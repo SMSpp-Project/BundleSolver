@@ -1,0 +1,63 @@
+##############################################################################
+################################ makefile-c ##################################
+##############################################################################
+#									     #
+#   complete makefile of MCFBlock / MCFSolver                                #
+#									     #
+#   The makefile defines internally all external libraries (comprised the    #
+#   SMS++ one) required by BundleSolver. Accordingly, all necessary          #
+#   OBJ, H, -I directives, external libraries + -L<libdirs> are added to the #
+#   corresponding MCFBk* macros.                                             #
+#                                                                            #
+#   Input:  $(CC)       = compiler command                                   #
+#           $(SW)       = compiler options                                   #
+#           $(BNDSLVSDR) = the directory where MCFBlock / MCFSolver source is#
+#           $(BNDSLVODR) = the directory where the objects have to be put    #
+#                                                                            #
+#   Output: $(BNDSLVOBJ) = the final object(s) / library                     #
+#           $(BNDSLVLIB) = external libraries + -L<libdirs>                  #
+#           $(BNDSLVH)   = the .h files to include for MCFBlock / MCFSolver  #
+#           $(BNDSLVINC) = the -I$( MCFBlock / MCFSolver directory )         #
+#                                                                            #
+#                                VERSION 1.00                                #
+#                               13 - 05 - 2019                               #
+#                                                                            #
+#                              Antonio Frangioni                             #
+#                               Enrico Gorgone                               #
+#                          Operations Research Group                         #
+#                         Dipartimento di Informatica                        #
+#                             Universita' di Pisa                            #
+#									     #
+##############################################################################
+
+# define & include the necessary modules- - - - - - - - - - - - - - - - - - -
+# if a module is not used in the current configuration, just comment out the
+# corresponding include line
+# each module outputs some macros to be used here:
+# *OBJ is the final object/library
+# *H   is the list of all include files
+# *INC is the -I<include directories>
+
+# define input macros for SMS++ complete makefile, then include it
+SMS++SDR = $(BNDSLVSDR)../SMS++/
+include $(SMS++SDR)lib/makefile-inc
+
+# define input macros for libNDO complete makefile, then include it
+libNDOSDR = $(BNDSLVSDR)../NdoFiOracle/
+include $(libNDOSDR)lib/makefile-inc
+
+# include the makefile requiring all external modules in input
+include $(BNDSLVSDR)/makefile
+
+# macroes to be exported- - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+# append external -I directives to MCFBkINC, MCFBkOBJ and MCFBkH as defined
+# by the makefile, thus the := assignment has to be used (use GNU make)
+BNDSLVOBJ := $(BNDSLVOBJ) $(libNDOOBJ) $(SMS++OBJ)
+BNDSLVINC := $(BNDSLVINC) $(SMS++INC) $(libNDOINC)
+BNDSLVH := $(BNDSLVH) $(libNDOH) 
+
+# external libreries for BundleSolver
+BNDSLVLIB = $(libNDOLIB) $(SMS++LIB) 
+
+############################ End of makefile #################################
