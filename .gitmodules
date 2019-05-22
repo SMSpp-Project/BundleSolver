@@ -1,0 +1,3 @@
+[submodule "ndosolver_fioracle_project"]
+	path = ndosolver_fioracle_project
+	url = https://gitlab.com/frangio68/ndosolver_fioracle_project.git
