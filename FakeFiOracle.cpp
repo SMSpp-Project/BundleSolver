@@ -56,7 +56,7 @@ using namespace SMSpp_di_unipi_it;
 Index FakeFiOracle::GetGi( SgRow SubG , cIndex_Set &SGBse ,
 			cIndex Name , cIndex strt , Index stp  ) {
 
- c05f->get_linearization_coefficients( SubG , Name, nullptr , strt , stp );
+ c05f->get_linearization_coefficients( SubG , Name, {} , strt , stp );
  SGBse = nullptr;
  return( stp - strt );
  }

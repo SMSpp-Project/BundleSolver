@@ -53,7 +53,7 @@ SMSpp_insert_in_factory_cpp_0( BundleSolver );
 const std::vector< std::string > BundleSolver::int_pars_str =
              { "intBPar1" , "intBPar2" , "intBPar6" ,
                "intEStps" , "intMnSSC" , "intMnNSC" ,
-               "intSPar1" , "intPPar1", "intPPar2" ,
+               "inttSPar1" , "intPPar1", "intPPar2" ,
 			   "intSPar3" };
 
 // define and initialize here the vector of double parameters names
@@ -62,7 +62,7 @@ const std::vector< std::string > BundleSolver::dbl_pars_str =
 		       "dblEDcrs" , "dblBPar3" ,  "dblBPar4"  ,
 		       "dblBPar5"  , "dblm1" , "dblm3" ,
 			   "dblmxIncr" ,  "dblmnIncr" ,  "dblmxDecr" ,
-			   "dblmmDecr" ,  "dbltMaior" ,  "dbltMinor" ,
+			   "dblmnDecr" ,  "dbltMaior" ,  "dbltMinor" ,
 			   "dbltInit" ,  "dbltSPar2" ,  "dblMPEFsb" ,
 			   "dblMPEOpt"  };
 
@@ -74,9 +74,10 @@ const std::map< std::string , BundleSolver::idx_type > BundleSolver::int_pars_ma
 		     { "intEStps" , BundleSolver::intEStps } ,
 		     { "intMnSSC" , BundleSolver::intMnSSC } ,
 		     { "intMnNSC" , BundleSolver::intMnNSC } ,
-		     { "intSPar1" , BundleSolver::intSPar1 } ,
+		     { "inttSPar1", BundleSolver::inttSPar1 } ,
 		     { "intPPar1" , BundleSolver::intPPar1 } ,
-			 { "intPPar2" , BundleSolver::intPPar3 } };
+		     { "intPPar2" , BundleSolver::intPPar2 } ,
+			 { "intPPar3" , BundleSolver::intPPar3 } };
 
 // define and initialize here the map for double parameters names
 const std::map< std::string , BundleSolver::idx_type > BundleSolver::dbl_pars_map =
@@ -92,13 +93,50 @@ const std::map< std::string , BundleSolver::idx_type > BundleSolver::dbl_pars_ma
 			 { "dblmxIncr" , BundleSolver::dblmxIncr } ,
 			 { "dblmnIncr" , BundleSolver::dblmnIncr } ,
 			 { "dblmxDecr" , BundleSolver::dblmxDecr } ,
-			 { "dblmmDecr" , BundleSolver::dblmmDecr } ,
+			 { "dblmnDecr" , BundleSolver::dblmnDecr } ,
 			 { "dbltMaior" , BundleSolver::dbltMaior } ,
 			 { "dbltMinor" , BundleSolver::dbltMinor } ,
 			 { "dbltInit" , BundleSolver::dbltInit } ,
 			 { "dbltSPar2" , BundleSolver::dbltSPar2 } ,
 			 { "dblMPEFsb", BundleSolver::dblMPEFsb } ,
 		     { "dblMPEOpt"  , BundleSolver::dblMPEOpt  } };
+
+// define and initialize here the default int parameters
+const std::vector<int> BundleSolver::dflt_int_par =
+        {    10 ,  // intBPar1
+			100 ,  // intBPar2
+			  0 ,  // intBPar6
+			  0 ,  // intEStps
+			  0 ,  // intMnSSC
+			  0 ,  // intMnNSC
+			  0 ,  // intSPar1
+			 30 ,  // intPPar1
+			 10 ,  // intPPar2
+			  5    // intPPar3
+			 };
+
+// define and initialize here the default double parameters
+const std::vector<double> BundleSolver::dflt_dbl_par =
+           { 1e2 ,    // dbltStar
+			 1e-2 ,   // dblEInit
+			 1e6 ,    // dblEFnal
+			 0.95 ,   // dblEDcrs
+			 - 1 ,    // dblBPar3
+			 - 1 ,    // dblBPar4
+			 30 ,     // dblBPar5
+			 0.1 ,    // dblm1
+			 3 ,      // dblm3
+			 10 ,     // dblmxIncr
+			 1.5 ,    // dblmnIncr
+			 0.1 ,    // dblmxDecr
+			 0.66 ,   // dblmmDecr
+			 1e6 ,    // dbltMaior
+			 1e-6,    // dbltMinor
+			  1 ,     // dbltInit
+			  0.1 ,   // dbltSPar2
+			 1e-6 ,   // dblMPEFsb
+			 1e-6     // dblMPEOpt
+               };
 
 /*--------------------------------------------------------------------------*/
 
@@ -212,8 +250,196 @@ return( Result );
 
 /*--------------------------------------------------------------------------*/
 
-const std::string & BundleSolver::int_par_idx2str( const idx_type idx )
- const
+int BundleSolver::get_dflt_int_par( const idx_type par ) const
+{
+ if( ( par >= intBPar1 ) && ( par < intLastBndSlvPar ) )
+  return( dflt_dbl_par[ par - intBPar1 ] );
+ else
+  return( CDASolver::get_dflt_int_par( par ) );
+ }
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+
+double BundleSolver::get_dflt_dbl_par( const idx_type par ) const
+{
+ if( ( par >= dbltStar ) && ( par < dblLastBndSlvPar ) )
+  return( dflt_dbl_par[ par - dbltStar ] );
+ else
+  return( CDASolver::get_dflt_dbl_par( par ) );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+int BundleSolver::get_int_par( const idx_type par ) const
+{
+ switch( par ) {
+  case( intMaxIter ):
+   return( MaxIter );
+   break;
+  case( intMaxSol ):
+   return( MaxSol );
+   break;
+  case( intLogVerb ):
+   return( LogVerb );
+   break;
+  case( intBPar1 ):
+   return( BPar1 );
+   break;
+  case( intBPar2 ):
+   return( BPar2 );
+   break;
+  case( intBPar6 ):
+   return( BPar6 );
+   break;
+  case( intEStps ):
+   return( EStps );
+   break;
+  case( intMnSSC ):
+   return( MnSSC );
+   break;
+  case( intMnNSC ):
+   return( MnNSC );
+   break;
+  case( inttSPar1 ):
+   return( tSPar1 );
+   break;
+  case( intPPar1 ):
+   return( PPar1 );
+   break;
+  case( intPPar2 ):
+   return( intPPar2 );
+   break;
+  case( intPPar3 ):
+   return( intPPar3 );
+   break;
+  default:
+   return( get_dflt_int_par( par ) );
+  }
+
+ } // end( BundleSolver::get_int_par )  - - - - - - - - - - - - - - - - - - -
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+
+double BundleSolver::get_dbl_par( const idx_type par ) const
+{
+ switch( par ) {
+  case( dblMaxTime ):
+   return( MaxTime );
+   break;
+  case( dblRelAcc ):
+   return( RelAcc );
+   break;
+  case( dblAbsAcc ):
+   return( AbsAcc );
+   break;
+  case( dblUpCutOff ):
+   return( UpCutOff );
+   break;
+  case( dblLwCutOff ):
+   return( LwCutOff );
+   break;
+  case( dblRAccSol ):
+   return( RAccSol );
+   break;
+  case( dblAAccSol ):
+   return( AAccSol );
+   break;
+  case( dblFAccSol  ):
+   return( FAccSol );
+   break;
+  case( dbltStar ):
+   return( tStar );
+   break;
+  case( dblEInit ):
+   return( EInit );
+   break;
+  case( dblEFnal ):
+   return( EFnal );
+   break;
+  case( dblEDcrs ):
+   return( EDcrs );
+   break;
+  case( dblBPar3 ):
+   return( BPar3 );
+   break;
+  case( dblBPar4 ):
+   return( dblBPar4 );
+   break;
+  case( dblBPar5 ):
+   return( BPar5 );
+   break;
+  case( dblm1 ):
+   return( m1 );
+   break;
+  case( dblm3 ):
+   return( m3 );
+   break;
+  case( dblmxIncr ):
+   return( mxIncr );
+   break;
+  case( dblmnIncr ):
+   return( mnIncr );
+   break;
+  case( dblmxDecr ):
+   return( mxDecr );
+   break;
+  case( dblmnDecr ):
+   return( mnDecr );
+   break;
+  case( dbltMaior ):
+   return( tMaior );
+   break;
+  case( dbltMinor ):
+   return( tMinor );
+   break;
+  case( dbltInit ):
+   return( tInit );
+   break;
+  case( dbltSPar2 ):
+   return( tSPar2 );
+   break;
+  case( dblMPEFsb ):
+   return( MPEFsb );
+   break;
+  case( dblMPEOpt ):
+   return( MPEOpt );
+   break;
+  default:
+   return( get_dflt_dbl_par( par ) );
+  }
+
+ } // end( BundleSolver::get_dbl_par ) - - - - - - - - - - - - - - - - - - - -
+
+/*--------------------------------------------------------------------------*/
+
+ThinComputeInterface::idx_type BundleSolver::int_par_str2idx(
+		const std::string & name ) const
+{
+ // these may be many enough as to warrant using a map
+ const auto it = int_pars_map.find( name );
+ if( it != int_pars_map.end() )
+  return( it->second );
+ else
+ return( CDASolver::int_par_str2idx( name ) );
+
+ } // end( BundleSolver::int_par_str2idx ) - - - - - - - - - - - - - - - - - -
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+
+ThinComputeInterface::idx_type BundleSolver::dbl_par_str2idx( const std::string & name ) const
+{
+ // these may be many enough as to warrant using a map
+ const auto it = dbl_pars_map.find( name );
+ if( it != dbl_pars_map.end() )
+  return( it->second );
+ else
+  return( CDASolver::dbl_par_str2idx( name ) );
+ } // end( BundleSolver::dbl_par_str2idx ) - - - - - - - - - - - - - - - - - -
+
+/*--------------------------------------------------------------------------*/
+
+const std::string & BundleSolver::int_par_idx2str(
+	const ThinComputeInterface::idx_type idx ) const
 {
  if( ( idx >= intBPar1 ) && ( idx < intLastBndSlvPar ) )
   return( int_pars_str[ idx - intBPar1 ] );

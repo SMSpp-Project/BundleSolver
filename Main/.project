@@ -26,6 +26,11 @@
 	</natures>
 	<linkedResources>
 		<link>
+			<name>Bundle</name>
+			<type>2</type>
+			<location>/Users/gorgone/Documents/GitHub/BundleSolver/NdoFiOracle/Bundle</location>
+		</link>
+		<link>
 			<name>BundleSolver.cpp</name>
 			<type>1</type>
 			<location>/Users/gorgone/Documents/GitHub/BundleSolver/BundleSolver.cpp</location>
@@ -44,6 +49,11 @@
 			<name>FakeFiOracle.h</name>
 			<type>1</type>
 			<location>/Users/gorgone/Documents/GitHub/BundleSolver/FakeFiOracle.h</location>
+		</link>
+		<link>
+			<name>NDOSlver</name>
+			<type>2</type>
+			<location>/Users/gorgone/Documents/GitHub/BundleSolver/NdoFiOracle/NDOSlver</location>
 		</link>
 		<link>
 			<name>include</name>

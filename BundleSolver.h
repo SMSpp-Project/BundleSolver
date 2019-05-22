@@ -82,7 +82,23 @@ namespace SMSpp_di_unipi_it
 /*--------------------------------------------------------------------------*/
 /// CDASolver
 /** The BunldeSolver implements the Solver interface for the (Generalized)
-    Bundle algorithm. */
+    Bundle algorithm.
+
+
+    - aggiungere Incrementale (approssimato)
+
+    - aggiungere doppia stabilizzazione, verificare formula per norme
+      diverse dalla norma 2
+
+    - parametro tolleranza assoluta subgradiente aggregato
+
+       max |g_i| \leq \epsilon
+
+    - test stopping con or tStar = 0, epsilon = 0
+
+    - specificare proprieta' blocco a cui si attacca il solver
+
+     */
 
 class BundleSolver : public CDASolver {
 
@@ -149,7 +165,7 @@ public:
  * z* = - Sum_i z[ i ]* is the optimal solution of the stabilized Dual
  * Master Problem [see MPSolver.h], is used as an estimate of the relative
  * gap between the current and the optimal solution; that is, IsOptimal()
- * returns true if EpsU <= EpsLin. Thus, the number EpsLin / EpsU is always
+ * returns true if EpsU <= RAccSol. Thus, the number RAccSol / EpsU is always
  * smaller than one, and typically increases as the algorithm proceeds.
  * Depending on the value of BPar6, the following formulae for the actual
  * value of BPar3, aBP3, are used:
@@ -158,11 +174,11 @@ public:
  *        every BPar5 iterations, while if BPar5 <= 0 then aBP3 is
  *        initialized to BPar3 and decreased every - BPar5 iterations;
  *  2: aBP3 is set to
- *        ( BPar5 > 0 ? BPar4 : BPar3 ) + BPar5 * ( EpsLin / EpsU )
+ *        ( BPar5 > 0 ? BPar4 : BPar3 ) + BPar5 * ( RAccSol / EpsU )
  *  3: aBP3 is set to
- *         ( BPar5 > 0 ? BPar4 : BPar3 ) + BPar5 / sqrt( EpsU / EpsLin )
+ *         ( BPar5 > 0 ? BPar4 : BPar3 ) + BPar5 / sqrt( EpsU / RAccSol )
  *  4: aBP3 is set to
- *        ( BPar5 > 0 ? BPar4 : BPar3 ) + BPar5 / log10( EpsU / EpsLin ) */
+ *        ( BPar5 > 0 ? BPar4 : BPar3 ) + BPar5 / log10( EpsU / RAccSol ) */
 
  intEStps ,    ///<
        /**< The evaluation of function to be minimized may be a
@@ -188,7 +204,7 @@ public:
        /**< minimum number of consecutive NS with the same t that
        * have to be performed before t is allowed to diminish  */
 
- intSPar1 ,    ///<
+ inttSPar1 ,    ///<
        /**<  Select the t-strategy used. This field is coded
        * bit-wise in the following way.
  * The first two bits control which heuristics are used to
@@ -279,18 +295,18 @@ public:
  * function of L (evaluating to 0 inside L and to +INF otherwise). In other
  * words, one has to show that there exists a( enspilon-)subgradient of
  * Fi() at Lambda that, *after projection on the frontier of L*, is all-0.
- * A general stopping condition requires that, if EpsLin is the *relative*
+ * A general stopping condition requires that, if RAccSol is the *relative*
  * precision required, a solver can stop if it finds an epsilon-subgradient
  * g at Lambda such that
-              tStar * || g || + epsilon <= EpsLin * | MaxFi |
+              tStar * || g || + epsilon <= RAccSol * | MaxFi |
  * where MaxFi is an estimate of the optimal solution value of the NDO
  * problem, tStar is an estimate of the longest step that can be performed
  * and || || is a norm-like function. tStar is related to the "scaling" of
  * Fi(), and it can be seen as an estimate of the actual decrease that can be
  * obtained by moving of an unitary step in the direction of any subgradient.
  * Alternatively, the above condition can be seen as a weaker form of
-        epsilon <= EpsLin * | MaxFi | / 2
-        || g || <= EpsLin * | MaxFi | / ( 2 * tStar )
+        epsilon <= RAccSol * | MaxFi | / 2
+        || g || <= RAccSol * | MaxFi | / ( 2 * tStar )
  * which says that the solver stops when both epsilon and || g || are
  * "small", with tStar dictating what "small" means for || g ||. Note that
  * each derived class can use different norm-like functions to evaluate one
@@ -319,10 +335,10 @@ public:
  * along iterations. Note that EFnal has a completely
  * different meaning as the one postulated by the base class (smallest
  * precision) because that makes no sense: the "final" precision clearly
- * has to be EpsLin. In fact, a value larger than EpsLin would make it
- * impossible (in theory) to reach EpsLin-accuracy for the overall
- * optimization, and a value smaller than EpsLin is wasteful as a higher
- * precision than EpsLin is not required. The idea is that the precision
+ * has to be RAccSol. In fact, a value larger than RAccSol would make it
+ * impossible (in theory) to reach RAccSol-accuracy for the overall
+ * optimization, and a value smaller than RAccSol is wasteful as a higher
+ * precision than RAccSol is not required. The idea is that the precision
  * should improve along the iterations, and the "speed" at which this
  * happens is dictated by EStps and EFnal; however, one can also keep the
  * precision "fixed" by setting EStps == 0. In this case, having defined
@@ -396,7 +412,7 @@ public:
  * previous value) */
 
  dblmxDecr ,    ///<
- dblmmDecr ,    ///<
+ dblmnDecr ,    ///<
        /**<  each time t diminishes, the new value of t is chosen
        * in the interval [t * mxDecr, t * mnDecr] (t is the
  * previous value) */
@@ -412,7 +428,7 @@ public:
  * tInit is in that order of magnitude, while tMinor should be set small
  * enough to never enter into play. Note that t is always kept <= tStar
  * [see NDOSolver.h], and that a "good" value for tStar (i.e., one that
- * actually ensures that the stopping point is EpsLin-optimal) is usually
+ * actually ensures that the stopping point is RAccSol-optimal) is usually
  * one or two orders of magnitude larger than a "good" tInit. */
 
  dbltSPar2 ,    ///< Numerical parameter for the long-term t-strategies
@@ -610,67 +626,39 @@ public:
 
  virtual idx_type get_num_int_par( void ) const override
  {
-  return( CDASolver::get_num_int_par() + 1 );
+  return( idx_type( intLastBndSlvPar ) );
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
  virtual idx_type get_num_dbl_par( void ) const override
  {
-  return( CDASolver::get_num_dbl_par() );
+  return( idx_type( dblLastBndSlvPar ) );
   }
 
 /*--------------------------------------------------------------------------*/
  
- virtual int get_dflt_int_par( const idx_type par ) const override
- {
-  return( CDASolver::get_dflt_int_par( par ) );
-  }
+ virtual int get_dflt_int_par( const idx_type par ) const override;
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  
- virtual double get_dflt_dbl_par( const idx_type par ) const override
- {
-  return( CDASolver::get_dflt_dbl_par( par ) );
-  }
+ virtual double get_dflt_dbl_par( const idx_type par ) const override;
 
 /*--------------------------------------------------------------------------*/
  
- virtual int get_int_par( const idx_type par ) const override
- {
-  return( get_dflt_int_par( par ) );
-  }
+ virtual int get_int_par( const idx_type par ) const override;
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  
- virtual double get_dbl_par( const idx_type par ) const override
- {
-  return( get_dflt_dbl_par( par ) );
-  }
+ virtual double get_dbl_par( const idx_type par ) const override;
 
 /*--------------------------------------------------------------------------*/
 
- virtual idx_type int_par_str2idx( const std::string & name ) const override
- {
-  // these may be many enough as to warrant using a map
-  const auto it = int_pars_map.find( name );
-  if( it != int_pars_map.end() )
-   return( it->second );
-  else
-  return( CDASolver::int_par_str2idx( name ) );
-  }
+ virtual idx_type int_par_str2idx( const std::string & name ) const override;
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- virtual idx_type dbl_par_str2idx( const std::string & name ) const override
- {
-  // these may be many enough as to warrant using a map
-  const auto it = dbl_pars_map.find( name );
-  if( it != dbl_pars_map.end() )
-   return( it->second );
-  else
-   return( CDASolver::dbl_par_str2idx( name ) );
-  }
+ virtual idx_type dbl_par_str2idx( const std::string & name ) const override;
 
 /*--------------------------------------------------------------------------*/
 
@@ -716,11 +704,19 @@ protected:
 
 C05Function * c05f; ///< the C05Function which has to be solved
 
+int MaxSol;         ///< maximum number of different solutions to report
+double RelAcc;      ///< relative accuracy for declaring a solution optimal
+double AbsAcc;      ///< absolute accuracy for declaring a solution optimal
+double UpCutOff;    ///< upper cutoff for stopping the algorithm
+double LwCutOff;    ///< lower cutoff for stopping the algorithm
+double RAccSol;     ///< maximum relative error in any reported solution
+double AAccSol;     ///< maximum absolute error in any reported solution
+double FAccSol;     ///< maximum constraint violation in any reported solution
+
 Index MaxIter;      ///< maximum number of iterations
 double MaxTime;     ///< maximum time (in seconds) for each call to Solve()
 
 double tStar;       ///< optimality related parameter: "scaling" of Fi
-double EpsLin;      ///< optimality related parameter: relative precision
 
 double EInit;      ///< precision-related parameter: initial precision
 double EFnal;      ///< precision-related parameter: final precision
@@ -737,10 +733,8 @@ Index ParIter;     ///< nuber of iterations in this run
 Index FiEvaltns;   ///< total number of Fi() calls
 Index GiEvaltns;   ///< total number of Gi() calls
 
-
+int LogVerb;       ///< "verbosity" of the log
 // ostream *NDOLog;   ///< the output stream object for log purposes
-// char NDOLLvl;      ///< the "level of verbosity" of the log
-
 // OPTtimers *NDOt;   ///< OPTtimer for timing purposes
 
 
@@ -864,6 +858,14 @@ int *FiStatus;
 #if( NONMONOTONE )
  HpRow FiVals;       // Fi-values for the last NONMONOTONE SSs
 #endif
+
+/*--------------------------------------------------------------------------*/
+
+ const static std::vector<int> dflt_int_par;
+ ///< the (static const) vector of int parameters default values
+
+ const static std::vector<double> dflt_dbl_par;
+ ///< the (static const) vector of double parameters default values
 
  const static std::vector< std::string > int_pars_str;
  ///< the (static const) vector of int parameters names
