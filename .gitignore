@@ -3,3 +3,9 @@
 Main/test.o
 BundleSolver.o
 Main/test.o
+FakeFiOracle.o
+BundleSolver.o
+Main/test
+Main/test.dSYM/Contents/Info.plist
+Main/test.dSYM/Contents/Resources/DWARF/test
+Main/test.o
