@@ -189,6 +189,11 @@ void BundleSolver::set_Block( Block * block )
 
  FakeFiOracle * Fi = new FakeFiOracle( c05f );
 
+
+ // < controllo sui vincoli, vogliamo che siano di box >
+
+ // < il blocco puo' avere solo figli, ma non nipoti >
+
  }  // end( BundleSolver::set_Block )  - - - - - - - - - - - - - - - - - - - -
 
 /*--------------------------------------------------------------------------*/

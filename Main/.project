@@ -56,6 +56,11 @@
 			<location>/Users/gorgone/Documents/GitHub/BundleSolver/NdoFiOracle/NDOSlver</location>
 		</link>
 		<link>
+			<name>SubGrad</name>
+			<type>2</type>
+			<location>/Users/gorgone/Documents/GitHub/BundleSolver/NdoFiOracle/SubGrad</location>
+		</link>
+		<link>
 			<name>include</name>
 			<type>2</type>
 			<location>/Users/gorgone/Documents/GitHub/sms++/include</location>
