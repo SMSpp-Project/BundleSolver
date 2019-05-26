@@ -36,6 +36,7 @@
 
 #include "FiOracle.h"
 #include "C05Function.h"
+#include "LinearFunction.h"
 
 #include "OPTtypes.h"
 #include "OPTUtils.h"
@@ -87,10 +88,10 @@ class FakeFiOracle : public FiOracle
     concerns the real evaluation of the function must be done in derived
     classes, which will have their parameters. */
 
-   FakeFiOracle( C05Function * fun ) : FiOracle()
+   FakeFiOracle( std::vector< C05Function * > objfun ,
+		   LinearFunction * zc = nullptr ) : FiOracle()
    {
-    c05f = fun;
-
+	v_c05f = objfun;
     SGBse1 = new Index[ NumVar + 1 ];
     }
 
@@ -123,8 +124,8 @@ class FakeFiOracle : public FiOracle
 
    virtual HpNum Fi( cIndex wFi = Inf<Index>() ) {
 
-	c05f->compute();
-    return( c05f->get_value() );
+	// c05f->compute();
+    // return( c05f->get_value() );
     }
 
 /*@} -----------------------------------------------------------------------*/
@@ -192,7 +193,8 @@ class FakeFiOracle : public FiOracle
 
  protected:
 
-  C05Function * c05f;
+  std::vector< C05Function * > v_c05f; /* the vector of the components of the
+                                           sum function */
   Index_Set SGBse1;       // format of Subgradient
 
 /*--------------------------------------------------------------------------*/

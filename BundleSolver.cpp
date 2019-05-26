@@ -33,7 +33,6 @@
 /*--------------------------------------------------------------------------*/
 
 #include "BundleSolver.h"
-#include "FakeFiOracle.h"
 
 /*--------------------------------------------------------------------------*/
 /*------------------------- NAMESPACE AND USING ----------------------------*/
@@ -199,6 +198,42 @@ void BundleSolver::set_Block( Block * block )
    throw( std::logic_error( "the objective is not a C05Function" ) );
   v_c05f.push_back( c05f );
 
+  // if some Variable are present, they are of the ColVariable type - - - - - -
+  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+  auto v_s_Variable = boost::any_cast< std::vector<ColVariable *> > ( f_Block->get_static_variables() );
+  for( auto var : v_s_Variable ) {
+   if( var == nullptr )
+	throw( std::logic_error( "Variable is not a ColVariable" ) );
+   }
+
+  auto v_d_Variable = boost::any_cast< std::vector<ColVariable *> > ( f_Block->get_dynamic_variables() );
+  for( auto var : v_d_Variable ) {
+   if( var == nullptr )
+	throw( std::logic_error( "Variable is not a ColVariable" ) );
+   }
+
+  // if some Constraint are present, their function must be linear
+  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+  auto v_s_Constraint = boost::any_cast< std::vector<FRowConstraint *> > ( f_Block->get_static_constraints() );
+  for( auto cnst : v_s_Constraint ) {
+   if( cnst == nullptr )
+	throw( std::logic_error( "Constraint is not a FRowConstraint" ) );
+   auto lfOFc = dynamic_cast<LinearFunction *>( (cnst)->get_function() );
+   if( lfOFc == nullptr )
+    throw( std::logic_error( "the constraint's function is not a LinearFunction" ) );
+   }
+
+  auto v_d_Constraint = boost::any_cast< std::vector<FRowConstraint *> > ( f_Block->get_dynamic_constraints() );
+  for( auto cnst : v_d_Constraint ) {
+   if( cnst == nullptr )
+	throw( std::logic_error( "Constraint is not a FRowConstraint" ) );
+   auto lfOFc = dynamic_cast<LinearFunction *>( (cnst)->get_function() );
+    if( lfOFc == nullptr )
+     throw( std::logic_error( "the constraint's function is not a LinearFunction" ) );
+   }
+
   }
  else {
 
@@ -213,7 +248,7 @@ void BundleSolver::set_Block( Block * block )
   if( lf == nullptr )
    throw( std::logic_error( "the objective is not a LinearFunction" ) );
 
-  for( auto & sb : f_Block->get_nested_Blocks() ) { // for each sub-block
+  for( auto sb : f_Block->get_nested_Blocks() ) { // for each sub-block
 
    // the objective function of each sub-block must be a C05Function - - - - -
    //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -233,14 +268,34 @@ void BundleSolver::set_Block( Block * block )
    if( sb->get_nested_Blocks().size() )
 	throw( std::logic_error( "nephew are not allowed" ) );
 
+   // Variable of Sub-Block are not expected, neither the Constraint - - - - -
+   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+   auto v_s_Variable = boost::any_cast< std::vector<ColVariable *> > ( sb->get_static_variables() );
+   if( v_s_Variable.size() )
+	throw( std::logic_error( "static Variable are not allowed" ) );
+
+   auto v_d_Variable = boost::any_cast< std::vector<ColVariable *> > ( sb->get_dynamic_variables() );
+   if( v_d_Variable.size() )
+	throw( std::logic_error( "dynamic Variable are not allowed" ) );
+
+   auto v_s_Constraint = boost::any_cast< std::vector<FRowConstraint *> > ( sb->get_static_constraints() );
+   if( v_s_Constraint.size() )
+	throw( std::logic_error( "static Constraint are not allowed" ) );
+
+   auto v_d_Constraint = boost::any_cast< std::vector<FRowConstraint *> > ( sb->get_dynamic_constraints() );
+   if( v_d_Constraint.size() )
+	throw( std::logic_error( "dynamic Constraint are not allowed" ) );
+
    }
   } // end decomposed case - - - - - - - - - - - - - - - - - - - - - - - - - -
 
  // construct a FakeFiOracle to handle the MPSolver, which has to
- // interface with a FiOracle object - - - - - - - - - - - - - - - - - - - - -
+ // interface with a FiOracle object, the FiOracle needs of all the
+ // description of the Function including the 0th component
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- // FakeFiOracle * Fi = new FakeFiOracle( c05f );
+ FakeFiOracle * Fi = new FakeFiOracle( v_c05f , lf );
 
  }  // end( BundleSolver::set_Block )  - - - - - - - - - - - - - - - - - - - -
 
@@ -248,7 +303,7 @@ void BundleSolver::set_Block( Block * block )
 
 void BundleSolver::SetMPSolver( MPSolver *MPS )
 {
-
+ Master = MPS;
  } // end( BundleSolver::SetMPSolver )  - - - - - - - - - - - - - - - - - - -
 
 /*--------------------------------------------------------------------------*/

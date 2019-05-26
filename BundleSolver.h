@@ -51,12 +51,17 @@
 /*--------------------------------------------------------------------------*/
 
 #include "CDASolver.h"
+
 #include "C05Function.h"
 #include "LinearFunction.h"
+
 #include "Block.h"
 #include "ColVariable.h"
 #include "FRealObjective.h"
+#include "FRowConstraint.h"
+
 #include "MPSolver.h"
+#include "FakeFiOracle.h"
 
 /*--------------------------------------------------------------------------*/
 /*-------------------------- NAMESPACE & USING -----------------------------*/
@@ -475,7 +480,10 @@ public:
 /*--------------------------------------------------------------------------*/
  /// destructor: it has to release all the Modifications
 
- virtual ~BundleSolver() { }
+ virtual ~BundleSolver() {
+
+  delete[] Fi;
+  }
 
 /*@} -----------------------------------------------------------------------*/
 /*-------------------------- OTHER INITIALIZATIONS -------------------------*/
@@ -711,10 +719,12 @@ protected:
 /*---------------------------- PROTECTED FIELDS  ---------------------------*/
 /*--------------------------------------------------------------------------*/
 
-std::vector< C05Function * > v_c05f;
-///< the vector of the components of the sum function
-LinearFunction * lf;
-///< the 0-th component of the sum function
+std::vector< C05Function * > v_c05f; /* the vector of the components of the
+                                        sum function */
+LinearFunction * lf; ///< the 0-th component of the sum function
+MPSolver *Master;    // (pointer to) the Master Problem Solver
+
+FakeFiOracle * Fi;  ///< a pointer to a FakeFiOracle object
 
 int MaxSol;         ///< maximum number of different solutions to report
 double RelAcc;      ///< relative accuracy for declaring a solution optimal
