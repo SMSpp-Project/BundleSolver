@@ -52,6 +52,7 @@
 
 #include "CDASolver.h"
 #include "C05Function.h"
+#include "LinearFunction.h"
 #include "Block.h"
 #include "ColVariable.h"
 #include "FRealObjective.h"
@@ -125,6 +126,16 @@ public:
 
   typedef std::vector<bool> Vec_Bool;  ///< a std::vector of bool
   typedef std::vector<OFValue> Vec_OFValue; ///< a std::vector of OFValue
+
+  typedef unsigned int LinearizationName;
+  ///< type used to define names of linearizations
+
+  typedef double FunctionValue;
+  ///< type of the returned value by Function
+
+  typedef std::vector< std::pair < LinearizationName , FunctionValue > >
+  LinearCombination;
+  ///< type used to define linear combinations of linearizations
 
 /*--------------------------------------------------------------------------*/
  /// public enum for the int algorithmic parameters
@@ -550,9 +561,7 @@ public:
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// write the "current" dual solution
- virtual void get_dual_solution( Configuration *solc = nullptr ) override
- {
-  }
+ virtual void get_dual_solution( Configuration *solc = nullptr ) override;
 
 /*--------------------------------------------------------------------------*/
 
@@ -702,7 +711,10 @@ protected:
 /*---------------------------- PROTECTED FIELDS  ---------------------------*/
 /*--------------------------------------------------------------------------*/
 
-C05Function * c05f; ///< the C05Function which has to be solved
+std::vector< C05Function * > v_c05f;
+///< the vector of the components of the sum function
+LinearFunction * lf;
+///< the 0-th component of the sum function
 
 int MaxSol;         ///< maximum number of different solutions to report
 double RelAcc;      ///< relative accuracy for declaring a solution optimal
@@ -858,6 +870,12 @@ int *FiStatus;
 #if( NONMONOTONE )
  HpRow FiVals;       // Fi-values for the last NONMONOTONE SSs
 #endif
+
+/*--------------------------------------------------------------------------*/
+
+ std::vector< std::pair < LinearizationName , LinearCombination > > zA;
+ /* the vector of the pairs  important linearization name and the
+    linear combination used to form it */
 
 /*--------------------------------------------------------------------------*/
 

@@ -172,27 +172,75 @@ void BundleSolver::set_Block( Block * block )
 {
  Solver::set_Block( block );  // attach to the new Block
 
- // the objective function of the inner block must be linear - - - - - - - - -
- //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ /* Two types of block can be handled by the BundleSolver:
 
- auto obj = boost::any_cast<FRealObjective *>( f_Block->get_objective() );
- if( obj == nullptr )
-  throw( std::logic_error( "the objective is not a real function" ) );
+     1. Only one single non-smooth function
+     2. a sum of non-smooth functions
 
- c05f = dynamic_cast<C05Function *>( (obj)->get_function() );
- if( c05f == nullptr )
-  throw( std::logic_error( "the objective is not a C05Function" ) );
+    The algorithm here developed aims at solving non-constrained non-smooth
+    optimization. The block can have box constraints at the most.
+    It is expected the block to have in the first case a FRealObjective
+    whose the function is a C05Function one and having no children, while in
+    the second case a FRealObjective one whose the function is a LinearFunction
+    and having as many sub-blocks as the number of components. In the latter case,
+    each sub-block must not contain any Variable or Constraint. */
+
+ if( f_Block->get_nested_Blocks().empty() ) {
+
+  // the objective function of the block must be a C05Function  - - - - - - - -
+  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+  auto obj = boost::any_cast<FRealObjective *>( f_Block->get_objective() );
+  if( obj == nullptr )
+   throw( std::logic_error( "the objective is not a real function" ) );
+
+  auto c05f = dynamic_cast<C05Function *>( (obj)->get_function() );
+  if( c05f == nullptr )
+   throw( std::logic_error( "the objective is not a C05Function" ) );
+  v_c05f.push_back( c05f );
+
+  }
+ else {
+
+  // the objective function of each block must be a LinearFunction - - - - - -
+  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+  auto obj = boost::any_cast<FRealObjective *>( f_Block->get_objective() );
+  if( obj == nullptr )
+   throw( std::logic_error( "the objective is not a real function" ) );
+
+  lf = dynamic_cast<LinearFunction *>( (obj)->get_function() );
+  if( lf == nullptr )
+   throw( std::logic_error( "the objective is not a LinearFunction" ) );
+
+  for( auto & sb : f_Block->get_nested_Blocks() ) { // for each sub-block
+
+   // the objective function of each sub-block must be a C05Function - - - - -
+   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+   auto obj = boost::any_cast<FRealObjective *>( sb->get_objective() );
+   if( obj == nullptr )
+    throw( std::logic_error( "the objective is not a real function" ) );
+
+   auto c05f = dynamic_cast<C05Function *>( (obj)->get_function() );
+   if( c05f == nullptr )
+	throw( std::logic_error( "the objective is not a C05Function" ) );
+   v_c05f.push_back( c05f );
+
+   // nephew are not allowed - - - - - - - - - - - - - - - - - - - - - - - - -
+   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+   if( sb->get_nested_Blocks().size() )
+	throw( std::logic_error( "nephew are not allowed" ) );
+
+   }
+  } // end decomposed case - - - - - - - - - - - - - - - - - - - - - - - - - -
 
  // construct a FakeFiOracle to handle the MPSolver, which has to
  // interface with a FiOracle object - - - - - - - - - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- FakeFiOracle * Fi = new FakeFiOracle( c05f );
-
-
- // < controllo sui vincoli, vogliamo che siano di box >
-
- // < il blocco puo' avere solo figli, ma non nipoti >
+ // FakeFiOracle * Fi = new FakeFiOracle( c05f );
 
  }  // end( BundleSolver::set_Block )  - - - - - - - - - - - - - - - - - - - -
 
@@ -215,7 +263,7 @@ int BundleSolver::compute( bool changedvars )
  // if( ! Master )
  // throw( std::logic_error( "Master not set ye" ) );
 
- if( !c05f )
+ if( v_c05f.empty() )
   throw( std::logic_error( "C05Function not set yet" ) );
 
  // initializations - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -252,6 +300,16 @@ if( MaxIter && ( ParIter >= MaxIter ) && ( ! Result ) )
 return( Result );
 
 } // end( BundleSolver::compute ) - - - - - - - - - - - - - - - - - - - - - -
+
+/*--------------------------------------------------------------------------*/
+/*---------------------- METHODS FOR READING RESULTS -----------------------*/
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::get_dual_solution( Configuration *solc ) {
+
+ for( auto & zel : zA )
+  v_c05f[ zel.first ]->set_important_linearization( std::move(zel.second) , zel.first );
+ } // end ( BundleSolver::get_dual_solution() )  - - - - - - - - - - - - - - -
 
 /*--------------------------------------------------------------------------*/
 
