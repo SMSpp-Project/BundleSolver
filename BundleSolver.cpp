@@ -198,42 +198,6 @@ void BundleSolver::set_Block( Block * block )
    throw( std::logic_error( "the objective is not a C05Function" ) );
   v_c05f.push_back( c05f );
 
-  // if some Variable are present, they are of the ColVariable type - - - - - -
-  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
-  auto v_s_Variable = boost::any_cast< std::vector<ColVariable *> > ( f_Block->get_static_variables() );
-  for( auto var : v_s_Variable ) {
-   if( var == nullptr )
-	throw( std::logic_error( "Variable is not a ColVariable" ) );
-   }
-
-  auto v_d_Variable = boost::any_cast< std::vector<ColVariable *> > ( f_Block->get_dynamic_variables() );
-  for( auto var : v_d_Variable ) {
-   if( var == nullptr )
-	throw( std::logic_error( "Variable is not a ColVariable" ) );
-   }
-
-  // if some Constraint are present, their function must be linear
-  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
-  auto v_s_Constraint = boost::any_cast< std::vector<FRowConstraint *> > ( f_Block->get_static_constraints() );
-  for( auto cnst : v_s_Constraint ) {
-   if( cnst == nullptr )
-	throw( std::logic_error( "Constraint is not a FRowConstraint" ) );
-   auto lfOFc = dynamic_cast<LinearFunction *>( (cnst)->get_function() );
-   if( lfOFc == nullptr )
-    throw( std::logic_error( "the constraint's function is not a LinearFunction" ) );
-   }
-
-  auto v_d_Constraint = boost::any_cast< std::vector<FRowConstraint *> > ( f_Block->get_dynamic_constraints() );
-  for( auto cnst : v_d_Constraint ) {
-   if( cnst == nullptr )
-	throw( std::logic_error( "Constraint is not a FRowConstraint" ) );
-   auto lfOFc = dynamic_cast<LinearFunction *>( (cnst)->get_function() );
-    if( lfOFc == nullptr )
-     throw( std::logic_error( "the constraint's function is not a LinearFunction" ) );
-   }
-
   }
  else {
 
@@ -289,6 +253,42 @@ void BundleSolver::set_Block( Block * block )
 
    }
   } // end decomposed case - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+ // if some Variable are present, they are of the ColVariable type - - - - - -
+ //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+ auto v_s_Variable = boost::any_cast< std::vector<ColVariable *> > ( f_Block->get_static_variables() );
+ for( auto var : v_s_Variable ) {
+  if( var == nullptr )
+	throw( std::logic_error( "Variable is not a ColVariable" ) );
+  }
+
+ auto v_d_Variable = boost::any_cast< std::vector<ColVariable *> > ( f_Block->get_dynamic_variables() );
+ for( auto var : v_d_Variable ) {
+  if( var == nullptr )
+	throw( std::logic_error( "Variable is not a ColVariable" ) );
+  }
+
+ // if some Constraint are present, their functions must be linear
+ //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+ auto v_s_Constraint = boost::any_cast< std::vector<FRowConstraint *> > ( f_Block->get_static_constraints() );
+ for( auto cnst : v_s_Constraint ) {
+  if( cnst == nullptr )
+	throw( std::logic_error( "Constraint is not a FRowConstraint" ) );
+  auto lfOFc = dynamic_cast<LinearFunction *>( (cnst)->get_function() );
+  if( lfOFc == nullptr )
+   throw( std::logic_error( "the constraint's function is not a LinearFunction" ) );
+  }
+
+ auto v_d_Constraint = boost::any_cast< std::vector<FRowConstraint *> > ( f_Block->get_dynamic_constraints() );
+ for( auto cnst : v_d_Constraint ) {
+  if( cnst == nullptr )
+	throw( std::logic_error( "Constraint is not a FRowConstraint" ) );
+  auto lfOFc = dynamic_cast<LinearFunction *>( (cnst)->get_function() );
+   if( lfOFc == nullptr )
+    throw( std::logic_error( "the constraint's function is not a LinearFunction" ) );
+  }
 
  // construct a FakeFiOracle to handle the MPSolver, which has to
  // interface with a FiOracle object, the FiOracle needs of all the
