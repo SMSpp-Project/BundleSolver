@@ -802,6 +802,8 @@ Vec_Index LamBase;   // the set of indices of Lambda
 Vec_Index Lam1Bse;   // the set of indices of Lambda1
 Index LamDim;        // dimension of LamBase
 
+Vec_p_Var LamVcblr;    // the set of indices of Lambda
+
 bool KpBstL;         // if LmbdBst has to be kept
 bool BHasChgd;       // true if LamBase has changed during the latest
                      // pricing (never set to true if PPar2 == 0, unless
@@ -916,6 +918,8 @@ int *FiStatus;
 /*--------------------------------------------------------------------------*/
 /*-------------------------- PRIVATE METHODS -------------------------------*/
 /*--------------------------------------------------------------------------*/
+
+  void InitMP( void );
 
 /*--------------------------------------------------------------------------*/
 /*------------------------------ PRIVATE FIELDS  ---------------------------*/

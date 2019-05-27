@@ -161,155 +161,6 @@ static const unsigned char RstCnt =  8;  // don't reset constraints
 static const unsigned char RstFiV = 16;  // don't reset FiVals
 
 static cIndex InINF = SMSpp_di_unipi_it::Inf<Index>();
-static const double HpINF = SMSpp_di_unipi_it::Inf<double>();
-
-/*--------------------------------------------------------------------------*/
-/*-------------------------- OTHER INITIALIZATIONS -------------------------*/
-/*--------------------------------------------------------------------------*/
-
-void BundleSolver::set_Block( Block * block )
-{
- Solver::set_Block( block );  // attach to the new Block
-
- /* Two types of block can be handled by the BundleSolver:
-
-     1. Only one single non-smooth function
-     2. a sum of non-smooth functions
-
-    The algorithm here developed aims at solving non-constrained non-smooth
-    optimization. The block can have box constraints at the most.
-    It is expected the block to have in the first case a FRealObjective
-    whose the function is a C05Function one and having no children, while in
-    the second case a FRealObjective one whose the function is a LinearFunction
-    and having as many sub-blocks as the number of components. In the latter case,
-    each sub-block must not contain any Variable or Constraint. */
-
- if( f_Block->get_nested_Blocks().empty() ) {
-
-  // the objective function of the block must be a C05Function  - - - - - - - -
-  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
-  auto obj = boost::any_cast<FRealObjective *>( f_Block->get_objective() );
-  if( obj == nullptr )
-   throw( std::logic_error( "the objective is not a real function" ) );
-
-  auto c05f = dynamic_cast<C05Function *>( (obj)->get_function() );
-  if( c05f == nullptr )
-   throw( std::logic_error( "the objective is not a C05Function" ) );
-  v_c05f.push_back( c05f );
-
-  }
- else {
-
-  // the objective function of each block must be a LinearFunction - - - - - -
-  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
-  auto obj = boost::any_cast<FRealObjective *>( f_Block->get_objective() );
-  if( obj == nullptr )
-   throw( std::logic_error( "the objective is not a real function" ) );
-
-  lf = dynamic_cast<LinearFunction *>( (obj)->get_function() );
-  if( lf == nullptr )
-   throw( std::logic_error( "the objective is not a LinearFunction" ) );
-
-  for( auto sb : f_Block->get_nested_Blocks() ) { // for each sub-block
-
-   // the objective function of each sub-block must be a C05Function - - - - -
-   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
-   auto obj = boost::any_cast<FRealObjective *>( sb->get_objective() );
-   if( obj == nullptr )
-    throw( std::logic_error( "the objective is not a real function" ) );
-
-   auto c05f = dynamic_cast<C05Function *>( (obj)->get_function() );
-   if( c05f == nullptr )
-	throw( std::logic_error( "the objective is not a C05Function" ) );
-   v_c05f.push_back( c05f );
-
-   // nephew are not allowed - - - - - - - - - - - - - - - - - - - - - - - - -
-   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
-   if( sb->get_nested_Blocks().size() )
-	throw( std::logic_error( "nephew are not allowed" ) );
-
-   // Variable of Sub-Block are not expected, neither the Constraint - - - - -
-   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
-   auto v_s_Variable = boost::any_cast< std::vector<ColVariable *> > ( sb->get_static_variables() );
-   if( v_s_Variable.size() )
-	throw( std::logic_error( "static Variable are not allowed" ) );
-
-   auto v_d_Variable = boost::any_cast< std::vector<ColVariable *> > ( sb->get_dynamic_variables() );
-   if( v_d_Variable.size() )
-	throw( std::logic_error( "dynamic Variable are not allowed" ) );
-
-   auto v_s_Constraint = boost::any_cast< std::vector<FRowConstraint *> > ( sb->get_static_constraints() );
-   if( v_s_Constraint.size() )
-	throw( std::logic_error( "static Constraint are not allowed" ) );
-
-   auto v_d_Constraint = boost::any_cast< std::vector<FRowConstraint *> > ( sb->get_dynamic_constraints() );
-   if( v_d_Constraint.size() )
-	throw( std::logic_error( "dynamic Constraint are not allowed" ) );
-
-   }
-  } // end decomposed case - - - - - - - - - - - - - - - - - - - - - - - - - -
-
- // if some Variable are present, they are of the ColVariable type - - - - - -
- //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
- auto v_s_Variable = boost::any_cast< std::vector<ColVariable *> > ( f_Block->get_static_variables() );
- for( auto var : v_s_Variable ) {
-  if( var == nullptr )
-	throw( std::logic_error( "Variable is not a ColVariable" ) );
-  }
-
- auto v_d_Variable = boost::any_cast< std::vector<ColVariable *> > ( f_Block->get_dynamic_variables() );
- for( auto var : v_d_Variable ) {
-  if( var == nullptr )
-	throw( std::logic_error( "Variable is not a ColVariable" ) );
-  }
-
- // if some Constraint are present, their functions must be linear
- //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
- auto v_s_Constraint = boost::any_cast< std::vector<FRowConstraint *> > ( f_Block->get_static_constraints() );
- for( auto cnst : v_s_Constraint ) {
-  if( cnst == nullptr )
-	throw( std::logic_error( "Constraint is not a FRowConstraint" ) );
-  auto lfOFc = dynamic_cast<LinearFunction *>( (cnst)->get_function() );
-  if( lfOFc == nullptr )
-   throw( std::logic_error( "the constraint's function is not a LinearFunction" ) );
-  }
-
- auto v_d_Constraint = boost::any_cast< std::vector<FRowConstraint *> > ( f_Block->get_dynamic_constraints() );
- for( auto cnst : v_d_Constraint ) {
-  if( cnst == nullptr )
-	throw( std::logic_error( "Constraint is not a FRowConstraint" ) );
-  auto lfOFc = dynamic_cast<LinearFunction *>( (cnst)->get_function() );
-   if( lfOFc == nullptr )
-    throw( std::logic_error( "the constraint's function is not a LinearFunction" ) );
-  }
-
- // construct a FakeFiOracle to handle the MPSolver, which has to
- // interface with a FiOracle object, the FiOracle needs of all the
- // description of the Function including the 0th component
- //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
- FakeFiOracle * Fi = new FakeFiOracle( v_c05f , lf );
-
- }  // end( BundleSolver::set_Block )  - - - - - - - - - - - - - - - - - - - -
-
-/*--------------------------------------------------------------------------*/
-
-void BundleSolver::SetMPSolver( MPSolver *MPS )
-{
- Master = MPS;
- } // end( BundleSolver::SetMPSolver )  - - - - - - - - - - - - - - - - - - -
-
-/*--------------------------------------------------------------------------*/
-/*--------------------------------- METHODS --------------------------------*/
-/*--------------------------------------------------------------------------*/
-
 int BundleSolver::compute( bool changedvars )
 {
  // basic sanity checks - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -354,16 +205,176 @@ if( MaxIter && ( ParIter >= MaxIter ) && ( ! Result ) )
 
 return( Result );
 
-} // end( BundleSolver::compute ) - - - - - - - - - - - - - - - - - - - - - -
+}
+static const double HpINF = SMSpp_di_unipi_it::Inf<double>();
+
+/*--------------------------------------------------------------------------*/
+/*-------------------------- OTHER INITIALIZATIONS -------------------------*/
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::set_Block( Block * block )
+{
+ Solver::set_Block( block );  // attach to the new Block
+
+ /* Two types of block can be handled by the BundleSolver:
+
+     1. Only one single non-smooth function
+     2. a sum of non-smooth functions
+
+    The algorithm here developed aims at solving non-constrained non-smooth
+    optimization. The block can have box constraints at the most.
+    It is expected the block to have in the first case a FRealObjective
+    whose the function is a C05Function one and having no children, while in
+    the second case a FRealObjective one whose the function is a LinearFunction
+    and having as many sub-blocks as the number of components. In the latter case,
+    each sub-block must not contain any Variable or Constraint. */
+
+ if( f_Block->get_nested_Blocks().empty() ) {
+
+  // the objective function of the block must be a C05Function  - - - - - - - -
+  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+  auto obj = boost::any_cast<FRealObjective *>( f_Block->get_objective() );
+  if( obj == nullptr )
+   throw( std::logic_error( "the objective is not a real function" ) );
+
+  auto c05f = dynamic_cast<C05Function *>( (obj)->get_function() );
+  if( c05f == nullptr )
+   throw( std::logic_error( "the objective is not a C05Function" ) );
+  v_c05f.push_back( c05f );
+
+  lf = nullptr;
+
+  }
+ else {
+
+  // the objective function of each block must be a LinearFunction - - - - - -
+  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+  auto obj = boost::any_cast<FRealObjective *>( f_Block->get_objective() );
+  if( obj == nullptr )
+   throw( std::logic_error( "the objective is not a real function" ) );
+
+  lf = dynamic_cast<LinearFunction *>( (obj)->get_function() );
+  if( lf == nullptr )
+   throw( std::logic_error( "the objective is not a LinearFunction" ) );
+
+  auto sb = f_Block->get_nested_Blocks();
+  v_c05f.resize( sb.size() );
+
+  for( Index i = 0 ; i < sb.size() ; ++i ) { // for each sub-block
+
+   // the objective function of each sub-block must be a C05Function - - - - -
+   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+   auto obj = boost::any_cast<FRealObjective *>( sb[ i ]->get_objective() );
+   if( obj == nullptr )
+    throw( std::logic_error( "the objective is not a real function" ) );
+
+   auto c05f = dynamic_cast<C05Function *>( (obj)->get_function() );
+   if( c05f == nullptr )
+	throw( std::logic_error( "the objective is not a C05Function" ) );
+   v_c05f[ i ] = c05f;
+
+   // nephew are not allowed - - - - - - - - - - - - - - - - - - - - - - - - -
+   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+   if( sb[ i ]->get_nested_Blocks().size() )
+	throw( std::logic_error( "nephew are not allowed" ) );
+
+   // Variable of Sub-Block are not expected, neither the Constraint - - - - -
+   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+   if( sb[ i ]->get_static_variables().size() )
+	throw( std::logic_error( "static Variable are not allowed" ) );
+
+   if( sb[ i ]->get_dynamic_variables().size() )
+	throw( std::logic_error( "dynamic Variable are not allowed" ) );
+
+   if( sb[ i ]->get_static_constraints().size() )
+	throw( std::logic_error( "static Constraint are not allowed" ) );
+
+   if( sb[ i ]->get_dynamic_constraints().size() )
+	throw( std::logic_error( "dynamic Constraint are not allowed" ) );
+
+   }
+  } // end decomposed case - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+ // if some Variable are present, they are of the ColVariable type - - - - - -
+ //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+ NumVar = 0;  // count the number of Variable
+ auto v_s_Variable = f_Block->get_static_variables();
+ for( auto & el : v_s_Variable ) {
+ if( un_any_thing_0( ColVariable , el , [ & ]{ ++NumVar; } ) )
+  break;
+ if( un_any_thing_1( ColVariable , el , [ & ]{ NumVar += var.size(); } ) )
+  break;
+ if( un_any_thing_K( ColVariable , el , [ & ]{ NumVar += var.size(); } ) )
+  break;
+ throw( std::logic_error( "some static Variable is not a ColVariable" ) );
+ }
+
+ // construct the vocabulary for Variable and sort it  - - - - - - - - - - - -
+ //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+ LamVcblr.resize( NumVar );
+ int count = 0;
+ for( auto & el : v_s_Variable )
+  un_any_static( el , [ & ]( ColVariable & static_var ){ LamVcblr[count++]= &static_var; } ,
+		  un_any_type<ColVariable>() );
+
+ std::sort( LamVcblr.begin() , LamVcblr.end() );
+
+ // no dynaimic variables are allowed  - - - - - - - - - - - - - - - - - - - -
+ //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+ if( f_Block->get_dynamic_variables().size() )
+  throw( std::logic_error( "dynamic Variable are not allowed" ) );
+
+ // if some Constraint are present, their functions must be linear
+ //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+ if( f_Block->get_static_constraints().size() )
+	throw( std::logic_error( "static Constraint are not allowed" ) );
+
+ if( f_Block->get_dynamic_constraints().size() )
+	throw( std::logic_error( "dynamic Constraint are not allowed" ) );
+
+ // construct a FakeFiOracle to handle the MPSolver, which has to
+ // interface with a FiOracle object, the FiOracle needs of all the
+ // description of the Function including the 0th component
+ //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+ FakeFiOracle * Fi = new FakeFiOracle( v_c05f , lf );
+
+ }  // end( BundleSolver::set_Block )  - - - - - - - - - - - - - - - - - - - -
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::SetMPSolver( MPSolver *MPS )
+{
+ Master = MPS;
+ // if( Master && Oracle )
+ //  InitMP();
+ } // end( BundleSolver::SetMPSolver )  - - - - - - - - - - - - - - - - - - -
+
+/*--------------------------------------------------------------------------*/
+/*--------------------------------- METHODS --------------------------------*/
+/*--------------------------------------------------------------------------*/
+
+// end( BundleSolver::compute ) - - - - - - - - - - - - - - - - - - - - - -
 
 /*--------------------------------------------------------------------------*/
 /*---------------------- METHODS FOR READING RESULTS -----------------------*/
 /*--------------------------------------------------------------------------*/
 
 void BundleSolver::get_dual_solution( Configuration *solc ) {
-
- for( auto & zel : zA )
-  v_c05f[ zel.first ]->set_important_linearization( std::move(zel.second) , zel.first );
+ for( Index i = 0 ; i < zA.size() ; ++i ) {
+  if( zA[i].second.empty() )
+   throw( std::invalid_argument( "the combination is not present" ) );
+  v_c05f[ i ]->set_important_linearization( std::move(zA[i].second) , zA[i].first );
+  }
  } // end ( BundleSolver::get_dual_solution() )  - - - - - - - - - - - - - - -
 
 /*--------------------------------------------------------------------------*/
@@ -575,6 +586,12 @@ const std::string & BundleSolver::dbl_par_idx2str( const idx_type idx )
  else
   return( CDASolver::dbl_par_idx2str( idx ) );
  }
+
+/*--------------------------------------------------------------------------*/
+/*-------------------------- PRIVATE METHODS -------------------------------*/
+/*--------------------------------------------------------------------------*/
+
+
 
 /*--------------------------------------------------------------------------*/
 /*----------------------- End File BundleSolver.cpp ------------------------*/
