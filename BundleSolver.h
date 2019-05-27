@@ -114,6 +114,8 @@ class BundleSolver : public CDASolver {
 
 public:
 
+  friend class FakeFiOracle;
+
 /*--------------------------------------------------------------------------*/
 /*---------------------------- PUBLIC TYPES --------------------------------*/
 /*--------------------------------------------------------------------------*/
@@ -482,7 +484,7 @@ public:
 
  virtual ~BundleSolver() {
 
-  delete[] Fi;
+  // delete[] Fi;
   }
 
 /*@} -----------------------------------------------------------------------*/
@@ -724,7 +726,7 @@ std::vector< C05Function * > v_c05f; /* the vector of the components of the
 LinearFunction * lf; ///< the 0-th component of the sum function
 MPSolver *Master;    // (pointer to) the Master Problem Solver
 
-FakeFiOracle * Fi;  ///< a pointer to a FakeFiOracle object
+// FakeFiOracle * Fi;  ///< a pointer to a FakeFiOracle object
 
 int MaxSol;         ///< maximum number of different solutions to report
 double RelAcc;      ///< relative accuracy for declaring a solution optimal

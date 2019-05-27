@@ -219,7 +219,7 @@ void BundleSolver::set_Block( Block * block )
  /* Two types of block can be handled by the BundleSolver:
 
      1. Only one single non-smooth function
-     2. a sum of non-smooth functions
+     2. a sum of some non-smooth functions
 
     The algorithm here developed aims at solving non-constrained non-smooth
     optimization. The block can have box constraints at the most.
@@ -227,7 +227,9 @@ void BundleSolver::set_Block( Block * block )
     whose the function is a C05Function one and having no children, while in
     the second case a FRealObjective one whose the function is a LinearFunction
     and having as many sub-blocks as the number of components. In the latter case,
-    each sub-block must not contain any Variable or Constraint. */
+    each sub-block must not contain any Variable or Constraint.
+    Variable may have a lower and upper bound. If the lower bound  has a finite
+    value, it must be 0. */
 
  if( f_Block->get_nested_Blocks().empty() ) {
 
@@ -241,8 +243,8 @@ void BundleSolver::set_Block( Block * block )
   auto c05f = dynamic_cast<C05Function *>( (obj)->get_function() );
   if( c05f == nullptr )
    throw( std::logic_error( "the objective is not a C05Function" ) );
-  v_c05f.push_back( c05f );
 
+  v_c05f.push_back( c05f );
   lf = nullptr;
 
   }
@@ -251,13 +253,18 @@ void BundleSolver::set_Block( Block * block )
   // the objective function of each block must be a LinearFunction - - - - - -
   // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-  auto obj = boost::any_cast<FRealObjective *>( f_Block->get_objective() );
-  if( obj == nullptr )
-   throw( std::logic_error( "the objective is not a real function" ) );
+  if( f_Block->get_objective().empty() )
+   lf =  nullptr;
+  else {
+   auto obj = boost::any_cast<FRealObjective *>( f_Block->get_objective() );
+   if( obj == nullptr )
+    throw( std::logic_error( "the objective is not a real function" ) );
 
-  lf = dynamic_cast<LinearFunction *>( (obj)->get_function() );
-  if( lf == nullptr )
-   throw( std::logic_error( "the objective is not a LinearFunction" ) );
+   lf = dynamic_cast<LinearFunction *>( (obj)->get_function() );
+   if( lf == nullptr )
+    throw( std::logic_error( "the objective is not a LinearFunction" ) );
+   }
+
 
   auto sb = f_Block->get_nested_Blocks();
   v_c05f.resize( sb.size() );
@@ -306,14 +313,14 @@ void BundleSolver::set_Block( Block * block )
  NumVar = 0;  // count the number of Variable
  auto v_s_Variable = f_Block->get_static_variables();
  for( auto & el : v_s_Variable ) {
- if( un_any_thing_0( ColVariable , el , [ & ]{ ++NumVar; } ) )
-  break;
- if( un_any_thing_1( ColVariable , el , [ & ]{ NumVar += var.size(); } ) )
-  break;
- if( un_any_thing_K( ColVariable , el , [ & ]{ NumVar += var.size(); } ) )
-  break;
- throw( std::logic_error( "some static Variable is not a ColVariable" ) );
- }
+  if( un_any_thing_0( ColVariable , el , [ & ]{ ++NumVar; } ) )
+   break;
+  if( un_any_thing_1( ColVariable , el , [ & ]{ NumVar += var.size(); } ) )
+   break;
+  if( un_any_thing_K( ColVariable , el , [ & ]{ NumVar += var.size(); } ) )
+   break;
+  throw( std::logic_error( "some static Variable is not a ColVariable" ) );
+  }
 
  // construct the vocabulary for Variable and sort it  - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -346,7 +353,7 @@ void BundleSolver::set_Block( Block * block )
  // description of the Function including the 0th component
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- FakeFiOracle * Fi = new FakeFiOracle( v_c05f , lf );
+ FakeFiOracle * Fi = new FakeFiOracle( this );
 
  }  // end( BundleSolver::set_Block )  - - - - - - - - - - - - - - - - - - - -
 

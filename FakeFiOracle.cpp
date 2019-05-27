@@ -48,6 +48,46 @@ using namespace SMSpp_di_unipi_it;
 /*--------------------------------- METHODS --------------------------------*/
 /*--------------------------------------------------------------------------*/
 
+FakeFiOracle::FakeFiOracle( BundleSolver *solver ) : FiOracle()
+{
+ bslv = solver;
+ SGBse1 = new Index[ NumVar + 1 ];
+ }
+
+/*--------------------------------------------------------------------------*/
+/*-------------------------- OTHER INITIALIZATIONS -------------------------*/
+/*--------------------------------------------------------------------------*/
+
+void FakeFiOracle::SetMaxName( cIndex MxNme ) {
+ int MaxName_ = MxNme / bslv->v_c05f.size();
+
+ for( auto c05_it = bslv->v_c05f.begin() ; c05_it != bslv->v_c05f.end() ; ++c05_it )
+  if( c05_it == bslv->v_c05f.begin() )
+   (*c05_it)->set_par( C05Function::intGPMaxSz , MaxName_ + int(MxNme % bslv->v_c05f.size()) );
+  else
+   (*c05_it)->set_par( C05Function::intGPMaxSz , MaxName_ );
+ MaxName = MxNme;
+ } // end ( FakeFiOracle::SetMaxName() ) - - - - - - - - - - - - - - - - - - -
+
+/*--------------------------------------------------------------------------*/
+/*-------------- METHODS FOR READING THE DATA OF THE PROBLEM ---------------*/
+/*--------------------------------------------------------------------------*/
+
+Index FakeFiOracle::GetNumVar( void ) const {
+ return( bslv->NumVar );
+ } // end ( FakeFiOracle::GetNumVar() )  - - - - - - - - - - - - - - - - - - -
+
+/*--------------------------------------------------------------------------*/
+
+Index FakeFiOracle::GetNrFi( void ) const {
+ return( (bslv->lf == nullptr)? bslv->v_c05f.size() : bslv->v_c05f.size() + 1 );
+ } // end ( FakeFiOracle::GetNrFi() )  - - - - - - - - - - - - - - - - - - - -
+
+/*--------------------------------------------------------------------------*/
+
+Index FakeFiOracle::GetMaxName( void ) const {
+ return( MaxName );
+ } // end ( FakeFiOracle::GetMaxName() ) - - - - - - - - - - - - - - - - - - -
 
 /*--------------------------------------------------------------------------*/
 /*------------- METHODS FOR READING SUBGRADIENTS / CONSTRAINTS -------------*/

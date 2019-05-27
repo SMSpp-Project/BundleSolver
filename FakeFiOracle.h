@@ -38,6 +38,8 @@
 #include "C05Function.h"
 #include "LinearFunction.h"
 
+#include "BundleSolver.h"
+
 #include "OPTtypes.h"
 #include "OPTUtils.h"
 
@@ -53,6 +55,8 @@
 /// namespace for the Structured Modeling System++ (SMS++)
 namespace SMSpp_di_unipi_it
 {
+
+ class BundleSolver;     // forward declaration of class BundleSolver
 
 /*--------------------------------------------------------------------------*/
 /*------------------------- CLASS FakeFiOracle  ----------------------------*/
@@ -88,12 +92,7 @@ class FakeFiOracle : public FiOracle
     concerns the real evaluation of the function must be done in derived
     classes, which will have their parameters. */
 
-   FakeFiOracle( std::vector< C05Function * > objfun ,
-		   LinearFunction * zc = nullptr ) : FiOracle()
-   {
-	v_c05f = objfun;
-    SGBse1 = new Index[ NumVar + 1 ];
-    }
+   FakeFiOracle( BundleSolver *solver );
 
 /*@} -----------------------------------------------------------------------*/
 /*-------------------------- OTHER INITIALIZATIONS -------------------------*/
@@ -101,6 +100,7 @@ class FakeFiOracle : public FiOracle
 /** @name Other initializations
     @{ */
 
+   virtual void SetMaxName( cIndex MxNme = 0 ) override;
 
 /*@} -----------------------------------------------------------------------*/
 /*-------------- METHODS FOR READING THE DATA OF THE PROBLEM ---------------*/
@@ -108,6 +108,16 @@ class FakeFiOracle : public FiOracle
 /** @name Reading the data of the problem
     @{ */
 
+
+  virtual Index GetNumVar( void ) const override;
+
+/*--------------------------------------------------------------------------*/
+
+  virtual Index GetNrFi( void ) const override;
+
+/*--------------------------------------------------------------------------*/
+
+  virtual Index GetMaxName( void ) const override;
 
 /*@} -----------------------------------------------------------------------*/
 /*---------------------- METHODS FOR SETTING LAMBDA ------------------------*/
@@ -193,9 +203,8 @@ class FakeFiOracle : public FiOracle
 
  protected:
 
-  std::vector< C05Function * > v_c05f; /* the vector of the components of the
-                                           sum function */
   Index_Set SGBse1;       // format of Subgradient
+  BundleSolver *bslv;
 
 /*--------------------------------------------------------------------------*/
 /*----------------------- PROTECTED DATA STRUCTURES  -----------------------*/
