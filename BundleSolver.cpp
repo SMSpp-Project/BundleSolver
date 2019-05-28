@@ -355,6 +355,16 @@ void BundleSolver::set_Block( Block * block )
 
  FakeFiOracle * Fi = new FakeFiOracle( this );
 
+/*
+ int MaxName_ = MxNme / bslv->v_c05f.size();
+
+ for( auto c05_it = bslv->v_c05f.begin() ; c05_it != bslv->v_c05f.end() ; ++c05_it )
+  if( c05_it == bslv->v_c05f.begin() )
+   (*c05_it)->set_par( C05Function::intGPMaxSz , MaxName_ + int(MxNme % bslv->v_c05f.size()) );
+  else
+   (*c05_it)->set_par( C05Function::intGPMaxSz , MaxName_ );
+ MaxName = MxNme;*/
+
  }  // end( BundleSolver::set_Block )  - - - - - - - - - - - - - - - - - - - -
 
 /*--------------------------------------------------------------------------*/

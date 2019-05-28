@@ -100,6 +100,18 @@ class FakeFiOracle : public FiOracle
 /** @name Other initializations
     @{ */
 
+   virtual void SetNDOSolver( NDOSolver *NwSlvr = 0 ) override;
+
+/*--------------------------------------------------------------------------*/
+
+   virtual void SetFiLog( ostream *outs = 0 , const char lvl = 0 ) override;
+
+/*--------------------------------------------------------------------------*/
+
+   virtual void SetFiTime( const bool TimeIt = true ) override;
+
+/*--------------------------------------------------------------------------*/
+
    virtual void SetMaxName( cIndex MxNme = 0 ) override;
 
 /*@} -----------------------------------------------------------------------*/
@@ -108,6 +120,10 @@ class FakeFiOracle : public FiOracle
 /** @name Reading the data of the problem
     @{ */
 
+/// get the number of Variable
+/** Variable cannot be changed. This means that is used the default
+ *  implementation of GetMaxNumVar(). The maximum number of variables is
+ *  equal to the current number of variable*/
 
   virtual Index GetNumVar( void ) const override;
 
@@ -119,40 +135,82 @@ class FakeFiOracle : public FiOracle
 
   virtual Index GetMaxName( void ) const override;
 
+/*--------------------------------------------------------------------------*/
+
+  virtual HpNum GetMinusInfinity( void ) override;
+
+/*--------------------------------------------------------------------------*/
+
+  virtual Index GetMaxNZ( cIndex wFi = Inf<Index>() ) const override;
+
+/*--------------------------------------------------------------------------*/
+
+  virtual Index GetMaxCNZ( cIndex wFi = Inf<Index>() ) const override;
+
+/*--------------------------------------------------------------------------*/
+
+  virtual bool GetUC( cIndex i ) override;
+
+/*--------------------------------------------------------------------------*/
+
+  virtual LMNum GetUB( cIndex i ) override;
+
+/*--------------------------------------------------------------------------*/
+
+  virtual LMNum GetBndEps( void ) override;
+
+/*--------------------------------------------------------------------------*/
+
+  virtual HpNum GetGlobalLipschitz( cIndex wFi = Inf<Index>() ) override;
+
+/*--------------------------------------------------------------------------*/
+
+  virtual NDOSolver *GetNDOSolver( void ) override;
+
 /*@} -----------------------------------------------------------------------*/
 /*---------------------- METHODS FOR SETTING LAMBDA ------------------------*/
 /*--------------------------------------------------------------------------*/
 /** @name Setting Lambda
    @{ */
 
+  virtual void SetLambda( cLMRow Lmbd = 0 ) override;
+
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  */
+
+  virtual void SetLamBase( cIndex_Set LmbdB = 0 , cIndex LmbdBD = 0 );
+
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  */
+
+  virtual bool SetPrecision( HpNum Eps );
 
 /*@} -----------------------------------------------------------------------*/
-/*------------------------ METHODS FOR COMPUTING Fi() -----------------------*/
+/*------------------------ METHODS FOR COMPUTING Fi() ----------------------*/
 /*--------------------------------------------------------------------------*/
 /** @name Computing Fi()
    @{ */
 
-   virtual HpNum Fi( cIndex wFi = Inf<Index>() ) {
-
-	// c05f->compute();
-    // return( c05f->get_value() );
-    }
+   virtual HpNum Fi( cIndex wFi = Inf<Index>() );
 
 /*@} -----------------------------------------------------------------------*/
 /*------------- METHODS FOR READING SUBGRADIENTS / CONSTRAINTS -------------*/
 /*--------------------------------------------------------------------------*/
 
+
+   virtual bool NewGi( cIndex wFi = Inf<Index>() ) override;
+
+/*--------------------------------------------------------------------------*/
+
    virtual Index GetGi( SgRow SubG , cIndex_Set &SGBse ,
 			cIndex Name = Inf<Index>() ,
-			cIndex strt = 0 , Index stp = Inf<Index>() );
+			cIndex strt = 0 , Index stp = Inf<Index>() ) override;
 
 /*--------------------------------------------------------------------------*/
 
-   virtual HpNum GetVal( cIndex Name = Inf<Index>() );
+   virtual HpNum GetVal( cIndex Name = Inf<Index>() ) override;
 
 /*--------------------------------------------------------------------------*/
 
-   virtual void SetGiName( cIndex Name ) {}
+   virtual void SetGiName( cIndex Name ) override;
 
 /*@} -----------------------------------------------------------------------*/
 /*-------------------- METHODS FOR READING OTHER RESULTS -------------------*/
@@ -161,17 +219,11 @@ class FakeFiOracle : public FiOracle
    @{ */
 
 
-   virtual HpNum GetLowerBound( cIndex wFi = Inf<Index>() )
-   {
-    return( - Inf<HpNum>() );
-    }
+   virtual HpNum GetLowerBound( cIndex wFi = Inf<Index>() ) override;
 
 /*--------------------------------------------------------------------------*/
 
-   virtual FiStatus GetFiStatus( Index wFi = Inf<Index>() )
-   {
-    return( kFiNorm );
-    }
+   virtual FiStatus GetFiStatus( Index wFi = Inf<Index>() ) override;
 
 /*@} -----------------------------------------------------------------------*/
 /*------------- METHODS FOR ADDING / REMOVING / CHANGING DATA --------------*/
@@ -179,12 +231,12 @@ class FakeFiOracle : public FiOracle
 /** @name Adding / removing / changing data
    @{ */
 
-   virtual void Deleted( cIndex i = Inf<Index>() ) {}
+   virtual void Deleted( cIndex i = Inf<Index>() );
 
 /*--------------------------------------------------------------------------*/
 
    virtual void Aggregate( cHpRow Mlt , cIndex_Set NmSt , cIndex Dm ,
-			   cIndex NwNm ) {}
+			   cIndex NwNm );
 
 /*@} -----------------------------------------------------------------------*/
 /*------------------------------ DESTRUCTOR --------------------------------*/
@@ -203,8 +255,12 @@ class FakeFiOracle : public FiOracle
 
  protected:
 
-  Index_Set SGBse1;       // format of Subgradient
   BundleSolver *bslv;
+  std::vector< std::tuple< Index , Index , bool > >  GiNameVcblr; /* vocabulary
+     for handling the items name; this is done to map the item name
+     from the FiOracle to that of C05Function.  */
+
+  Index last_c05;
 
 /*--------------------------------------------------------------------------*/
 /*----------------------- PROTECTED DATA STRUCTURES  -----------------------*/

@@ -721,12 +721,7 @@ protected:
 /*---------------------------- PROTECTED FIELDS  ---------------------------*/
 /*--------------------------------------------------------------------------*/
 
-std::vector< C05Function * > v_c05f; /* the vector of the components of the
-                                        sum function */
-LinearFunction * lf; ///< the 0-th component of the sum function
-MPSolver *Master;    // (pointer to) the Master Problem Solver
 
-// FakeFiOracle * Fi;  ///< a pointer to a FakeFiOracle object
 
 int MaxSol;         ///< maximum number of different solutions to report
 double RelAcc;      ///< relative accuracy for declaring a solution optimal
@@ -803,8 +798,6 @@ Vec_VarValue LmbdBst; // the best point found so far
 Vec_Index LamBase;   // the set of indices of Lambda
 Vec_Index Lam1Bse;   // the set of indices of Lambda1
 Index LamDim;        // dimension of LamBase
-
-Vec_p_Var LamVcblr;    // the set of indices of Lambda
 
 bool KpBstL;         // if LmbdBst has to be kept
 bool BHasChgd;       // true if LamBase has changed during the latest
@@ -890,6 +883,16 @@ int *FiStatus;
  std::vector< std::pair < LinearizationName , LinearCombination > > zA;
  /* the vector of the pairs  important linearization name and the
     linear combination used to form it */
+
+ std::vector< C05Function * > v_c05f; /* the vector of the components of the
+                                         sum function */
+ LinearFunction * lf; ///< the 0-th component of the sum function
+ MPSolver *Master;    // (pointer to) the Master Problem Solver
+
+ // FakeFiOracle * Fi;  ///< a pointer to a FakeFiOracle object
+
+
+ std::vector<ColVariable *> LamVcblr;    // the set of indices of Lambda
 
 /*--------------------------------------------------------------------------*/
 
