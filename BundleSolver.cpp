@@ -2741,9 +2741,11 @@ bool BundleSolver::IsOptimal( double eps ) const
   if( eps <= 0 )
    eps = RelAcc;
 
-  // aggiungere alro test ??
+  if( tStar > 0 )
+   return( DSTS + Sigma <= eps * FiL );
+  else
+   return( ( DSTS <= RAccSol ) && ( Sigma <= eps * FiL ) );
 
-  return( DSTS + Sigma <= eps * FiL );
   }
  } // end( BundleSolver::IsOptimal() ) - - - - - - - - - - - - - - - - - - - -
 
