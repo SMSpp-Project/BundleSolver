@@ -58,7 +58,6 @@ FakeFiOracle::FakeFiOracle( BundleSolver *solver ) : FiOracle()
   for( Index j = 0 ; j < bslv->v_c05f[i]->get_int_par( C05Function::intGPMaxSz);
        j++ )
    *it = std::make_tuple( j , i , true );
-
  } // end ( FakeFiOracle::FakeFiOracle( ) )  - - - - - - - - - - - - - - - - -
 
 /*--------------------------------------------------------------------------*/
@@ -200,7 +199,6 @@ HpNum FakeFiOracle::Fi( cIndex wFi ) {
 bool FakeFiOracle::NewGi( cIndex wFi ) {
  if( wFi == 0 )
   throw( std::invalid_argument( "asking for the 0th component" ) );
-
  last_c05 =  wFi-1;
  return( true );
  } // end ( FakeFiOracle::NewGi( ) ) - - - - - - - - - - - - - - - - - - - - -
@@ -229,7 +227,6 @@ HpNum FakeFiOracle::GetVal( cIndex Name )
 
 void FakeFiOracle::SetGiName( cIndex Name )
 {
-
  auto it = GiNameVcblr.begin();
  for( ; it != GiNameVcblr.end() ; ++it  )
   if( std::get<1>( *it ) == last_c05 && std::get<2>( *it ) == true ) {

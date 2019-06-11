@@ -246,7 +246,7 @@ class FakeFiOracle : public FiOracle
 
    virtual ~FakeFiOracle()
    {
-    delete Fit;
+	GiNameVcblr.clear();
     }
 
 /*@} -----------------------------------------------------------------------*/

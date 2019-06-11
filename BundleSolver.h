@@ -60,8 +60,19 @@
 #include "FRealObjective.h"
 #include "FRowConstraint.h"
 
+// #include <Eigen/Dense>
+// #include <Eigen/Sparse>
+
 #include "MPSolver.h"
 #include "FakeFiOracle.h"
+
+/*------------------------------- LOG_BND ----------------------------------*/
+
+#define LOG_BND 1
+
+/* If LOG_BND > 0, the Bundle class produces a log of its activities on the
+   ostream object and at the "level of verbosity" set with the method
+   SetBLog() [see below]. */
 
 /*--------------------------------------------------------------------------*/
 /*-------------------------- NAMESPACE & USING -----------------------------*/
@@ -74,7 +85,9 @@
 /// namespace for the Structured Modeling System++ (SMS++)
 namespace SMSpp_di_unipi_it
 {
-    
+
+ class FakeFiOracle;     // forward declaration of class FakeFiOracle
+
 /*--------------------------------------------------------------------------*/
 /*------------------------------- CLASSES ----------------------------------*/
 /*--------------------------------------------------------------------------*/
@@ -144,7 +157,18 @@ public:
   LinearCombination;
   ///< type used to define linear combinations of linearizations
 
+  typedef Eigen::SparseVector<FunctionValue> SparseVector;
+  ///< type used to store a sparse vector
+
 /*--------------------------------------------------------------------------*/
+ /// Public enum "extending" sol_type to a specific case of CDASolvers
+ enum sol_type {
+  kEILoopNow = kBothInfeasible + 1 ,
+
+  kEIAbort,
+  };
+
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  */
  /// public enum for the int algorithmic parameters
  /** Public enum describing the different types of algorithmic parameters
   * of "int" type that BundleSolver should have. The value
@@ -159,7 +183,7 @@ public:
  * but keeping the "bundle" small obviously makes the Master
  * Problem cheaper. */
 
- intBPar2 ,    ///<
+ // intBPar2 ,    ///<
         /**< Maximum dimension of the bundle: has more or less the
         * Same "problems" as BPar1, but if the latter is well chosen
  * then BPar2 can be kept big while the "B-strategy" keeps the
@@ -265,26 +289,22 @@ public:
  *       are at the end, especially if the FiOracle dynamically
  *       generates its variables, so use with caution.   */
 
- intPPar1 ,    ///<
+ // intPPar1 ,    ///<
+ // intPPar2 ,    ///<
+ // intPPar3 ,    ///<
        /**< Parameters controlling the variables generator: "price
        * in" (discover if new variables have to be added) is done
- * all the first PPar1 iterations ...  */
-
- intPPar2 ,    ///<
-       /**< .. and then every PPar2 iterations; note that the
-       * price in is done anyway each time convergence is detected.
+ * all the first PPar1 iterations and then every PPar2 iterations; note
+ * that the price in is done anyway each time convergence is detected.
  * If PPar2 == 0, all the variables are present from the
- * beginning (PPar1 is ignored if PPar2 == 0). */
-
- intPPar3 ,    ///<
-       /**< A variable that has been inactive for the last PPar3
-       * pricings (this one included) is eliminated: note that the
- * "price out" operation is done every PPar2 iterations, so
- * that a variable that is eliminated is likely to have been inactive for
- * (about) PPar2 * PPar3 iterations. For PPar3 == 1, a variable is eliminated
- * in the very pricing in which it is discovered to be zero (and the
- * direction saying that it would stay zero). If PPar3 == 0, variables are
- * *never* removed. PPar3 is ignored if PPar2 == 0.  */
+ * beginning (PPar1 is ignored if PPar2 == 0). A variable that has
+ * been inactive for the last PPar3 pricings (this one included) is
+ * eliminated: note that the "price out" operation is done every PPar2
+ * iterations, so that a variable that is eliminated is likely to have been
+ * inactive for (about) PPar2 * PPar3 iterations. For PPar3 == 1, a variable
+ * is eliminated in the very pricing in which it is discovered to be zero
+ * (and the direction saying that it would stay zero). If PPar3 == 0, variables
+ *  are *never* removed. PPar3 is ignored if PPar2 == 0.  */
 
  intLastBndSlvPar ///< first allowed new int parameter for derived classes
        /**< Convenience value for easily allow derived classes
@@ -506,15 +526,11 @@ public:
 
 /*--------------------------------------------------------------------------*/
 
- virtual void set_par( const idx_type par , const int value ) override
- {
-  }
+ virtual void set_par( const idx_type par , const int value ) override;
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- virtual void set_par( const idx_type par , const double value ) override
- {
-  }
+ virtual void set_par( const idx_type par , const double value ) override;
 
 /*--------------------------------------------------------------------------*/
 
@@ -715,13 +731,100 @@ protected:
 /*-------------------------- PROTECTED METHODS -----------------------------*/
 /*--------------------------------------------------------------------------*/
 
-  // void process_outstanding_Modification( void );
+ void FormD( void );
+
+/* When no variables generation is done (PPar2 == 0), FormD() just calls
+ SolveMP() once and calculates the direction d: however, it also implements
+ some strategies to survive to "fatal" failures in the subproblem solver,
+ typically eliminating some of the items in the bundle.
+
+ Set the protected field Result to kOK if (evenctually after some "fatal"
+ failure) a tentative descent direction could be found, to kUnfsbl if the
+ MP is dual unfeasible and to kError if this was returned by SolveMP(): in
+ the latter cases, the whole algorithm must abort.
+
+ If variables generation is done (PPar2 > 0), this is where the
+ corresponding strategies are implemented: in this case, SolveMP() can be
+ called more than once within the same call to FormD(), since the resulting
+ direction has to be optimal w.r.t. all the current "active set" of
+ variables. */
+
+/*--------------------------------------------------------------------------*/
+ ///< Updates the out-of-base counters for all items in the Bundle.
+ void UpdtCntrs( void );
+
+/*--------------------------------------------------------------------------*/
+
+ virtual int EveryIteration( void );
+
+ /**< This method is an "hook" for derived classes: it is called at Every
+    Iteration, between the computation of the tentative direction and the
+    computation of Fi(). It can serve to various purposes, primarly checking
+    extra stoping conditions or interfering with the usual stopping conditions
+    of the Bundle code: however, any kind of operation can be performed here
+    inside, e.g. adding or removing variables from the problem [see
+    [Add/Remove]Variable() above].
+    More in general, this method can be used to merge the main cycle of the
+    Bundle method within any other however complex code: the Bundle gives out
+    the control at this time, and resumes its operations when EveryIteration()
+    returns. The returned value influences the behaviour of the Bundle for the
+    current iteration:
+
+    kEINorm        the current iteration is continued normally;
+
+    kEIAbort       the whole algorithm is aborted, and Solve() is immediately
+                   terminated returning kAbort: this is useful for instance
+                   to enforce new termination criteria;
+
+    kEILoopNow     the current iteration is aborted, i.e. the stopping
+                   condition is *not* checked, and Fi() is *not* called: the
+ 		  next iteration is immediately started, but the iterations
+ 		  count is *not* increased. This is useful e.g. if something
+ 		  has been changed in the data of the problem that suggests
+ 		  to try a new direction, like a new "active" or variable
+ 		  [see AddVariable() above] to be inserted;
+
+    kEIContAnyway  the current iteration is continued normally but for the
+                   fact that the stopping condition is *not* checked. */
+
+/*--------------------------------------------------------------------------*/
+
+ void FormLambda1( HpNum Tau );
+ /* After a (succesfull) call to FormD(), sets the new tentative point Lambda1
+    (a protected field of type LMRow) as Lambda1 = Lambda + ( Tau / t ) * d. */
+
+/*--------------------------------------------------------------------------*/
+
+ bool FiAndGi( void );
+
+ /* Computes Fi( Lambda1 ), inserting the obtained items (subgradients or
+    constraints) in the bundle. Returns true <=> the newly obtained information
+    changes the solution of the MP. */
+
+/*--------------------------------------------------------------------------*/
+
+ void GotoLambda1( void );
+
+ /* Move the current point to Lambda1. */
+
+/*--------------------------------------------------------------------------*/
+ ///< Eliminate outdated items, i.e., these with "large" out-of-base counter.
+
+ void SimpleBStrat( void );
+
+/*--------------------------------------------------------------------------*/
+
+ void UpdtLowerBound( void );
+
+/*--------------------------------------------------------------------------*/
+
+    void Log1( void );
+
+    void Log2( void );
 
 /*--------------------------------------------------------------------------*/
 /*---------------------------- PROTECTED FIELDS  ---------------------------*/
 /*--------------------------------------------------------------------------*/
-
-
 
 int MaxSol;         ///< maximum number of different solutions to report
 double RelAcc;      ///< relative accuracy for declaring a solution optimal
@@ -791,13 +894,14 @@ double MPEOpt;        // precision required to the MP Solver (optimality)
 Index MaxNumVar;     // maximum number of variables
 Vec_Bool IsEasy;     // tells whether any component of Fi is "easy"
 
-Vec_VarValue Lambda;  // the current point
-Vec_VarValue Lambda1; // the tentative point
-Vec_VarValue LmbdBst; // the best point found so far
+SparseVector Lambda;  // the current point
+SparseVector Lambda1; // the tentative point
+SparseVector LmbdBst; // the best point found so far
 
+/*
 Vec_Index LamBase;   // the set of indices of Lambda
 Vec_Index Lam1Bse;   // the set of indices of Lambda1
-Index LamDim;        // dimension of LamBase
+Index LamDim;        // dimension of LamBase */
 
 bool KpBstL;         // if LmbdBst has to be kept
 bool BHasChgd;       // true if LamBase has changed during the latest
@@ -862,8 +966,8 @@ Vec_SIndex OOBase;   // Out-Of-Base counters:
                      //   removable for the next k iterations: note that
                      //   some items in base may be such
                      // = - Inf<SIndex>() means unremovable
-Vec_Index InctvCtr;  // "out of base" counter for variables
-Vec_Index nBase;     // temporary
+// Vec_Index InctvCtr;  // "out of base" counter for variables
+// Vec_Index nBase;     // temporary
 
 bool TrueLB;         // true if LowerBound is a "true" lower bound rather
                      // than just the "minus infinity"
@@ -872,7 +976,7 @@ bool SSDone;         // true if the laste step was a SS
 
 bool ItemsChgd;      // true if no itmes have been added to MP
 
-int *FiStatus;
+Vec_Index FiStatus;
 
 #if( NONMONOTONE )
  HpRow FiVals;       // Fi-values for the last NONMONOTONE SSs
@@ -886,11 +990,10 @@ int *FiStatus;
 
  std::vector< C05Function * > v_c05f; /* the vector of the components of the
                                          sum function */
- LinearFunction * lf; ///< the 0-th component of the sum function
+ LinearFunction * linf; ///< the 0-th component of the sum function
  MPSolver *Master;    // (pointer to) the Master Problem Solver
 
- // FakeFiOracle * Fi;  ///< a pointer to a FakeFiOracle object
-
+ FakeFiOracle * FakeFi;  ///< a pointer to a FakeFiOracle object
 
  std::vector<ColVariable *> LamVcblr;    // the set of indices of Lambda
 
@@ -927,8 +1030,95 @@ int *FiStatus;
   void InitMP( void );
 
 /*--------------------------------------------------------------------------*/
+
+  bool FindNextSG( Index &wFi );
+
+/*--------------------------------------------------------------------------*/
+
+  Index BStrategy( cIndex wFi );
+
+/*--------------------------------------------------------------------------*/
+
+  Index FindAPlace( cIndex wFi );
+
+/*--------------------------------------------------------------------------*/
+
+  void AggregateZ( cHpRow Mlt , cIndex_Set MBse , Index MBDm ,
+  			  cIndex wFi , cIndex whr );
+
+/*--------------------------------------------------------------------------*/
+
+  HpNum Heuristic1( void );
+
+  HpNum Heuristic2( void );
+
+/*--------------------------------------------------------------------------*/
+
+  bool DoSS( void );
+
+/*--------------------------------------------------------------------------*/
+ /**< Remove all the items from the bundle, except the (sub)gradient of the
+     linear 0-th component of Fi). */
+
+  void RemoveItems( void );
+
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  */
+
+  void guts_of_destructor( );
+
+/*--------------------------------------------------------------------------*/
+
+  void ReSetAlg( unsigned char RstLvl = 0 );
+
+  /**< Resets the internal state of the Bundle algorithm. Since several
+     different things can be reset independently, RstLvl is coded bit-wise:
+
+     - bit 0: if 0, all the algorithmic parameters are reset to the default
+       values read by the stream/set by SetPar(), while if 1 they are left
+       untouched;
+
+     - bit 1: if 0 the current point is reset to the all-0 vector, while if
+       1 it is left untouched;
+
+     - bit 2: if 0, all the subgradients are removed from the bundle, except
+       the constant (sub)gradient of the linear 0-th component, while if 1
+       the subgradients are left there;
+
+     - bit 3: if 0, all the constraints are removed from the bundle, while
+       if 1 the constraints are left there.
+
+     - bit 4: if 0 the value of Fi() in the current point is reset to HpINF
+       (i.e., unknown), while if 1 it is left untouched; note that resetting
+       the current point [see bit 1] has this as a side-effect, regardless to
+       the value of bit 4. */
+
+/*--------------------------------------------------------------------------*/
+
+  void Delete( cIndex i );
+
+/*--------------------------------------------------------------------------*/
+
+  void UpdtaBP3( void );
+
+  void CmptaBPX( void );
+
+/*--------------------------------------------------------------------------*/
+
+  bool IsOptimal( double eps = 0 ) const;
+
+/*--------------------------------------------------------------------------*/
+
+  bool CheckAlfa( const bool All = false );
+
+  void StrongCheckAlfa( void );
+
+/*--------------------------------------------------------------------------*/
 /*------------------------------ PRIVATE FIELDS  ---------------------------*/
 /*--------------------------------------------------------------------------*/
+
+  Index MBDim;      // number of items in the optimal multiplier base
+  Index aBP3;       // current max number of items to be fetched
+  Index aBP4;       // min number of items to be fetched
 
 SMSpp_insert_in_factory_h;
 

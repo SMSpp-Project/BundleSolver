@@ -36,10 +36,7 @@
 #include <fstream>
 #include <sstream>
 
-#include "OPTvect.h"
-
 #include "QPPnltMP.h"
-#include "Bundle.h"
 
 /*--------------------------------------------------------------------------*/
 /*-------------------------------- USING -----------------------------------*/
@@ -72,10 +69,6 @@ int main( int argc , char **argv )
  QPPenaltyMP *MP = new QPPenaltyMP( &ParFile );
 
  ParFile.close();
-
- // Bundle *s = new Bundle( &ParFile );
-
- //NDO_di_unipi_it::Bundle *s = new NDO_di_unipi_it::Bundle( &ParFile );
 
  auto Slv = Solver::new_Solver( "BundleSolver" );
 
