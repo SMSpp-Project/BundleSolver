@@ -2229,13 +2229,12 @@ void BundleSolver::InitMP( void )
 
  // insert the constant subgradient of the 0-th component - - - - - - - - - -
 
- double* SubG = Master->GetItem( 0 );
- if( linf )
-  linf->get_linearization_coefficients( SubG );
-
- const Index* SGBse = nullptr;
- Master->SetItemBse( SGBse , NumVar );
- Master->SetItem( InINF );
+ if( linf ) {
+  linf->get_linearization_coefficients( Master->GetItem( 0 ) );
+  const Index* SGBse = nullptr;
+  Master->SetItemBse( SGBse , NumVar );
+  Master->SetItem( InINF );
+  }
 
  tHasChgd = LBHasChgd = true;
 
