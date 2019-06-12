@@ -36,11 +36,11 @@
 
 # macroes to be exported- - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-BNDSLVOBJ = $(BNDSLVSDR)BundleSolver.o $(BNDSLVSDR)FakeFiOracle.o
+BNDSLVOBJ = $(BNDSLVSDR)BundleSolver.o 
 
 BNDSLVINC = -I$(BNDSLVSDR)
 
-BNDSLVH   = $(BNDSLVSDR)BundleSolver.h $(BNDSLVSDR)FakeFiOracle.h
+BNDSLVH   = $(BNDSLVSDR)BundleSolver.h 
 
 # clean - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -53,8 +53,8 @@ $(BNDSLVSDR)BundleSolver.o: $(BNDSLVSDR)BundleSolver.cpp $(BNDSLVH) \
 	$(SMS++OBJ) $(libNDOOBJ) 
 	$(CC) -c $*.cpp -o $@ $(BNDSLVINC) $(SMS++INC) $(libNDOINC) $(SW)
 
-$(BNDSLVSDR)FakeFiOracle.o: $(BNDSLVSDR)FakeFiOracle.cpp $(BNDSLVH) \
-	$(libNDOOBJ) 
-	$(CC) -c $*.cpp -o $@ $(BNDSLVINC) $(libNDOINC) $(SW)
+#$(BNDSLVSDR)FakeFiOracle.o: $(BNDSLVSDR)FakeFiOracle.cpp $(BNDSLVH) \
+#	$(libNDOOBJ) 
+#	$(CC) -c $*.cpp -o $@ $(BNDSLVINC) $(libNDOINC) $(SW)
 
 ########################## End of makefile ###################################

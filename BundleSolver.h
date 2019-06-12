@@ -64,7 +64,6 @@
 // #include <Eigen/Sparse>
 
 #include "MPSolver.h"
-#include "FakeFiOracle.h"
 
 /*------------------------------- LOG_BND ----------------------------------*/
 
@@ -86,7 +85,7 @@
 namespace SMSpp_di_unipi_it
 {
 
- class FakeFiOracle;     // forward declaration of class FakeFiOracle
+ // class FakeFiOracle;     // forward declaration of class FakeFiOracle
 
 /*--------------------------------------------------------------------------*/
 /*------------------------------- CLASSES ----------------------------------*/
@@ -122,12 +121,227 @@ namespace SMSpp_di_unipi_it
 class BundleSolver : public CDASolver {
 
 /*--------------------------------------------------------------------------*/
+/*------------------------- CLASS FakeFiOracle  ----------------------------*/
+/*--------------------------------------------------------------------------*/
+/*--------------------------- GENERAL NOTES --------------------------------*/
+/*--------------------------------------------------------------------------*/
+
+class FakeFiOracle : public FiOracle
+{
+
+/*--------------------------------------------------------------------------*/
+/*----------------------- PUBLIC PART OF THE CLASS -------------------------*/
+/*--------------------------------------------------------------------------*/
+
+ public:
+
+/*--------------------------------------------------------------------------*/
+/*---------------------------- PUBLIC TYPES --------------------------------*/
+/*--------------------------------------------------------------------------*/
+/** @name Public Types
+    @{ */
+
+
+/*@} -----------------------------------------------------------------------*/
+/*--------------------- PUBLIC METHODS OF THE CLASS ------------------------*/
+/*--------------------------------------------------------------------------*/
+/*---------------------------- CONSTRUCTOR ---------------------------------*/
+/*--------------------------------------------------------------------------*/
+/** @name Constructor
+    @{ */
+
+/** Constructor of the class: takes no arguments, since everything that
+    concerns the real evaluation of the function must be done in derived
+    classes, which will have their parameters. */
+
+   FakeFiOracle( BundleSolver *solver );
+
+/*@} -----------------------------------------------------------------------*/
+/*-------------------------- OTHER INITIALIZATIONS -------------------------*/
+/*--------------------------------------------------------------------------*/
+/** @name Other initializations
+    @{ */
+
+   virtual void SetNDOSolver( NDOSolver *NwSlvr = 0 ) override;
+
+/*--------------------------------------------------------------------------*/
+
+   virtual void SetFiLog( ostream *outs = 0 , const char lvl = 0 ) override;
+
+/*--------------------------------------------------------------------------*/
+
+   virtual void SetFiTime( const bool TimeIt = true ) override;
+
+/*--------------------------------------------------------------------------*/
+
+   virtual void SetMaxName( cIndex MxNme = 0 ) override;
+
+/*@} -----------------------------------------------------------------------*/
+/*-------------- METHODS FOR READING THE DATA OF THE PROBLEM ---------------*/
+/*--------------------------------------------------------------------------*/
+/** @name Reading the data of the problem
+    @{ */
+
+/// get the number of Variable
+/** Variable cannot be changed. This means that is used the default
+ *  implementation of GetMaxNumVar(). The maximum number of variables is
+ *  equal to the current number of variable*/
+
+  virtual Index GetNumVar( void ) const override;
+
+/*--------------------------------------------------------------------------*/
+
+  virtual Index GetNrFi( void ) const override;
+
+/*--------------------------------------------------------------------------*/
+
+  virtual Index GetMaxName( void ) const override;
+
+/*--------------------------------------------------------------------------*/
+
+  virtual HpNum GetMinusInfinity( void ) override;
+
+/*--------------------------------------------------------------------------*/
+
+  virtual Index GetMaxNZ( cIndex wFi = Inf<Index>() ) const override;
+
+/*--------------------------------------------------------------------------*/
+
+  virtual Index GetMaxCNZ( cIndex wFi = Inf<Index>() ) const override;
+
+/*--------------------------------------------------------------------------*/
+
+  virtual bool GetUC( cIndex i ) override;
+
+/*--------------------------------------------------------------------------*/
+
+  virtual LMNum GetUB( cIndex i ) override;
+
+/*--------------------------------------------------------------------------*/
+
+  virtual LMNum GetBndEps( void ) override;
+
+/*--------------------------------------------------------------------------*/
+
+  virtual HpNum GetGlobalLipschitz( cIndex wFi = Inf<Index>() ) override;
+
+/*--------------------------------------------------------------------------*/
+
+  virtual NDOSolver *GetNDOSolver( void ) override;
+
+/*@} -----------------------------------------------------------------------*/
+/*---------------------- METHODS FOR SETTING LAMBDA ------------------------*/
+/*--------------------------------------------------------------------------*/
+/** @name Setting Lambda
+   @{ */
+
+  virtual void SetLambda( cLMRow Lmbd = 0 ) override;
+
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  */
+
+  virtual void SetLamBase( cIndex_Set LmbdB = 0 , cIndex LmbdBD = 0 );
+
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  */
+
+  virtual bool SetPrecision( HpNum Eps );
+
+/*@} -----------------------------------------------------------------------*/
+/*------------------------ METHODS FOR COMPUTING Fi() ----------------------*/
+/*--------------------------------------------------------------------------*/
+/** @name Computing Fi()
+   @{ */
+
+   virtual HpNum Fi( cIndex wFi = Inf<Index>() );
+
+/*@} -----------------------------------------------------------------------*/
+/*------------- METHODS FOR READING SUBGRADIENTS / CONSTRAINTS -------------*/
+/*--------------------------------------------------------------------------*/
+
+
+   virtual bool NewGi( cIndex wFi = Inf<Index>() ) override;
+
+/*--------------------------------------------------------------------------*/
+
+   virtual Index GetGi( SgRow SubG , cIndex_Set &SGBse ,
+			cIndex Name = Inf<Index>() ,
+			cIndex strt = 0 , Index stp = Inf<Index>() ) override;
+
+/*--------------------------------------------------------------------------*/
+
+   virtual HpNum GetVal( cIndex Name = Inf<Index>() ) override;
+
+/*--------------------------------------------------------------------------*/
+
+   virtual void SetGiName( cIndex Name ) override;
+
+/*@} -----------------------------------------------------------------------*/
+/*-------------------- METHODS FOR READING OTHER RESULTS -------------------*/
+/*--------------------------------------------------------------------------*/
+/** @name Reading other results
+   @{ */
+
+
+   virtual HpNum GetLowerBound( cIndex wFi = Inf<Index>() ) override;
+
+/*--------------------------------------------------------------------------*/
+
+   virtual FiStatus GetFiStatus( Index wFi = Inf<Index>() ) override;
+
+/*@} -----------------------------------------------------------------------*/
+/*------------- METHODS FOR ADDING / REMOVING / CHANGING DATA --------------*/
+/*--------------------------------------------------------------------------*/
+/** @name Adding / removing / changing data
+   @{ */
+
+   virtual void Deleted( cIndex i = Inf<Index>() );
+
+/*--------------------------------------------------------------------------*/
+
+   virtual void Aggregate( cHpRow Mlt , cIndex_Set NmSt , cIndex Dm ,
+			   cIndex NwNm );
+
+/*@} -----------------------------------------------------------------------*/
+/*------------------------------ DESTRUCTOR --------------------------------*/
+/*--------------------------------------------------------------------------*/
+/** @name Destructor
+    @{ */
+
+   virtual ~FakeFiOracle()
+   {
+	GiNameVcblr.clear();
+    }
+
+/*@} -----------------------------------------------------------------------*/
+/*-------------------- PROTECTED PART OF THE CLASS -------------------------*/
+/*--------------------------------------------------------------------------*/
+
+ protected:
+
+  BundleSolver *bslv;
+  std::vector< std::tuple< Index , Index , bool > >  GiNameVcblr; /* vocabulary
+     for handling the items name; this is done to map the item name
+     from the FiOracle to that of C05Function.  */
+
+  Index last_c05;
+
+/*--------------------------------------------------------------------------*/
+/*----------------------- PROTECTED DATA STRUCTURES  -----------------------*/
+/*--------------------------------------------------------------------------*/
+/** @name Standard fields
+
+/*@} -----------------------------------------------------------------------*/
+/*--------------------------------------------------------------------------*/
+
+ };  // end( class FakeFiOracle )
+
+
+/*--------------------------------------------------------------------------*/
 /*----------------------- PUBLIC PART OF THE CLASS -------------------------*/
 /*--------------------------------------------------------------------------*/
 
 public:
 
-  friend class FakeFiOracle;
+  // friend class FakeFiOracle;
 
 /*--------------------------------------------------------------------------*/
 /*---------------------------- PUBLIC TYPES --------------------------------*/
@@ -495,7 +709,7 @@ public:
  /** Void constructor: does nothing special, except verifying that the
   * template argument derives from MCFClass. */
 
- BundleSolver( ) : CDASolver()  {
+ BundleSolver( ) : CDASolver() , FakeFi( this )  {
     
   }
 
@@ -894,9 +1108,9 @@ double MPEOpt;        // precision required to the MP Solver (optimality)
 Index MaxNumVar;     // maximum number of variables
 Vec_Bool IsEasy;     // tells whether any component of Fi is "easy"
 
-SparseVector Lambda;  // the current point
-SparseVector Lambda1; // the tentative point
-SparseVector LmbdBst; // the best point found so far
+std::vector<VarValue> Lambda;  // the current point
+std::vector<VarValue> Lambda1; // the tentative point
+std::vector<VarValue> LmbdBst; // the best point found so far
 
 /*
 Vec_Index LamBase;   // the set of indices of Lambda
@@ -993,9 +1207,11 @@ Vec_Index FiStatus;
  LinearFunction * linf; ///< the 0-th component of the sum function
  MPSolver *Master;    // (pointer to) the Master Problem Solver
 
- FakeFiOracle * FakeFi;  ///< a pointer to a FakeFiOracle object
+ FakeFiOracle FakeFi;  ///< a pointer to a FakeFiOracle object
 
  std::vector<ColVariable *> LamVcblr;    // the set of indices of Lambda
+
+ bool MPName;
 
 /*--------------------------------------------------------------------------*/
 

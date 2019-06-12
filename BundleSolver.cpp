@@ -33,6 +33,7 @@
 /*--------------------------------------------------------------------------*/
 
 #include "BundleSolver.h"
+#include "QPPnltMP.h"
 
 /*--------------------------------------------------------------------------*/
 /*------------------------- NAMESPACE AND USING ----------------------------*/
@@ -891,10 +892,17 @@ void BundleSolver::set_Block( Block * block )
 
  // initialize the MP Solver, if any - - - - - - - - - - - - - - - - - - - -
 
- if( Master ) {
-  InitMP();
-  FakeFi = new FakeFiOracle( this );
-  }
+ if( Master )        // a MP solver is set ??? dove metterlo ???
+  Master->SetDim();  // clear all its internal state
+
+ // ?? aggiustare, aggiungere OSIMP ?? //
+
+ if( MPName )
+  Master = new QPPenaltyMP( );
+ else
+  Master = new QPPenaltyMP( );
+
+ InitMP();
 
  }  // end( BundleSolver::set_Block )  - - - - - - - - - - - - - - - - - - - -
 
@@ -1044,11 +1052,16 @@ void BundleSolver::set_par( const idx_type par , const double value ) {
 
 void BundleSolver::SetMPSolver( MPSolver *MPS )
 {
+
+ // il nome del master da usare sta in SetComputeConfig
+ // laa coistruzone del master problem sta in set_block
+
+
  if( Master )        // a MP solver is set ??? dove metterlo ???
   Master->SetDim();  // clear all its internal state
 
- if( FakeFi )
-  delete[] FakeFi;
+// if( FakeFi )
+ // delete[] FakeFi;
 
  // construct a FakeFiOracle to handle the MPSolver, which has to
  // interface with a FiOracle object, the FiOracle needs of all the
@@ -1057,7 +1070,7 @@ void BundleSolver::SetMPSolver( MPSolver *MPS )
  Master = MPS;
  if( Master && f_Block ) {
   InitMP();
-  FakeFi = new FakeFiOracle( this );
+  // FakeFi = new FakeFiOracle( this );
   }
 
  } // end( BundleSolver::SetMPSolver )  - - - - - - - - - - - - - - - - - - -
@@ -1748,7 +1761,7 @@ int BundleSolver::EveryIteration( void )
 
 void BundleSolver::FormLambda1( HpNum Tau )
 {
- Master->MakeLambda1( Lambda.valuePtr() , Lambda1.valuePtr() , Tau );
+ Master->MakeLambda1( Lambda.data() , Lambda1.data() , Tau );
 
   //  if( ( Oracle->GetBndEps() < MPEFsb ) && Master->NumBxdVars() ) ???
 
@@ -1758,7 +1771,7 @@ void BundleSolver::FormLambda1( HpNum Tau )
   // precision required by the FiOracle, the (upper and lower) bounds are
   // strictly enforced here
 
-  SparseVector tL1 = Lambda1;
+  std::vector<VarValue> tL1 = Lambda1; //?? assegnamento corretto ?? //
 
   if( Master->NumNNVars() )             // there are NN vars and UB vars
    if( Master->NumNNVars() == NumVar )  // actually, all variables are NN
@@ -1775,12 +1788,12 @@ void BundleSolver::FormLambda1( HpNum Tau )
      }
     else */
      for( Index h = 0 ; h < NumVar ; h++ ) {
-      if( tL1.coeffRef(h) < 0 )
-       tL1.coeffRef(h) = 0;
+      if( tL1[ h ] < 0 )
+       tL1[ h ] = 0;
 
       const double UBh = LamVcblr[h]->get_ub();
-      if( tL1.coeffRef(h) > UBh )
-       tL1.coeffRef(h) = UBh;
+      if( tL1[ h ] > UBh )
+       tL1[ h ] = UBh;
       }
    else                                 // not all variables are NN
    /* if( PPar2 ) {
@@ -1796,12 +1809,12 @@ void BundleSolver::FormLambda1( HpNum Tau )
      }
     else */
      for( Index h = 0 ; h < NumVar ; h++ ) {
-      if( Master->IsNN( h ) && ( tL1.coeffRef(h) < 0 ) )
-       tL1.coeffRef(h) = 0;
+      if( Master->IsNN( h ) && ( tL1[ h ] < 0 ) )
+       tL1[ h ] = 0;
 
       const double UBh = LamVcblr[h]->get_ub();
-      if( tL1.coeffRef(h) > UBh )
-       tL1.coeffRef(h) = UBh;
+      if( tL1[ h ] > UBh )
+       tL1[ h ] = UBh;
       }
   else  // there are only UB vars
   /* if( PPar2 ) {
@@ -1815,8 +1828,8 @@ void BundleSolver::FormLambda1( HpNum Tau )
    else */
     for( Index h = 0 ; h < NumVar ; h++ ) {
      const double UBh = LamVcblr[h]->get_ub();
-     if( tL1.coeffRef(h) > UBh )
-      tL1.coeffRef(h) = UBh;
+     if( tL1[ h ] > UBh )
+      tL1[ h ] = UBh;
      }
 
   }  // end( if( the bounds have to be enforced ) )
@@ -1852,7 +1865,7 @@ bool BundleSolver::FiAndGi( void )
 
  if( LHasChgd ) {  // if Lambda has changed, pass the new one to the Oracle
   for( Index i = 0 ; i < NumVar ; i++ )
-   LamVcblr[ i ]->set_value( Lambda1.coeff(i) );
+   LamVcblr[ i ]->set_value( Lambda1[i] );
   LHasChgd = false;
   for( auto c05 : v_c05f )
    c05->compute( true );
@@ -1969,7 +1982,7 @@ bool BundleSolver::FiAndGi( void )
   HpNum ScPr1k;
 
   if( FiLambda1[ wFi ] == Inf<double>() )  // it is a constraint
-   cp = Master->CheckCnst( Alfa1k , ScPr1k , Lambda.valuePtr() );
+   cp = Master->CheckCnst( Alfa1k , ScPr1k , Lambda.data() );
   else                             // it is a subgradient
    cp = Master->CheckSubG( FiLambda1[ wFi ] - RfrncFi[ wFi ] ,
                            t , Alfa1k , ScPr1k );
@@ -2209,21 +2222,20 @@ void BundleSolver::InitMP( void )
  // have been set, and it is re-called each time any one of the two changes
  // set the size- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- Master->SetDim( BPar2 , FakeFi , PPar2 ? true : false );
+ Master->SetDim( BPar2 , &FakeFi , PPar2 ? true : false );
 
  Master->SetPar( MPSolver::kOptEps , MPEOpt );
  Master->SetPar( MPSolver::kFsbEps , MPEFsb );
 
  // insert the constant subgradient of the 0-th component - - - - - - - - - -
 
- SparseVector SubG;
+ double* SubG = Master->GetItem( 0 );
  if( linf )
   linf->get_linearization_coefficients( SubG );
 
- // Master->GetItem( 0 ) ?? copy data di SubG in Master->GetItem( 0 ) ???
-
- Master->SetItemBse( (Index *)SubG.innerNonZeroPtr() , SubG.nonZeros() ); //???
- Master->SetItem( InINF );   //?? indice e vettore resta in memoria ??
+ const Index* SGBse = nullptr;
+ Master->SetItemBse( SGBse , NumVar );
+ Master->SetItem( InINF );
 
  tHasChgd = LBHasChgd = true;
 
@@ -2767,6 +2779,231 @@ void BundleSolver::StrongCheckAlfa( void )
 
 /*--------------------------------------------------------------------------*/
 
+BundleSolver::FakeFiOracle::FakeFiOracle( BundleSolver *solver ) : FiOracle()
+{
+ bslv = solver;
+
+ GiNameVcblr.resize( bslv->BPar2 );
+ auto it =  GiNameVcblr.begin();
+ for( Index i = 0 ; i < bslv->v_c05f.size() ; ++i )
+  for( Index j = 0 ; j < bslv->v_c05f[i]->get_int_par( C05Function::intGPMaxSz);
+       j++ )
+   *it = std::make_tuple( j , i , true );
+ } // end ( FakeFiOracle::FakeFiOracle( ) )  - - - - - - - - - - - - - - - - -
+
+/*--------------------------------------------------------------------------*/
+/*-------------------------- OTHER INITIALIZATIONS -------------------------*/
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::FakeFiOracle::SetNDOSolver( NDOSolver *NwSlvr ) {
+ throw( std::logic_error( "this method cannot be called" ) );
+ } // end ( FakeFiOracle::SetNDOSolver() ) - - - - - - - - - - - - - - - - - -
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::FakeFiOracle::SetFiLog( ostream *outs , const char lvl ) {
+ throw( std::logic_error( "this method cannot be called" ) );
+ } // end ( FakeFiOracle::SetFiLog() ) - - - - - - - - - - - - - - - - - - - -
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::FakeFiOracle::SetFiTime( const bool TimeIt ) {
+ throw( std::logic_error( "this method cannot be called" ) );
+ } // end ( FakeFiOracle::SetFiTime() )  - - - - - - - - - - - - - - - - - - -
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::FakeFiOracle::SetMaxName( cIndex MxNme ) {
+ throw( std::logic_error( "this method cannot be called" ) );
+ } // end ( FakeFiOracle::SetMaxName() ) - - - - - - - - - - - - - - - - - - -
+
+/*--------------------------------------------------------------------------*/
+/*-------------- METHODS FOR READING THE DATA OF THE PROBLEM ---------------*/
+/*--------------------------------------------------------------------------*/
+
+Index BundleSolver::FakeFiOracle::GetNumVar( void ) const {
+ return( bslv->NumVar );
+ } // end ( FakeFiOracle::GetNumVar() )  - - - - - - - - - - - - - - - - - - -
+
+/*--------------------------------------------------------------------------*/
+
+Index BundleSolver::FakeFiOracle::GetNrFi( void ) const {
+ return( bslv->v_c05f.size( ) );
+ } // end ( FakeFiOracle::GetNrFi() )  - - - - - - - - - - - - - - - - - - - -
+
+/*--------------------------------------------------------------------------*/
+
+Index BundleSolver::FakeFiOracle::GetMaxName( void ) const {
+ return( bslv->BPar2 );
+ } // end ( FakeFiOracle::GetMaxName() ) - - - - - - - - - - - - - - - - - - -
+
+/*--------------------------------------------------------------------------*/
+
+HpNum BundleSolver::FakeFiOracle::GetMinusInfinity( void ) {
+ throw( std::logic_error( "this method cannot be called" ) );
+ } // end ( FakeFiOracle::GetMinusInfinity() ) - - - - - - - - - - - - - - - -
+
+/*--------------------------------------------------------------------------*/
+
+Index BundleSolver::FakeFiOracle::GetMaxNZ( cIndex wFi ) const {
+ if( wFi != Inf<Index>() )
+  throw( std::logic_error( "GetMaxNZ can be called with wFi = Inf only" ) );
+ return( bslv->NumVar );
+ } // end ( FakeFiOracle::GetMaxNZ() ) - - - - - - - - - - - - - - - - - - - -
+
+/*--------------------------------------------------------------------------*/
+
+Index BundleSolver::FakeFiOracle::GetMaxCNZ( cIndex wFi ) const {
+ throw( std::logic_error( "this method cannot be called" ) );
+ } // end ( FakeFiOracle::GetMaxCNZ() )  - - - - - - - - - - - - - - - - - - -
+
+/*--------------------------------------------------------------------------*/
+
+bool BundleSolver::FakeFiOracle::GetUC( cIndex i ) {
+
+ double lb_value = bslv->LamVcblr[ i ]->get_lb();
+ if( lb_value == -Inf<ColVariable::VarValue>() )
+  return( true );
+
+ if( lb_value != ColVariable::VarValue(0) )
+  throw( std::logic_error( "any value different from zero is not allowed" ) );
+
+ return( false );
+ } // end ( FakeFiOracle::GetUC() )  - - - - - - - - - - - - - - - - - - - - -
+
+/*--------------------------------------------------------------------------*/
+
+LMNum BundleSolver::FakeFiOracle::GetUB( cIndex i ) {
+ return( bslv->LamVcblr[ i ]->get_ub() );
+ } // end ( FakeFiOracle::GetUB() )  - - - - - - - - - - - - - - - - - - - - -
+
+/*--------------------------------------------------------------------------*/
+
+LMNum BundleSolver::FakeFiOracle::GetBndEps(  ) {
+ throw( std::logic_error( "this method cannot be called" ) );
+ } // end ( FakeFiOracle::GetBndEps() )  - - - - - - - - - - - - - - - - - - -
+
+/*--------------------------------------------------------------------------*/
+
+HpNum BundleSolver::FakeFiOracle::GetGlobalLipschitz( cIndex wFi ) {
+ throw( std::logic_error( "this method cannot be called" ) );
+ } // end ( FakeFiOracle::GetGlobalLipschitz() )   - - - - - - - - - - - - - -
+
+/*--------------------------------------------------------------------------*/
+
+NDOSolver * BundleSolver::FakeFiOracle::GetNDOSolver( void ) {
+ throw( std::logic_error( "this method cannot be called" ) );
+ } // end ( FakeFiOracle::GetNDOSolver() ) - - - - - - - - - - - - - - - - - -
+
+/*--------------------------------------------------------------------------*/
+/*---------------------- METHODS FOR SETTING LAMBDA ------------------------*/
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::FakeFiOracle::SetLambda( cLMRow Lmbd ) {
+ throw( std::logic_error( "this method cannot be called" ) );
+ }
+
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  */
+
+void BundleSolver::FakeFiOracle::SetLamBase( cIndex_Set LmbdB  , cIndex LmbdBD ) {
+ throw( std::logic_error( "this method cannot be called" ) );
+ }
+
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  */
+
+bool BundleSolver::FakeFiOracle::SetPrecision( HpNum Eps ) {
+ throw( std::logic_error( "this method cannot be called" ) );
+ }
+
+/*--------------------------------------------------------------------------*/
+/*------------------------ METHODS FOR COMPUTING Fi() ----------------------*/
+/*--------------------------------------------------------------------------*/
+
+HpNum BundleSolver::FakeFiOracle::Fi( cIndex wFi ) {
+ throw( std::logic_error( "this method cannot be called" ) );
+ } // end ( FakeFiOracle::Fi( ) )  - - - - - - - - - - - - - - - - - - - - - -
+
+/*--------------------------------------------------------------------------*/
+/*------------- METHODS FOR READING SUBGRADIENTS / CONSTRAINTS -------------*/
+/*--------------------------------------------------------------------------*/
+
+bool BundleSolver::FakeFiOracle::NewGi( cIndex wFi ) {
+ if( wFi == 0 )
+  throw( std::invalid_argument( "asking for the 0th component" ) );
+ last_c05 =  wFi-1;
+ return( true );
+ } // end ( FakeFiOracle::NewGi( ) ) - - - - - - - - - - - - - - - - - - - - -
+
+/*--------------------------------------------------------------------------*/
+
+Index BundleSolver::FakeFiOracle::GetGi( SgRow SubG , cIndex_Set &SGBse ,
+			cIndex Name , cIndex strt , Index stp  ) {
+
+ bslv->v_c05f[ std::get<1>(GiNameVcblr[Name]) ]->get_linearization_coefficients(
+	 SubG , std::get<0>(GiNameVcblr[Name]) , {} , strt , stp );
+
+ SGBse = nullptr;
+ return( stp - strt );
+ } // end ( FakeFiOracle::GetGi( ) )   - - - - - - - - - - - - - - - - - - - -
+
+/*--------------------------------------------------------------------------*/
+
+HpNum BundleSolver::FakeFiOracle::GetVal( cIndex Name )
+{
+ return( bslv->v_c05f[ std::get<1>(GiNameVcblr[Name]) ]->
+ 		 get_linearization_constant( std::get<0>(GiNameVcblr[Name]) ) );
+ } // end ( FakeFiOracle::GetVal( ) )  - - - - - - - - - - - - - - - - - - - -
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::FakeFiOracle::SetGiName( cIndex Name )
+{
+ auto it = GiNameVcblr.begin();
+ for( ; it != GiNameVcblr.end() ; ++it  )
+  if( std::get<1>( *it ) == last_c05 && std::get<2>( *it ) == true ) {
+   std::get<2>( *it ) = false;
+   break;
+   }
+
+ if( it == GiNameVcblr.end() )
+  throw( std::invalid_argument( "the global pool is full" ) );
+
+ bslv->v_c05f[ last_c05 ]->store_linearization( std::get<0>( *it ) );
+
+ } // end ( FakeFiOracle::SetGiName( ) ) - - - - - - - - - - - - - - - - - - -
+
+/*--------------------------------------------------------------------------*/
+/*-------------------- METHODS FOR READING OTHER RESULTS -------------------*/
+/*--------------------------------------------------------------------------*/
+
+HpNum BundleSolver::FakeFiOracle::GetLowerBound( cIndex wFi ) {
+ throw( std::logic_error( "this method cannot be called" ) );
+ }  // end ( FakeFiOracle::GetLowerBound( ) )  - - - - - - - - - - - - - - - -
+
+/*--------------------------------------------------------------------------*/
+
+FiOracle::FiStatus BundleSolver::FakeFiOracle::GetFiStatus( Index wFi ) {
+ throw( std::logic_error( "this method cannot be called" ) );
+ }  // end ( FakeFiOracle::GetFiStatus( ) )  - - - - - - - - - - - - - - - - -
+
+/*--------------------------------------------------------------------------*/
+/*------------- METHODS FOR ADDING / REMOVING / CHANGING DATA --------------*/
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::FakeFiOracle::Deleted( cIndex i ) {
+
+ bslv->v_c05f[ std::get<1>(GiNameVcblr[i]) ]->
+     delete_linearization( std::get<0>(GiNameVcblr[i]) );
+
+ std::get<2>(GiNameVcblr[i]) = true;
+ } // end ( FakeFiOracle::Deleted( ) ) - - - - - - - - - - - - - - - - - - - -
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::FakeFiOracle::Aggregate( cHpRow Mlt , cIndex_Set NmSt ,
+		cIndex Dm , cIndex NwNm ) {
+ throw( std::logic_error( "this method cannot be called" ) );
+ }  // end ( FakeFiOracle::Aggregate( ) )  - - - - - - - - - - - - - - - - - -
 
 /*--------------------------------------------------------------------------*/
 /*----------------------- End File BundleSolver.cpp ------------------------*/
