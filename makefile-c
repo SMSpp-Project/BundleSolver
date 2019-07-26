@@ -42,6 +42,14 @@
 SMS++SDR = $(BNDSLVSDR)../SMS++/
 include $(SMS++SDR)lib/makefile-inc
 
+# define input macros for libCPLEX complete makefile, then include it
+libCPLEXDIR = $(BNDSLVSDR)../extlib/
+include $(libCPLEXDIR)makefile-libCPX
+
+# define input macros for MILPSolver complete makefile, then include it
+MILPSSDR = $(BNDSLVSDR)../milpsolver/
+include $(MILPSSDR)/makefile
+
 # define input macros for libNDO complete makefile, then include it
 libNDOSDR = $(BNDSLVSDR)/NdoFiOracle/
 include $(libNDOSDR)lib/makefile-inc
@@ -53,8 +61,8 @@ include $(BNDSLVSDR)/makefile
 
 # append external -I directives to MCFBkINC, MCFBkOBJ and MCFBkH as defined
 # by the makefile, thus the := assignment has to be used (use GNU make)
-BNDSLVOBJ := $(BNDSLVOBJ) $(libNDOOBJ) $(SMS++OBJ)
-BNDSLVINC := $(BNDSLVINC) $(SMS++INC) $(libNDOINC)
+BNDSLVOBJ := $(BNDSLVOBJ) $(MILPSOBJ) $(libNDOOBJ) $(SMS++OBJ)
+BNDSLVINC := $(BNDSLVINC) $(SMS++INC) $(libNDOINC) $(MILPSINC) 
 BNDSLVH := $(BNDSLVH) $(libNDOH) 
 
 # external libreries for BundleSolver

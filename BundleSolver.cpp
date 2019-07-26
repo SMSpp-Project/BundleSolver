@@ -33,7 +33,11 @@
 /*--------------------------------------------------------------------------*/
 
 #include "BundleSolver.h"
+#include "LagBFunction.h"
 #include "QPPnltMP.h"
+#include "OSIMPSolver.h"
+#include "cplex.h"
+#include "OsiCpxSolverInterface.hpp"
 
 /*--------------------------------------------------------------------------*/
 /*------------------------- NAMESPACE AND USING ----------------------------*/
@@ -97,15 +101,11 @@ const std::vector< std::string > BundleSolver::dbl_pars_str =
 // define and initialize here the map for int parameters names
 const std::map< std::string , BundleSolver::idx_type > BundleSolver::int_pars_map =
                    { { "intBPar1"  , BundleSolver::intBPar1  } ,
-		     // { "intBPar2" , BundleSolver::intBPar2 } ,
 		     { "intBPar6" , BundleSolver::intBPar6 } ,
 		     { "intEStps" , BundleSolver::intEStps } ,
 		     { "intMnSSC" , BundleSolver::intMnSSC } ,
 		     { "intMnNSC" , BundleSolver::intMnNSC } ,
-		     { "inttSPar1", BundleSolver::inttSPar1 } ,
-		   // { "intPPar1" , BundleSolver::intPPar1 } ,
-		   // { "intPPar2" , BundleSolver::intPPar2 } ,
-		   // { "intPPar3" , BundleSolver::intPPar3 }
+		     { "inttSPar1", BundleSolver::inttSPar1 }
 			 };
 
 // define and initialize here the map for double parameters names
@@ -133,15 +133,11 @@ const std::map< std::string , BundleSolver::idx_type > BundleSolver::dbl_pars_ma
 // define and initialize here the default int parameters
 const std::vector<int> BundleSolver::dflt_int_par =
         {    10 ,  // intBPar1
-		//	100 ,  // intBPar2
 			  0 ,  // intBPar6
 			  0 ,  // intEStps
 			  0 ,  // intMnSSC
 			  0 ,  // intMnNSC
 			  0   // intSPar1
-		//	 30 ,  // intPPar1
-		//	 10 ,  // intPPar2
-		//	  5    // intPPar3
 			 };
 
 // define and initialize here the default double parameters
@@ -193,6 +189,12 @@ static const unsigned char RstFiV = 16;  // don't reset FiVals
 static cIndex InINF = SMSpp_di_unipi_it::Inf<Index>();
 
 
+static const char* sense_l = "L";
+static const char* sense_e_ = "E";
+static const char* sense_g_ = "G";
+static const char* sense_r_ = "R";
+
+/*--------------------------------------------------------------------------*/
 
 int BundleSolver::compute( bool changedvars )
 {
@@ -221,6 +223,13 @@ int BundleSolver::compute( bool changedvars )
 
   FormD();
 
+  // ?? check sigma, sigma < 0 4.6 o 4.7, per noise reduction ??
+
+  if( !CheckAlfa() ) {  // se t == tMaior termina
+   t = std::min( t * mxIncr , tMaior );
+   continue;
+   }
+
   if( Result )  // problems in the Master Problem solver
    break;
 
@@ -235,31 +244,6 @@ int BundleSolver::compute( bool changedvars )
 
   Log1();
 
-  // contrast MPsolver::Alfa[] with Oracle::Alfa[]- - - - - - - - - - - - - -
-
-  StrongCheckAlfa();
-
-  // hook for derived classes - - - - - - - - - - - - - - - - - - - - - - - -
-  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
-  int rs = EveryIteration();
-
-  if( rs == kEIAbort ) {
-   BLOG( 1 , " EveryIteration():STOP" << std::endl );
-   Result = kStopIter;
-   break;
-   }
-
-  if( rs == kEILoopNow ) {
-   BLOG( 1 , " EveryIteration():loop" << std::endl );
-   continue;
-   }
-
-  // check the status of the FiOracle and take the necessary action - - - - -
-  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
-  // FiOracle::FiStatus fs = Oracle->GetFiStatus(); // ?? cosa mettere ??
-
   // check for optimality - - - - - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -271,22 +255,24 @@ int BundleSolver::compute( bool changedvars )
   // the hard long-term t-strategy requires t to increase if the step is too
   // small, and therefore has to be checked before the others
 
-  if( ( ( tSPar1 & tSP1Msk ) == kHLTTS ) && ( FiLambda[0] < Inf<double>() ) ) {
-   HpNum AFL = std::abs( FiLambda[0] );
+  if( (tStar > 0 ) && ( ( tSPar1 & tSP1Msk ) == kHLTTS )
+	   && ( UpFiLmb[NrFi] < Inf<double>() ) ) {
+
+   double AFL = std::abs( UpFiLmb[NrFi] );
    if( AFL < 1 )
     AFL = 1;
 
-   if( vStar <= tSPar2 * EpsU * AFL ) {
+   if( vStar[ NrFi ] <= tSPar2 * EpsU * AFL ) {
     BLOG( 1 , "small v => increase t" << std::endl << "           " );
 
     // collect two numbers vc and vl such that v( tNew ) >= vc + tNew * vl
     // we require that v( tNew ) >= vc + tNew * vl = tSPar2 * EpsU * AFL
     // ==> tNew = ( tSPar2 * EpsU * AFL - vc ) / vl
 
-    HpNum vl , vc;
+    double vl , vc;
     Master->SensitAnals( vl , vc );
 
-    HpNum tt;
+    double tt;
     if( - vl < Eps<HpNum>() )  // v( t ) is [almost] constant ==> D*_t [~]= 0
      tt = tStar;       // ==> the CP model is ~bounded
     else
@@ -298,40 +284,13 @@ int BundleSolver::compute( bool changedvars )
      continue;         // loop only if t changes
      }
     }
-   }  // end if( Hard t-strategy )
-
+   }  // end if( Hard t-strategy )  - - - - - - - - - - - - - - - - - - - - -
+  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
   // a real iteration (iterations where Fi() is not evaluated do not count) -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
   ParIter++;
-
-  // change the "precision" in computing Fi() - - - - - - - - - - - - - - - -
-  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-  // this is the "regular mechanism"; gradually decrease the precision along
-  // the iterations
-
-  if( EStps ) {
-   cIndex nstps = ceil( double( EStps > 0 ? ParIter : ParSS ) /
-			double( std::abs( EStps ) ) );
-   EpsCurr = EDcrs >= 0 ? std::abs( EInit ) : EpsU;
-   if( EFnal >= 0 )
-    EpsCurr *= pow( std::abs( EDcrs ) , EFnal * nstps );
-   else
-    EpsCurr *= std::abs( EDcrs ) * ( nstps ? pow( nstps , EFnal ) : 1 );
-
-   EpsCurr = std::max( RelAcc , std::min( EpsCurr , std::abs( EInit ) ) );
-   }
-  else
-   EpsCurr = EDcrs >= 0 ? std::abs( EInit ) : ( std::abs( EDcrs ) * EpsU );
-
-  if( ( EpsCurr < EpsFi ) ||
-     ( ( EpsCurr > EpsFi ) && ( EInit < 0 ) ) ) {
-   // only allow increasing EpsFi if EInit < 0, always allow decreasing it
-   BLOG( 1 , " ~ changing precision to " << EpsCurr << std::endl
-	 << "           " );
-   // Oracle->SetPrecision( EpsFi = EpsCurr ); // bisgona cambiare precisione??
-   }
 
   // calculate Lambda1- - - - - - - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -358,148 +317,56 @@ int BundleSolver::compute( bool changedvars )
   // calculate Fi( Lambda1 )- - - - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-  bool MPchgs;  // true if no cycling will occur
-  for( ;; ) {   // ... possibly more than once due to precision issues
+  Index wFi = 0;
+  CurrNrEvls.assign( NrFi , Index(0) );
 
-   // actually compute Fi and collect subgrads- - - - - - - - - - - - - - - -
-   // meanwhile check if the new subgradients change the CP model enough
-   MPchgs = FiAndGi();
+  bool MPchgs = false;  // true if no cycling will occur
+  for( ; ; ) {   // ... possibly more than once due to precision issues
 
-   if( Result == kError )
-    break;
+   MPchgs = FiAndGi( wFi ); // the component wFi needs more time to be solved
+   CurrNrEvls[ wFi ]++;
 
-   // if there are negative alphas, something has indeed changed
-   if( FiLambda[0] < Inf<double>() )
-    MPchgs |= CheckAlfa();
+   if( MPchgs ) // if something changes
+	break;                                          // all done
 
-   MPchgs |= DoSS();  // doing a SS clearly changes the MP
+   // find next component   - - - - - - - - - - - - - - - - - - - - - - - - -
+   // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-   if( MPchgs )       // if something changes
-    break;            // all done
-
-   // check for running time - - - - - - - - - - - - - - - - - - - - - - - - -
-   // if we get here there is something wrong with the FiOracle's precision;
-   // the possible solution is to give it a few more resources to try to do
-   // it, but this is not possible if we have ran out of time
-
-   // ?? mettere tempo ??
-
-   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-   // if neither a SS is done nor the Master Problem changes, there must be
-   // something wrong with the FiOracle's precision
-
-   #if( NOISE_REDUCTION_FIRST  )
-    // we try to patch this by playing with t first, which corresponds to
-    // saying that we think it faster to re-solve the Master Problem rather
-    // than to get more precision from the FiOracle
-
-    if( ( DSTS >= RelAcc * std::max( HpNum( 1 ) , std::abs( FiLambda[0] ) ) ) &&
-  	( t < tMaior ) ) {
-       t = std::min( t * mxIncr , tMaior );
-       BLOG( 1 , " ~ noise reduction: t increased to " << t << std::endl );
-       tHasChgd = true;
-       break;
-       }
-   #endif
-
-   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-   // Now check if any of the components has not been solved with the required
-   // accuracy yet; in this case allow the component(s) to be re-computed
-   // again (to increase accuracy). Note that you expect this to happen only
-   // a limited number of times, both because eventually a "good enough"
-   // solution will be found by the oracle, and because eventually time will
-   // run out.
-
-   FiOracle::FiStatus FiStt = FiOracle::kFiNorm;
-   for( Index k = 0 ; k++ < NrFi ; )
-    if( ( ( IsEasy.empty() ) || ( ! IsEasy[ k ] ) ) &&
-      ( FiStatus[ k ] == FiOracle::kFiStop ) ) {
-     FiStt = FiOracle::kFiStop;
-     break;
-     }
-
-   if( FiStt == FiOracle::kFiStop )  // at least one non-easy component did
-    continue;                        // not finish, go give them more time
-
-   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-   // the oracle reports to have computed the function to the required
-   // precision, but this is not enough: here goes the "emergency mechanism"
-   // that tries to increase the accuracy, but of course this all depends on
-   // if the oracle is actually available to do it
-
-   EpsCurr = std::max( RelAcc , std::min( EpsCurr , EpsFi ) * std::abs( EDcrs ) );
-
-   // ?? precisione oracolo da cambaire ??
-   /* if( EpsCurr < EpsFi )  // unless we have already hit EpsLin
-    if( Oracle->SetPrecision( EpsFi = EpsCurr ) ) {  // if it is
-     BLOG( 1 , " ~ increasing precision to " << EpsCurr << std::endl );
-     VectAssign( FiStatus + 1 , FiOracle::kFiStop , NrFi );
-     // reset FiStatus[]: if a component has said "kFiOK" before, with a
-     // coarser accuracy, this does not mean the computation is still OK
-     // now that the accuracy has increased, so we must assume it is not
-     continue;                                       // go compute Fi() again
-     } */
-
-   #if( ! NOISE_REDUCTION_FIRST  )
-    // we try to patch this by playing with t last, which corresponds to
-    // saying that we think it faster to get more precision from the
-    // FiOracle rather than to re-solve the Master Problem
-
-    if( ( DSTS >= RelAcc * std::max( HpNum( 1 ) , std::abs( FiLambda[0] ) ) ) &&
-  	   ( t < tMaior ) ) {
-     t = std::min( t * mxIncr , tMaior );
-     BLOG( 1 , " ~ noise reduction: t increased to " << t << std::endl );
-     tHasChgd = true;
-     break;
-     }
-   #endif
-
-   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-   // Now the Bundle is potentially in trouble: the new informations does not
-   // change the model, changing t does not help, and the oracle is not
-   // willing to provide any more precision right now. However, the oracle
-   // may "know" this, this being an iteration where the Bundle would have
-   // stopped already, but it was told not to by the oracle. This is clearly
-   // at risk of cycling, so the oracle must have some internal mechanism to
-   // avoid that. in this case, trust the oracle: just go to the next
-   // iteration and hope that something eventually will change.
-
-   // ?? vedere parte di sotto ??
-   /*
-   if( fs == FiOracle::kFiCont ) {  // if the oracle wants to rule
-    MPchgs = true;                  // pretend to believe no cycling will
-    break;                          // occur since the oracle says so
+   if( !FindNext( wFi ) ) {
+	break;
     }
-   else {                           // really, nothing else to do but quit
-    BLOG( 1 , " ~ too low precision in the FiOracle" << std::endl );
-    Result = kLwPrcsn;
-    break;
-    } */
 
-   }  // end( for( ever ) )
+   } // end Fi and Gi computation - - - - - - - - - - - - - - - - - - - - - -
+  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+
+  if( !MPchgs ) { // noise reduction
+   t = std::min( t * mxIncr , tMaior );
+   BLOG( 1 , " ~ noise reduction: t increased to " << t << std::endl );
+   tHasChgd = true;
+   }
 
   // check whether the Lower Bounds have changed- - - - - - - - - - - - - - -
 
   UpdtLowerBound();
 
   // some log about the newly obtained information- - - - - - - - - - - - - -
+  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
   Log2();
 
-  if( FiLambda1[0] == - Inf<double>() ) {
+  // check whether either any error has occurred or time has expired- - - - -
+  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+  if( UpFiLmb1[NrFi] == - Inf<double>() ) {
    Result = kUnbounded;
    break;
    }
 
-  // check whether either any error has occurred or time has expired- - - - -
-
   if( ( Result == kError ) || ( Result == kStopTime ) )
    break;
 
-  // if( Result == kLwPrcsn ) ??
-  //  break;
-
-  if( ( ~ MPchgs ) && tHasChgd )  // "noise reduction": t has changed,
+  if( tHasChgd )  // "noise reduction": t has changed,
    continue;                      // so go solve the master problem again
                                   // (no NS/SS decision can be made)
 
@@ -518,13 +385,15 @@ int BundleSolver::compute( bool changedvars )
   // case one could end up declaring the problem unbounded below. This is why
   // a value slightly smaller than *LowerBound is used instead.
 
-  if( FiLambda[0] < Inf<double>() ) {  // .. but only if Fi( Lambda ) is defined
+  // ?? controllare giu' ??
+
+  if( UpFiLmb[NrFi] < Inf<double>() ) {  // .. but only if Fi( Lambda ) is defined
    if( TrueLB )
-    if( FiBest[0] - RelAcc * std::abs( FiBest[0] ) <= LowerBound[0] )
+    if( UpFiBest[NrFi] - RelAcc * std::abs( UpFiBest[NrFi] ) <= LowerBound )
      break;
 
-   if( FiBest[0] <= LowerBound[0] *
-                  ( 1 - ( LowerBound[0] > 0 ? RelAcc : - RelAcc ) ) ) {
+   if( UpFiBest[NrFi] <= LowerBound *
+                  ( 1 - ( LowerBound > 0 ? RelAcc : - RelAcc ) ) ) {
     Result = kUnbounded;
     break;
     }
@@ -536,18 +405,17 @@ int BundleSolver::compute( bool changedvars )
   // largest value that would have produced a feasible point, i.e.
   // t := *Alfa1 / ( - *ScPr1 )
 
-  if( FiLambda1[0] == Inf<double>() )
+  if( UpFiLmb1[NrFi] == Inf<double>() )  // ???
    continue;
   else
-   if( FiLambda[0] == Inf<double>() ) {  // if reached feasibility  - - - - -
+   if( UpFiLmb[NrFi] == Inf<double>() ) {  // if reached feasibility  - - - - -
     GotoLambda1();             // go to the feasible point
     continue;                  // and start the actual minimization of Fi()
     }
 
   // the NS / SS decision - - - - - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
-  SSDone = DoSS();
+  SSDone = ( UpFiLmb1[ NrFi ] < UpTrgt )? true : false;
 
   // compute the heuristic t- - - - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -602,7 +470,7 @@ int BundleSolver::compute( bool changedvars )
      switch( tSPar1 & tSP1Msk ) {
       case( kSLTTS ):
       case( kHLTTS ):
-       if( vStar <= tSPar2 * EpsU * std::max( std::abs( FiLambda[0] ) , HpNum( 1 ) ) ) {
+       if( vStar[ NrFi ] <= tSPar2 * EpsU * std::max( std::abs( UpFiLmb[NrFi] ) , HpNum( 1 ) ) ) {
         BLOG( 1 , " small v" );
  	    tt = t;
         }
@@ -631,7 +499,7 @@ int BundleSolver::compute( bool changedvars )
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
   if( tSPar1 & kEGTTS )  // endgame t-strategy: note the "/ 10"!!
-   if( DSTS < RelAcc * std::max( std::abs( FiLambda[0] ) , HpNum( 1 ) ) / 10 ) {
+   if( DSTS < RelAcc * std::max( std::abs( UpFiLmb[NrFi] ) , HpNum( 1 ) ) / 10 ) {
     tt = std::max( t * ( mxDecr + mnDecr ) / 2 , tMinor );
     BLOG( 1 , " ~ endgame, t = " << tt );
     }
@@ -712,7 +580,7 @@ void BundleSolver::set_Block( Block * block )
   // the objective function of each block must be a LinearFunction - - - - - -
   // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-  if( f_Block->get_objective().empty() )
+  if( f_Block->get_objective() )
    linf =  nullptr;
   else {
    auto obj = boost::any_cast<FRealObjective *>( f_Block->get_objective() );
@@ -819,20 +687,42 @@ void BundleSolver::set_Block( Block * block )
  // read information about the function  - - - - - - - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- std::vector<Index> BNC( v_c05f.size() );
+ NrFi = v_c05f.size();
 
- if( v_c05f.size() > 1 ) {
+ NrEasy = 0;
+ if( NrFi > 1 ) {
+
+  auto sb = f_Block->get_nested_Blocks();
+  std::vector<Index> BNC( NrFi );
+
   bool HasEasy = false;
-  IsEasy.resize( v_c05f.size() );
-  for( Index k = 0 ; k < v_c05f.size() ; ++k )
-    if( BNC[ k ] )
+  IsEasy.resize( NrFi );
+  for( Index k = 0 ; k < NrFi ; ++k ) {
+
+   // ?? quando i solver distruggere dopo SetDim o
+   // con il distruttore della classe??
+
+   auto LagB = dynamic_cast<LagBFunction *>( v_c05f[ k ] );
+   if( LagB  ) {
+
+    MILP_s[ k ] = new MILPSolver();
+    MILP_s[ k ]->set_Block( LagB->get_inner_block() );
+
+    BNC[ k ] = MILP_s[ k ]->get_numcols();
+
+    if( BNC[ k ] ) {
      IsEasy[ k ] = HasEasy = true;
+     NrEasy++;
+     }
     else
      IsEasy[ k ] = false;
 
-   if( ! HasEasy ) {
-    IsEasy.clear();
     }
+   }
+
+   if( ! HasEasy )
+    IsEasy.clear();
+
    }
 
  // allocate memory- - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -843,42 +733,37 @@ void BundleSolver::set_Block( Block * block )
 
  if( KpBstL )  // best point found so far
   LmbdBst.resize( NumVar);
- // else
- // LmbdBst.clear(); ?? come si pulisce lo sparsevector
 
  OOBase.resize( BPar2 , Inf<SIndex>() );  // counter for eliminating outdated
                                           // items: Inf<SIndex>() means empty
 
  FreList.resize( BPar2 );       // list of free bundle slots
- whisZ.resize( v_c05f.size() ); // for each component, the name of its "Z" if it is
+ whisZ.resize( NrFi );          // for each component, the name of its "Z" if it is
                                 // in the bunlde
 
- NrFi = ( linf )?  v_c05f.size() + 1 : v_c05f.size();
+ UpFiLmb.resize( NrFi + 1 );        // current, ...
+ LwFiLmb.resize( NrFi + 1 );        // current, ...
+ UpFiLmb1.resize( NrFi + 1 );       // tentative, ...
+ LwFiLmb1.resize( NrFi + 1 );       //
+ UpFiBest.resize( NrFi + 1 );          // best, ...
+ UpRifFi.resize( NrFi + 1 );         // and reference Fi() values
 
- FiLambda.resize( NrFi );        // current, ...
- FiLambda1.resize( NrFi );       // tentative, ...
- FiBest.resize( NrFi );          // best, ...
- RfrncFi.resize( NrFi );         // and reference Fi() values
-
- FiStatus.resize( NrFi , kStopIter );
- LowerBound.resize( NrFi , -Inf<double>() ); // lower bounds
+ FiStatus.resize( NrFi , kUnEval );
+ LowerBound = -Inf<double>(); // lower bounds
  TrueLB = false;
 
- RfrncFi.resize( NrFi , Inf<double>() );
- FiLambda1[0] = FiBest[0] = Inf<double>();       // Fi( Lambda ) is not known
+ UpRifFi.resize( NrFi + 1 , 0 );
+ whisG1.resize( NrFi , Inf<Index>() );  // no representative yet
 
- whisG1.resize( v_c05f.size() , Inf<Index>() );  // no representative yet
-
- ScPr1.resize( NrFi , 0 );
- Alfa1.resize( NrFi , 0 );
- DeltaAlfa.resize( v_c05f.size() );
+ ScPr1.resize( NrFi + 1 , 0 );
+ Alfa1.resize( NrFi + 1 , 0 );
+ DeltaAlfa.resize( NrFi );
 
  FreDim = 0;
- BHasChgd = true;  // ensure SetLamBase() is called at least once
  Result = kError;
  SSDone = false;
 
- // ReSetAlg( RstCrr | RstSbg | RstCnt );  ?? da fare ??   // Fi( Lambda ) is reset inside
+ ReSetAlg( RstCrr | RstSbg | RstCnt );  // Fi( Lambda ) is reset inside
 
  // Oracle->SetPrecision( EpsFi = ABS( EInit  ) );
 
@@ -899,8 +784,23 @@ void BundleSolver::set_Block( Block * block )
 
  if( MPName )
   Master = new QPPenaltyMP( );
- else
-  Master = new QPPenaltyMP( );
+ else {
+  /* OSIMPSolver *MP = new OSIMPSolver( );
+     OsiCpxSolverInterface *osiSlvr = new OsiCpxSolverInterface();
+     int algorithm, reduction, threads, stab;
+     DfltdSfInpt( &ParFile , algorithm , int(0) );
+     DfltdSfInpt( &ParFile , reduction , int(3) );
+     DfltdSfInpt( &ParFile , threads , int(1) );
+     DfltdSfInpt( &ParFile , stab , int(1) );
+
+    CPXENVptr env = osiSlvr->getEnvironmentPtr ();
+    CPXsetintparam( env , CPX_PARAM_THREADS , threads );
+    MP->SetOsi( osiSlvr );
+    MP->SetStabType( OSIMPSolver::StabFun( stab ) );
+    MP->SetAlgo( OSIMPSolver::OsiAlg( algorithm ) , OSIMPSolver::OsiRed( reduction ) );
+
+    Master = MP;*/
+  }
 
  InitMP();
 
@@ -923,14 +823,8 @@ void BundleSolver::set_par( const idx_type par , const int value ) {
   case( intBPar1 ):
    BPar1 = value;
    break;
-  // case( intBPar2 ):
-  // BPar2 = value;
-  // break;
   case( intBPar6 ):
    BPar6 = value;
-   break;
-  case( intEStps ):
-   EStps = value;
    break;
   case( intMnSSC ):
    MnSSC = value;
@@ -941,15 +835,6 @@ void BundleSolver::set_par( const idx_type par , const int value ) {
   case( inttSPar1 ):
    tSPar1 = value;
    break;
- // case( intPPar1 ):
- //  PPar1 = value;
- //  break;
- // case( intPPar2 ):
- //  PPar2 = value;
- //  break;
- // case( intPPar3 ):
- //  PPar3 = value;
- //  break;
   default:
    CDASolver::set_par( par , value );
   }
@@ -990,12 +875,6 @@ void BundleSolver::set_par( const idx_type par , const double value ) {
    break;
   case( dblEInit ):
    EInit = value;
-   break;
-  case( dblEFnal ):
-   EFnal = value;
-   break;
-  case( dblEDcrs ):
-   EDcrs = value;
    break;
   case( dblBPar3 ):
    BPar3 = value;
@@ -1049,33 +928,6 @@ void BundleSolver::set_par( const idx_type par , const double value ) {
  } // end (BundleSolver::set_par( ) )  - - - - - - - - - - - - - - - - - - - -
 
 /*--------------------------------------------------------------------------*/
-
-void BundleSolver::SetMPSolver( MPSolver *MPS )
-{
-
- // il nome del master da usare sta in SetComputeConfig
- // laa coistruzone del master problem sta in set_block
-
-
- if( Master )        // a MP solver is set ??? dove metterlo ???
-  Master->SetDim();  // clear all its internal state
-
-// if( FakeFi )
- // delete[] FakeFi;
-
- // construct a FakeFiOracle to handle the MPSolver, which has to
- // interface with a FiOracle object, the FiOracle needs of all the
- // description of the Function including the 0th component
-
- Master = MPS;
- if( Master && f_Block ) {
-  InitMP();
-  // FakeFi = new FakeFiOracle( this );
-  }
-
- } // end( BundleSolver::SetMPSolver )  - - - - - - - - - - - - - - - - - - -
-
-/*--------------------------------------------------------------------------*/
 /*--------------------------------- METHODS --------------------------------*/
 /*--------------------------------------------------------------------------*/
 
@@ -1098,7 +950,7 @@ void BundleSolver::get_dual_solution( Configuration *solc ) {
 int BundleSolver::get_dflt_int_par( const idx_type par ) const
 {
  if( ( par >= intBPar1 ) && ( par < intLastBndSlvPar ) )
-  return( dflt_dbl_par[ par - intBPar1 ] );
+  return( dflt_int_par[ par - intBPar1 ] );
  else
   return( CDASolver::get_dflt_int_par( par ) );
  }
@@ -1130,14 +982,8 @@ int BundleSolver::get_int_par( const idx_type par ) const
   case( intBPar1 ):
    return( BPar1 );
    break;
-  // case( intBPar2 ):
-  // return( BPar2 );
-  // break;
   case( intBPar6 ):
    return( BPar6 );
-   break;
-  case( intEStps ):
-   return( EStps );
    break;
   case( intMnSSC ):
    return( MnSSC );
@@ -1148,17 +994,8 @@ int BundleSolver::get_int_par( const idx_type par ) const
   case( inttSPar1 ):
    return( tSPar1 );
    break;
- // case( intPPar1 ):
- //  return( PPar1 );
- //  break;
- // case( intPPar2 ):
- //  return( PPar2 );
- //  break;
- // case( intPPar3 ):
- //  return( PPar3 );
- //  break;
   default:
-   return( get_dflt_int_par( par ) );
+   return( CDASolver::get_dflt_int_par( par ) );
   }
 
  } // end( BundleSolver::get_int_par )  - - - - - - - - - - - - - - - - - - -
@@ -1197,12 +1034,6 @@ double BundleSolver::get_dbl_par( const idx_type par ) const
    break;
   case( dblEInit ):
    return( EInit );
-   break;
-  case( dblEFnal ):
-   return( EFnal );
-   break;
-  case( dblEDcrs ):
-   return( EDcrs );
    break;
   case( dblBPar3 ):
    return( BPar3 );
@@ -1250,7 +1081,7 @@ double BundleSolver::get_dbl_par( const idx_type par ) const
    return( MPEOpt );
    break;
   default:
-   return( get_dflt_dbl_par( par ) );
+   return( CDASolver::get_dflt_dbl_par( par ) );
   }
 
  } // end( BundleSolver::get_dbl_par ) - - - - - - - - - - - - - - - - - - - -
@@ -1347,20 +1178,20 @@ void BundleSolver::FormD( void )
 
  // collect and set individual and global lower bounds- - - - - - - - - - - -
 
- if( LBHasChgd && ( FiLambda[0] < Inf<double>() ) ) {
-  if( LowerBound[0] > - Inf<double>() )
-   Master->SetLowerBound( LowerBound[0] - FiLambda[0] );
+ if( LBHasChgd && ( UpFiLmb[NrFi] < Inf<double>() ) ) {
+  if( LowerBound > - Inf<double>() )
+   Master->SetLowerBound( LowerBound - UpFiLmb[NrFi] );
   else
    Master->SetLowerBound( - Inf<double>() );
 
-  for( Index k = 0 ; k++ < NrFi ; ) {
+  for( Index k = 0 ; k < NrFi ; k++ ) {
    if( IsEasy.size() && IsEasy[ k ] )  // skip easy components
     continue;
 
-   if( LowerBound[ k ] > - Inf<double>() )
-    Master->SetLowerBound( LowerBound[ k ] - FiLambda[ k ] , k );
+  if( LowerBound > - Inf<double>() )
+    Master->SetLowerBound( LowerBound - UpFiLmb[ k ] , k + 1 );
    else
-    Master->SetLowerBound( - Inf<double>() , k );
+    Master->SetLowerBound( - Inf<double>() , k + 1 );
    }
 
   LBHasChgd = false;
@@ -1368,327 +1199,148 @@ void BundleSolver::FormD( void )
 
  // set termination criterion - - - - - - - - - - - - - - - - - - - - - - - -
 
- if( FiLambda[0] < Inf<double>() )
+ if( UpFiLmb[NrFi] < Inf<double>() )
   Master->SetPar( MPSolver::kZero ,
-		  RelAcc * std::max( std::abs( FiLambda[0] ) , double( 1 ) )
+		  RelAcc * std::max( std::abs( UpFiLmb[NrFi] ) , double( 1 ) )
 		         / std::max( tStar / t , HpNum( 1 ) ) );
 
-          //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
- for(;;)  // price-in loop- - - - - - - - - - - - - - - - - - - - - - - - - -
- {        //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
-  for(;;)  // error-handling loop - - - - - - - - - - - - - - - - - - - - - -
-  {        // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ for(;;)  // error-handling loop - - - - - - - - - - - - - - - - - - - - - -
+ {        // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 
-   // ensure the MPSolver does not exceed the remaining time
-   // Master->SetPar( MPSolver::kMaxTme , MaxTime - NDOt->Read() );
+  // ensure the MPSolver does not exceed the remaining time
+  // Master->SetPar( MPSolver::kMaxTme , MaxTime - NDOt->Read() );
 
+  MPSolver::MPStatus mps = Master->SolveMP();  // solve the MP
 
-   MPSolver::MPStatus mps = Master->SolveMP();  // solve the MP
+  if( mps == MPSolver::kOK )        // everything's alright
+   break;
 
-   if( mps == MPSolver::kOK )        // everything's alright
-    break;
+  if( mps == MPSolver::kUnfsbl ) {  // the feasible set is empty
+   Result = kInfeasible;
+   break;
+   }
 
-   if( mps == MPSolver::kUnfsbl ) {  // the feasible set is empty
-    Result = kInfeasible;
+  if( mps == MPSolver::kUnbndd ) {  // the MP is unbounded: this can always
+                                     // be mended by decreasing t ...
+   if( ( t <= tMinor ) || ( Master->BCSize() >= Master->BSize() ) ) {
+    // ... but t must always be >= tMinor, and it is already == tMinor in
+    // the "empty" case of the initial iteration with empty bundle
+    BLOG( 1 , std::endl << "Bundle::FormD: failure in MPSolver." );
+    Result = kError;
     break;
     }
 
-   if( mps == MPSolver::kUnbndd ) {  // the MP is unbounded: this can always
-                                     // be mended by decreasing t ...
-    if( ( t <= tMinor ) || ( Master->BCSize() >= Master->BSize() ) ) {
-     // ... but t must always be >= tMinor, and it is already == tMinor in
-     // the "empty" case of the initial iteration with empty bundle
-     BLOG( 1 , std::endl << "Bundle::FormD: failure in MPSolver." );
-     Result = kError;
+   BLOG( 1 , std::endl << "Bundle::FormD: MP unbounded, decreasing t" );
+   Master->Sett( t = std::max( t / 2 , tMinor ) );
+   continue;
+   }
+
+  if( mps == MPSolver::kStppd ) {  // stopped by time limit
+   //!! so far, the time limit in the MPSolver is only due to the
+   //!! global time limit in the NDOSolver, but one day we may want
+   //!! to set it independently; then, some checks will have to be
+   //!! done if the solution is feasible and it can still be used
+   //!! and v is sufficiently < 0: in this case we can use the
+   //!! solution as well, otherwise we have to give the MPSolver
+   //!! more time
+   Result = kStopTime;
+   break;
+   }
+
+  // mps == MPSolver::kError, i.e., there has been a numerical problem in- -
+  // the MP Solver; it's not yet time to despair, as by eliminating items- -
+  // it may be possible to solve the problem - - - - - - - - - - - - - - - -
+
+  Index MBDm;
+  cIndex_Set MBse;
+  cHpRow Mlt = Master->ReadMult( MBse , MBDm );
+  Index i = InINF;
+
+  // the last *removable* item in Base is eliminated - - - - - - - - - - - -
+
+  if( MBse ) {
+   for( ; MBDm-- ; )
+    if( ( OOBase[ MBse[ MBDm ] ] >= 0 ) &&
+        ( Mlt[ MBDm ] >= Eps<HpNum>() ) ) {
+     i = MBse[ MBDm ];
+     break;
+     }
+   }
+  else
+   for( ; MBDm-- ; )
+    if( ( OOBase[ MBDm ] >= 0 ) && ( Mlt[ MBDm ] >= Eps<HpNum>() ) ) {
+     i = MBDm;
      break;
      }
 
-    BLOG( 1 , std::endl << "Bundle::FormD: MP unbounded, decreasing t" );
-    Master->Sett( t = std::max( t / 2 , tMinor ) );
-    continue;
-    }
+  if( i == InINF )  // there are no *removable* items in Base - - - -
+   for( Index j = Master->MaxName() ; j-- ; )  // pick any removable item
+    if( ( OOBase[ j ] >= 0 ) && ( OOBase[ j ] < Inf<SIndex>() ) ) {
+     i = j;
+     break;
+     }
 
-   if( mps == MPSolver::kStppd ) {  // stopped by time limit
-    //!! so far, the time limit in the MPSolver is only due to the
-    //!! global time limit in the NDOSolver, but one day we may want
-    //!! to set it independently; then, some checks will have to be
-    //!! done if the solution is feasible and it can still be used
-    //!! and v is sufficiently < 0: in this case we can use the
-    //!! solution as well, otherwise we have to give the MPSolver
-    //!! more time
-    Result = kStopTime;
-    break;
-    }
-
-   // mps == MPSolver::kError, i.e., there has been a numerical problem in- -
-   // the MP Solver; it's not yet time to despair, as by eliminating items- -
-   // it may be possible to solve the problem - - - - - - - - - - - - - - - -
-
-   Index MBDm;
-   cIndex_Set MBse;
-   cHpRow Mlt = Master->ReadMult( MBse , MBDm );
-   Index i = InINF;
-
-   // the last *removable* item in Base is eliminated - - - - - - - - - - - -
-
-   if( MBse ) {
-    for( ; MBDm-- ; )
-     if( ( OOBase[ MBse[ MBDm ] ] >= 0 ) &&
-	 ( Mlt[ MBDm ] >= Eps<HpNum>() ) ) {
-      i = MBse[ MBDm ];
-      break;
-      }
-    }
-   else
-    for( ; MBDm-- ; )
-     if( ( OOBase[ MBDm ] >= 0 ) && ( Mlt[ MBDm ] >= Eps<HpNum>() ) ) {
-      i = MBDm;
-      break;
-      }
-
-   if( i == InINF )  // there are no *removable* items in Base - - - -
-    for( Index j = Master->MaxName() ; j-- ; )  // pick any removable item
-     if( ( OOBase[ j ] >= 0 ) && ( OOBase[ j ] < Inf<SIndex>() ) ) {
-      i = j;
-      break;
-      }
-
-   if( i == InINF ) {  // there are no removable items at all- - - - -
-    BLOG( 0 , std::endl << "Bundle::FormD: unrecoverable MP failure." );
-    Result = kError;
-    return;
-    }
-
-   Delete( i );      // just delete i
-
-   }  // end ( error-handling loop )- - - - - - - - - - - - - - - - - - - - -
-      //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
-  Sigma = Master->ReadSigma();                  // read Sigma*
-
-  vStar = - Master->ReadFiBLambda();            // read v*
-
-  if( IsEasy.size() ) {                                // there are easy components
-   for( Index k = 0 ; k++ < NrFi ; )            // read the *exact* Fi-value
-    if( IsEasy[ k ] )                           // for all them
-     FiLambda1[ k ] = Master->ReadFiBLambda( k );
-
-   if( FiLambda[0] < Inf<double>() )
-    for( Index k = 0 ; k++ < NrFi ; )
-     if( IsEasy[ k ] )
-      vStar += RfrncFi[ k ];
-   }
-
-  DSTS = Master->ReadDStart( tStar );           // D_{t*,\beta,x}
-  Deltav = vStar;
-  if( m1 < 0 )                                  // use - z( P_{t,\beta,x} )
-   Deltav -= Master->ReadDt( t );
-
-  // Sigma* + D*_{t*}( -z* ) is the "maximum expected increase" used in
-  // the stopping criterion, EpsU is that relative to Fi( Lambda )
-  if( FiLambda[0] < Inf<double>() )
-   EpsU = ( DSTS + Sigma ) / std::max( std::abs( FiLambda[0] ) , double( 1 ) );
-  else
-   EpsU = 1;  // ensure EpsU is initialized somehow
-
-  // the z[ i ] have changed, so in principle they are no longer in the
-  // bundle: it may be the case that they actually are, but this is
-  // taken care of in UpdtCntrs()
-  whisZ.assign( NrFi , Inf<Index>() );
-
-  // the scalar products have changed
-  ScPr1.assign( NrFi , Inf<double>() );
-
-  if( ! PPar2 )  // no L.V.G.
-   return;       // nothing else to do
-
-  // if( LamDim == NumVar )  // all variables are there
-  // break;                 // no "price in" to do (but possibly "price out")
-
-  // LVG: price in- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-  // do pricing only for the first PPar1 iterations and then once every PPar2
-  // iterations: however, do it also if convergence is detected or if the
-  // subproblem is primal unfeasible
-
-  if( ( Result == kOK ) && ( ParIter > Index( PPar1  ) ) &&
-      ( ( ParIter - Index( PPar1  ) ) % PPar2 ) && ( ! IsOptimal() ) )
+  if( i == InINF ) {  // there are no removable items at all- - - - -
+   BLOG( 0 , std::endl << "Bundle::FormD: unrecoverable MP failure." );
+   Result = kError;
    return;
-
-  // ask for *all* the entries of d[] - - - - - - - - - - - - - - - - - - - -
-
-  const double* tdir = Master->Readd( true );
-
-  // now construct the new LamBase- - - - - - - - - - - - - - - - - - - - - -
-
-  Index nBD = 0;
-  Index oBD = 0;
-  double epsDir = Master->EpsilonD() * t;
-
-  /*
-  Dynamic generation of variables not handled yet.
-
-  Index_Set NewStuff = LamBase + LamDim;
-
-  if( ! Master->NumNNVars() ) {  // there are no NN variables - - - - - - - -
-   for( Index k = 0 ; k < NumVar ; k++ )
-    if( LamBase[ oBD ] == k ) {
-     oBD++;
-     nBase[ nBD++ ] = k;
-     }
-    else
-     if( ABS( tdir[ k ] ) > epsDir ) {
-      nBase[ nBD++ ] = *(++NewStuff) = k;
-      if( PPar3 )
-       InctvCtr[ k ] = 0;
-      BLOGb( LogVar , std::endl << " Created variable " << k );
-      }
    }
-  else
-   if( Master->NumNNVars() == NumVar ) {  // there are only NN variables- - -
-    for( Index k = 0 ; k < NumVar ; k++ )
-     if( LamBase[ oBD ] == k ) {
-      oBD++;
-      nBase[ nBD++ ] = k;
-      }
-     else
-      if( tdir[ k ] > epsDir ) {
-       nBase[ nBD++ ] = *(++NewStuff) = k;
-       if( PPar3 )
-        InctvCtr[ k ] = 0;
 
-       BLOGb( LogVar , std::endl << " Created variable " << k << " (>= 0)" );
-       }
-    }
-   else {  // there are both NN and UC variables- - - - - - - - - - - - - - -
-    for( Index k = 0 ; k < NumVar ; k++ )
-     if( LamBase[ oBD ] == k ) {
-      oBD++;
-      nBase[ nBD++ ] = k;
-      }
-     else
-      if( ( tdir[ k ] > epsDir ) ||
-	  ( ( tdir[ k ] < - epsDir ) && ( ! Master->IsNN( k ) ) ) ) {
-       nBase[ nBD++ ] = *(++NewStuff) = k;
-       if( PPar3 )
-        InctvCtr[ k ] = 0;
+  Delete( i );      // just delete i
 
-       BLOGb( LogVar , std::endl << " Created variable " << k );
-       BLOG2b( LogVar , Master->IsNN( k ) , " (>= 0)" );
-       }
-    }  // end else( there are both NN and UC variables )- - - - - - - - - - -
+  }  // end ( error-handling loop )- - - - - - - - - - - - - - - - - - - - -
+  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-  if( nBD == oBD )  // no changes in LamBase- - - - - - - - - - - - - - - - -
-   break;
-  else {  // LamBase has changed- - - - - - - - - - - - - - - - - - - - - - -
-   BHasChgd = true;                // signal it
-   *(++NewStuff) = InINF;          // and put termination marks to the
-   nBase[ LamDim = nBD ] = InINF;  // vector of newly added stuff and
-                                          // nBase
-   // signal the changes to the MP solver
-   Master->AddActvSt( LamBase + oBD + 1 , nBD - oBD , nBase );
+ Sigma = Master->ReadSigma();                  // read Sigma*
 
-   // add the entries to Lambda
-   nBase--; LamBase--; Lambda--;
+ DeltaStar = Master->ReadDStart( t ) / 2.0 + Sigma; // ?? 1/2 ci vuole ??
+ cLMRow tdir = Master->Readd( true );
 
-   for( ; nBD > oBD ; nBD-- )
-    if( LamBase[ oBD ] == nBase[ nBD ] )
-     Lambda[ nBD ] = Lambda[ oBD-- ];
-    else
-     Lambda[ nBD ] = 0;
+ NrmD = 0;
+ for( Index i = 0 ; i < NumVar ; i++ )
+  NrmD += tdir[ i ] * tdir[ i ];
+ NrmD = sqrt(  NrmD );
 
-   nBase++; LamBase++; Lambda++;
+ vStar[ NrFi ] = - Master->ReadFiBLambda();            // read v*
 
-   // set the new LamBase
-   Swap( LamBase , nBase );
-   } */
+ if( IsEasy.size() ) {                         // there are easy components
+  for( Index k = 0 ; k < NrFi ; k++ )          // read the *exact* Fi-value
+   if( IsEasy[ k ] )                           // for all them
+    UpFiLmb1[ k ] = Master->ReadFiBLambda( k );
+   else
+    vStar[ k ] = - Master->ReadFiBLambda( k );
 
-  break; // ?? giusto ??
+  if( UpFiLmb[NrFi] < Inf<double>() )
+   for( Index k = 0 ; k < NrFi ; k++ )
+    if( IsEasy[ k ] )
+     vStar[ NrFi ] += UpRifFi[ k ];
+  }
+ else
+  for( Index k = 0 ; k < NrFi ; k++ )
+   if( !IsEasy[ k ] )
+    vStar[ k ] = - Master->ReadFiBLambda( k );
 
-  // end price in - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-  }  // end( for(;;) )
+ DSTS = Master->ReadDStart( tStar );           // D_{t*,\beta,x}
+ Deltav = vStar[ NrFi ];
+ if( m1 < 0 )                                  // use - z( P_{t,\beta,x} )
+  Deltav -= Master->ReadDt( t );
 
- /*
- // LVG: price out- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
- // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
- if( ParIter > Index( PPar1 ) ) {  // skip the first PPar1 iterations
-  // (all of them if PPar3 == 0 ==> PPar1 == InINF )
+ // Sigma* + D*_{t*}( -z* ) is the "maximum expected increase" used in
+ // the stopping criterion, EpsU is that relative to Fi( Lambda )
+ if( UpFiLmb[NrFi] < Inf<double>() && tStar > 0 ) // ?? tStar > 0 va bene ??
+  EpsU = ( DSTS + Sigma ) / std::max( std::abs( UpFiLmb[NrFi] ) , double( 1 ) );
+ else
+  EpsU = 1;  // ensure EpsU is initialized somehow
 
-  // ask for the entries of d[] corresponding to "active" variables - - - - -
+ // the z[ i ] have changed, so in principle they are no longer in the
+ // bundle: it may be the case that they actually are, but this is
+ // taken care of in UpdtCntrs()
+ whisZ.assign( NrFi , Inf<Index>() );
 
-  cLMRow tdir = Master->Readd( false );
-
-  // now construct the new LamBase- - - - - - - - - - - - - - - - - - - - - -
-
-  Index nBD = 0;
-  Index oBD = 0;
-  LMNum epsDir = Master->EpsilonD() * t;
-  Index_Set DltdStuff = nBase + MaxNumVar;
-
-  if( ! Master->NumNNVars() )  // there are no NN variables - - - - - - - - -
-   for( Index k ; ( k = LamBase[ oBD ] ) < InINF ; oBD++ )
-    if( ( ABS( Lambda[ oBD ] ) <= epsDir ) && ( ABS( tdir[ k ] ) <= epsDir )
-	&& ( ++InctvCtr[ k ] >= Index( PPar3 ) ) ) {
-     *(DltdStuff--) = k;
-     BLOGb( LogVar , std::endl << " Eliminated variable " << k );
-     }
-    else {
-     Lambda[ nBD ] = Lambda[ oBD ];
-     InctvCtr[ nBase[ nBD++ ] = k ] = 0;
-     }
-  else
-   if( Master->NumNNVars() == NumVar )  // there are only NN variables- - - -
-    for( Index k ; ( k = LamBase[ oBD ] ) < InINF ; oBD++ )
-     if( ( Lambda[ oBD ] <= epsDir ) && ( tdir[ k ] <= epsDir ) &&
-         ( ++InctvCtr[ k ] >= Index( PPar3 ) ) ) {
-      *(DltdStuff--) = k;
-      BLOGb( LogVar , std::endl << " Eliminated variable " << k << " (>= 0)" );
-      }
-     else {
-      Lambda[ nBD ] = Lambda[ oBD ];
-      InctvCtr[ nBase[ nBD++ ] = k ] = 0;
-      }
-   else {  // there are both NN and UC variables- - - - - - - - - - - - - - -
-    for( Index k ; ( k = LamBase[ oBD ] ) < InINF ; oBD++ )
-     if( ( ABS( Lambda[ oBD ] ) <= epsDir )                   &&
-	 ( ( tdir[ k ] <= epsDir ) &&
-	   ( ( tdir[ k ] >= - epsDir ) || Master->IsNN( k ) ) ) &&
-         ( ++InctvCtr[ k ] >= Index( PPar3 ) ) ) {
-      *(DltdStuff--) = k;
-      BLOGb( LogVar , std::endl << " Eliminated variable " << k << " (>= 0)" );
-      BLOG2b( LogVar , Master->IsNN( k ) , " (>= 0)" );
-      }
-     else {
-      Lambda[ nBD ] = Lambda[ oBD ];
-      InctvCtr[ nBase[ nBD++ ] = k ] = 0;
-      }
-    }  // end else( there are both NN and UC variables )- - - - - - - - - - -
-
-  if( nBD < oBD ) {  // some variables have been eliminated - - - - - - - - -
-   BHasChgd = true;                // signal it
-   nBase[ LamDim = nBD ] = InINF;  // and put the termination mark to nBase
-
-   // invert the vector of deleted stuff, since it is in reverse order
-
-   Index_Set tDSH = ++DltdStuff;
-   for( Index_Set tDST = nBase + MaxNumVar ; tDSH < tDST ; )
-    Swap( *(tDSH++) , *(tDST--) );
-
-   // set the new LamBase
-
-   Swap( LamBase , nBase );
-
-   // signal the changes to the MP solver
-
-   Master->RmvActvSt( DltdStuff , oBD - nBD , LamBase );
-   }
-  }  // end if( skip the first PPar1 iterations ) - - - - - - - - - - - - - -
-     // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
- */
+ // the scalar products have changed
+ ScPr1.assign( NrFi , Inf<double>() );
 
  }  // end( BundleSolver::FormD )  - - - - - - - - - - - - - - - - - - - - - -
 
@@ -1751,14 +1403,6 @@ void BundleSolver::UpdtCntrs( void )
 
 /*--------------------------------------------------------------------------*/
 
-int BundleSolver::EveryIteration( void )
-{
- return( kOK );
-
- }  // end( BundleSolver::EveryIteration ) - - - - - - - - - - - - - - - - - -
-
-/*--------------------------------------------------------------------------*/
-
 void BundleSolver::FormLambda1( HpNum Tau )
 {
  Master->MakeLambda1( Lambda.data() , Lambda1.data() , Tau );
@@ -1771,321 +1415,372 @@ void BundleSolver::FormLambda1( HpNum Tau )
   // precision required by the FiOracle, the (upper and lower) bounds are
   // strictly enforced here
 
-  std::vector<VarValue> tL1 = Lambda1; //?? assegnamento corretto ?? //
+  std::vector<VarValue> tL1 = Lambda1;
 
   if( Master->NumNNVars() )             // there are NN vars and UB vars
    if( Master->NumNNVars() == NumVar )  // actually, all variables are NN
-  /*  if( PPar2 ) {
-     Index_Set tLB = LamBase;
-     for( Index h ; ( h = *(tLB++) ) < InINF ; tL1++ ) {
-      if( *tL1 < 0 )
-       *tL1 = 0;
-
-      cLMNum UBh = Oracle->GetUB( h );
-      if( *tL1 > UBh )
-       *tL1 = UBh;
-      }
-     }
-    else */
-     for( Index h = 0 ; h < NumVar ; h++ ) {
-      if( tL1[ h ] < 0 )
-       tL1[ h ] = 0;
-
-      const double UBh = LamVcblr[h]->get_ub();
-      if( tL1[ h ] > UBh )
-       tL1[ h ] = UBh;
-      }
-   else                                 // not all variables are NN
-   /* if( PPar2 ) {
-     Index_Set tLB = LamBase;
-     for( Index h ; ( h = *(tLB++) ) < InINF ; tL1++ ) {
-      if( Master->IsNN( h ) && ( *tL1 < 0 ) )
-       *tL1 = 0;
-
-      cLMNum UBh = Oracle->GetUB( h );
-      if( *tL1 > UBh )
-       *tL1 = UBh;
-      }
-     }
-    else */
-     for( Index h = 0 ; h < NumVar ; h++ ) {
-      if( Master->IsNN( h ) && ( tL1[ h ] < 0 ) )
-       tL1[ h ] = 0;
-
-      const double UBh = LamVcblr[h]->get_ub();
-      if( tL1[ h ] > UBh )
-       tL1[ h ] = UBh;
-      }
-  else  // there are only UB vars
-  /* if( PPar2 ) {
-    Index_Set tLB = LamBase;
-    for( Index h ; ( h = *(tLB++) ) < InINF ; tL1++ ) {
-     const double UBh = LamVcblr[h]->get_ub();
-     if( tL1.coeffRef(h) > UBh )
-      tL1.coeffRef(h) = UBh;
-     }
-    }
-   else */
     for( Index h = 0 ; h < NumVar ; h++ ) {
+     if( tL1[ h ] < 0 )
+      tL1[ h ] = 0;
+
      const double UBh = LamVcblr[h]->get_ub();
      if( tL1[ h ] > UBh )
       tL1[ h ] = UBh;
      }
+   else                                 // not all variables are NN
+    for( Index h = 0 ; h < NumVar ; h++ ) {
+     if( Master->IsNN( h ) && ( tL1[ h ] < 0 ) )
+      tL1[ h ] = 0;
+
+     const double UBh = LamVcblr[h]->get_ub();
+     if( tL1[ h ] > UBh )
+      tL1[ h ] = UBh;
+     }
+  else  // there are only UB vars
+   for( Index h = 0 ; h < NumVar ; h++ ) {
+    const double UBh = LamVcblr[h]->get_ub();
+    if( tL1[ h ] > UBh )
+     tL1[ h ] = UBh;
+    }
 
   }  // end( if( the bounds have to be enforced ) )
 
- LHasChgd = true;  // signal that Lambda1 has changed
-
- FiStatus.assign( NrFi , kStopIter );
-
- // if( BHasChgd && LamBase )
- //  VectAssign( Lam1Bse , LamBase , LamDim + 1 );
 
  whisG1.assign( NrFi , Inf<Index>() );
  // reset the representatives
+
+ // Lambda has changed, pass the new one to the oracle - - - - - - - - - - - -
+ //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+ FiStatus.assign( NrFi ,  kUnEval );
+ for( Index i = 0 ; i < NumVar ; i++ )
+  LamVcblr[ i ]->set_value( Lambda1[i] );
+
+ // compute the upper and lower model at the tentative point   - - - - - - - -
+ //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+ if( linf ) {
+  linf->compute( true );
+  UpFiLmb1[ NrFi ] = linf->get_upper_estimate();
+  LwFiLmb1[ NrFi ] = linf->get_lower_estimate();
+  }
+ else
+  UpFiLmb1[ NrFi ] = LwFiLmb1[ NrFi ] = 0;
+
+ for( Index k = 0 ; k < NrFi ; k++ ) {
+  if( IsEasy.size() && IsEasy[ k ] )  // if k is an easy component
+   UpFiLmb1[ k ] =  LwFiLmb1[ k ] = Master->ReadFiBLambda( k );
+  else {
+
+   if( v_c05f[ k ]->get_Lipschitz_constant() < Inf<FunctionValue>()
+	   && UpFiLmb[ k ] < Inf<FunctionValue>() )
+    UpFiLmb1[ k ] = UpRifFi[ k ] + v_c05f[ k ]->get_Lipschitz_constant() * NrmD;
+   else
+	UpFiLmb1[ k ] = Inf<FunctionValue>();
+
+   if( LwFiLmb[ k ] > -Inf<FunctionValue>() )
+    LwFiLmb1[ k ] = UpRifFi[ k ] + vStar[ k ];
+   else
+    LwFiLmb1[ k ] = -Inf<FunctionValue>();
+   }
+
+  if( UpFiLmb1[ NrFi ] < Inf<FunctionValue>() )
+   if( UpFiLmb1[ k ] < Inf<FunctionValue>() )
+    UpFiLmb1[ NrFi ] += UpFiLmb1[ k ];
+   else
+	UpFiLmb1[ NrFi ] = Inf<FunctionValue>();
+
+  if( LwFiLmb1[ NrFi ] > -Inf<FunctionValue>() )
+   if( LwFiLmb1[ k ] < Inf<FunctionValue>() )
+    LwFiLmb1[ NrFi ] += LwFiLmb1[ k ];
+   else
+    LwFiLmb1[ NrFi ] = -Inf<FunctionValue>();
+
+  }
+
+ // update the upper and lower targets - - - - - - - - - - - - - - - - - - - -
+ //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+ if( UpFiLmb[ NrFi ] < Inf<FunctionValue>() )
+  UpTrgt = UpRifFi[ NrFi ] + (1.0 - m2) * vStar[ NrFi ];
+ else
+  UpTrgt = Inf<FunctionValue>();
+
+ if( LwFiLmb[ NrFi ] > -Inf<FunctionValue>() )
+  if( m1 > 0 )
+   LwTrgt = UpRifFi[ NrFi ] + vStar[ NrFi ] + m1 * DeltaStar;
+  else
+   LwTrgt = UpRifFi[ NrFi ] + ( 1.0 - m1 ) * vStar[ NrFi ];
+ else
+  LwTrgt = -Inf<FunctionValue>();
 
  }  // end( BundleSolver::FormLambda1 )  - - - - - - - - - - - - - - - - - - -
 
 /*--------------------------------------------------------------------------*/
 
-bool BundleSolver::FiAndGi( void )
+bool BundleSolver::FiAndGi( Index wFi )
 {
- // set the new Lambda1[] and Lam1Bse[], if any - - - - - - - - - - - - - - -
+
+ double UpCutOff, LwCutOff, LwFiK;
+
+ if( IsEasy.size() && IsEasy[ wFi ] )
+  return( false );
+
+ LwFiK =  UpRifFi[ wFi ] + vStar[ wFi ];
+
+ if( UpFiLmb[ wFi ] < Inf<OFValue>() )
+  if( UpTrgt < Inf<OFValue>() && UpFiLmb1[ NrFi ] < Inf<OFValue>() )
+   UpCutOff = std::max( UpTrgt - ( UpFiLmb1[ NrFi ] - UpFiLmb1[ wFi ] ) ,
+   		              LwFiK - m2 * BetaK( wFi ) * vStar[ NrFi ] );
+  else
+   UpCutOff = LwFiK - m2 * BetaK( wFi ) * vStar[ NrFi ];
+ else
+  UpCutOff = Inf<OFValue>();
+
+ if( LwFiLmb[ wFi ] > -Inf<OFValue>() )
+  if( LwTrgt > -Inf<OFValue>() && LwFiLmb1[ NrFi ] > -Inf<OFValue>() )
+   LwCutOff = std::max( LwTrgt - ( LwFiLmb1[ NrFi ] - LwFiLmb1[ wFi ] ) ,
+    		              LwFiK + m1 * BetaK( wFi ) * DeltaStar );
+  else
+   LwCutOff = LwFiK + m1 * BetaK( wFi ) * DeltaStar;
+ else
+  LwCutOff = -Inf<OFValue>();
+
+ if( LwCutOff > -Inf<OFValue>() && UpCutOff < Inf<OFValue>() )
+  EpsCurr = ( UpCutOff - LwCutOff ) / std::max( 1.0 , std::abs(UpRifFi[ wFi ] ) );
+ else
+  EpsCurr = EInit;
+
+ // assign the cutoff values to the c05Function - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- /* ??
- if( BHasChgd ) {  // if LamBase has changed, pass the new one to the Oracle
-  if( LamDim < NumVar )
-   Oracle->SetLamBase( Lam1Bse , LamDim );
-  else
-   Oracle->SetLamBase( NULL , NumVar );
+ v_c05f[ wFi ]->set_par( dblUpCutOff , UpCutOff );
+ v_c05f[ wFi ]->set_par( dblLwCutOff , LwCutOff );
+ v_c05f[ wFi ]->set_par( dblRelAcc , EpsCurr );
 
-  BHasChgd = false;
-  } */
+ if( FiStatus[ wFi ] ==  kUnEval )
+  FiStatus[ wFi ] = v_c05f[ wFi ]->compute( true );
+ else {
+  FiStatus[ wFi ] = v_c05f[ wFi ]->compute( false );
 
- if( LHasChgd ) {  // if Lambda has changed, pass the new one to the Oracle
-  for( Index i = 0 ; i < NumVar ; i++ )
-   LamVcblr[ i ]->set_value( Lambda1[i] );
-  LHasChgd = false;
-  for( auto c05 : v_c05f )
-   c05->compute( true );
-  if( linf )
-   linf->compute( true );
+  if( UpFiLmb1[ NrFi ] < Inf<OFValue>() )
+   UpFiLmb1[ NrFi ] -= UpFiLmb1[ wFi ];
+
+  if( LwFiLmb1[ NrFi ] > -Inf<OFValue>() )
+   LwFiLmb1[ NrFi ] -= LwFiLmb1[ wFi ];
+
   }
 
- // call Fi() - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
- // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ UpFiLmb1[ wFi ] = std::min( v_c05f[ wFi ]->get_upper_estimate() , UpFiLmb1[ wFi ] );
+ LwFiLmb1[ wFi ] = std::max( v_c05f[ wFi ]->get_lower_estimate() , LwFiLmb1[ wFi ] );
 
- FiLambda1[ 0 ] = linf->get_value();  // the 0-th component
-
- for( Index k = 0 ; k++ < NrFi ; )
-  // now all other components, one by one - - - - - - - - - - - - - - - - - -
-  if( IsEasy.size() && IsEasy[ k ] )     // an easy component
-   FiLambda1[ 0 ] += FiLambda1[ k ];  // nothing to do: Fi[ k ] is known already
-  else {                          // an hard component
-   /* FiStatus[ k ] == kFiStop it means that the function value of component
-      k still needs to be computed "with enough accuracy" (this is set in
-      FormLambda1() when the function has not been computed at all); here we
-      make sure to compute again only the components that have not been
-      "solved accurately enough yet" (at the first call after a FormLambda1(),
-      all of them). */
-
-   if( FiStatus[ k ] == kStopIter ) {
-    FiLambda1[ k ] = v_c05f[ k ]->get_value();
-    //FiStatus[ k ] = Oracle->GetFiStatus( k );   // ?? da aggiustare ??
-    if( FiStatus[ k ] == kError ) {
-     BLOG( 1 , " ~ Error in the FiOracle" << std::endl );
-     return( false );
-     }
-    }
-
-   if( FiLambda1[0] < Inf<double>() ) {
-    if( FiLambda1[ k ] >= Inf<double>() )
-     FiLambda1[0] = Inf<double>();
-    else
-     FiLambda1[0] += FiLambda1[ k ];
-    }
+ if( UpFiLmb1[ NrFi ] < Inf<OFValue>() )
+  UpFiLmb1[ NrFi ] += UpFiLmb1[ wFi ];
+ else
+  if( UpFiLmb1[ wFi ] < Inf<OFValue>() ) {
+   if( linf )
+	UpFiLmb1[ NrFi ] = linf->get_upper_estimate();
+   else
+    UpFiLmb1[ NrFi ] = 0;
+   Index k = 0;
+   for( ; k < NrFi , UpFiLmb1[ k ] < Inf<OFValue>() ; k++ )
+    UpFiLmb1[ NrFi ] += UpFiLmb1[ wFi ];
+   if( k < NrFi )
+	UpFiLmb1[ NrFi ] = Inf<OFValue>();
    }
 
- if( FiLambda1[0] == Inf<double>() )    // Fi() is not defined in Lambda1
-  DeltaFi = Inf<double>();
+ if( LwFiLmb1[ NrFi ] > -Inf<OFValue>() )
+  LwFiLmb1[ NrFi ] += LwFiLmb1[ wFi ];
  else
-  DeltaFi = RfrncFi[0] - FiLambda1[0];
+  if( LwFiLmb1[ wFi ] > -Inf<OFValue>() ) {
+   if( linf )
+    LwFiLmb1[ NrFi ] = linf->get_lower_estimate();
+  else
+   LwFiLmb1[ NrFi ] = 0;
+   Index k = 0;
+   for( ; k < NrFi , LwFiLmb1[ k ] > -Inf<OFValue>() ; k++ )
+    LwFiLmb1[ NrFi ] += LwFiLmb1[ wFi ];
+   if( k < NrFi )
+	LwFiLmb1[ NrFi ] = -Inf<OFValue>();
+   }
 
- SSDone = false;
 
- if( FiLambda1[0] == - Inf<double>() )  // error in computing Fi()
-  return( true );
+ if( UpFiLmb1[ NrFi ] == Inf<OFValue>() )  // Fi() is not defined in Lambda1
+  DeltaFi = Inf<OFValue>();
+ else
+  DeltaFi = UpRifFi[ NrFi ] - UpFiLmb1[ NrFi ];
 
  FiEvaltns++;
 
  // update FiBest, if necessary - - - - - - - - - - - - - - - - - - - - - - -
 
- if( FiLambda1[0] < FiBest[0] ) {
-  FiBest = FiLambda1; //?? va bene?? <--VectAssign( FiBest , FiLambda1 , NrFi + 1 );
-  if( KpBstL ) {
-  /*if( LamDim < NumVar )
-    VectAssignB( LmbdBst , Lambda1 , Lam1Bse , NumVar );
-   else */
-   LmbdBst = Lambda1; // VectAssign( LmbdBst , Lambda1 , NumVar );
-   }
+ if( UpFiLmb1[ NrFi ] < UpFiBest[0] ) {
+  UpFiBest = UpFiLmb1;
+  if( KpBstL )
+   LmbdBst = Lambda1;
 
   }
 
- // call (possibly many times) Gi() - - - - - - - - - - - - - - - - - - - - -
+ // get a new linearization - - - - - - - - - - - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- bool dChanges = false;
- Index wFi = 0;  // which component of Fi the new item shall belong to; it
-                 // *can* be 0, as the 0-th component (if HpINF) may
-                 // generate global constraints
+ bool HasLin;
+ bool diagonal;
 
  for( Index Ftchd = 0 ; Ftchd < aBP3 ; ) {
-  // check if the Oracle has any new items- - - - - - - - - - - - - - - - - -
 
-  if( ! FindNextSG( wFi ) )
-   break;
+  diagonal = true;
+  if( Ftchd ==  0 ) {  // se LwFiLmb1 e' infinito  ho un vincolo
 
-  // check if aggregation has to be performed - - - - - - - - - - - - - - - -
-  // doing this now could occasionally result in useless aggregations, but it
-  // avoids complications in the interface of MPSolver (inserting some
-  // Z[ wFi ] while inserting the new item)
+   HasLin = v_c05f[ wFi ]->has_linearization( diagonal ); // invertire
 
-  Index wh = BStrategy( wFi );
+   if( !HasLin )
+    HasLin = v_c05f[ wFi ]->has_linearization( diagonal = false );
 
-  // get the space for the item from the MPSolver - - - - - - - - - - - - - -
-
-  SparseVector G1;
-  if( linf )
-   linf->get_linearization_coefficients( G1 );
-
-  // SgRow G1 = Master->GetItem( wFi );
-
-  // fetch the item from the Oracle - - - - - - - - - - - - - - - - - - - - -
-
-  v_c05f[ wFi ]->get_linearization_coefficients( G1 );
-
-  cIndex_Set SGBse = (Index *)G1.innerNonZeroPtr();
-  cIndex SGBDm = G1.nonZeros();
-
-  HpNum Alfa1k = v_c05f[ wFi ]->get_linearization_constant();
-
-  GiEvaltns++;
-
-  // pass the base to the MP Solver - - - - - - - - - - - - - - - - - - - - -
-
-  Master->SetItemBse( SGBse , SGBDm );
-
-  // calculate ScPr1k and Alfa1k- - - - - - - - - - - - - - - - - - - - - - -
-
-  Index cp;
-  HpNum ScPr1k;
-
-  if( FiLambda1[ wFi ] == Inf<double>() )  // it is a constraint
-   cp = Master->CheckCnst( Alfa1k , ScPr1k , Lambda.data() );
-  else                             // it is a subgradient
-   cp = Master->CheckSubG( FiLambda1[ wFi ] - RfrncFi[ wFi ] ,
-                           t , Alfa1k , ScPr1k );
-
-  // check if the item changes the solution of the MP - - - - - - - - - - - -
-
-  if( FiLambda[0] < Inf<double>() )  // ... but only if Fi( Lambda ) is defined
-   dChanges |= Master->ChangesMPSol();
-  else
-   dChanges = true;               // any first item changes the solution
-
-  if( cp < InINF ) {  // the item is a copy- - - - - - - - - - - - - -
-   BLOGb( LogBnd , std::endl << "New item is a copy of " << cp );
-
-   cHpNum OrigA1k = (Master->ReadLinErr())[ cp ];
-
-   if( OrigA1k > Alfa1k ) {        // if the copy has smaller Alfa than the
-    Master->SubstItem( wh = cp );  // original, substitute it
-
-    BLOGb( LogBnd , " with smaller Alfa" );
-    }
-   else
-    wh = InINF;               // otherwise, nothing new has happened
    }
-  else {              // insert the item, if there is space - - - - - - - - -
-   if( wh < InINF )     // someone has been selected in BStrategy()
-    Master->RmvItem( wh );     // remove it from the MP
-   else
-    wh = FindAPlace( wFi );    // find a spot in the bundle
+  else {
 
-   if( wh == InINF ) {  // no space found ...
-    if( ! Ftchd ) {            // ... and this was the first item
-     BLOG( 0 , std::endl << " ERROR: No space in the bundle" << std::endl );
-     Result = kError;          // signal an error
-     dChanges = true;          // ensure that the outer Fi-cycle ends
+   HasLin = v_c05f[ wFi ]->compute_new_linearization( diagonal );
+
+   if( !HasLin )
+    HasLin = v_c05f[ wFi ]->compute_new_linearization( diagonal = false );
+
+   }
+
+  if( HasLin ) {
+
+   // check if aggregation has to be performed - - - - - - - - - - - - - - - -
+   // doing this now could occasionally result in useless aggregations, but it
+   // avoids complications in the interface of MPSolver (inserting some
+   // Z[ wFi ] while inserting the new item)
+
+   Index wh = BStrategy( wFi );
+
+   // get the space for the item from the MPSolver - - - - - - - - - - - - - -
+
+   double* G1 = Master->GetItem( wFi );
+
+   // fetch the item from the Oracle - - - - - - - - - - - - - - - - - - - - -
+
+   cIndex_Set SGBse = nullptr;
+   v_c05f[ wFi ]->get_linearization_coefficients( G1 );
+   HpNum Alfa1k = v_c05f[ wFi ]->get_linearization_constant();
+
+   GiEvaltns++;
+
+   // pass the base to the MP Solver - - - - - - - - - - - - - - - - - - - - -
+
+   Master->SetItemBse( SGBse , NumVar );
+
+   // calculate ScPr1k and Alfa1k- - - - - - - - - - - - - - - - - - - - - - -
+
+   Index cp;
+   HpNum ScPr1k;
+
+   if( !diagonal )  // it is a constraint
+    cp = Master->CheckCnst( Alfa1k , ScPr1k , Lambda.data() );
+   else                             // it is a subgradient
+    cp = Master->CheckSubG( UpFiLmb1[ wFi ] - UpRifFi[ wFi ] ,
+                          t , Alfa1k , ScPr1k );
+
+
+   if( cp < InINF ) {  // the item is a copy- - - - - - - - - - - - - -
+    BLOGb( LogBnd , std::endl << "New item is a copy of " << cp );
+
+    cHpNum OrigA1k = (Master->ReadLinErr())[ cp ];
+
+    if( OrigA1k > Alfa1k ) {        // if the copy has smaller Alfa than the
+     Master->SubstItem( wh = cp );  // original, substitute it
+
+     BLOGb( LogBnd , " with smaller Alfa" );
      }
     else
-     BLOG( 1 , std::endl << " WARNING: No space in the bundle" << std::endl );
-
-    break;                     // the cycle ends
+     wh = InINF;               // otherwise, nothing new has happened
     }
+   else {              // insert the item, if there is space - - - - - - - - -
+    if( wh < InINF )     // someone has been selected in BStrategy()
+     Master->RmvItem( wh );     // remove it from the MP
+    else
+     wh = FindAPlace( wFi );    // find a spot in the bundle
 
-   Master->SetItem( wh );      // insert the item in the MP Solver
-   OOBase[ wh ] = -1;          // ensure it won't be touched again this round
-
-   #if( LOG_BND )
-    if( LogVerb ) {
-     if( FiLambda1[ wFi ] == Inf<double>() )
-      *f_log << std::endl << "New constraint " << wh << ", rhs = " << Alfa1k;
+    if( wh == InINF ) {  // no space found ...
+     if( ! Ftchd ) {            // ... and this was the first item
+      BLOG( 0 , std::endl << " ERROR: No space in the bundle" << std::endl );
+      Result = kError;          // signal an error
+                               // ensure that the outer Fi-cycle ends
+      }
      else
-      *f_log << std::endl << "New eps-subgradient " << wh << " for Fi[ "
+      BLOG( 1 , std::endl << " WARNING: No space in the bundle" << std::endl );
+
+     break;                     // the cycle ends
+     }
+
+    Master->SetItem( wh );      // insert the item in the MP Solver
+    OOBase[ wh ] = -1;          // ensure it won't be touched again this round
+
+    #if( LOG_BND )
+     if( LogVerb ) {
+      if( !diagonal )
+       *f_log << std::endl << "New constraint " << wh << ", rhs = " << Alfa1k;
+      else
+       *f_log << std::endl << "New eps-subgradient " << wh << " for Fi[ "
 	      << wFi << " ], eps = " << Alfa1k << ", gd = " << - ScPr1k;
-     }
-   #endif
-   }
-
-  // if something was inserted, bookkeeping is needed - - - - - - - - - - - -
-
-  if( wh < InINF ) {
-   Ftchd++;                    // one more item
-   v_c05f[ wFi ]->store_linearization( wh ); // tell the name of the item to the FiOracle
-
-   if( FiLambda1[ wFi ] < Inf<double>() ) {  // it is a subgradient
-    if( ( whisG1[ wFi ] == InINF ) || ( Alfa1k < Alfa1[ wFi ] ) ||
-        ( ( Alfa1k == Alfa1[ wFi ] ) && ( ScPr1k > ScPr1[ wFi ] ) ) ) {
-     whisG1[ wFi ] = wh;       // wh is the new representative of wFi
-     Alfa1[ wFi ] = Alfa1k;
-     ScPr1[ wFi ] = ScPr1k;
-     }
+      }
+    #endif
     }
-   else
-    OOBase[ wh ] = - Inf<SIndex>();
-    /* if the item is a constraint, mark it as permanently fixed: this may be
+
+   // if something was inserted, bookkeeping is needed - - - - - - - - - - - -
+
+   if( wh < InINF ) {
+    Ftchd++;                    // one more item
+    v_c05f[ wFi ]->store_linearization( wh ); // tell the name of the item to the FiOracle
+
+    if( UpFiLmb1[ wFi ] < Inf<double>() ) {  // it is a subgradient
+     if( ( whisG1[ wFi ] == InINF ) || ( Alfa1k < Alfa1[ wFi ] ) ||
+       ( ( Alfa1k == Alfa1[ wFi ] ) && ( ScPr1k > ScPr1[ wFi ] ) ) ) {
+      whisG1[ wFi ] = wh;       // wh is the new representative of wFi
+      Alfa1[ wFi ] = Alfa1k;
+      ScPr1[ wFi ] = ScPr1k;
+      }
+     }
+    else
+     OOBase[ wh ] = - Inf<SIndex>();
+     /* if the item is a constraint, mark it as permanently fixed: this may be
        a bad choice in practice, although it is required by the theory
        (we'll see ...) */
-   }
-  }  // end of item-collecting loop - - - - - - - - - - - - - - - - - - - - -
-     // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    }
 
- // compute *Alfa1 and *ScPr1 - - - - - - - - - - - - - - - - - - - - - - - -
+   // compute *Alfa1 and *ScPr1 - - - - - - - - - - - - - - - - - - - - - - - -
+   // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+   Alfa1[NrFi] = 0;
+   ScPr1[NrFi] = Master->ReadGid();
+
+   for( Index k = 0 ; k < NrFi ; k++ )
+    if( whisG1[ k ] < InINF ) {
+     if( Alfa1[ k ] == Inf<double>() )
+      Alfa1[ k ] = (Master->ReadLinErr())[ whisG1[ k ] ];
+
+     Alfa1[NrFi] += Alfa1[ k ];
+
+     if( ScPr1[ k ] == Inf<double>() )
+      ScPr1[ k ] = Master->ReadGid( whisG1[ k ] );
+
+     ScPr1[NrFi] += ScPr1[ k ];
+     }
+    else
+     Alfa1[ k ] = ScPr1[ k ] = 0;
+
+   }
+  }
+
+ // update lower and upper estimates  - - - - - - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- Alfa1[0] = 0;
- ScPr1[0] = Master->ReadGid();
+ if( ( LwFiLmb1[ NrFi ] > LwTrgt ) || ( UpFiLmb1[ NrFi ] < UpTrgt ) )
+  return( true );
 
- for( wFi = 0 ; wFi++ < NrFi ; )
-  if( whisG1[ wFi ] < InINF ) {
-   if( Alfa1[ wFi ] == Inf<double>() )
-    Alfa1[ wFi ] = (Master->ReadLinErr())[ whisG1[ wFi ] ];
-
-   Alfa1[0] += Alfa1[ wFi ];
-
-   if( ScPr1[ wFi ] == Inf<double>() )
-    ScPr1[ wFi ] = Master->ReadGid( whisG1[ wFi ] );
-
-   ScPr1[0] += ScPr1[ wFi ];
-   }
-  else
-   Alfa1[ wFi ] = ScPr1[ wFi ] = 0;
-
- // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
- return( dChanges );
+ return( false );
 
  }  // end( BundleSolver::FiAndGi() )  - - - - - - - - - - - - - - - - - - - -
 
@@ -2095,32 +1790,22 @@ void BundleSolver::GotoLambda1( void )
 {
  // compute the DeltaFi[] vector- - - - - - - - - - - - - - - - - - - - - - -
 
- // VectDiff( FiLambda , FiLambda1 , RfrncFi , NrFi + 1 ); ??
  for( Index i = 0 ; i <= NrFi ; i++ )
-  FiLambda[ i ] = FiLambda[ i ]	- RfrncFi[ i ];
-
+  UpFiLmb1[ i ] = UpFiLmb[ i ]; // 	- UpRifFi[ i ];
 
  // do the move - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
  Lambda.swap(Lambda1);
- FiLambda.swap(FiLambda1);
- RfrncFi = FiLambda; //???
+ UpFiLmb.swap(UpFiLmb1);
+ UpRifFi = UpFiLmb;
 
  // change the current point in the MP Solver - - - - - - - - - - - - - - - -
 
- Master->ChangeCurrPoint( t , FiLambda1.data() );
+ Master->ChangeCurrPoint( t , UpFiLmb1.data() );
 
  // signal that Alfa1[] is not reliable - - - - - - - - - - - - - - - - - - -
 
  Alfa1.assign( NrFi + 1 , Inf<double>() );
-
- // check the new linearization errors- - - - - - - - - - - - - - - - - - - -
-
- CheckAlfa( true );
-
- // signal that the latest Fi() point is current- - - - - - - - - - - - - - -
-
- SSDone = true;
 
  }  // end( GotoLambda1 )
 
@@ -2140,26 +1825,28 @@ void BundleSolver::SimpleBStrat( void )
 
 void BundleSolver::UpdtLowerBound( void )
 {
- /* ???
- cHpNum LwrBnd = Oracle->GetLowerBound();
- if( LwrBnd != LowerBound[ 0 ] ) {
-  LowerBound[ 0 ] = LwrBnd;
+ double LwrBnd = f_Block->get_valid_lower_bound( false ); // ??
+ if( LwrBnd > - Inf<double>() )
+  TrueLB = true;
+ else {
+  TrueLB = false;
+  LwrBnd = f_Block->get_valid_lower_bound( true );
+  }
+
+if( LwrBnd != LowerBound ) {
+  LowerBound = LwrBnd;
   LBHasChgd = true;
-  TrueLB = ( LwrBnd > Oracle->GetMinusInfinity() );
   }
 
- for( Index k = 0 ; k++ < NrFi ; ) {
-  if( IsEasy && IsEasy[ k ] )  // skip easy components
-   continue;
-
-  cHpNum LwrBndk = Oracle->GetLowerBound( k );
-  if( LwrBndk != LowerBound[ k ] ) {
-   LowerBound[ k ] = LwrBndk;
-   LBHasChgd = true;
-   }
-  }
-  */
  } // end( BundleSolver::UpdtLowerBound )  - - - - - - - - - - - - - - - - - -
+
+/*--------------------------------------------------------------------------*/
+
+double BundleSolver::BetaK( Index wFi ) {
+
+return( 1.0 / double( NrEasy ) );
+
+} // end( BundleSolver::BetaK )  - - - - - - - - - - - - - - - - - -
 
 /*--------------------------------------------------------------------------*/
 
@@ -2176,10 +1863,10 @@ void BundleSolver::Log1( void )
 
    *f_log <<  " Fi = ";
 
-   if( FiLambda[0] == Inf<double>() )
+   if( UpFiLmb[NrFi] == Inf<double>() )
     *f_log << " - INF";
    else
-    *f_log <<  - FiLambda[0] << " ~ eU = " << EpsU;
+    *f_log <<  -UpFiLmb[NrFi] << " ~ eU = " << EpsU;
 
    if( BPar6 )
     *f_log << " ~ BP3 = " << aBP3;
@@ -2195,18 +1882,18 @@ void BundleSolver::Log2( void )
   if( LogVerb > 1 ) {
    *f_log << std::endl << "           ";
 
-   if( LowerBound[0] > - Inf<double>() )
-    *f_log << "UB = " << - LowerBound[0] << " ~ ";
+   if( LowerBound > - Inf<double>() )
+    *f_log << "UB = " << - LowerBound << " ~ ";
 
    *f_log << "Fi1 = ";
 
-   if( FiLambda1[0] == - Inf<double>() )
+   if( UpFiLmb1[NrFi] == - Inf<double>() )
     *f_log << "+ INF => STOP." << std::endl;
    else
-    if( FiLambda1[0] == Inf<double>() )
+    if( UpFiLmb1[NrFi] == Inf<double>() )
      *f_log << " - INF" << std::endl;
     else
-     *f_log << - FiLambda1[0] << " ~ Alfa1 = " << Alfa1[0]
+     *f_log << - UpFiLmb1[NrFi] << " ~ Alfa1 = " << Alfa1[0]
 	     << " ~ Gi1xd = " << - ScPr1[0] << std::endl;
    }
  #endif
@@ -2230,7 +1917,7 @@ void BundleSolver::InitMP( void )
  // insert the constant subgradient of the 0-th component - - - - - - - - - -
 
  if( linf ) {
-  linf->get_linearization_coefficients( Master->GetItem( 0 ) );
+  // linf->get_linearization_coefficients( Master->GetItem( 0 ) );
   const Index* SGBse = nullptr;
   Master->SetItemBse( SGBse , NumVar );
   Master->SetItem( InINF );
@@ -2242,27 +1929,25 @@ void BundleSolver::InitMP( void )
 
 /*--------------------------------------------------------------------------*/
 
-bool BundleSolver::FindNextSG( Index &wFi )
-{
- // checks if the Oracle is willing to give out any subgradient of some
- // component, beginning from the current value of wFi and going round-robin
+bool BundleSolver::FindNext( Index &wFi ) {
 
- bool GiSet = false;
- for( Index i = NrFi + 1 ; i-- ; wFi = ( wFi < NrFi ? wFi + 1 : 0 ) ) {
-  if( wFi ) {
-   if( IsEasy.size() && IsEasy[ wFi ] )
-    continue;
-   }
-  else
-   if( FiLambda1[0] < Inf<double>() )    // Fi[ 0 ]( Lambda1 ) is defined
-    continue;                         // Fi[ 0 ] cannot give anything new
+ Index PrWFi = wFi;
+ bool NextIsAccepted = false;
 
-  if( GiSet = v_c05f[ wFi ]->compute_new_linearization() ) // Oracle->NewGi( wFi ) )
-   break;
-  }
+ do {
+  wFi = ( wFi == NrFi - 1 )? 0 : wFi + 1;
+  if( ( FiStatus[ wFi ] == kUnEval ) ||
+	 ( FiStatus[ wFi ] < kError && FiStatus[ wFi ] > kOK
+	         && CurrNrEvls[ wFi ] != MaxNrEvls[ wFi ] ) )
+   NextIsAccepted = true;
+  } while( !NextIsAccepted && ( wFi != PrWFi ) );
 
- return( GiSet );
- } // end( BundleSolver::FindNextSG() )  - - - - - - - - - - - - - - - - - - -
+ if( NextIsAccepted )
+  return( true );
+ else
+  return( false );
+
+ } // end( BundleSolver::FindNext( ) )  - - - - - - - - - - - - - - - - - - - -
 
 /*--------------------------------------------------------------------------*/
 
@@ -2509,17 +2194,17 @@ HpNum BundleSolver::Heuristic1( void )
 
 HpNum BundleSolver::Heuristic2( void )
 {
- if( std::abs( vStar - DeltaFi ) < Eps<double>() )
+ if( std::abs( vStar[ NrFi ] - DeltaFi ) < Eps<double>() )
   return( tMaior );
  else
-  return( t * ( vStar / ( 2 * ( vStar - DeltaFi ) ) ) );
+  return( t * ( vStar[ NrFi ] / ( 2 * ( vStar[ NrFi ] - DeltaFi ) ) ) );
  } // end( BundleSolver::Heuristic2() ) - -  - - - - - - - - - - - - - - - - -
 
 /*--------------------------------------------------------------------------*/
 
 bool BundleSolver::DoSS( void )
 {
- if( vStar == - Inf<double>() )
+ if( vStar[ NrFi ] == - Inf<double>() )
   return( false );
 
  return( DeltaFi >= std::abs( m1 ) * Deltav );
@@ -2562,13 +2247,7 @@ void BundleSolver::guts_of_destructor( void )
  ScPr1.clear();
  whisG1.clear();
 
- LowerBound.clear();
  FiStatus.clear();
-
- FiLambda1.clear();
- RfrncFi.clear();
- FiBest.clear();
- FiLambda.clear();
 
  whisZ.clear();
  FreList.clear();
@@ -2633,7 +2312,7 @@ void BundleSolver::ReSetAlg( unsigned char RstLvl )
      }
 
  if( ! ( RstLvl & RstFiV ) )  // reset the current value of Fi( Lambda ) - - -
-  FiLambda[0] = Inf<double>();
+  UpFiLmb[NrFi] = Inf<double>();
 
  }  // end( BundleSolver::ReSetAlg ) - - - - - - - - - - - - - - - - - - - - -
 
@@ -2691,17 +2370,17 @@ void BundleSolver::UpdtaBP3( void )
 		              Index( std::ceil( NrFi * ( - BPar3 ) ) ) );
  switch( BPar6 ) {
   case( 4 ):
-   if( FiLambda[0] < Inf<double>() )
+   if( LwFiLmb[NrFi] > -Inf<double>() )
     aBP3 = ( BPar5 > 0 ? aBP4 : tBP3 ) +
            Index( BPar5 / std::log10( EpsU / RelAcc ) );
     break;
   case( 3 ):
-   if( FiLambda[0] < Inf<double>() )
+   if( LwFiLmb[NrFi] > -Inf<double>() )
     aBP3 = ( BPar5 > 0 ? aBP4 : tBP3 ) +
                          Index( BPar5 / std::sqrt( EpsU / RelAcc ) );
    break;
   case( 2 ):
-   if( FiLambda[0] < Inf<double>() )
+   if( LwFiLmb[NrFi] > -Inf<double>() )
     aBP3 = ( BPar5 > 0 ? aBP4 : tBP3 ) +
            Index( BPar5 * ( RelAcc / EpsU ) );
    break;
@@ -2741,9 +2420,9 @@ void BundleSolver::CmptaBPX( void )
 
 bool BundleSolver::IsOptimal( double eps ) const
 {
- double FiL = FiLambda[0];
+ double FiL = UpFiLmb[0];
 
- if( FiL == Inf<double>() || vStar == -Inf<double>() )
+ if( FiL == Inf<double>() || vStar[ NrFi ] == -Inf<double>() )
   return( false );
  else {
   if( FiL < 0 ) FiL = - FiL;
@@ -2755,7 +2434,7 @@ bool BundleSolver::IsOptimal( double eps ) const
   if( tStar > 0 )
    return( DSTS + Sigma <= eps * FiL );
   else
-   return( ( DSTS <= RAccSol ) && ( Sigma <= eps * FiL ) );
+   return( ( Master->ReadDStart( 1 ) <= AAccSol ) && ( Sigma <= eps * FiL ) );
 
   }
  } // end( BundleSolver::IsOptimal() ) - - - - - - - - - - - - - - - - - - - -
@@ -2764,17 +2443,8 @@ bool BundleSolver::IsOptimal( double eps ) const
 
 bool BundleSolver::CheckAlfa( const bool All )
 {
-
- // ?? come bisgona comportarsi con alfa negativi ??
-
- }  // end( CheckAlfa )
-
-/*--------------------------------------------------------------------------*/
-
-void BundleSolver::StrongCheckAlfa( void )
-{
-
- }  // end( StrongCheckAlfa )
+ return( Sigma >= - t * m3 * Master->ReadDStart( t ) );
+ }  // end( CheckAlfa )  - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 /*--------------------------------------------------------------------------*/
 
@@ -2887,6 +2557,80 @@ LMNum BundleSolver::FakeFiOracle::GetBndEps(  ) {
 HpNum BundleSolver::FakeFiOracle::GetGlobalLipschitz( cIndex wFi ) {
  throw( std::logic_error( "this method cannot be called" ) );
  } // end ( FakeFiOracle::GetGlobalLipschitz() )   - - - - - - - - - - - - - -
+
+/*--------------------------------------------------------------------------*/
+
+Index BundleSolver::FakeFiOracle::GetBNC( cIndex wFi ) {
+
+ return( bslv->MILP_s[ wFi - 1 ]->get_numcols() );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+Index BundleSolver::FakeFiOracle::GetBNR( cIndex wFi ) {
+
+ return( bslv->MILP_s[ wFi -1 ]->get_numrows() );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+Index BundleSolver::FakeFiOracle::GetBNZ( cIndex wFi ) {
+
+ return( bslv->MILP_s[ wFi -1 ]->get_nzelements() );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::FakeFiOracle::GetBDesc( cIndex wFi , int *Bbeg , int *Bind , double *Bval ,
+ 			  double *lhs , double *rhs , double *cst ,
+ 			  double *lbd , double *ubd ) {
+
+ auto MILPSlv = bslv->MILP_s[wFi-1];
+
+ int num_col = MILPSlv->get_numcols();
+
+ std::copy( MILPSlv->get_matbeg().begin() , MILPSlv->get_matbeg().end() , Bbeg );
+ std::copy( MILPSlv->get_matind().begin() , MILPSlv->get_matind().end() , Bind );
+ std::copy( MILPSlv->get_matval().begin() , MILPSlv->get_matval().end() , Bval );
+
+ for( Index i = 0 ; i < num_col ; i++ ) {
+
+  if( MILPSlv->get_sense()[ i ] == 'L' ) {
+   rhs[ i ] = MILPSlv->get_rhs()[ i ];
+   lhs[ i ] = -Inf<double>();
+   }
+  else
+   if( MILPSlv->get_sense()[ i ] == 'E' ) {
+	rhs[ i ] = MILPSlv->get_rhs()[ i ];
+	lhs[ i ] = MILPSlv->get_rhs()[ i ];
+    }
+    else
+	 if( bslv->MILP_s[ wFi -1 ]->get_sense()[ i ] == 'G' ) {
+      rhs[ i ] = Inf<double>();
+      lhs[ i ] = MILPSlv->get_rhs()[ i ];
+	  }
+	 else {
+	  double rngval = MILPSlv->get_rngval()[ i ];
+	  if( rngval > double(0) ) {
+	   rhs[ i ] = MILPSlv->get_rhs()[ i ] + rngval;
+	   lhs[ i ] = MILPSlv->get_rhs()[ i ];
+	   }
+	  else {
+	   rhs[ i ] = MILPSlv->get_rhs()[ i ];
+	   lhs[ i ] = MILPSlv->get_rhs()[ i ] + rngval;
+	   }
+	  }
+
+  // usare std::copy
+  lbd[ i ] = MILPSlv->get_lb()[ i ];
+  ubd[ i ] = MILPSlv->get_ub()[ i ];
+  }
+
+ // posso usare .data()??
+
+ Bbeg[ num_col ] = MILPSlv->get_matbeg()[ num_col ];
+
+ }
 
 /*--------------------------------------------------------------------------*/
 

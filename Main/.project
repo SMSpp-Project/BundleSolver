@@ -41,14 +41,14 @@
 			<location>/Users/gorgone/Documents/GitHub/BundleSolver/BundleSolver.h</location>
 		</link>
 		<link>
-			<name>FakeFiOracle.cpp</name>
+			<name>MILPSolver.cpp</name>
 			<type>1</type>
-			<location>/Users/gorgone/Documents/GitHub/BundleSolver/FakeFiOracle.cpp</location>
+			<location>/Users/gorgone/Documents/GitHub/milpsolver/src/MILPSolver.cpp</location>
 		</link>
 		<link>
-			<name>FakeFiOracle.h</name>
+			<name>MILPSolver.h</name>
 			<type>1</type>
-			<location>/Users/gorgone/Documents/GitHub/BundleSolver/FakeFiOracle.h</location>
+			<location>/Users/gorgone/Documents/GitHub/milpsolver/include/MILPSolver.h</location>
 		</link>
 		<link>
 			<name>NDOSlver</name>

@@ -60,6 +60,8 @@
 #include "FRealObjective.h"
 #include "FRowConstraint.h"
 
+#include "MILPSolver.h"
+
 // #include <Eigen/Dense>
 // #include <Eigen/Sparse>
 
@@ -101,9 +103,6 @@ namespace SMSpp_di_unipi_it
 /// CDASolver
 /** The BunldeSolver implements the Solver interface for the (Generalized)
     Bundle algorithm.
-
-
-    - aggiungere Incrementale (approssimato)
 
     - aggiungere doppia stabilizzazione, verificare formula per norme
       diverse dalla norma 2
@@ -224,6 +223,24 @@ class FakeFiOracle : public FiOracle
 /*--------------------------------------------------------------------------*/
 
   virtual HpNum GetGlobalLipschitz( cIndex wFi = Inf<Index>() ) override;
+
+/*--------------------------------------------------------------------------*/
+
+  virtual Index GetBNC( cIndex wFi );
+
+/*--------------------------------------------------------------------------*/
+
+  virtual Index GetBNR( cIndex wFi );
+
+/*--------------------------------------------------------------------------*/
+
+  virtual Index GetBNZ( cIndex wFi );
+
+/*--------------------------------------------------------------------------*/
+
+  virtual void GetBDesc( cIndex wFi , int *Bbeg , int *Bind , double *Bval ,
+ 			  double *lhs , double *rhs , double *cst ,
+ 			  double *lbd , double *ubd );
 
 /*--------------------------------------------------------------------------*/
 
@@ -377,9 +394,14 @@ public:
 /*--------------------------------------------------------------------------*/
  /// Public enum "extending" sol_type to a specific case of CDASolvers
  enum sol_type {
+
+  kNoBetter = kOK + 1,
+
   kEILoopNow = kBothInfeasible + 1 ,
 
   kEIAbort,
+
+  kNormal
   };
 
 /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  */
@@ -746,13 +768,6 @@ public:
 
  virtual void set_par( const idx_type par , const double value ) override;
 
-/*--------------------------------------------------------------------------*/
-
- void SetMPSolver( MPSolver *MPS = 0 );
-
-/**< Gives to the BundleSolver object a pointer to an object of class MPSolver
- that will be used as Master Problem Solver during the Bundle algorithm. */
-
 /*@} -----------------------------------------------------------------------*/
 /*--------------------- METHODS FOR SOLVING THE MODEL ----------------------*/
 /*--------------------------------------------------------------------------*/
@@ -969,47 +984,13 @@ protected:
 
 /*--------------------------------------------------------------------------*/
 
- virtual int EveryIteration( void );
-
- /**< This method is an "hook" for derived classes: it is called at Every
-    Iteration, between the computation of the tentative direction and the
-    computation of Fi(). It can serve to various purposes, primarly checking
-    extra stoping conditions or interfering with the usual stopping conditions
-    of the Bundle code: however, any kind of operation can be performed here
-    inside, e.g. adding or removing variables from the problem [see
-    [Add/Remove]Variable() above].
-    More in general, this method can be used to merge the main cycle of the
-    Bundle method within any other however complex code: the Bundle gives out
-    the control at this time, and resumes its operations when EveryIteration()
-    returns. The returned value influences the behaviour of the Bundle for the
-    current iteration:
-
-    kEINorm        the current iteration is continued normally;
-
-    kEIAbort       the whole algorithm is aborted, and Solve() is immediately
-                   terminated returning kAbort: this is useful for instance
-                   to enforce new termination criteria;
-
-    kEILoopNow     the current iteration is aborted, i.e. the stopping
-                   condition is *not* checked, and Fi() is *not* called: the
- 		  next iteration is immediately started, but the iterations
- 		  count is *not* increased. This is useful e.g. if something
- 		  has been changed in the data of the problem that suggests
- 		  to try a new direction, like a new "active" or variable
- 		  [see AddVariable() above] to be inserted;
-
-    kEIContAnyway  the current iteration is continued normally but for the
-                   fact that the stopping condition is *not* checked. */
-
-/*--------------------------------------------------------------------------*/
-
  void FormLambda1( HpNum Tau );
  /* After a (succesfull) call to FormD(), sets the new tentative point Lambda1
     (a protected field of type LMRow) as Lambda1 = Lambda + ( Tau / t ) * d. */
 
 /*--------------------------------------------------------------------------*/
 
- bool FiAndGi( void );
+ bool FiAndGi( Index wFi );
 
  /* Computes Fi( Lambda1 ), inserting the obtained items (subgradients or
     constraints) in the bundle. Returns true <=> the newly obtained information
@@ -1029,6 +1010,10 @@ protected:
 /*--------------------------------------------------------------------------*/
 
  void UpdtLowerBound( void );
+
+/*--------------------------------------------------------------------------*/
+
+ double BetaK( Index wFi );
 
 /*--------------------------------------------------------------------------*/
 
@@ -1055,9 +1040,9 @@ double MaxTime;     ///< maximum time (in seconds) for each call to Solve()
 double tStar;       ///< optimality related parameter: "scaling" of Fi
 
 double EInit;      ///< precision-related parameter: initial precision
-double EFnal;      ///< precision-related parameter: final precision
-double EDcrs;      ///< precision-related parameter: rate of decrease
-int EStps;         ///< precision-related parameter: number of steps
+// double EFnal;      ///< precision-related parameter: final precision
+// double EDcrs;      ///< precision-related parameter: rate of decrease
+// int EStps;         ///< precision-related parameter: number of steps
 
 int Result;        ///< result of the latest call to Solve()
 
@@ -1089,6 +1074,7 @@ double mnDecr;
 int MnNSC;
 
 double m1;            // parameters for deciding if a SS/NS is done:
+double m2;
 double m3;            // see the description in the constructor
 
 double tMaior;        // max value for t
@@ -1108,6 +1094,8 @@ double MPEOpt;        // precision required to the MP Solver (optimality)
 Index MaxNumVar;     // maximum number of variables
 Vec_Bool IsEasy;     // tells whether any component of Fi is "easy"
 
+Index NrEasy;
+
 std::vector<VarValue> Lambda;  // the current point
 std::vector<VarValue> Lambda1; // the tentative point
 std::vector<VarValue> LmbdBst; // the best point found so far
@@ -1118,18 +1106,17 @@ Vec_Index Lam1Bse;   // the set of indices of Lambda1
 Index LamDim;        // dimension of LamBase */
 
 bool KpBstL;         // if LmbdBst has to be kept
-bool BHasChgd;       // true if LamBase has changed during the latest
-                     // pricing (never set to true if PPar2 == 0, unless
-                     // at the very first call to the oracle)
 bool LHasChgd;       // true if Lambda has changed since the latest call
                      // to FiAndGi(): allows repeated calls in the same
                      // Lambda, e.g. with increasing precision
 bool tHasChgd;       // true if t has changed since the last MP
 
-Vec_OFValue FiLambda;      // Fi[ k ]( Lambda )
-Vec_OFValue FiBest;        // best value(s) of Fi found so far
-Vec_OFValue FiLambda1;     // Fi[ k ]( Lambda1 )
-Vec_OFValue RfrncFi;       // the value of Fi[ k ]() where the zero of the Cutting
+// Vec_OFValue FiLambda;      // Fi[ k ]( Lambda )
+// Vec_OFValue FiBest;        // best value(s) of Fi found so far
+// Vec_OFValue FiLambda1;     // Fi[ k ]( Lambda1 )
+// Vec_OFValue RfrncFi;
+
+                     // the value of Fi[ k ]() where the zero of the Cutting
                      // Plane models are fixed: it is == FiLambda[ k ]() but
                      // when FiLambda[ k ]() == HpINF
 // double b0;         // the constant in the affine 0-th component of Fi
@@ -1146,14 +1133,14 @@ Vec_OFValue Alfa1;   // linearization error of G[ WhIsG1[ k ] ] w.r.t. the
                      // current point Lambda
 Vec_OFValue DeltaAlfa; // correction of Fi-values due to inexactness
 
-Vec_OFValue LowerBound;// Lower Bound over (the various components of) Fi
+OFValue LowerBound;// Lower Bound over (the various components of) Fi
 
 double t;             // the (tremendous) t parameter
 double Prevt;         // what t were before being changed for funny reasons
 
 double Sigma;         // Sigma*: convex combination of the Alfa's
 double DSTS;          // D*_{t*}( -z* ), the other part of the dual objective
-double vStar;         // v*, the predicted improvement
+// double vStar;         // v*, the predicted improvement
 double Deltav;        // the "desired improvement" in the Fi-value
 
 double DeltaFi;       // FiLambda - FiLambda1
@@ -1213,6 +1200,31 @@ Vec_Index FiStatus;
 
  bool MPName;
 
+ double UpTrgt; // upper target
+ double LwTrgt; // lower target
+
+ std::vector<MILPSolver*> MILP_s;
+
+
+ Vec_OFValue UpFiBest;
+ Vec_OFValue UpFiLmb1;
+ Vec_OFValue LwFiLmb1;
+
+ Vec_OFValue UpFiLmb;
+ Vec_OFValue LwFiLmb;
+
+ Vec_OFValue UpRifFi;
+
+
+ Vec_OFValue vStar;         // v*, the predicted improvement
+
+
+ std::vector<Index> MaxNrEvls;
+ std::vector<Index> CurrNrEvls;
+
+ double DeltaStar;
+ double NrmD;
+
 /*--------------------------------------------------------------------------*/
 
  const static std::vector<int> dflt_int_par;
@@ -1245,9 +1257,7 @@ Vec_Index FiStatus;
 
   void InitMP( void );
 
-/*--------------------------------------------------------------------------*/
-
-  bool FindNextSG( Index &wFi );
+  bool FindNext( Index &wFi );
 
 /*--------------------------------------------------------------------------*/
 
@@ -1325,8 +1335,6 @@ Vec_Index FiStatus;
 /*--------------------------------------------------------------------------*/
 
   bool CheckAlfa( const bool All = false );
-
-  void StrongCheckAlfa( void );
 
 /*--------------------------------------------------------------------------*/
 /*------------------------------ PRIVATE FIELDS  ---------------------------*/

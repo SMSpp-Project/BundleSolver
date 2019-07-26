@@ -78,8 +78,6 @@ int main( int argc , char **argv )
  BundleSolver *BndSlv = static_cast<BundleSolver *>( Slv );
  if( BndSlv == nullptr )
   throw( std::logic_error( "the solver is not of the Bindle type" ) );
-
- BndSlv->SetMPSolver( MP );
                     
  // all done
  return( 0 );
