@@ -38,20 +38,20 @@
 # *H   is the list of all include files
 # *INC is the -I<include directories>
 
-# define input macros for libCPLEX complete makefile, then include it
+# define input macros for libCPLEX library makefile, then include it
 libCPLEXDIR = $(BNDSLVSDR)../extlib/
 include $(libCPLEXDIR)makefile-libCPLEX
 
-# define input macros for libNDO complete makefile, then include it
+# define input macros for libNDO library makefile, then include it
 libNDOSDR = $(BNDSLVSDR)NdoFiOracle/
 include $(libNDOSDR)lib/makefile-inc
 
-# define input macros for SMS++ complete makefile, then include it
+# define input macros for SMS++ library makefile, then include it
 SMS++SDR = $(BNDSLVSDR)../SMS++/
 include $(SMS++SDR)lib/makefile-inc
 
-# define input macros for MILPSolver complete makefile, then include it
-MILPSSDR = $(BNDSLVSDR)../milpsolver/
+# define input macros for MILPSolver basic makefile, then include it
+MILPSSDR = $(BNDSLVSDR)../MILPSolver/
 include $(MILPSSDR)/makefile
 
 # include the makefile requiring all external modules in input

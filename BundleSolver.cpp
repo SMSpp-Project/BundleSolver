@@ -563,11 +563,11 @@ void BundleSolver::set_Block( Block * block )
   // the objective function of the block must be a C05Function  - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-  auto obj = boost::any_cast<FRealObjective *>( f_Block->get_objective() );
+  auto obj = dynamic_cast< FRealObjective * >( f_Block->get_objective() );
   if( obj == nullptr )
-   throw( std::logic_error( "the objective is not a real function" ) );
+   throw( std::logic_error( "objective is not a FRealObjective" ) );
 
-  auto c05f = dynamic_cast<C05Function *>( (obj)->get_function() );
+  auto c05f = dynamic_cast< C05Function * >( (obj)->get_function() );
   if( c05f == nullptr )
    throw( std::logic_error( "the objective is not a C05Function" ) );
 
@@ -583,7 +583,7 @@ void BundleSolver::set_Block( Block * block )
   if( f_Block->get_objective() )
    linf =  nullptr;
   else {
-   auto obj = boost::any_cast<FRealObjective *>( f_Block->get_objective() );
+   auto obj = dynamic_cast< FRealObjective * >( f_Block->get_objective() );
    if( obj == nullptr )
     throw( std::logic_error( "the objective is not a real function" ) );
 
@@ -601,7 +601,7 @@ void BundleSolver::set_Block( Block * block )
    // the objective function of each sub-block must be a C05Function - - - - -
    //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-   auto obj = boost::any_cast<FRealObjective *>( sb[ i ]->get_objective() );
+   auto obj = dynamic_cast< FRealObjective * >( sb[ i ]->get_objective() );
    if( obj == nullptr )
     throw( std::logic_error( "the objective is not a real function" ) );
 
