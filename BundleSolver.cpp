@@ -2182,14 +2182,13 @@ void BundleSolver::AggregateZ( cHpRow Mlt , cIndex_Set MBse , Index MBDm ,
 
  // tell the C05Function what is going to happen  - - - - - - - - - - - - - - -
 
- LinearCombination coefficients;
+ LinearCombination coefficients( MBDm );
+ for( Index i = 0 ; i < MBDm ; i++ ) {
+  coefficients[i].first =  MBse[ i ];
+  coefficients[i].second =  Mlt[ i ];
+  }
 
  v_c05f[ wFi ]->store_combination_of_linearizations( coefficients , whr );
-
- MBDm = coefficients.size();
-
- // ?? settare Mlt, MBse, MBDm
- //Oracle->Aggregate( Mlt , MBse , MBDm , whr );
 
  // ask the MPSolver the memory for keeping Z[ wFi ]- - - - - - - - - - - - -
  // note: Mlt and MBse could very well be "temporary" memory belonging to the
