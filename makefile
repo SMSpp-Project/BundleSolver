@@ -53,8 +53,4 @@ $(BNDSLVSDR)BundleSolver.o: $(BNDSLVSDR)BundleSolver.cpp $(BNDSLVH) \
 	$(SMS++OBJ) $(libNDOOBJ) 
 	$(CC) -c $*.cpp -o $@ $(BNDSLVINC) $(SMS++INC) $(libNDOINC) $(SW)
 
-#$(BNDSLVSDR)FakeFiOracle.o: $(BNDSLVSDR)FakeFiOracle.cpp $(BNDSLVH) \
-#	$(libNDOOBJ) 
-#	$(CC) -c $*.cpp -o $@ $(BNDSLVINC) $(libNDOINC) $(SW)
-
 ########################## End of makefile ###################################
