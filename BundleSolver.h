@@ -61,10 +61,6 @@
 #include "FRowConstraint.h"
 
 #include "MILPSolver.h"
-
-// #include <Eigen/Dense>
-// #include <Eigen/Sparse>
-
 #include "MPSolver.h"
 
 /*------------------------------- LOG_BND ----------------------------------*/
@@ -87,8 +83,6 @@
 namespace SMSpp_di_unipi_it
 {
 
- // class FakeFiOracle;     // forward declaration of class FakeFiOracle
-
 /*--------------------------------------------------------------------------*/
 /*------------------------------- CLASSES ----------------------------------*/
 /*--------------------------------------------------------------------------*/
@@ -102,263 +96,15 @@ namespace SMSpp_di_unipi_it
 /*--------------------------------------------------------------------------*/
 /// CDASolver
 /** The BunldeSolver implements the Solver interface for the (Generalized)
-    Bundle algorithm.
-
-    - aggiungere doppia stabilizzazione, verificare formula per norme
-      diverse dalla norma 2
-
-    - parametro tolleranza assoluta subgradiente aggregato
-
-       max |g_i| \leq \epsilon
-
-    - test stopping con or tStar = 0, epsilon = 0
-
-    - specificare proprieta' blocco a cui si attacca il solver
-
-     */
+    Bundle algorithm. */
 
 class BundleSolver : public CDASolver {
-
-/*--------------------------------------------------------------------------*/
-/*------------------------- CLASS FakeFiOracle  ----------------------------*/
-/*--------------------------------------------------------------------------*/
-/*--------------------------- GENERAL NOTES --------------------------------*/
-/*--------------------------------------------------------------------------*/
-
-class FakeFiOracle : public FiOracle
-{
-
-/*--------------------------------------------------------------------------*/
-/*----------------------- PUBLIC PART OF THE CLASS -------------------------*/
-/*--------------------------------------------------------------------------*/
-
- public:
-
-/*--------------------------------------------------------------------------*/
-/*---------------------------- PUBLIC TYPES --------------------------------*/
-/*--------------------------------------------------------------------------*/
-/** @name Public Types
-    @{ */
-
-
-/*@} -----------------------------------------------------------------------*/
-/*--------------------- PUBLIC METHODS OF THE CLASS ------------------------*/
-/*--------------------------------------------------------------------------*/
-/*---------------------------- CONSTRUCTOR ---------------------------------*/
-/*--------------------------------------------------------------------------*/
-/** @name Constructor
-    @{ */
-
-/** Constructor of the class: takes no arguments, since everything that
-    concerns the real evaluation of the function must be done in derived
-    classes, which will have their parameters. */
-
-   FakeFiOracle( BundleSolver *solver );
-
-/*@} -----------------------------------------------------------------------*/
-/*-------------------------- OTHER INITIALIZATIONS -------------------------*/
-/*--------------------------------------------------------------------------*/
-/** @name Other initializations
-    @{ */
-
-   virtual void SetNDOSolver( NDOSolver *NwSlvr = 0 ) override;
-
-/*--------------------------------------------------------------------------*/
-
-   virtual void SetFiLog( ostream *outs = 0 , const char lvl = 0 ) override;
-
-/*--------------------------------------------------------------------------*/
-
-   virtual void SetFiTime( const bool TimeIt = true ) override;
-
-/*--------------------------------------------------------------------------*/
-
-   virtual void SetMaxName( cIndex MxNme = 0 ) override;
-
-/*@} -----------------------------------------------------------------------*/
-/*-------------- METHODS FOR READING THE DATA OF THE PROBLEM ---------------*/
-/*--------------------------------------------------------------------------*/
-/** @name Reading the data of the problem
-    @{ */
-
-/// get the number of Variable
-/** Variable cannot be changed. This means that is used the default
- *  implementation of GetMaxNumVar(). The maximum number of variables is
- *  equal to the current number of variable*/
-
-  virtual Index GetNumVar( void ) const override;
-
-/*--------------------------------------------------------------------------*/
-
-  virtual Index GetNrFi( void ) const override;
-
-/*--------------------------------------------------------------------------*/
-
-  virtual Index GetMaxName( void ) const override;
-
-/*--------------------------------------------------------------------------*/
-
-  virtual HpNum GetMinusInfinity( void ) override;
-
-/*--------------------------------------------------------------------------*/
-
-  virtual Index GetMaxNZ( cIndex wFi = Inf<Index>() ) const override;
-
-/*--------------------------------------------------------------------------*/
-
-  virtual Index GetMaxCNZ( cIndex wFi = Inf<Index>() ) const override;
-
-/*--------------------------------------------------------------------------*/
-
-  virtual bool GetUC( cIndex i ) override;
-
-/*--------------------------------------------------------------------------*/
-
-  virtual LMNum GetUB( cIndex i ) override;
-
-/*--------------------------------------------------------------------------*/
-
-  virtual LMNum GetBndEps( void ) override;
-
-/*--------------------------------------------------------------------------*/
-
-  virtual HpNum GetGlobalLipschitz( cIndex wFi = Inf<Index>() ) override;
-
-/*--------------------------------------------------------------------------*/
-
-  virtual Index GetBNC( cIndex wFi );
-
-/*--------------------------------------------------------------------------*/
-
-  virtual Index GetBNR( cIndex wFi );
-
-/*--------------------------------------------------------------------------*/
-
-  virtual Index GetBNZ( cIndex wFi );
-
-/*--------------------------------------------------------------------------*/
-
-  virtual void GetBDesc( cIndex wFi , int *Bbeg , int *Bind , double *Bval ,
- 			  double *lhs , double *rhs , double *cst ,
- 			  double *lbd , double *ubd );
-
-/*--------------------------------------------------------------------------*/
-
-  virtual NDOSolver *GetNDOSolver( void ) override;
-
-/*@} -----------------------------------------------------------------------*/
-/*---------------------- METHODS FOR SETTING LAMBDA ------------------------*/
-/*--------------------------------------------------------------------------*/
-/** @name Setting Lambda
-   @{ */
-
-  virtual void SetLambda( cLMRow Lmbd = 0 ) override;
-
-/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  */
-
-  virtual void SetLamBase( cIndex_Set LmbdB = 0 , cIndex LmbdBD = 0 );
-
-/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  */
-
-  virtual bool SetPrecision( HpNum Eps );
-
-/*@} -----------------------------------------------------------------------*/
-/*------------------------ METHODS FOR COMPUTING Fi() ----------------------*/
-/*--------------------------------------------------------------------------*/
-/** @name Computing Fi()
-   @{ */
-
-   virtual HpNum Fi( cIndex wFi = Inf<Index>() );
-
-/*@} -----------------------------------------------------------------------*/
-/*------------- METHODS FOR READING SUBGRADIENTS / CONSTRAINTS -------------*/
-/*--------------------------------------------------------------------------*/
-
-
-   virtual bool NewGi( cIndex wFi = Inf<Index>() ) override;
-
-/*--------------------------------------------------------------------------*/
-
-   virtual Index GetGi( SgRow SubG , cIndex_Set &SGBse ,
-			cIndex Name = Inf<Index>() ,
-			cIndex strt = 0 , Index stp = Inf<Index>() ) override;
-
-/*--------------------------------------------------------------------------*/
-
-   virtual HpNum GetVal( cIndex Name = Inf<Index>() ) override;
-
-/*--------------------------------------------------------------------------*/
-
-   virtual void SetGiName( cIndex Name ) override;
-
-/*@} -----------------------------------------------------------------------*/
-/*-------------------- METHODS FOR READING OTHER RESULTS -------------------*/
-/*--------------------------------------------------------------------------*/
-/** @name Reading other results
-   @{ */
-
-
-   virtual HpNum GetLowerBound( cIndex wFi = Inf<Index>() ) override;
-
-/*--------------------------------------------------------------------------*/
-
-   virtual FiStatus GetFiStatus( Index wFi = Inf<Index>() ) override;
-
-/*@} -----------------------------------------------------------------------*/
-/*------------- METHODS FOR ADDING / REMOVING / CHANGING DATA --------------*/
-/*--------------------------------------------------------------------------*/
-/** @name Adding / removing / changing data
-   @{ */
-
-   virtual void Deleted( cIndex i = Inf<Index>() );
-
-/*--------------------------------------------------------------------------*/
-
-   virtual void Aggregate( cHpRow Mlt , cIndex_Set NmSt , cIndex Dm ,
-			   cIndex NwNm );
-
-/*@} -----------------------------------------------------------------------*/
-/*------------------------------ DESTRUCTOR --------------------------------*/
-/*--------------------------------------------------------------------------*/
-/** @name Destructor
-    @{ */
-
-   virtual ~FakeFiOracle()
-   {
-	GiNameVcblr.clear();
-    }
-
-/*@} -----------------------------------------------------------------------*/
-/*-------------------- PROTECTED PART OF THE CLASS -------------------------*/
-/*--------------------------------------------------------------------------*/
-
- protected:
-
-  BundleSolver *bslv;
-  std::vector< std::tuple< Index , Index , bool > >  GiNameVcblr; /* vocabulary
-     for handling the items name; this is done to map the item name
-     from the FiOracle to that of C05Function.  */
-
-  Index last_c05;
-
-/*--------------------------------------------------------------------------*/
-/*----------------------- PROTECTED DATA STRUCTURES  -----------------------*/
-/*--------------------------------------------------------------------------*/
-/** @name Standard fields
-
-/*@} -----------------------------------------------------------------------*/
-/*--------------------------------------------------------------------------*/
-
- };  // end( class FakeFiOracle )
-
 
 /*--------------------------------------------------------------------------*/
 /*----------------------- PUBLIC PART OF THE CLASS -------------------------*/
 /*--------------------------------------------------------------------------*/
 
 public:
-
-  // friend class FakeFiOracle;
 
 /*--------------------------------------------------------------------------*/
 /*---------------------------- PUBLIC TYPES --------------------------------*/
@@ -388,23 +134,8 @@ public:
   LinearCombination;
   ///< type used to define linear combinations of linearizations
 
-  typedef Eigen::SparseVector<FunctionValue> SparseVector;
-  ///< type used to store a sparse vector
-
 /*--------------------------------------------------------------------------*/
- /// Public enum "extending" sol_type to a specific case of CDASolvers
- enum sol_type {
 
-  kNoBetter = kOK + 1,
-
-  kEILoopNow = kBothInfeasible + 1 ,
-
-  kEIAbort,
-
-  kNormal
-  };
-
-/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  */
  /// public enum for the int algorithmic parameters
  /** Public enum describing the different types of algorithmic parameters
   * of "int" type that BundleSolver should have. The value
@@ -412,30 +143,21 @@ public:
   * by derived classes. */
 
  enum int_par_type_BndSlv {
- intBPar1 = CDASolver::intLastParCDAS ,    ///<
-       /**< If an item has had a zero multiplier [see ReadMult()
-       * in NDOSolver.h] for the last BPar1 steps, it is eliminated;
- * if BPar1 is "too small" precious information may be lost,
- * but keeping the "bundle" small obviously makes the Master
- * Problem cheaper. */
 
- // intBPar2 ,    ///<
-        /**< Maximum dimension of the bundle: has more or less the
-        * Same "problems" as BPar1, but if the latter is well chosen
- * then BPar2 can be kept big while the "B-strategy" keeps the
- * actual number of items low. A small BPar2 can affect the convergence of
- * the algorithm, in theory as well as in practice, if aggregation is not
- * allowed. However, an unnecessarily large BPar2 may force the MP Solver to
- * allocate a large amount of memory without a real need.. */
+ intBPar1 = CDASolver::intLastParCDAS ,    ///<
+       /**< If an item has had a zero multiplier for the last BPar1 steps,
+        * it is eliminated; if BPar1 is "too small" precious information
+ *  may be lost, but keeping the "bundle" small obviously makes the Master
+ * Problem cheaper. */
 
  intBPar6 ,   ///<
          /**< These parameters control how the actual number of
          * subgradients/constraints (items) that are requested
- * to the FiOracle varies, between BPar4 and BPar3, as the
+ * to the C05Function, between BPar4 and BPar3, as the
  * algorithm proceeds; note that what varies in practice is
  * the maximum number, as it is always legal for the FiOracle to refuse
- * giving other items, although the Bundle code will complain and stop if
- * less than BPar4 are given. In the Bundle code, the number
+ * giving other items, although the BundleSolver code will complain and
+ * stop if less than BPar4 are given. In the Bundle code, the number
  *
  *      EpsU = Sigma + D_{tStar}*( z* ) / max( | ReadFiVal() | , 1 ) ,
  *
@@ -458,31 +180,15 @@ public:
  *  4: aBP3 is set to
  *        ( BPar5 > 0 ? BPar4 : BPar3 ) + BPar5 / log10( EpsU / RAccSol ) */
 
- intEStps ,    ///<
-       /**< The evaluation of function to be minimized may be a
-       * costly task: in many cases, it requires the solution
- * of a - possibly hard - optimization problem. Often,
- * time can be saved if the function is only approximately computed at the
- * beginning of the optimization process; of course, the computation should
- * become more and more "exact" as the optimization proceeds. The relative
- * precision required to the FiOracle [see SetPrecision() in FiOracle.h] is
- * initially set to EInit, and decreased down to EFnal by multiplying it by
- * EDcrs every EStps iterations. If the NDO algorithm allows it, EStps can be set
- * to 0 meaning that the precision is decreased only if necessary, i.e., when it is
- * impossible to proceed otherwise (the algorithm must have some way to
- * detect this). The precision is kept fixed if EInit == EFnal. A NDO solver
- * which is *not* capable of handling approximate computation of the function
- * can ignore the values of these parameters. */
-
- intMnSSC ,   ///<
+ intMnSSC ,   ///< minimum number of consecutive serious steps
        /**< minimum number of consecutive SS with the same t that
        * have to be performed before t is allowed to grow  */
 
- intMnNSC ,   ///<
+ intMnNSC ,   ///< minimum number of consecutive null steps
        /**< minimum number of consecutive NS with the same t that
        * have to be performed before t is allowed to diminish  */
 
- inttSPar1 ,    ///<
+ inttSPar1 ,    ///< first t-strategy parameter
        /**<  Select the t-strategy used. This field is coded
        * bit-wise in the following way.
  * The first two bits control which heuristics are used to
@@ -525,22 +231,19 @@ public:
  *       are at the end, especially if the FiOracle dynamically
  *       generates its variables, so use with caution.   */
 
- // intPPar1 ,    ///<
- // intPPar2 ,    ///<
- // intPPar3 ,    ///<
-       /**< Parameters controlling the variables generator: "price
-       * in" (discover if new variables have to be added) is done
- * all the first PPar1 iterations and then every PPar2 iterations; note
- * that the price in is done anyway each time convergence is detected.
- * If PPar2 == 0, all the variables are present from the
- * beginning (PPar1 is ignored if PPar2 == 0). A variable that has
- * been inactive for the last PPar3 pricings (this one included) is
- * eliminated: note that the "price out" operation is done every PPar2
- * iterations, so that a variable that is eliminated is likely to have been
- * inactive for (about) PPar2 * PPar3 iterations. For PPar3 == 1, a variable
- * is eliminated in the very pricing in which it is discovered to be zero
- * (and the direction saying that it would stay zero). If PPar3 == 0, variables
- *  are *never* removed. PPar3 is ignored if PPar2 == 0.  */
+ intMaxNrEvls , ///< max number of function evaluation for each iteration
+ intKpBstL , ///< true if LmbdBst has to be kept, false otherwise
+
+ intMPName, /// <true if MP solver is a QPPenalty, otherwise MP is a OSiMPSolver
+
+ intQPmp1, ///< MxAdd parameter for QPPenaltyMP solver only
+ intQPmp2, ///< MxRmv parameter for QPPenaltyMP solver only
+
+ intOSImp1 , ///< algorithm type for OsiMP solver only
+ intOSImp2 , ///< reduction parameter for OsiMP solver only
+ intOSImp3 , ///< threads parameter for OsiMP solver only
+ intOSImp4 , ///< stabilization type for OsiMP solver only
+ intOSImp5 , ///< which OsiXXXSolverInterface is used in OsiMP solver
 
  intLastBndSlvPar ///< first allowed new int parameter for derived classes
        /**< Convenience value for easily allow derived classes
@@ -558,9 +261,8 @@ public:
   enum dbl_par_type_S {
   dbltStar = dblLastParCDAS ,    ///<
        /**< Optimality related parameters. Proving that some point Lambda is
-       * optimal for a NonDifferentiable
- * Optimization problem involves finding an all-0 subgradient
- * of the function at Lambda. If an all-0 vector is found in
+       * optimal for a NonDifferentiable Optimization problem involves finding
+ * an all-0 subgradient of the function at Lambda. If an all-0 vector is found in
  * the epsilon-subdifferential of Lambda, then the point is epsilon-optimal.
  * Note that if the minimization problem is subject to constraints, i.e.,
  * Fi() has to be minimized only on the points Lambda \in L, the latter
@@ -588,9 +290,9 @@ public:
  * used for MaxFi, although using the bast Fi-value found so far is pretty
  * common. */
 
- dblEInit ,    ///<
+ dblEInit ,    ///< *maximum* precision required to the C05Function
        /**< ABS( EInit ) is the initial, and *maximum*, precision
-                   required to the oracle, but the sign tells how the
+                   required to the C05Function, but the sign tells how the
 		   "emergency mechanism" alluded to above interacts with
  * the "regular mechanism" controlled by these parameters. In particular,
  * if EInit > 0 then the accuracy is monotonically non-increasing: if the
@@ -602,45 +304,6 @@ public:
  * instance, if EStps == 0, see below, then the precision is set to a "fixed"
  * value). */
 
- dblEFnal ,    ///<
- dblEDcrs ,    ///<
-       /**<  The other three parameters define a general formula that
-       * sets the "regular mechanism" for changing the precision
- * along iterations. Note that EFnal has a completely
- * different meaning as the one postulated by the base class (smallest
- * precision) because that makes no sense: the "final" precision clearly
- * has to be RAccSol. In fact, a value larger than RAccSol would make it
- * impossible (in theory) to reach RAccSol-accuracy for the overall
- * optimization, and a value smaller than RAccSol is wasteful as a higher
- * precision than RAccSol is not required. The idea is that the precision
- * should improve along the iterations, and the "speed" at which this
- * happens is dictated by EStps and EFnal; however, one can also keep the
- * precision "fixed" by setting EStps == 0. In this case, having defined
- *
- *  EpsU = ( ReadDStart( tStar ) + ReadSigma() ) / ReadFiVal()
- *
- * the current estimate of the optimality measure, the formula is
- *
- *   precision = / ABS( EInit )          if EDcrs >= 0
- *               \ ABS( EDcrs ) * EpsU   if EDcrs < 0
- *
- * and this is kept fixed along all the iterations (except, EpsU is not
- * really fixed); only the "emergency mechanism" will increase it if this
- * is absolutely needed. If instead EStps != 0, having defined
- *
- *   opt = / ABS( EInit )   if EDcrs >= 0
- *         \ EpsU           if EDcrs < 0
- *
- *   h = / NrIter()   if EStps > 0    ,     k = ceil( h / ABS( EStps ) )
- *       \ NrSSs()    if EStps < 0
- *
- * the formula is:
- *
- *   precision = opt * / ABS( EDcrs )^{ EFnal * k }   if EFnal >= 0
- *                     \ ABS( EDcrs ) * k^{ EFnal }   if EFnal < 0
- *
- * (while ensuring precision <= ABS( EInit )). */
-
  dblBPar3 ,    ///< maximum number of new subgradients/constraints
  dblBPar4 ,    ///< minimum number of new subgradients/constraints
        /**< Maximum and minimum number of new subgradients/constraints (items)
@@ -648,7 +311,7 @@ public:
  * each function evaluation. Two different ways are given for specifying
  * these numbers: positive values are (rounded up and) taken as
  * absolute values, while negative numbers are first multiplied by
- * FiOracle::GetNrFi()---the number of components of Fi()---(and then
+ * the number of components of the C05Function (and then
  * rounded up); thus, the default vale "-1" stands for "one for each of the
  * components of Fi()". Clearly, the "finalized" value of BPar3 has to be
  * <= BPar2, and the "finalized" value of BPar4 has to be <= than that.  */
@@ -657,7 +320,7 @@ public:
        /**< see intbPar6 above */
 
 
- dblm1 ,    ///<
+ dblm1 ,    ///< m1 factor
        /**< SS condition: if DeltaFi >= | m1 | * Deltav, then a
        * SS is done. What is taken as Deltav depends on the sign of
  * m1: if m1 > 0 then Deltav = - v* (the decrease predicted
@@ -670,7 +333,7 @@ public:
  * used, at least in theory, for some classes of functions (the polyhedral
  * ones) and some under assumptions on the MP. */
 
- dblm3 ,    ///<
+ dblm3 ,    ///< m3 factor
        /**< A nevly obtained subgradient is deemed "useless" if
        * Alfa >= m3 * Sigma; in this case, if a NS has to be done,
  * t is decreased. This parameter is mostly critical: if no
@@ -679,14 +342,14 @@ public:
  * algorithm to perform very short steps and therefore to converge very
  * slowly. When a "long-term" t-strategy is used, .9 may be a good value.*/
 
- dblmxIncr ,    ///<
- dblmnIncr ,    ///<
+ dblmxIncr ,    ///< maximum increasing t-factor
+ dblmnIncr ,    ///< minimum increasing t-factor
        /**< each time t grows, the new value of t is chosen in
        * the interval [t * mnIncr, t * mxIncr] (t is the
  * previous value) */
 
- dblmxDecr ,    ///<
- dblmnDecr ,    ///<
+ dblmxDecr ,    ///< maximum decreasing t-factor
+ dblmnDecr ,    ///< minimum decreasing t-factor
        /**<  each time t diminishes, the new value of t is chosen
        * in the interval [t * mxDecr, t * mnDecr] (t is the
  * previous value) */
@@ -708,13 +371,7 @@ public:
  dbltSPar2 ,    ///< Numerical parameter for the long-term t-strategies
        /**< see inttSPar1 above. */
 
- dblMPEFsb ,    ///<
-         /**< (relative) precision required to the MP Solver as
-         * far as constraints satisfaction is concerned. */
-
- dblMPEOpt ,    ///<
-         /**< (relative) precision required to the MP Solver as
-         * far as optimality of the solution is concerned*/
+ dblQPmp1 , ///< cut-off value for QPPenaltyMP solver only
 
   dblLastBndSlvPar ///< first allowed new double parameter for derived classes
         /**< Convenience value for easily allow derived classes
@@ -784,23 +441,19 @@ public:
 /** @name Accessing the found solutions (if any)
  *  @{ */
 
- virtual OFValue get_lb( void ) override {  }
+ virtual OFValue get_lb( void ) override { return(0); }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- virtual OFValue get_ub( void )  override { }
+ virtual OFValue get_ub( void )  override { return(0); }
 
 /*--------------------------------------------------------------------------*/
 
- virtual bool has_var_solution( void ) override
- {
-  }
+ virtual bool has_var_solution( void ) override { return( true ); }
 
  /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- virtual bool has_dual_solution( void ) override
- {
-  }
+ virtual bool has_dual_solution( void ) override { return( true ); }
 
 /*--------------------------------------------------------------------------*/
 /*
@@ -822,12 +475,14 @@ public:
 
  virtual bool new_var_solution( void ) override
  {
+  return( false );
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
  virtual bool new_dual_solution( void )  override
  {
+  return( false );
   }
 
 /*--------------------------------------------------------------------------*/
@@ -1028,8 +683,6 @@ protected:
 int MaxSol;         ///< maximum number of different solutions to report
 double RelAcc;      ///< relative accuracy for declaring a solution optimal
 double AbsAcc;      ///< absolute accuracy for declaring a solution optimal
-double UpCutOff;    ///< upper cutoff for stopping the algorithm
-double LwCutOff;    ///< lower cutoff for stopping the algorithm
 double RAccSol;     ///< maximum relative error in any reported solution
 double AAccSol;     ///< maximum absolute error in any reported solution
 double FAccSol;     ///< maximum constraint violation in any reported solution
@@ -1040,10 +693,6 @@ double MaxTime;     ///< maximum time (in seconds) for each call to Solve()
 double tStar;       ///< optimality related parameter: "scaling" of Fi
 
 double EInit;      ///< precision-related parameter: initial precision
-// double EFnal;      ///< precision-related parameter: final precision
-// double EDcrs;      ///< precision-related parameter: rate of decrease
-// int EStps;         ///< precision-related parameter: number of steps
-
 int Result;        ///< result of the latest call to Solve()
 
 Index NumVar;      ///< (current) number of variables
@@ -1055,9 +704,6 @@ Index FiEvaltns;   ///< total number of Fi() calls
 Index GiEvaltns;   ///< total number of Gi() calls
 
 int LogVerb;       ///< "verbosity" of the log
-// ostream *NDOLog;   ///< the output stream object for log purposes
-// OPTtimers *NDOt;   ///< OPTtimer for timing purposes
-
 
 int BPar1;           // parameter for removal of items (B-strategy)
 int BPar2;           // max Bundle size
@@ -1084,43 +730,19 @@ double tInit;         // initial value for t
 int tSPar1;          // long-term t-strategy parameters
 double tSPar2;        // see the description in the constructor
 
-int PPar1;           // pricing related parameters
-int PPar2;           // see the description in the constructor
-int PPar3;
-
-double MPEFsb;        // precision required to the MP Solver (feasibility)
-double MPEOpt;        // precision required to the MP Solver (optimality)
-
-Index MaxNumVar;     // maximum number of variables
 Vec_Bool IsEasy;     // tells whether any component of Fi is "easy"
-
 Index NrEasy;
 
 std::vector<VarValue> Lambda;  // the current point
 std::vector<VarValue> Lambda1; // the tentative point
 std::vector<VarValue> LmbdBst; // the best point found so far
 
-/*
-Vec_Index LamBase;   // the set of indices of Lambda
-Vec_Index Lam1Bse;   // the set of indices of Lambda1
-Index LamDim;        // dimension of LamBase */
 
 bool KpBstL;         // if LmbdBst has to be kept
 bool LHasChgd;       // true if Lambda has changed since the latest call
                      // to FiAndGi(): allows repeated calls in the same
                      // Lambda, e.g. with increasing precision
 bool tHasChgd;       // true if t has changed since the last MP
-
-// Vec_OFValue FiLambda;      // Fi[ k ]( Lambda )
-// Vec_OFValue FiBest;        // best value(s) of Fi found so far
-// Vec_OFValue FiLambda1;     // Fi[ k ]( Lambda1 )
-// Vec_OFValue RfrncFi;
-
-                     // the value of Fi[ k ]() where the zero of the Cutting
-                     // Plane models are fixed: it is == FiLambda[ k ]() but
-                     // when FiLambda[ k ]() == HpINF
-// double b0;         // the constant in the affine 0-th component of Fi
-// we could get to know it, if it was useful (which it is not)
 
 Vec_Index whisZ;     // the position in the bundle where the "aggregate
                      // subgradient" Z[ k ] of "component" k is kept in
@@ -1140,13 +762,12 @@ double Prevt;         // what t were before being changed for funny reasons
 
 double Sigma;         // Sigma*: convex combination of the Alfa's
 double DSTS;          // D*_{t*}( -z* ), the other part of the dual objective
-// double vStar;         // v*, the predicted improvement
+Vec_OFValue vStar;         // v*, the predicted improvement
 double Deltav;        // the "desired improvement" in the Fi-value
 
 double DeltaFi;       // FiLambda - FiLambda1
 double EpsU;          // precison required by the long-term t-strategy
 
-double EpsCurr;       // the precision currently required to the FiOracle
 double EpsFi;         // the last precision passed to the FiOracle (can be
                      // different from EpsCurr)
 
@@ -1167,21 +788,13 @@ Vec_SIndex OOBase;   // Out-Of-Base counters:
                      //   removable for the next k iterations: note that
                      //   some items in base may be such
                      // = - Inf<SIndex>() means unremovable
-// Vec_Index InctvCtr;  // "out of base" counter for variables
-// Vec_Index nBase;     // temporary
 
 bool TrueLB;         // true if LowerBound is a "true" lower bound rather
                      // than just the "minus infinity"
 bool LBHasChgd;      // true some LowerBound has changed
 bool SSDone;         // true if the laste step was a SS
 
-bool ItemsChgd;      // true if no itmes have been added to MP
-
 Vec_Index FiStatus;
-
-#if( NONMONOTONE )
- HpRow FiVals;       // Fi-values for the last NONMONOTONE SSs
-#endif
 
 /*--------------------------------------------------------------------------*/
 
@@ -1191,39 +804,52 @@ Vec_Index FiStatus;
 
  std::vector< C05Function * > v_c05f; /* the vector of the components of the
                                          sum function */
- LinearFunction * linf; ///< the 0-th component of the sum function
- MPSolver *Master;    // (pointer to) the Master Problem Solver
-
- FakeFiOracle FakeFi;  ///< a pointer to a FakeFiOracle object
+ LinearFunction * linear_function; ///< the 0-th component of the sum function
+ MPSolver *Master;    ///< (pointer to) the Master Problem Solver
+ std::vector<MILPSolver*> MILP_s; /* MILP solver used to read the
+                  easy part of the sub-problems */
 
  std::vector<ColVariable *> LamVcblr;    // the set of indices of Lambda
-
- bool MPName;
-
+ bool MPName; // true if MP solver is a QPPenalty, otherwise MP is a OSiMPSolver
  double UpTrgt; // upper target
  double LwTrgt; // lower target
 
- std::vector<MILPSolver*> MILP_s;
+ Vec_OFValue UpFiBest;   // Fi best value vector
+ Vec_OFValue UpRifFi;    /* The value of Fi[ k ]() where the zero of the Cutting
+                            Plane models are fixed: it is == FiLambda[ k ]() but
+                            when FiLambda[ k ]() == HpINF */
 
+ Vec_OFValue UpFiLmb1;   ///< upper function value vector at the tentative point
+ Vec_OFValue LwFiLmb1;   ///< lower function value vector at the tentative point
 
- Vec_OFValue UpFiBest;
- Vec_OFValue UpFiLmb1;
- Vec_OFValue LwFiLmb1;
+ Vec_OFValue UpFiLmb;    ///< upper function value vector at the current point
+ Vec_OFValue LwFiLmb;    ///< lower function value vector at the current point
 
- Vec_OFValue UpFiLmb;
- Vec_OFValue LwFiLmb;
-
- Vec_OFValue UpRifFi;
-
-
- Vec_OFValue vStar;         // v*, the predicted improvement
-
-
- std::vector<Index> MaxNrEvls;
+ Index MaxNrEvls;
  std::vector<Index> CurrNrEvls;
 
  double DeltaStar;
  double NrmD;
+
+ Index MxAdd;
+ Index MxRmv; /* How many variables can be "moved" at each iteration of the
+        "upper-level method" for solving bound-constrained MPs
+        implemented into the base class BMinQuad (if any, see
+		HV_NNVAR above, otherwise the parameters are just ignored);
+		see SetMaxVar[Add/Rmv]() in BMinQuad.h. If 0 [the default]
+		is used, no bound is given. */
+
+ double CtOff; /* The "break" value for the pricing in the base class
+                 MinQuad [see SetPricing() in MinQuad.h]: positive values are
+                 passed untouched, while any negative value is turned into
+                 Inf<HpNum>() */
+
+ Index algo;      ///< algorithm type ( for OSIMPSolver only )
+ Index reduction; ///< pre-processing (reduction) ( for OSIMPSolver only )
+ Index threads;   ///< number of threads ( for OSIMPSolver only )
+ Index stblztn;   ///< stabilization type ( for OSIMPSolver only )
+ bool osi_type;   /* which OsiXXXSolverInterface (for OsiMPSolver):
+                      0 = Clp, 1 = Cplex */
 
 /*--------------------------------------------------------------------------*/
 
@@ -1252,6 +878,234 @@ Vec_Index FiStatus;
  private:
 
 /*--------------------------------------------------------------------------*/
+/*------------------------- CLASS FakeFiOracle  ----------------------------*/
+/*--------------------------------------------------------------------------*/
+/*--------------------------- GENERAL NOTES --------------------------------*/
+/*--------------------------------------------------------------------------*/
+
+class FakeFiOracle : public FiOracle
+{
+
+/*--------------------------------------------------------------------------*/
+/*----------------------- PUBLIC PART OF THE CLASS -------------------------*/
+/*--------------------------------------------------------------------------*/
+
+ public:
+
+/*--------------------------------------------------------------------------*/
+/*---------------------------- PUBLIC TYPES --------------------------------*/
+/*--------------------------------------------------------------------------*/
+/** @name Public Types
+    @{ */
+
+
+/*@} -----------------------------------------------------------------------*/
+/*--------------------- PUBLIC METHODS OF THE CLASS ------------------------*/
+/*--------------------------------------------------------------------------*/
+/*---------------------------- CONSTRUCTOR ---------------------------------*/
+/*--------------------------------------------------------------------------*/
+/** @name Constructor
+    @{ */
+
+/** Constructor of the class: takes no arguments, since everything that
+    concerns the real evaluation of the function must be done in derived
+    classes, which will have their parameters. */
+
+   FakeFiOracle( BundleSolver *solver );
+
+/*@} -----------------------------------------------------------------------*/
+/*-------------------------- OTHER INITIALIZATIONS -------------------------*/
+/*--------------------------------------------------------------------------*/
+/** @name Other initializations
+    @{ */
+
+   virtual void SetNDOSolver( NDOSolver *NwSlvr = 0 ) override;
+
+/*--------------------------------------------------------------------------*/
+
+   virtual void SetFiLog( ostream *outs = 0 , const char lvl = 0 ) override;
+
+/*--------------------------------------------------------------------------*/
+
+   virtual void SetFiTime( const bool TimeIt = true ) override;
+
+/*--------------------------------------------------------------------------*/
+
+   virtual void SetMaxName( cIndex MxNme = 0 ) override;
+
+/*@} -----------------------------------------------------------------------*/
+/*-------------- METHODS FOR READING THE DATA OF THE PROBLEM ---------------*/
+/*--------------------------------------------------------------------------*/
+/** @name Reading the data of the problem
+    @{ */
+
+/// get the number of Variable
+/** Variable cannot be changed. This means that is used the default
+ *  implementation of GetMaxNumVar(). The maximum number of variables is
+ *  equal to the current number of variable*/
+
+  virtual Index GetNumVar( void ) const override;
+
+/*--------------------------------------------------------------------------*/
+
+  virtual Index GetNrFi( void ) const override;
+
+/*--------------------------------------------------------------------------*/
+
+  virtual Index GetMaxName( void ) const override;
+
+/*--------------------------------------------------------------------------*/
+
+  virtual HpNum GetMinusInfinity( void ) override;
+
+/*--------------------------------------------------------------------------*/
+
+  virtual Index GetMaxNZ( cIndex wFi = Inf<Index>() ) const override;
+
+/*--------------------------------------------------------------------------*/
+
+  virtual Index GetMaxCNZ( cIndex wFi = Inf<Index>() ) const override;
+
+/*--------------------------------------------------------------------------*/
+
+  virtual bool GetUC( cIndex i ) override;
+
+/*--------------------------------------------------------------------------*/
+
+  virtual LMNum GetUB( cIndex i ) override;
+
+/*--------------------------------------------------------------------------*/
+
+  virtual LMNum GetBndEps( void ) override;
+
+/*--------------------------------------------------------------------------*/
+
+  virtual HpNum GetGlobalLipschitz( cIndex wFi = Inf<Index>() ) override;
+
+/*--------------------------------------------------------------------------*/
+
+  virtual Index GetBNC( cIndex wFi ) override;
+
+/*--------------------------------------------------------------------------*/
+
+  virtual Index GetBNR( cIndex wFi ) override;
+
+/*--------------------------------------------------------------------------*/
+
+  virtual Index GetBNZ( cIndex wFi ) override;
+
+/*--------------------------------------------------------------------------*/
+
+  virtual void GetBDesc( cIndex wFi , int *Bbeg , int *Bind , double *Bval ,
+ 			  double *lhs , double *rhs , double *cst ,
+ 			  double *lbd , double *ubd ) override;
+
+/*--------------------------------------------------------------------------*/
+
+  virtual NDOSolver *GetNDOSolver( void ) override;
+
+/*@} -----------------------------------------------------------------------*/
+/*---------------------- METHODS FOR SETTING LAMBDA ------------------------*/
+/*--------------------------------------------------------------------------*/
+/** @name Setting Lambda
+   @{ */
+
+  virtual void SetLambda( cLMRow Lmbd = 0 ) override;
+
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  */
+
+  virtual void SetLamBase( cIndex_Set LmbdB = 0 , cIndex LmbdBD = 0 ) override;
+
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  */
+
+  virtual bool SetPrecision( HpNum Eps ) override;
+
+/*@} -----------------------------------------------------------------------*/
+/*------------------------ METHODS FOR COMPUTING Fi() ----------------------*/
+/*--------------------------------------------------------------------------*/
+/** @name Computing Fi()
+   @{ */
+
+   virtual HpNum Fi( cIndex wFi = Inf<Index>() ) override;
+
+/*@} -----------------------------------------------------------------------*/
+/*------------- METHODS FOR READING SUBGRADIENTS / CONSTRAINTS -------------*/
+/*--------------------------------------------------------------------------*/
+
+
+   virtual bool NewGi( cIndex wFi = Inf<Index>() ) override;
+
+/*--------------------------------------------------------------------------*/
+
+   virtual Index GetGi( SgRow SubG , cIndex_Set &SGBse ,
+			cIndex Name = Inf<Index>() ,
+			cIndex strt = 0 , Index stp = Inf<Index>() ) override;
+
+/*--------------------------------------------------------------------------*/
+
+   virtual HpNum GetVal( cIndex Name = Inf<Index>() ) override;
+
+/*--------------------------------------------------------------------------*/
+
+   virtual void SetGiName( cIndex Name ) override;
+
+/*@} -----------------------------------------------------------------------*/
+/*-------------------- METHODS FOR READING OTHER RESULTS -------------------*/
+/*--------------------------------------------------------------------------*/
+/** @name Reading other results
+   @{ */
+
+
+   virtual HpNum GetLowerBound( cIndex wFi = Inf<Index>() ) override;
+
+/*--------------------------------------------------------------------------*/
+
+   virtual FiStatus GetFiStatus( Index wFi = Inf<Index>() ) override;
+
+/*@} -----------------------------------------------------------------------*/
+/*------------- METHODS FOR ADDING / REMOVING / CHANGING DATA --------------*/
+/*--------------------------------------------------------------------------*/
+/** @name Adding / removing / changing data
+   @{ */
+
+   virtual void Deleted( cIndex i = Inf<Index>() ) override;
+
+/*--------------------------------------------------------------------------*/
+
+   virtual void Aggregate( cHpRow Mlt , cIndex_Set NmSt , cIndex Dm ,
+			   cIndex NwNm ) override;
+
+/*@} -----------------------------------------------------------------------*/
+/*------------------------------ DESTRUCTOR --------------------------------*/
+/*--------------------------------------------------------------------------*/
+/** @name Destructor
+    @{ */
+
+   virtual ~FakeFiOracle()
+   {
+	GiNameVcblr.clear();
+    }
+
+/*@} -----------------------------------------------------------------------*/
+/*-------------------- PROTECTED PART OF THE CLASS -------------------------*/
+/*--------------------------------------------------------------------------*/
+
+ protected:
+
+  BundleSolver *bslv;
+  std::vector< std::tuple< Index , Index , bool > >  GiNameVcblr; /* vocabulary
+     for handling the items name; this is done to map the item name
+     from the FiOracle to that of C05Function.  */
+
+  Index last_c05;
+
+/*--------------------------------------------------------------------------*/
+/*----------------------- PROTECTED DATA STRUCTURES  -----------------------*/
+/*--------------------------------------------------------------------------*/
+
+ };  // end( class FakeFiOracle )
+
+/*--------------------------------------------------------------------------*/
 /*-------------------------- PRIVATE METHODS -------------------------------*/
 /*--------------------------------------------------------------------------*/
 
@@ -1277,10 +1131,6 @@ Vec_Index FiStatus;
   HpNum Heuristic1( void );
 
   HpNum Heuristic2( void );
-
-/*--------------------------------------------------------------------------*/
-
-  bool DoSS( void );
 
 /*--------------------------------------------------------------------------*/
  /**< Remove all the items from the bundle, except the (sub)gradient of the
@@ -1344,6 +1194,8 @@ Vec_Index FiStatus;
   Index aBP3;       // current max number of items to be fetched
   Index aBP4;       // min number of items to be fetched
 
+  FakeFiOracle FakeFi;  ///< a pointer to a FakeFiOracle object
+
 SMSpp_insert_in_factory_h;
 
 /*--------------------------------------------------------------------------*/
@@ -1375,8 +1227,3 @@ void BundleSolver< MCFC >::process_outstanding_Modification( void )
 /*--------------------------------------------------------------------------*/
 /*------------------------- End File BundleSolver.h ------------------------*/
 /*--------------------------------------------------------------------------*/
-
-
-
-
-
