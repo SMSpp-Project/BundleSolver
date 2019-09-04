@@ -769,19 +769,11 @@ void BundleSolver::set_Block( Block * block )
   Master->SetDim();  // clear all its internal state
 
  if( MPName ) {
-  ofstream qp_ofs ("param.qp");
-  if( qp_ofs.is_open() ) {
-   qp_ofs << CtOff << endl;
-   qp_ofs << MxAdd << endl;
-   qp_ofs << MxRmv << endl;
-   qp_ofs.close();
-   }
-  else
-   throw( std::logic_error( "errors in loading parameters" ) );
-  ifstream qp_ifs ("param.qp");
-  if( !qp_ifs.is_open() )
-   throw( std::logic_error( "errors in loading parameters" ) );
-  Master = new QPPenaltyMP( &qp_ifs );
+  Master = new QPPenaltyMP( );
+  QPPenaltyMP *qp = dynamic_cast<QPPenaltyMP*>( Master );
+  qp->SetPricing( CtOff );
+  qp->SetMaxVarAdd( MxAdd );
+  qp->SetMaxVarRmv( MxRmv );
   }
  else {
   Master = new OSIMPSolver( );
