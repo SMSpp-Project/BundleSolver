@@ -234,7 +234,8 @@ public:
  intMaxNrEvls , ///< max number of function evaluation for each iteration
  intKpBstL , ///< true if LmbdBst has to be kept, false otherwise
 
- intMPName, /// <true if MP solver is a QPPenalty, otherwise MP is a OSiMPSolver
+ intMPName, ///< true if MP solver is a QPPenalty, otherwise MP is a OSiMPSolver
+ intMPlvl , ///< log verbosity of Master Problem
 
  intQPmp1, ///< MxAdd parameter for QPPenaltyMP solver only
  intQPmp2, ///< MxRmv parameter for QPPenaltyMP solver only
@@ -851,6 +852,9 @@ Vec_Index FiStatus;
  bool osi_type;   /* which OsiXXXSolverInterface (for OsiMPSolver):
                       0 = Clp, 1 = Cplex */
 
+ Index MPlvl; // log verbosity of master problem
+
+ bool log_chgd ;
 /*--------------------------------------------------------------------------*/
 
  const static std::vector<int> dflt_int_par;

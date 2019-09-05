@@ -77,7 +77,7 @@ const std::vector< std::string > BundleSolver::int_pars_str =
              { "intBPar1" , "intBPar6" ,
                "intMnSSC" , "intMnNSC" ,
                "inttSPar1" , "intMaxNrEvls" , "intKpBstL" , "intMPName" ,
-			   "intQPmp1" ,  "intQPmp2",
+			   "intMPlvl" , "intQPmp1" ,  "intQPmp2",
 			   "OSImp1" , "OSImp2" , "OSImp3" , "OSImp4" , "OSImp5"  };
 
 // define and initialize here the vector of double parameters names
@@ -99,6 +99,7 @@ const std::map< std::string , BundleSolver::idx_type > BundleSolver::int_pars_ma
 			 { "intMaxNrEvls" , BundleSolver::intMaxNrEvls } ,
 		     { "intKpBstL" , BundleSolver::intKpBstL } ,
 			 { "intMPName" , BundleSolver::intMPName } ,
+			 { "intMPlvl" , BundleSolver::intMPlvl } ,
 			 { "intQPmp1" , BundleSolver::intQPmp1 } ,
 			 { "intQPmp2" , BundleSolver::intQPmp2 } ,
 			 { "intOSImp1" , BundleSolver::intOSImp1 } ,
@@ -137,6 +138,7 @@ const std::vector<int> BundleSolver::dflt_int_par =
 			  2 ,  // intMaxNrEvls
 			  0 ,  // intKpBstL
 			  1 ,  // intMPName
+			  0 ,  // intMPlvl
 			  0 ,  // intQPmp1
 			  0 ,  // intQPmp2
 			  4 ,  // intOSImp1
@@ -201,14 +203,23 @@ int BundleSolver::compute( bool changedvars )
  if( v_c05f.empty() )
   throw( std::logic_error( "C05Function is not set yet" ) );
 
+ // get the stabilitazion's type  - - - - - - - - - - - - - - - - - - - - - -
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- bool MPisQuad = false;
-
- auto OsiMP = dynamic_cast<OSIMPSolver*>( Master );
- auto QppMP = dynamic_cast<OSIMPSolver*>( Master );
-
- if( ( OsiMP &&  ( stblztn == OSIMPSolver::quadratic ) ) || QppMP )
+ bool MPisQuad;
+ if( MPName )
   MPisQuad = true;
+ else
+  if( stblztn == OSIMPSolver::quadratic )
+   MPisQuad = true;
+  else
+   MPisQuad = false;
+
+ // set log - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+ if( !log_chgd )
+  Master->SetMPLog( f_log , MPlvl );
 
  // initializations - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -236,7 +247,7 @@ int BundleSolver::compute( bool changedvars )
     continue;
    }
 
-  if( Result )  // problems in the Master Problem solver
+  if( Result >= kError )  // problems in the Master Problem solver
    break;
 
   // update out-of-base counters- - - - - - - - - - - - - - - - - - - - - - -
@@ -322,6 +333,8 @@ int BundleSolver::compute( bool changedvars )
   Index wFi = 0;
   CurrNrEvls.assign( NrFi , Index(0) );
 
+  std::cout << " GESSONE IL PISCIONE " << std::endl;
+
   bool MPchgs = false;  // true if no cycling will occur
   for( ; ; ) {   // ... possibly more than once due to precision issues
 
@@ -339,7 +352,6 @@ int BundleSolver::compute( bool changedvars )
 
    } // end Fi and Gi computation - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
 
   if( !MPchgs ) { // noise reduction
    t = std::min( t * mxIncr , tMaior );
@@ -398,7 +410,7 @@ int BundleSolver::compute( bool changedvars )
    continue;
   else
    if( UpFiLmb[NrFi] == Inf<double>() ) {  // if reached feasibility  - - - - -
-    GotoLambda1();             // go to the feasible point
+	GotoLambda1();             // go to the feasible point
     continue;                  // and start the actual minimization of Fi()
     }
 
@@ -676,6 +688,9 @@ void BundleSolver::set_Block( Block * block )
 
  NrFi = v_c05f.size();
 
+ MILP_s.resize( NrFi , nullptr );
+ vStar.resize( NrFi + 1 , 0 );
+
  NrEasy = 0;
  if( NrFi > 1 ) {
 
@@ -711,6 +726,8 @@ void BundleSolver::set_Block( Block * block )
     IsEasy.clear();
 
    }
+ else
+  MILP_s[ 0 ] = nullptr;
 
  // allocate memory- - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -776,6 +793,7 @@ void BundleSolver::set_Block( Block * block )
   qp->SetMaxVarRmv( MxRmv );
   }
  else {
+
   Master = new OSIMPSolver( );
   OSIMPSolver *osi_mps = dynamic_cast<OSIMPSolver*>( Master );
   if( osi_type ) {
@@ -791,6 +809,13 @@ void BundleSolver::set_Block( Block * block )
   osi_mps->SetStabType( OSIMPSolver::StabFun( stblztn ) );
   osi_mps->SetAlgo( OSIMPSolver::OsiAlg( algo ) , OSIMPSolver::OsiRed( reduction ) );
   }
+
+ if( f_log ) {
+  Master->SetMPLog( f_log , MPlvl );
+  log_chgd = true;
+  }
+ else
+  log_chgd = false;
 
  InitMP();
 
@@ -833,6 +858,9 @@ void BundleSolver::set_par( const idx_type par , const int value ) {
    break;
   case( intMPName ):
    MPName = bool(value);
+   break;
+  case( intMPlvl ):
+   MPlvl = bool(value);
    break;
   case( intQPmp1 ):
    MxAdd = value;
@@ -1013,6 +1041,9 @@ int BundleSolver::get_int_par( const idx_type par ) const
    break;
   case( intMPName ):
    return( MPName );
+   break;
+  case( intMPlvl ):
+   return( MPlvl );
    break;
   case( intQPmp1 ):
    return( MxAdd );
@@ -1321,14 +1352,14 @@ void BundleSolver::FormD( void )
   // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
  Sigma = Master->ReadSigma();                  // read Sigma*
- vStar[ NrFi ] = - Master->ReadFiBLambda();            // read v*
+ vStar[ NrFi ] = - Master->ReadFiBLambda();    // read v*
 
  if( IsEasy.size() ) {                         // there are easy components
   for( Index k = 0 ; k < NrFi ; k++ )          // read the *exact* Fi-value
    if( IsEasy[ k ] )                           // for all them
-    UpFiLmb1[ k ] = Master->ReadFiBLambda( k );
+    UpFiLmb1[ k ] = Master->ReadFiBLambda( k + 1 );
    else
-    vStar[ k ] = - Master->ReadFiBLambda( k );
+    vStar[ k ] = - Master->ReadFiBLambda( k + 1 );
 
   if( UpFiLmb[NrFi] < Inf<double>() )
    for( Index k = 0 ; k < NrFi ; k++ )
@@ -1337,8 +1368,7 @@ void BundleSolver::FormD( void )
   }
  else
   for( Index k = 0 ; k < NrFi ; k++ )
-   if( !IsEasy[ k ] )
-    vStar[ k ] = - Master->ReadFiBLambda( k );
+   vStar[ k ] = - Master->ReadFiBLambda( k + 1 );
 
  DSTS = Master->ReadDStart( tStar );           // D_{t*,\beta,x}
  Deltav = vStar[ NrFi ];
@@ -1700,7 +1730,7 @@ bool BundleSolver::FiAndGi( Index wFi )
 
   // get the space for the item from the MPSolver - - - - - - - - - - - - - -
 
-  double* G1 = Master->GetItem( wFi );
+  double* G1 = Master->GetItem( wFi + 1 );
 
   // fetch the item from the Oracle - - - - - - - - - - - - - - - - - - - - -
 
@@ -2583,8 +2613,11 @@ HpNum BundleSolver::FakeFiOracle::GetGlobalLipschitz( cIndex wFi ) {
 /*--------------------------------------------------------------------------*/
 
 Index BundleSolver::FakeFiOracle::GetBNC( cIndex wFi ) {
-
- return( bslv->MILP_s[ wFi - 1 ]->get_numcols() );
+ if( bslv->MILP_s[ wFi - 1 ] ) {
+  return( bslv->MILP_s[ wFi - 1 ]->get_numcols() );
+  }
+ else
+  return( 0 );
  }
 
 /*--------------------------------------------------------------------------*/
