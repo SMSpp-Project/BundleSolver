@@ -333,8 +333,6 @@ int BundleSolver::compute( bool changedvars )
   Index wFi = 0;
   CurrNrEvls.assign( NrFi , Index(0) );
 
-  std::cout << " GESSONE IL PISCIONE " << std::endl;
-
   bool MPchgs = false;  // true if no cycling will occur
   for( ; ; ) {   // ... possibly more than once due to precision issues
 
@@ -810,13 +808,6 @@ void BundleSolver::set_Block( Block * block )
   osi_mps->SetAlgo( OSIMPSolver::OsiAlg( algo ) , OSIMPSolver::OsiRed( reduction ) );
   }
 
- if( f_log ) {
-  Master->SetMPLog( f_log , MPlvl );
-  log_chgd = true;
-  }
- else
-  log_chgd = false;
-
  InitMP();
 
  }  // end( BundleSolver::set_Block )  - - - - - - - - - - - - - - - - - - - -
@@ -860,7 +851,7 @@ void BundleSolver::set_par( const idx_type par , const int value ) {
    MPName = bool(value);
    break;
   case( intMPlvl ):
-   MPlvl = bool(value);
+   MPlvl = value;
    break;
   case( intQPmp1 ):
    MxAdd = value;
@@ -970,7 +961,16 @@ void BundleSolver::set_par( const idx_type par , const double value ) {
 /*--------------------------------- METHODS --------------------------------*/
 /*--------------------------------------------------------------------------*/
 
-// end( BundleSolver::compute ) - - - - - - - - - - - - - - - - - - - - - -
+void BundleSolver::set_log( std::ostream *log_stream )
+{
+ f_log = log_stream;
+ if( f_log ) {
+  Master->SetMPLog( f_log , MPlvl );
+  log_chgd = true;
+  }
+ else
+  log_chgd = false;
+ }
 
 /*--------------------------------------------------------------------------*/
 /*---------------------- METHODS FOR READING RESULTS -----------------------*/

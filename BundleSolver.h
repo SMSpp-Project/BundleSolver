@@ -63,6 +63,8 @@
 #include "MILPSolver.h"
 #include "MPSolver.h"
 
+#include "NDOSlver.h"
+
 /*------------------------------- LOG_BND ----------------------------------*/
 
 #define LOG_BND 1
@@ -425,6 +427,10 @@ public:
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
  virtual void set_par( const idx_type par , const double value ) override;
+
+/*--------------------------------------------------------------------------*/
+
+ virtual void set_log( std::ostream *log_stream = nullptr ) override;
 
 /*@} -----------------------------------------------------------------------*/
 /*--------------------- METHODS FOR SOLVING THE MODEL ----------------------*/
@@ -855,6 +861,7 @@ Vec_Index FiStatus;
  Index MPlvl; // log verbosity of master problem
 
  bool log_chgd ;
+
 /*--------------------------------------------------------------------------*/
 
  const static std::vector<int> dflt_int_par;
