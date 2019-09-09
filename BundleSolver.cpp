@@ -414,6 +414,7 @@ int BundleSolver::compute( bool changedvars )
 
   // the NS / SS decision - - - - - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
   SSDone = ( UpFiLmb1[ NrFi ] < UpTrgt )? true : false;
 
   // compute the heuristic t- - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1752,7 +1753,7 @@ bool BundleSolver::FiAndGi( Index wFi )
   // update alpha value at Lambda1 point  - - - - - - - - - - - - - - - - - -
 
   Alfa1k = UpFiLmb1[ wFi ] - Alfa1k
-		  - std::inner_product( Lambda1.begin() , Lambda1.end() , G1 , 0 ); //??
+		  - std::inner_product( Lambda1.begin() , Lambda1.end() , G1 , 0 );
 
   if( !diagonal )  // it is a constraint
    cp = Master->CheckCnst( Alfa1k , ScPr1k , Lambda.data() );
@@ -1863,6 +1864,9 @@ bool BundleSolver::FiAndGi( Index wFi )
 
 void BundleSolver::GotoLambda1( void )
 {
+ std::vector<VarValue>  DeltaFi( NumVar );
+ std::transform( UpFiLmb1.begin(), UpFiLmb1.end(), UpRifFi.begin(),
+		 DeltaFi.begin(), std::minus<double>() );
 
  // do the move - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -1872,7 +1876,7 @@ void BundleSolver::GotoLambda1( void )
 
  // change the current point in the MP Solver - - - - - - - - - - - - - - - -
 
- Master->ChangeCurrPoint( t , UpFiLmb1.data() );
+ Master->ChangeCurrPoint( t , DeltaFi.data() );
 
  // signal that Alfa1[] is not reliable - - - - - - - - - - - - - - - - - - -
 
