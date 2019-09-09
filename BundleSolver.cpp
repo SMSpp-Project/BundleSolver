@@ -1646,13 +1646,15 @@ bool BundleSolver::FiAndGi( Index wFi )
 	UpFiLmb1[ NrFi ] = linear_function->get_upper_estimate();
    else
     UpFiLmb1[ NrFi ] = 0;
-   for( Index k ; k < NrFi ; k++ )
+
+   for( Index k = 0 ; k < NrFi ; k++ )
 	if( UpFiLmb1[ k ] < Inf<OFValue>() )
      UpFiLmb1[ NrFi ] += UpFiLmb1[ wFi ];
 	else {
      UpFiLmb1[ NrFi ] = Inf<OFValue>();
      break;
 	 }
+
    }
 
  if( LwFiLmb1[ NrFi ] > -Inf<OFValue>() )
@@ -1663,7 +1665,7 @@ bool BundleSolver::FiAndGi( Index wFi )
     LwFiLmb1[ NrFi ] = linear_function->get_lower_estimate();
    else
     LwFiLmb1[ NrFi ] = 0;
-   for( Index k ; k < NrFi ; k++ )
+   for( Index k = 0 ; k < NrFi ; k++ )
     if( LwFiLmb1[ k ] > -Inf<OFValue>() )
      LwFiLmb1[ NrFi ] += LwFiLmb1[ wFi ];
     else {
