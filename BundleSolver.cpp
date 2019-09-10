@@ -1757,8 +1757,6 @@ bool BundleSolver::FiAndGi( Index wFi )
   Alfa1k = UpFiLmb1[ wFi ] - Alfa1k
 		  - std::inner_product( Lambda1.begin() , Lambda1.end() , G1 , double(0) );
 
-  cout << " alpha1k dopo = "<< Alfa1k << endl;
-
   if( !diagonal )  // it is a constraint
    cp = Master->CheckCnst( Alfa1k , ScPr1k , Lambda.data() );
   else                             // it is a subgradient
