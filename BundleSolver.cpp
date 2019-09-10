@@ -1755,7 +1755,9 @@ bool BundleSolver::FiAndGi( Index wFi )
   // update alpha value at Lambda1 point  - - - - - - - - - - - - - - - - - -
 
   Alfa1k = UpFiLmb1[ wFi ] - Alfa1k
-		  - std::inner_product( Lambda1.begin() , Lambda1.end() , G1 , 0 );
+		  - std::inner_product( Lambda1.begin() , Lambda1.end() , G1 , double(0) );
+
+  cout << " alpha1k dopo = "<< Alfa1k << endl;
 
   if( !diagonal )  // it is a constraint
    cp = Master->CheckCnst( Alfa1k , ScPr1k , Lambda.data() );
@@ -1941,7 +1943,7 @@ void BundleSolver::Log1( void )
    if( UpFiLmb[NrFi] == Inf<double>() )
     *f_log << " - INF";
    else
-    *f_log <<  -UpFiLmb[NrFi] << " ~ eU = " << EpsU;
+    *f_log << UpFiLmb[NrFi] << " ~ eU = " << EpsU;
 
    if( BPar6 )
     *f_log << " ~ BP3 = " << aBP3;
@@ -1968,7 +1970,7 @@ void BundleSolver::Log2( void )
     if( UpFiLmb1[NrFi] == Inf<double>() )
      *f_log << " - INF" << std::endl;
     else
-     *f_log << - UpFiLmb1[NrFi] << " ~ Alfa1 = " << Alfa1[NrFi]
+     *f_log << UpFiLmb1[NrFi] << " ~ Alfa1 = " << Alfa1[NrFi]
 	     << " ~ Gi1xd = " << - ScPr1[NrFi] << std::endl;
    }
  #endif
