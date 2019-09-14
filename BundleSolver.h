@@ -448,11 +448,11 @@ public:
 /** @name Accessing the found solutions (if any)
  *  @{ */
 
- virtual OFValue get_lb( void ) override { return(0); }
+ virtual OFValue get_lb( void ) override { return(UpRifFi[ NrFi ]); }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- virtual OFValue get_ub( void )  override { return(0); }
+ virtual OFValue get_ub( void )  override { return(UpRifFi[ NrFi ]); }
 
 /*--------------------------------------------------------------------------*/
 
