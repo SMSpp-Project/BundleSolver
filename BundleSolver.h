@@ -1013,6 +1013,16 @@ class FakeFiOracle : public FiOracle
 
 /*--------------------------------------------------------------------------*/
 
+  virtual Index GetANZ( cIndex wFi , cIndex strt = 0 ,
+  			 Index stp = Inf<Index>() ) override;
+
+/*--------------------------------------------------------------------------*/
+
+  virtual void GetADesc( cIndex wFi , int *Abeg , int *Aind , double *Aval ,
+ 			  cIndex strt = 0 , Index stp = Inf<Index>() ) override;
+
+/*--------------------------------------------------------------------------*/
+
   virtual NDOSolver *GetNDOSolver( void ) override;
 
 /*@} -----------------------------------------------------------------------*/

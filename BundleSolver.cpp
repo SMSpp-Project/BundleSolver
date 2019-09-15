@@ -697,7 +697,7 @@ void BundleSolver::set_Block( Block * block )
   std::vector<Index> BNC( NrFi );
 
   bool HasEasy = false;
-  IsEasy.resize( NrFi );
+  IsEasy.resize( NrFi , false );
   for( Index k = 0 ; k < NrFi ; ++k ) {
 
    // ?? quando i solver distruggere dopo SetDim o
@@ -705,19 +705,13 @@ void BundleSolver::set_Block( Block * block )
 
    auto LagB = dynamic_cast<LagBFunction *>( v_c05f[ k ] );
    if( LagB  ) {
-
     MILP_s[ k ] = new MILPSolver();
     MILP_s[ k ]->set_Block( LagB->get_inner_block() );
-
     BNC[ k ] = MILP_s[ k ]->get_numcols();
-
     if( BNC[ k ] ) {
      IsEasy[ k ] = HasEasy = true;
      NrEasy++;
      }
-    else
-     IsEasy[ k ] = false;
-
     }
    }
 
@@ -2619,9 +2613,8 @@ HpNum BundleSolver::FakeFiOracle::GetGlobalLipschitz( cIndex wFi ) {
 /*--------------------------------------------------------------------------*/
 
 Index BundleSolver::FakeFiOracle::GetBNC( cIndex wFi ) {
- if( bslv->MILP_s[ wFi - 1 ] ) {
+ if( bslv->IsEasy[wFi-1] )
   return( bslv->MILP_s[ wFi - 1 ]->get_numcols() );
-  }
  else
   return( 0 );
  }
@@ -2687,6 +2680,32 @@ void BundleSolver::FakeFiOracle::GetBDesc( cIndex wFi , int *Bbeg , int *Bind , 
 	  }
 
  } // end ( BundleSolver::FakeFiOracle::GetBDesc() ) - - - - - - - - - - - - -
+
+/*--------------------------------------------------------------------------*/
+
+Index BundleSolver::FakeFiOracle::GetANZ( cIndex wFi , cIndex strt ,
+ 			 Index stp ) {
+
+ if( !bslv->IsEasy[wFi-1] )
+  throw( std::logic_error( "the Function is not a Lagrangian one" ) );
+
+ auto LagB = static_cast<LagBFunction *>( bslv->v_c05f[wFi-1] );
+ return( LagB->get_Amat_nzelements() );
+
+ } // end ( BundleSolver::FakeFiOracle::GetANZ() ) - - - - - - - - - - - - - -
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::FakeFiOracle::GetADesc( cIndex wFi , int *Abeg , int *Aind ,
+		double *Aval , cIndex strt , Index stp ) {
+
+ if( !bslv->IsEasy[wFi-1] )
+  throw( std::logic_error( "the Function is not a Lagrangian one" ) );
+
+ auto LagB = static_cast<LagBFunction *>( bslv->v_c05f[wFi-1] );
+ LagB->get_Amat_desc( Abeg , Aind , Aval , strt , stp );
+
+ } // end ( BundleSolver::FakeFiOracle::GetANZ() ) - - - - - - - - - - - - - -
 
 /*--------------------------------------------------------------------------*/
 
