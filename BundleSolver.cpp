@@ -194,6 +194,9 @@ static cIndex InINF = SMSpp_di_unipi_it::Inf<Index>();
 
 int BundleSolver::compute( bool changedvars )
 {
+ // first, process any outstanding Modification
+ process_outstanding_Modification();
+
  // basic sanity checks - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -2497,6 +2500,179 @@ bool BundleSolver::CheckAlfa( const bool All )
 {
  return( Sigma >= - t * m3 * Master->ReadDStart( t ) );
  }  // end( CheckAlfa )  - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::process_outstanding_Modification( void )
+{
+ // no-frills loop: do them in order, with no attempt at optimizing
+ while( ! v_mod.empty() ) {
+  auto mod = v_mod.front();  // pick (a reference to) the first Modification
+
+
+  /* Use a Lambda to define a "guts" of the method that can be called
+     recursively. Note the trick of defining the std::function object and
+     "passing" it to the lambda, which allows recursive calls. Note the need
+     to explicitly capture "this" to use fields/methods of the class. */
+
+  // auto MCFB = static_cast< MCFBlock * >( f_Block );
+
+  std::function< void( sp_Mod )> guts_of_poM;
+  guts_of_poM = [ this , & guts_of_poM ]( sp_Mod mod ) {
+
+   // process Modification - - - - - - - - - - - - - - - - - - - - - - - - - -
+   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+   /* This requires to patiently sift through the possible Modification types
+       to find what this Modification exactly is, and call the appropriate
+       method. */
+
+   // GroupModification- - - - - - - - - - - - - - - - - - - - - - - - - - - -
+   {
+    const auto tmod = std::dynamic_pointer_cast<GroupModification>( mod );
+    if( tmod ) {
+     for( const auto & submod : tmod->v_sub_Modifications )
+      guts_of_poM( submod );
+
+     return;
+     }
+    } // end GroupModification - - - - - - - - - - - - - - - - - - - - - - - -
+
+   // C05FunctionMod - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+   {
+    const auto tmod = std::dynamic_pointer_cast<C05FunctionMod>( mod );
+    if( tmod ) {
+     Index wFi = get_index_of_component(tmod->f_function);
+     std::vector<double> Alfa1;
+     switch( tmod->f_type ) {
+      case( C05FunctionMod::AllLinearizationChanged ):
+	   Master->ChgSubG( 0 , NumVar , wFi+1 );
+      case( C05FunctionMod::AlphaChanged ):
+	   // a finite f_shift should be treated in a different way but
+	   // as of now the finite shifts are ignored by MPSolver
+	   Alfa1.resize( Master->MaxName(wFi+1) );
+       for( Index i = 0 ; i < Master->MaxName(wFi+1) ; i++ )
+        if( Master->WComponent( i ) == wFi+1 ) {
+         Alfa1[ i ] = v_c05f[wFi]->get_linearization_constant( i );
+         // alpha has to be referred to \Lambda
+         std::vector<double> G1(NumVar);
+         v_c05f[ wFi ]->get_linearization_coefficients( G1.data() , i );
+         Alfa1[ i ] = UpRifFi[ wFi ] - Alfa1[ i ]
+          		  - std::inner_product( Lambda.begin() , Lambda.end() , G1.data() , double(0) );
+         Master->ChgAlfa( Alfa1.data() , wFi );
+        }
+       break;
+      case( C05FunctionMod::AllEntriesChanged ):
+       Master->ChgSubG( 0 , NumVar , wFi+1 );
+       break;
+      } // switch( tmod->f_type )
+     }  // end  if( tmod )
+    } // end C05FunctionMod  - - - - - - - - - - - - - - - - - - - - - - - - -
+
+   // C05FunctionModRngd - - - - - - - - - - - - - - - - - - - - - - - - - - -
+   {
+    const auto tmod = std::dynamic_pointer_cast<C05FunctionModRngd>( mod );
+    if( tmod ) {
+     Index wFi = get_index_of_component(tmod->f_function);
+     std::vector<double> Alfa1;
+     switch( tmod->f_type ) {
+      case( C05FunctionMod::AllLinearizationChanged ):
+       Master->ChgSubG( v_c05f[wFi]->is_active(tmod->f_strt) ,
+    		            v_c05f[wFi]->is_active(tmod->f_stop) , wFi+1 );
+      case( C05FunctionMod::AlphaChanged ):
+       // a finite f_shift should be treated in a different way but
+       // as of now the finite shifts are ignored by MPSolver
+       Alfa1.resize( Master->MaxName(wFi+1) );
+       for( Index i = 0 ; i < Master->MaxName(wFi+1) ; i++ )
+        if( Master->WComponent( i ) == wFi+1 ) {
+         Alfa1[ i ] = v_c05f[wFi]->get_linearization_constant( i );
+         // alpha has to be referred to \Lambda
+         std::vector<double> G1(NumVar);
+         v_c05f[ wFi ]->get_linearization_coefficients( G1.data() , i );
+         Alfa1[ i ] = UpRifFi[ wFi ] - Alfa1[ i ]
+		          		  - std::inner_product( Lambda.begin() , Lambda.end() , G1.data() , double(0) );
+         Master->ChgAlfa( Alfa1.data() , wFi );
+         }
+       break;
+      case( C05FunctionMod::AllEntriesChanged ):
+       Master->ChgSubG( v_c05f[wFi]->is_active(tmod->f_strt) ,
+                        v_c05f[wFi]->is_active(tmod->f_stop) , wFi+1 );
+       break;
+      } // switch( tmod->f_type )
+     }  // end  if( tmod )
+    } // end C05FunctionModRngd  - - - - - - - - - - - - - - - - - - - - - - -
+
+   // C05FunctionModSbst - - - - - - - - - - - - - - - - - - - - - - - - - - -
+   {
+    const auto tmod = std::dynamic_pointer_cast<C05FunctionModSbst>( mod );
+    if( tmod ) {
+     Index wFi = get_index_of_component(tmod->f_function);
+     std::vector<double> Alfa1;
+     switch( tmod->f_type ) {
+      case( C05FunctionMod::AllLinearizationChanged ):
+       Master->ChgSubG( v_c05f[wFi]->is_active(tmod->v_vars[0]) ,
+               v_c05f[wFi]->is_active(tmod->v_vars[tmod->v_vars.size()-1]) , wFi+1 );
+      case( C05FunctionMod::AlphaChanged ):
+       // a finite f_shift should be treated in a different way but
+       // as of now the finite shifts are ignored by MPSolver
+       Alfa1.resize( Master->MaxName(wFi+1) );
+       for( Index i = 0 ; i < Master->MaxName(wFi+1) ; i++ )
+        if( Master->WComponent( i ) == wFi+1 ) {
+         Alfa1[ i ] = v_c05f[wFi]->get_linearization_constant( i );
+         // alpha has to be referred to \Lambda
+         std::vector<double> G1(NumVar);
+         v_c05f[ wFi ]->get_linearization_coefficients( G1.data() , i );
+         Alfa1[ i ] = UpRifFi[ wFi ] - Alfa1[ i ]
+		          		  - std::inner_product( Lambda.begin() , Lambda.end() , G1.data() , double(0) );
+         Master->ChgAlfa( Alfa1.data() , wFi );
+         }
+       break;
+      case( C05FunctionMod::AllEntriesChanged ):
+       Master->ChgSubG( v_c05f[wFi]->is_active(tmod->v_vars[0]) ,
+               v_c05f[wFi]->is_active(tmod->v_vars[tmod->v_vars.size()-1]) , wFi+1 );
+       break;
+      } // switch( tmod->f_type )
+     }  // end  if( tmod )
+    } // end C05FunctionModSbst  - - - - - - - - - - - - - - - - - - - - - - -
+
+   // C05FunctionModLin  - - - - - - - - - - - - - - - - - - - - - - - - - - -
+   {
+    const auto tmod = std::dynamic_pointer_cast<C05FunctionModLin>( mod );
+    if( tmod ) {
+     Index wFi = get_index_of_component(tmod->f_function);
+     if( wFi == Inf<Index>() ) { // 0th component
+      double * G1 = Master->GetItem( 0 );
+      linear_function->get_linearization_coefficients( G1 );
+      for( Index i = 0 ; i < tmod->v_vars.size() ; ++i )
+       G1[ linear_function->is_active(tmod->v_vars[i]) ] +=
+        tmod->v_delta[ i ];
+      const Index* SGBse = nullptr;
+      Master->SetItemBse( SGBse , NumVar );
+      Master->SetItem( InINF );
+      } // end if( linear_function )
+     else
+      for( Index i = 0 ; i < Master->MaxName(wFi+1) ; i++ )
+       if( Master->WComponent( i ) == wFi+1 ) {
+        std::vector<double> G1(NumVar);
+        v_c05f[ wFi ]->get_linearization_coefficients( G1.data() , i );
+        for( Index i = 0 ; i < tmod->v_vars.size() ; ++i )
+          G1[ v_c05f[ wFi ]->is_active(tmod->v_vars[i]) ] +=
+           tmod->v_delta[ i ];
+        throw( std::logic_error( "expected to be completed" ) );
+        }
+     } // end  if( tmod )
+    } // end C05FunctionModLin   - - - - - - - - - - - - - - - - - - - - - - -
+
+   };  // end( guts_of_poM ) - - - - - - - - - - - - - - - - - - - - - - - - -
+  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+  // finally, call the "guts of" - - - - - - - - - - - - - - - - - - - - - - -
+
+  guts_of_poM( mod );  // now the actual call
+
+  v_mod.pop_front();   // now the Modification is processed: remove it
+
+  }  // end( while( there are Modification ) )
+ }  // end( BundleSolver::process_outstanding_Modification ) - - - - - - - - -
 
 /*--------------------------------------------------------------------------*/
 

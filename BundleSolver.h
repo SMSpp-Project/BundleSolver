@@ -1208,6 +1208,26 @@ class FakeFiOracle : public FiOracle
   bool CheckAlfa( const bool All = false );
 
 /*--------------------------------------------------------------------------*/
+
+  Index get_index_of_component( Function * f ) {
+   const auto c05Fc = dynamic_cast< C05Function*>(f);
+   const auto lf = dynamic_cast< LinearFunction*>(f);
+   if(c05Fc) {
+    for( Index i = 0 ; i < NrFi ; i++ )
+	 if( c05Fc == v_c05f[ i ] )
+	  return( i );
+    throw( std::logic_error( "function not found" ) );
+    }
+   if(lf)
+	return( Inf<Index>() );
+   throw( std::logic_error( "this function is not of the C05Function type" ) );
+   }
+
+/*--------------------------------------------------------------------------*/
+
+  void process_outstanding_Modification( void );
+
+/*--------------------------------------------------------------------------*/
 /*------------------------------ PRIVATE FIELDS  ---------------------------*/
 /*--------------------------------------------------------------------------*/
 
@@ -1225,15 +1245,6 @@ SMSpp_insert_in_factory_h;
 
 /*@}  end( group( Solver_CLASSES ) ) ---------------------------------------*/
 /*--------------------------------------------------------------------------*/
-
-/*--------------------------------------------------------------------------*/
-/*------------------- inline methods implementation ------------------------*/
-/*--------------------------------------------------------------------------*/
-
-/* template< class MCFC >
-void BundleSolver< MCFC >::process_outstanding_Modification( void )
-{
- }  // end( BundleSolver::process_outstanding_Modification ) */
 
 /*--------------------------------------------------------------------------*/
 /*--------------------------------------------------------------------------*/
