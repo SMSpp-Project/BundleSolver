@@ -32,7 +32,7 @@
 #include "LagBFunction.h"
 #include "QPPnltMP.h"
 #include "OSIMPSolver.h"
-#include "cplex.h"
+#include "ilcplex/cplex.h"
 #include "OsiCpxSolverInterface.hpp"
 #include "OsiClpSolverInterface.hpp"
 
