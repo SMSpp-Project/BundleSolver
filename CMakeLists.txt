@@ -36,7 +36,7 @@ target_sources(BundleSolver PRIVATE BundleSolver.cpp)
 # for local build and installation.
 target_include_directories(
         BundleSolver PUBLIC
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
         $<INSTALL_INTERFACE:include/SMS++>)
 
 target_link_libraries(BundleSolver PUBLIC
@@ -61,7 +61,7 @@ install(TARGETS BundleSolver
 
 # Install headers
 install(FILES
-        ${CMAKE_CURRENT_SOURCE_DIR}/BundleSolver,h
+        ${CMAKE_CURRENT_SOURCE_DIR}/BundleSolver.h
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/SMS++)
 
 # Install target import file
@@ -103,3 +103,6 @@ if (CMAKE_BUILD_TYPE STREQUAL "Debug")
     # Register package in user's package registry (~/.cmake/registry)
     export(PACKAGE BundleSolver)
 endif ()
+
+# ----- Subdirectories ------------------------------------------------------ #
+add_subdirectory(Main)
