@@ -136,6 +136,8 @@ public:
   LinearCombination;
   ///< type used to define linear combinations of linearizations
 
+  using Range = Function::Range;
+
 /*--------------------------------------------------------------------------*/
 
  /// public enum for the int algorithmic parameters

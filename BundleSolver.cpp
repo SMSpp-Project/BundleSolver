@@ -2541,9 +2541,9 @@ void BundleSolver::process_outstanding_Modification( void )
    {
     const auto tmod = std::dynamic_pointer_cast<C05FunctionMod>( mod );
     if( tmod ) {
-     Index wFi = get_index_of_component(tmod->f_function);
+     Index wFi = get_index_of_component(tmod->function());
      std::vector<double> Alfa1;
-     switch( tmod->f_type ) {
+     switch( tmod->type() ) {
       case( C05FunctionMod::AllLinearizationChanged ):
 	   Master->ChgSubG( 0 , NumVar , wFi+1 );
       case( C05FunctionMod::AlphaChanged ):
@@ -2555,7 +2555,8 @@ void BundleSolver::process_outstanding_Modification( void )
          Alfa1[ i ] = v_c05f[wFi]->get_linearization_constant( i );
          // alpha has to be referred to \Lambda
          std::vector<double> G1(NumVar);
-         v_c05f[ wFi ]->get_linearization_coefficients( G1.data() , i );
+         Range range = make_pair( 0, NumVar );
+         v_c05f[ wFi ]->get_linearization_coefficients( G1.data() , range, i );
          Alfa1[ i ] = UpRifFi[ wFi ] - Alfa1[ i ]
           		  - std::inner_product( Lambda.begin() , Lambda.end() , G1.data() , double(0) );
          Master->ChgAlfa( Alfa1.data() , wFi );
@@ -2572,12 +2573,11 @@ void BundleSolver::process_outstanding_Modification( void )
    {
     const auto tmod = std::dynamic_pointer_cast<C05FunctionModRngd>( mod );
     if( tmod ) {
-     Index wFi = get_index_of_component(tmod->f_function);
+     Index wFi = get_index_of_component(tmod->function());
      std::vector<double> Alfa1;
-     switch( tmod->f_type ) {
+     switch( tmod->type() ) {
       case( C05FunctionMod::AllLinearizationChanged ):
-       Master->ChgSubG( v_c05f[wFi]->is_active(tmod->f_strt) ,
-    		            v_c05f[wFi]->is_active(tmod->f_stop) , wFi+1 );
+        Master->ChgSubG( tmod->range().first , tmod->range().second , wFi+1 );
       case( C05FunctionMod::AlphaChanged ):
        // a finite f_shift should be treated in a different way but
        // as of now the finite shifts are ignored by MPSolver
@@ -2587,15 +2587,15 @@ void BundleSolver::process_outstanding_Modification( void )
          Alfa1[ i ] = v_c05f[wFi]->get_linearization_constant( i );
          // alpha has to be referred to \Lambda
          std::vector<double> G1(NumVar);
-         v_c05f[ wFi ]->get_linearization_coefficients( G1.data() , i );
+         Range range = make_pair( 0, NumVar );
+         v_c05f[ wFi ]->get_linearization_coefficients( G1.data() , range , i );
          Alfa1[ i ] = UpRifFi[ wFi ] - Alfa1[ i ]
 		          		  - std::inner_product( Lambda.begin() , Lambda.end() , G1.data() , double(0) );
          Master->ChgAlfa( Alfa1.data() , wFi );
          }
        break;
       case( C05FunctionMod::AllEntriesChanged ):
-       Master->ChgSubG( v_c05f[wFi]->is_active(tmod->f_strt) ,
-                        v_c05f[wFi]->is_active(tmod->f_stop) , wFi+1 );
+       Master->ChgSubG( tmod->range().first , tmod->range().second , wFi+1 );
        break;
       } // switch( tmod->f_type )
      }  // end  if( tmod )
@@ -2605,12 +2605,12 @@ void BundleSolver::process_outstanding_Modification( void )
    {
     const auto tmod = std::dynamic_pointer_cast<C05FunctionModSbst>( mod );
     if( tmod ) {
-     Index wFi = get_index_of_component(tmod->f_function);
+     Index wFi = get_index_of_component(tmod->function());
      std::vector<double> Alfa1;
-     switch( tmod->f_type ) {
+     switch( tmod->type() ) {
       case( C05FunctionMod::AllLinearizationChanged ):
-       Master->ChgSubG( v_c05f[wFi]->is_active(tmod->v_vars[0]) ,
-               v_c05f[wFi]->is_active(tmod->v_vars[tmod->v_vars.size()-1]) , wFi+1 );
+       Master->ChgSubG( v_c05f[wFi]->is_active(tmod->vars()[0]) ,
+               v_c05f[wFi]->is_active(tmod->vars()[tmod->vars().size()-1]) , wFi+1 );
       case( C05FunctionMod::AlphaChanged ):
        // a finite f_shift should be treated in a different way but
        // as of now the finite shifts are ignored by MPSolver
@@ -2620,15 +2620,16 @@ void BundleSolver::process_outstanding_Modification( void )
          Alfa1[ i ] = v_c05f[wFi]->get_linearization_constant( i );
          // alpha has to be referred to \Lambda
          std::vector<double> G1(NumVar);
-         v_c05f[ wFi ]->get_linearization_coefficients( G1.data() , i );
+         Range range = make_pair( 0, NumVar );
+         v_c05f[ wFi ]->get_linearization_coefficients( G1.data() , range , i );
          Alfa1[ i ] = UpRifFi[ wFi ] - Alfa1[ i ]
 		          		  - std::inner_product( Lambda.begin() , Lambda.end() , G1.data() , double(0) );
          Master->ChgAlfa( Alfa1.data() , wFi );
          }
        break;
       case( C05FunctionMod::AllEntriesChanged ):
-       Master->ChgSubG( v_c05f[wFi]->is_active(tmod->v_vars[0]) ,
-               v_c05f[wFi]->is_active(tmod->v_vars[tmod->v_vars.size()-1]) , wFi+1 );
+       Master->ChgSubG( v_c05f[wFi]->is_active(tmod->vars()[0]) ,
+               v_c05f[wFi]->is_active(tmod->vars()[tmod->vars().size()-1]) , wFi+1 );
        break;
       } // switch( tmod->f_type )
      }  // end  if( tmod )
@@ -2638,13 +2639,13 @@ void BundleSolver::process_outstanding_Modification( void )
    {
     const auto tmod = std::dynamic_pointer_cast<C05FunctionModLin>( mod );
     if( tmod ) {
-     Index wFi = get_index_of_component(tmod->f_function);
+     Index wFi = get_index_of_component(tmod->function());
      if( wFi == Inf<Index>() ) { // 0th component
       double * G1 = Master->GetItem( 0 );
       linear_function->get_linearization_coefficients( G1 );
-      for( Index i = 0 ; i < tmod->v_vars.size() ; ++i )
-       G1[ linear_function->is_active(tmod->v_vars[i]) ] +=
-        tmod->v_delta[ i ];
+      for( Index i = 0 ; i < tmod->vars().size() ; ++i )
+       G1[ linear_function->is_active(tmod->vars()[i]) ] +=
+        tmod->delta()[ i ];
       const Index* SGBse = nullptr;
       Master->SetItemBse( SGBse , NumVar );
       Master->SetItem( InINF );
@@ -2653,10 +2654,11 @@ void BundleSolver::process_outstanding_Modification( void )
       for( Index i = 0 ; i < Master->MaxName(wFi+1) ; i++ )
        if( Master->WComponent( i ) == wFi+1 ) {
         std::vector<double> G1(NumVar);
-        v_c05f[ wFi ]->get_linearization_coefficients( G1.data() , i );
-        for( Index i = 0 ; i < tmod->v_vars.size() ; ++i )
-          G1[ v_c05f[ wFi ]->is_active(tmod->v_vars[i]) ] +=
-           tmod->v_delta[ i ];
+        Range range = make_pair( 0, NumVar );
+        v_c05f[ wFi ]->get_linearization_coefficients( G1.data() , range , i );
+        for( Index i = 0 ; i < tmod->vars().size() ; ++i )
+          G1[ v_c05f[ wFi ]->is_active(tmod->vars()[i]) ] +=
+           tmod->delta()[ i ];
         throw( std::logic_error( "expected to be completed" ) );
         }
      } // end  if( tmod )
@@ -2866,7 +2868,7 @@ Index BundleSolver::FakeFiOracle::GetANZ( cIndex wFi , cIndex strt ,
   throw( std::logic_error( "the Function is not a Lagrangian one" ) );
 
  auto LagB = static_cast<LagBFunction *>( bslv->v_c05f[wFi-1] );
- return( LagB->get_Amat_nzelements() );
+ //?? DA FARE return( LagB->get_Amat_nzelements() );
 
  } // end ( BundleSolver::FakeFiOracle::GetANZ() ) - - - - - - - - - - - - - -
 
@@ -2879,7 +2881,7 @@ void BundleSolver::FakeFiOracle::GetADesc( cIndex wFi , int *Abeg , int *Aind ,
   throw( std::logic_error( "the Function is not a Lagrangian one" ) );
 
  auto LagB = static_cast<LagBFunction *>( bslv->v_c05f[wFi-1] );
- LagB->get_Amat_desc( Abeg , Aind , Aval , strt , stp );
+ //?? DA FARE LagB->get_Amat_desc( Abeg , Aind , Aval , strt , stp );
 
  } // end ( BundleSolver::FakeFiOracle::GetANZ() ) - - - - - - - - - - - - - -
 
@@ -2933,8 +2935,9 @@ bool BundleSolver::FakeFiOracle::NewGi( cIndex wFi ) {
 Index BundleSolver::FakeFiOracle::GetGi( SgRow SubG , cIndex_Set &SGBse ,
 			cIndex Name , cIndex strt , Index stp  ) {
 
+ auto range = make_pair(strt, stp);
  bslv->v_c05f[ std::get<1>(GiNameVcblr[Name]) ]->get_linearization_coefficients(
-	 SubG , std::get<0>(GiNameVcblr[Name]) , {} , strt , stp );
+ 	 SubG , range , std::get<0>(GiNameVcblr[Name]) );
 
  SGBse = nullptr;
  return( stp - strt );
