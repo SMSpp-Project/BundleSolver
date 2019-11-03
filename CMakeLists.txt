@@ -10,17 +10,10 @@ cmake_minimum_required(VERSION 3.8...3.15)
 # TODO: set proper version
 project(BundleSolver VERSION 1.0.0 LANGUAGES CXX)
 
+# ----- Settings ------------------------------------------------------------ #
+include(CTest)
+
 # ----- Requirements -------------------------------------------------------- #
-# find_package() is used to find libraries and automatically configure them.
-# It requires either a package configuration module (***Config.cmake) or a
-# find module (Find***.cmake), usually provided by libraries.
-
-# We can provide a settings file with -DSETTINGS="filename"
-if ((CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME) AND SETTINGS)
-    message(STATUS "Using CMake custom settings in ${SETTINGS}")
-    include(${SETTINGS} OPTIONAL)
-endif ()
-
 find_package(SMSpp REQUIRED)
 find_package(MILPSolver REQUIRED)
 find_package(NDOFiOracle REQUIRED)
@@ -93,8 +86,7 @@ install(FILES
 # This is needed so other projects can find the library in a local build.
 # It does not affect installation.
 
-if (CMAKE_BUILD_TYPE STREQUAL "Debug")
-    set(CMAKE_EXPORT_PACKAGE_REGISTRY ON)
+if (CMAKE_EXPORT_PACKAGE_REGISTRY)
 
     export(EXPORT BundleSolver-targets
            FILE ${CMAKE_CURRENT_BINARY_DIR}/BundleSolverTargets.cmake
@@ -105,4 +97,6 @@ if (CMAKE_BUILD_TYPE STREQUAL "Debug")
 endif ()
 
 # ----- Subdirectories ------------------------------------------------------ #
-add_subdirectory(Main)
+if (BUILD_TESTING)
+    add_subdirectory(Main)
+endif()
