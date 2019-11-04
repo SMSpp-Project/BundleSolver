@@ -1988,6 +1988,7 @@ void BundleSolver::InitMP( void )
 
  // insert the constant subgradient of the 0-th component - - - - - - - - - -
 
+
  if( linear_function ) {
   linear_function->get_linearization_coefficients( Master->GetItem( 0 ) );
   const Index* SGBse = nullptr;
@@ -2791,7 +2792,8 @@ HpNum BundleSolver::FakeFiOracle::GetGlobalLipschitz( cIndex wFi ) {
 /*--------------------------------------------------------------------------*/
 
 Index BundleSolver::FakeFiOracle::GetBNC( cIndex wFi ) {
- if( bslv->IsEasy[wFi-1] )
+
+ if( bslv->NrEasy && bslv->IsEasy[wFi-1] )
   return( bslv->MILP_s[ wFi - 1 ]->get_numcols() );
  else
   return( 0 );
@@ -2800,14 +2802,12 @@ Index BundleSolver::FakeFiOracle::GetBNC( cIndex wFi ) {
 /*--------------------------------------------------------------------------*/
 
 Index BundleSolver::FakeFiOracle::GetBNR( cIndex wFi ) {
-
  return( bslv->MILP_s[ wFi -1 ]->get_numrows() );
  }
 
 /*--------------------------------------------------------------------------*/
 
 Index BundleSolver::FakeFiOracle::GetBNZ( cIndex wFi ) {
-
  return( bslv->MILP_s[ wFi -1 ]->get_nzelements() );
  }
 
