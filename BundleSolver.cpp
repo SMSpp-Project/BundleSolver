@@ -2267,7 +2267,7 @@ HpNum BundleSolver::Heuristic2( void )
  if( std::abs( vStar[ NrFi ] + DeltaFi ) < Eps<double>() )
   return( tMaior );
  else
-  return( t * ( vStar[ NrFi ] / ( 2 * ( vStar[ NrFi ] + DeltaFi ) ) ) );
+  return( t * abs( vStar[ NrFi ] / ( 2 * ( vStar[ NrFi ] + DeltaFi ) ) ) );
  } // end( BundleSolver::Heuristic2() ) - -  - - - - - - - - - - - - - - - - -
 
 /*--------------------------------------------------------------------------*/
