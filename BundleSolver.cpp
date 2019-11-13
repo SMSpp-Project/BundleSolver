@@ -740,7 +740,7 @@ void BundleSolver::set_Block( Block * block )
  OOBase.resize( BPar2 , Inf<SIndex>() );  // counter for eliminating outdated
                                           // items: Inf<SIndex>() means empty
 
- FreList.resize( BPar2 );       // list of free bundle slots
+ FreList = priority_queue<Index>();     // list of free bundle slots
  whisZ.resize( NrFi );          // for each component, the name of its "Z" if it is
                                 // in the bunlde
 
@@ -762,7 +762,6 @@ void BundleSolver::set_Block( Block * block )
  Alfa1.resize( NrFi + 1 , 0 );
  DeltaAlfa.resize( NrFi );
 
- FreDim = 0;
  Result = kError;
  SSDone = false;
 
@@ -962,6 +961,7 @@ void BundleSolver::set_par( const idx_type par , const double value ) {
 void BundleSolver::set_log( std::ostream *log_stream )
 {
  f_log = log_stream;
+
  if( f_log ) {
   Master->SetMPLog( f_log , MPlvl );
   log_chgd = true;
@@ -1929,7 +1929,7 @@ void BundleSolver::Log1( void )
  #if( LOG_BND )
   if( LogVerb > 1 ) {
    *f_log << std::endl << "{" << SCalls << "-" << ParIter << "-"
-	   << Master->MaxName() - FreDim << "-" << MBDim << "} t = " << t
+	   << Master->MaxName() - FreList.size() << "-" << MBDim << "} t = " << t
 	   << " ~ D*_1( z* ) = " << Master->ReadDStart( 1 )
 	   << " ~ Sigma = " << Sigma << std::endl << "           ";
 
@@ -2036,7 +2036,7 @@ Index BundleSolver::BStrategy( cIndex wFi )
  // required; picking a specific spot in the free space is the task of
  // FindAPlace(), which however is not called right away because the place
  // may end up not being needed
- if( FreDim || ( Master->MaxName() < Index( BPar2 ) ) )
+ if( FreList.size() || ( Master->MaxName() < Index( BPar2 ) ) )
   return( InINF );
 
  // there is not plenty of space- - - - - - - - - - - - - - - - - - - - - - -
@@ -2180,17 +2180,15 @@ Index BundleSolver::FindAPlace( cIndex wFi )
 
  Index wh = InINF;
 
- if( FreDim ) {              // there are deleted items
-  wh = FreList.front();      // pick one
-  std::pop_heap (FreList.begin(),FreList.end());
-  FreList.pop_back();
-  FreDim = FreList.size();
+ if( FreList.size() ) {              // there are deleted items
+  wh = FreList.top();   // pick one
+  FreList.pop();
   }
  else                                       // there are no deleted items ...
   if( Master->MaxName() < Index( BPar2 ) )  // ... but there is still space
    wh = Master->MaxName();                  // next name
 
- assert( Master->MaxName() >= FreDim );
+ assert( Master->MaxName() >= FreList.size() );
 
  return( wh );
 
@@ -2289,7 +2287,7 @@ void BundleSolver::RemoveItems( void )
    linear_function->delete_linearization( i );
   }
 
- FreDim = 0;
+ FreList = priority_queue<Index>();
 
  }  // end( BundleSolver::RemoveItems )  - - - - - - - - - - - - - - - - - - -
 
@@ -2308,7 +2306,7 @@ void BundleSolver::guts_of_destructor( void )
  FiStatus.clear();
 
  whisZ.clear();
- FreList.clear();
+ FreList = priority_queue<Index>();
  OOBase.clear();
 
  if( !IsEasy.empty() )
@@ -2394,10 +2392,7 @@ void BundleSolver::Delete( cIndex i )
 
  // bookkeeping of internal data structures - - - - - - - - - - - - - - - - -
 
- FreList.push_back( int(i) ); // ?? controllare ??
- push_heap(FreList.begin() , FreList.end());
- FreDim++;
-
+ FreList.push( i );
  OOBase[ i ] = Inf<SIndex>();
 
  // compacting FreList[] if it's too big- - - - - - - - - - - - - - - - - - -
@@ -2407,14 +2402,14 @@ void BundleSolver::Delete( cIndex i )
  // Bundle can compute the number of "live" items
 
  cIndex MxNm = Master->MaxName();
- if( FreDim > MxNm ) {
-  FreDim = 0;
+ if( FreList.size() > MxNm ) {
+  FreList = priority_queue<Index>();
   for( Index i = 0 ; i < MxNm ; i++ )
    if( OOBase[ i ] == Inf<SIndex>() )
-    FreList[ FreDim++ ] = i;
+    FreList.push( i );
   }
 
- assert( Master->MaxName() >= FreDim );
+ assert( Master->MaxName() >= FreList.size() );
 
  }  // end( BundleSolver::Delete() ) - - - - - - - - - - - - - - - - - - - - -
 

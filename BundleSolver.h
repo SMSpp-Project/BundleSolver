@@ -64,6 +64,7 @@
 #include "MPSolver.h"
 
 #include "NDOSlver.h"
+#include <queue>
 
 /*------------------------------- LOG_BND ----------------------------------*/
 
@@ -785,8 +786,7 @@ int ParSS;           // number of SS within the present call to Solve()
 int CSSCntr;         // counter of consecutive SS
 int CNSCntr;         // counter of consecutive NS
 
-Index FreDim;        // number of free positions in the Bundle
-Vec_Index FreList;   // list (heap) of free positions in the Bundle
+std::priority_queue<Index> FreList;   // list (heap) of free positions in the Bundle
 
 Vec_SIndex OOBase;   // Out-Of-Base counters:
                      // = Inf<SIndex>() means no item is there
