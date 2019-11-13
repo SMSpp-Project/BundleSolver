@@ -1874,6 +1874,7 @@ void BundleSolver::GotoLambda1( void )
 
  Lambda.swap(Lambda1);
  UpFiLmb.swap(UpFiLmb1);
+ LwFiLmb.swap(LwFiLmb1);
  UpRifFi = UpFiLmb;
 
  // change the current point in the MP Solver - - - - - - - - - - - - - - - -
