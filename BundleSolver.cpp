@@ -544,6 +544,9 @@ void BundleSolver::set_Block( Block * block )
   guts_of_destructor();   // deallocate memory
   }
 
+ if( ! block )
+  return;
+
  Solver::set_Block( block );  // attach to the new Block
 
  /* Two types of block can be handled by the BundleSolver:
