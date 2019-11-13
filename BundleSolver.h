@@ -773,7 +773,6 @@ double Prevt;         // what t were before being changed for funny reasons
 double Sigma;         // Sigma*: convex combination of the Alfa's
 double DSTS;          // D*_{t*}( -z* ), the other part of the dual objective
 Vec_OFValue vStar;         // v*, the predicted improvement
-double Deltav;        // the "desired improvement" in the Fi-value
 
 double DeltaFi;       // FiLambda - FiLambda1
 double EpsU;          // precison required by the long-term t-strategy

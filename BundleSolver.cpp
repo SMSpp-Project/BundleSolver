@@ -279,7 +279,7 @@ int BundleSolver::compute( bool changedvars )
    if( AFL < 1 )
     AFL = 1;
 
-   if( vStar[ NrFi ] <= tSPar2 * EpsU * AFL ) {
+   if( abs(vStar[ NrFi ]) <= tSPar2 * EpsU * AFL ) {
     BLOG( 1 , "small v => increase t" << std::endl << "           " );
 
     // collect two numbers vc and vl such that v( tNew ) >= vc + tNew * vl
@@ -431,9 +431,11 @@ int BundleSolver::compute( bool changedvars )
    tt = Heuristic2();
 
   if( SSDone ) {  // SS - - - - - - - - - - - - - - - - - - - - - - - - - - -
-   BLOG( 1 , std::endl << " SS[" << CSSCntr << "]: DFi (" << DeltaFi
- 	          << ") >= m1 * Dv (" << std::abs( m1 ) * Deltav << ") ~ Ht = "
- 	          << tt );
+
+   BLOG( 1 , std::endl << " SS[" << CSSCntr << "]: DFi = " << DeltaFi
+ 	          <<  " ~ Up1(" << UpFiLmb1[ NrFi ] << ") < UpTrgt("
+			  << UpTrgt
+ 	          << ") ~ Ht = " << tt );
 
    tt = std::min( std::min( tMaior , t * mxIncr ) ,
  		  std::max( t * mnIncr , tt ) );
@@ -455,9 +457,9 @@ int BundleSolver::compute( bool changedvars )
    CNSCntr = 0;
    }
   else {        // NS - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-   BLOG( 1 , std::endl << " NS[" << CNSCntr << "]: DFi (" << DeltaFi
- 	          << ") < m1 * Dv (" << std::abs( m1 ) * Deltav
- 	          << ") ~ Ht = " << tt );
+   BLOG( 1 , std::endl << " NS[" << CNSCntr << "]: DFi = " << DeltaFi
+		      <<  " ~ Lw1(" << LwFiLmb1[ NrFi ] << ") > LwTrgt("
+		      << LwTrgt << ") ~ Ht = " << tt );
 
    tt = std::max( std::max( tMinor , t * mxDecr ) ,
  		  std::min( t * mnDecr , tt ) );
@@ -473,7 +475,7 @@ int BundleSolver::compute( bool changedvars )
      switch( tSPar1 & tSP1Msk ) {
       case( kSLTTS ):
       case( kHLTTS ):
-       if( vStar[ NrFi ] <= tSPar2 * EpsU * std::max( std::abs( UpFiLmb[NrFi] ) , HpNum( 1 ) ) ) {
+       if( abs(vStar[ NrFi ]) <= tSPar2 * EpsU * std::max( std::abs( UpFiLmb[NrFi] ) , HpNum( 1 ) ) ) {
         BLOG( 1 , " small v" );
  	    tt = t;
         }
@@ -1353,14 +1355,14 @@ void BundleSolver::FormD( void )
   // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
  Sigma = Master->ReadSigma();                  // read Sigma*
- vStar[ NrFi ] = - Master->ReadFiBLambda();    // read v*
+ vStar[ NrFi ] = Master->ReadFiBLambda();      // read v*
 
  if( IsEasy.size() ) {                         // there are easy components
   for( Index k = 0 ; k < NrFi ; k++ )          // read the *exact* Fi-value
    if( IsEasy[ k ] )                           // for all them
     UpFiLmb1[ k ] = Master->ReadFiBLambda( k + 1 );
    else
-    vStar[ k ] = - Master->ReadFiBLambda( k + 1 );
+    vStar[ k ] = Master->ReadFiBLambda( k + 1 );
 
   if( UpFiLmb[NrFi] < Inf<double>() )
    for( Index k = 0 ; k < NrFi ; k++ )
@@ -1369,12 +1371,9 @@ void BundleSolver::FormD( void )
   }
  else
   for( Index k = 0 ; k < NrFi ; k++ )
-   vStar[ k ] = - Master->ReadFiBLambda( k + 1 );
+   vStar[ k ] = Master->ReadFiBLambda( k + 1 );
 
  DSTS = Master->ReadDStart( tStar );           // D_{t*,\beta,x}
- Deltav = vStar[ NrFi ];
- if( m1 < 0 )                                  // use - z( P_{t,\beta,x} )
-  Deltav -= Master->ReadDt( t );
 
  // Sigma* + D*_{t*}( -z* ) is the "maximum expected increase" used in
  // the stopping criterion, EpsU is that relative to Fi( Lambda )
@@ -1677,7 +1676,7 @@ bool BundleSolver::FiAndGi( Index wFi )
  if( UpFiLmb1[ NrFi ] == Inf<OFValue>() )  // Fi() is not defined in Lambda1
   DeltaFi = Inf<OFValue>();
  else
-  DeltaFi = UpRifFi[ NrFi ] - UpFiLmb1[ NrFi ];
+  DeltaFi = UpFiLmb1[ NrFi ] - UpRifFi[ NrFi ];
 
  FiEvaltns++;
 
@@ -2265,10 +2264,10 @@ HpNum BundleSolver::Heuristic1( void )
 
 HpNum BundleSolver::Heuristic2( void )
 {
- if( std::abs( vStar[ NrFi ] - DeltaFi ) < Eps<double>() )
+ if( std::abs( vStar[ NrFi ] + DeltaFi ) < Eps<double>() )
   return( tMaior );
  else
-  return( t * ( vStar[ NrFi ] / ( 2 * ( vStar[ NrFi ] - DeltaFi ) ) ) );
+  return( t * ( vStar[ NrFi ] / ( 2 * ( vStar[ NrFi ] + DeltaFi ) ) ) );
  } // end( BundleSolver::Heuristic2() ) - -  - - - - - - - - - - - - - - - - -
 
 /*--------------------------------------------------------------------------*/
@@ -2477,7 +2476,7 @@ bool BundleSolver::IsOptimal( double eps ) const
 {
  double FiL = UpFiLmb[0];
 
- if( FiL == Inf<double>() || vStar[ NrFi ] == -Inf<double>() )
+ if( FiL == Inf<double>() || vStar[ NrFi ] == Inf<double>() )
   return( false );
  else {
   if( FiL < 0 ) FiL = - FiL;
