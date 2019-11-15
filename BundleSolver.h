@@ -394,7 +394,7 @@ public:
  /** Void constructor: does nothing special, except verifying that the
   * template argument derives from MCFClass. */
 
- BundleSolver( ) : CDASolver() , FakeFi( this )  {
+ BundleSolver( ) : CDASolver() , FakeFi( this ) , Master( nullptr )  {
     
   }
 
