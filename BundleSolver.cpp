@@ -493,7 +493,6 @@ int BundleSolver::compute( bool changedvars )
         }
       }
 
-   LwFiLmb.swap(LwFiLmb1);
    BLOG( 1 , std::endl );
 
    CNSCntr++;
@@ -1572,9 +1571,9 @@ void BundleSolver::FormLambda1( HpNum Tau )
 
  if( LwFiLmb[ NrFi ] > -Inf<FunctionValue>() )
   if( m1 > 0 )
-   LwTrgt = UpRifFi[ NrFi ] + vStar[ NrFi ] + m1 * DeltaStar;
+   LwTrgt = UpRifFi[ NrFi ] + vStar[ NrFi ] - m1 * DeltaStar;
   else
-   LwTrgt = UpRifFi[ NrFi ] + ( 1.0 - m1 ) * vStar[ NrFi ];
+   LwTrgt = UpRifFi[ NrFi ] + ( 1.0 + m1 ) * vStar[ NrFi ];
  else
   LwTrgt = -Inf<FunctionValue>();
 
@@ -1624,16 +1623,14 @@ bool BundleSolver::FiAndGi( Index wFi )
 
  if( FiStatus[ wFi ] ==  kUnEval )
   FiStatus[ wFi ] = v_c05f[ wFi ]->compute( true );
- else {
+ else
   FiStatus[ wFi ] = v_c05f[ wFi ]->compute( false );
 
-  if( UpFiLmb1[ NrFi ] < Inf<OFValue>() )
-   UpFiLmb1[ NrFi ] -= UpFiLmb1[ wFi ];
+ if( UpFiLmb1[ NrFi ] < Inf<OFValue>() )
+  UpFiLmb1[ NrFi ] -= UpFiLmb1[ wFi ];
 
-  if( LwFiLmb1[ NrFi ] > -Inf<OFValue>() )
-   LwFiLmb1[ NrFi ] -= LwFiLmb1[ wFi ];
-
-  }
+ if( LwFiLmb1[ NrFi ] > -Inf<OFValue>() )
+  LwFiLmb1[ NrFi ] -= LwFiLmb1[ wFi ];
 
  UpFiLmb1[ wFi ] = std::min( v_c05f[ wFi ]->get_upper_estimate() , UpFiLmb1[ wFi ] );
  LwFiLmb1[ wFi ] = std::max( v_c05f[ wFi ]->get_lower_estimate() , LwFiLmb1[ wFi ] );
@@ -1665,6 +1662,7 @@ bool BundleSolver::FiAndGi( Index wFi )
     LwFiLmb1[ NrFi ] = linear_function->get_lower_estimate();
    else
     LwFiLmb1[ NrFi ] = 0;
+
    for( Index k = 0 ; k < NrFi ; k++ )
     if( LwFiLmb1[ k ] > -Inf<OFValue>() )
      LwFiLmb1[ NrFi ] += LwFiLmb1[ wFi ];
@@ -1874,6 +1872,7 @@ void BundleSolver::GotoLambda1( void )
 
  Lambda.swap(Lambda1);
  UpFiLmb.swap(UpFiLmb1);
+ LwFiLmb.swap(LwFiLmb1);
  UpRifFi = UpFiLmb;
 
  // change the current point in the MP Solver - - - - - - - - - - - - - - - -
