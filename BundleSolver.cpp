@@ -1983,6 +1983,7 @@ void BundleSolver::InitMP( void )
  // have been set, and it is re-called each time any one of the two changes
  // set the size- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
+ FakeFi.initialize();
  Master->SetDim( BPar2 , &FakeFi , false );
 
  Master->SetPar( MPSolver::kOptEps , RAccSol );
@@ -2679,13 +2680,6 @@ void BundleSolver::process_outstanding_Modification( void )
 BundleSolver::FakeFiOracle::FakeFiOracle( BundleSolver *solver ) : FiOracle()
 {
  bslv = solver;
-
- GiNameVcblr.resize( bslv->BPar2 );
- auto it =  GiNameVcblr.begin();
- for( Index i = 0 ; i < bslv->v_c05f.size() ; ++i )
-  for( Index j = 0 ; j < bslv->v_c05f[i]->get_int_par( C05Function::intGPMaxSz);
-       j++ )
-   *it = std::make_tuple( j , i , true );
  } // end ( FakeFiOracle::FakeFiOracle( ) )  - - - - - - - - - - - - - - - - -
 
 /*--------------------------------------------------------------------------*/
@@ -2997,6 +2991,17 @@ void BundleSolver::FakeFiOracle::Deleted( cIndex i ) {
 void BundleSolver::FakeFiOracle::Aggregate( cHpRow Mlt , cIndex_Set NmSt ,
 		cIndex Dm , cIndex NwNm ) {
  throw( std::logic_error( "this method cannot be called" ) );
+ }  // end ( FakeFiOracle::Aggregate( ) )  - - - - - - - - - - - - - - - - - -
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::FakeFiOracle::initialize( void ) {
+ GiNameVcblr.resize( bslv->BPar2 );
+ auto it =  GiNameVcblr.begin();
+ for( Index i = 0 ; i < bslv->v_c05f.size() ; ++i )
+  for( Index j = 0 ; j < bslv->v_c05f[i]->get_int_par( C05Function::intGPMaxSz);
+	       j++ )
+	*it = std::make_tuple( j , i , true );
  }  // end ( FakeFiOracle::Aggregate( ) )  - - - - - - - - - - - - - - - - - -
 
 /*--------------------------------------------------------------------------*/
