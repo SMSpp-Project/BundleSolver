@@ -46,13 +46,13 @@ using namespace SMSpp_di_unipi_it;
 /*-------------------------------- MACROS ----------------------------------*/
 /*--------------------------------------------------------------------------*/
 
-#define BLOG( l , x ) if( LogVerb > l ) *f_log << x
+#define BLOG( l , x ) if( f_log && ( LogVerb > l ) ) *f_log << x
 
-#define BLOG2( l , c , x ) if( ( LogVerb > l ) && c ) *f_log << x
+#define BLOG2( l , c , x ) if( f_log && ( LogVerb > l ) && c ) *f_log << x
 
-#define BLOGb( l , x ) if( LogVerb & l ) *f_log << x
+#define BLOGb( l , x ) if( f_log && ( LogVerb & l ) ) *f_log << x
 
-#define BLOG2b( l , c , x ) if( ( LogVerb & l ) && c ) *f_log << x
+#define BLOG2b( l , c , x ) if( f_log && ( LogVerb & l ) && c ) *f_log << x
 
 /*--------------------------------------------------------------------------*/
 /*----------------------------- STATIC MEMBERS -----------------------------*/
@@ -245,11 +245,19 @@ int BundleSolver::compute( bool changedvars )
    break;
    }
 
-  // Noise Reduction "ex-ante" check: ensure that the \sigma* is "not too
-  // negative", if it is increase t (if possible) and re-solve the MP
-  // Note that this kind of NR only happens if the oracle is "unfaithful",
-  // i.e., it pretends to provide information with the required accuracy
-  // but in fact it does not
+  // check for optimality - - - - - - - - - - - - - - - - - - - - - - - - - -
+  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+  if( IsOptimal() )
+   break;
+
+  // check if "ex-ante" Noise Reduction is needed - - - - - - - - - - - - - -
+  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  // ensure that the \sigma* is "not too negative", if it is increase t (if
+  // possible) and re-solve the MP; note that this kind of NR only happens if
+  // the oracle is "unfaithful", i.e., it pretends to provide information with
+  // the required accuracy but in fact it does not
+
   if( ( Sigma < 0 ) &&  // do not even call ReadDStart() if Sigma >= 0
       ( Sigma <= - m3 * Master->ReadDStart( t ) ) ) {
    if( t >= tMaior ) {
@@ -271,12 +279,6 @@ int BundleSolver::compute( bool changedvars )
   // some log - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
   Log1();
-
-  // check for optimality - - - - - - - - - - - - - - - - - - - - - - - - - -
-  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
-  if( IsOptimal() )
-   break;
 
   // Hard Long-Term t-strategy for quadratic stabilization- - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -395,20 +397,14 @@ int BundleSolver::compute( bool changedvars )
    continue;                      // so go solve the master problem again
                                   // (no NS/SS decision can be made)
 
-  // check the Lower Bound- - - - - - - - - - - - - - - - - - - - - - - - - -
+  // check for the conditional lower bound- - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-  // .. but only if Fi( Lambda ) is defined
 
-  if( UpFiLmb[ NrFi ] < Inf< VarValue >() ) {
-   if( TrueLB )
-    if( UpFiBest - max_error() <= LowerBound )
-     break;
-
-   if( UpFiBest <= LowerBound *
-                   ( 1 - ( LowerBound > 0 ? RelAcc : - RelAcc ) ) ) {
-    Result = kUnbounded;
-    break;
-    }
+  if( ( ! TrueLB ) &&
+      ( UpFiBest <= LowerBound *
+	            ( 1 - ( LowerBound > 0 ? RelAcc : - RelAcc ) ) ) ) {
+   Result = kUnbounded;
+   break;
    }
 
   // avoid the t-changing phase if Lambda1 is unfeasible- - - - - - - - - - -
@@ -551,14 +547,13 @@ void BundleSolver::set_Block( Block * block )
 {
  if( f_Block ) {  // changing from a previous oracle - - - - - - - - - - - - -
                  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-  RemoveItems();  // clear the bundle
   guts_of_destructor();   // deallocate memory
   }
 
- if( ! block )
-  return;
-
  Solver::set_Block( block );  // attach to the new Block
+
+ if( ! f_Block )  // that was actually clearing the Block
+  return;         // all done
 
  /* Two types of block can be handled by the BundleSolver:
 
@@ -873,7 +868,7 @@ void BundleSolver::set_par( const idx_type par , const int value ) {
   case( intBPar2 ):
    if( value < 2 )
     throw( std::invalid_argument( "BPar2 must be >= 2" ) );
-   BPar1 = value;
+   BPar2 = value;
    break;
   case( intBPar3 ):
    if( value < BPar4 )
@@ -1803,7 +1798,7 @@ bool BundleSolver::FiAndGi( Index wFi )
    Master->SetItem( wh );      // insert the item in the MP Solver
    OOBase[ wh ] = -1;          // ensure it won't be touched again this round
 
-   if( LogVerb ) {
+   if( f_log && LogVerb ) {
     if( ! diagonal )
      *f_log << std::endl << "New constraint " << wh << ", rhs = " << Alfa1k;
     else
@@ -1934,45 +1929,49 @@ double BundleSolver::BetaK( Index wFi )
 
 void BundleSolver::Log1( void )
 {
- if( LogVerb > 1 ) {
-  *f_log << std::endl << "{" << SCalls << "-" << ParIter << "-"
-	 << Master->MaxName() - FreList.size() << "-" << MBDim << "} t = " << t
-	 << " ~ D*_1( z* ) = " << Master->ReadDStart( 1 )
-	 << " ~ Sigma = " << Sigma << std::endl << "           ";
+ if( ( ! f_log ) || ( LogVerb <= 1 ) )
+  return;
 
-  *f_log <<  " Fi = ";
+ *f_log << std::endl << "{" << SCalls << "-" << ParIter << "-"
+	<< Master->MaxName() - FreList.size() << "-" << MBDim << "} t = " << t
+	<< " ~ D*_1( z* ) = " << Master->ReadDStart( 1 )
+	<< " ~ Sigma = " << Sigma << std::endl << "           ";
 
-  if( UpFiLmb[NrFi] == Inf<double>() )
-   *f_log << " - INF";
-  else
-   *f_log << UpFiLmb[NrFi] << " ~ eU = " << EpsU;
+ *f_log <<  " Fi = ";
 
-  if( BPar6 )
-   *f_log << " ~ BP3 = " << aBP3;
-  }
+ if( UpFiLmb[ NrFi ] == Inf<double>() )
+  *f_log << " - INF";
+ else
+  *f_log << UpFiLmb[NrFi] << " ~ eU = " << EpsU;
+
+ if( BPar6 )
+  *f_log << " ~ BP3 = " << aBP3;
+
  } // end( BundleSolver::Log1 )  - - - - - - - - - - - - - - - - - - - - - - -
 
 /*--------------------------------------------------------------------------*/
 
 void BundleSolver::Log2( void )
 {
- if( LogVerb > 1 ) {
-  *f_log << std::endl << "           ";
+ if( ( ! f_log ) || ( LogVerb <= 1 ) )
+  return;
 
-  if( LowerBound > - Inf<double>() )
-   *f_log << "UB = " << - LowerBound << " ~ ";
+ *f_log << std::endl << "           ";
 
-  *f_log << "Fi1 = ";
+ if( LowerBound > - Inf<double>() )
+  *f_log << "LB = " << LowerBound << " ~ ";
 
-  if( UpFiLmb1[ NrFi ] <= - Inf<double>() )
-   *f_log << "+ INF => STOP." << std::endl;
+ *f_log << "Fi1 = ";
+
+ if( UpFiLmb1[ NrFi ] <= - Inf<double>() )
+  *f_log << "+ INF => STOP." << std::endl;
+ else
+  if( UpFiLmb1[ NrFi ] >= Inf<double>() )
+   *f_log << " - INF" << std::endl;
   else
-   if( UpFiLmb1[ NrFi ] >= Inf<double>() )
-    *f_log << " - INF" << std::endl;
-   else
-    *f_log << UpFiLmb1[ NrFi ] << " ~ Alfa1 = " << Alfa1[ NrFi ]
-	   << " ~ Gi1xd = " << - ScPr1[ NrFi ] << std::endl;
-  }
+   *f_log << UpFiLmb1[ NrFi ] << " ~ Alfa1 = " << Alfa1[ NrFi ]
+	  << " ~ Gi1xd = " << - ScPr1[ NrFi ] << std::endl;
+
  } // end( BundleSolver::Log2 )  - - - - - - - - - - - - - - - - - - - - - - -
 
 /*--------------------------------------------------------------------------*/
