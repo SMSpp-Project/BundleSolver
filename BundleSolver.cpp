@@ -46,23 +46,13 @@ using namespace SMSpp_di_unipi_it;
 /*-------------------------------- MACROS ----------------------------------*/
 /*--------------------------------------------------------------------------*/
 
-#if( LOG_BND )
- #define BLOG( l , x ) if( LogVerb > l ) *f_log << x
+#define BLOG( l , x ) if( LogVerb > l ) *f_log << x
 
- #define BLOG2( l , c , x ) if( ( LogVerb > l ) && c ) *f_log << x
+#define BLOG2( l , c , x ) if( ( LogVerb > l ) && c ) *f_log << x
 
- #define BLOGb( l , x ) if( LogVerb & l ) *f_log << x
+#define BLOGb( l , x ) if( LogVerb & l ) *f_log << x
 
- #define BLOG2b( l , c , x ) if( ( LogVerb & l ) && c ) *f_log << x
-#else
- #define BLOG( l , x )
-
- #define BLOG2( l , c , x )
-
- #define BLOGb( l , x )
-
- #define BLOG2b( l , c , x )
-#endif
+#define BLOG2b( l , c , x ) if( ( LogVerb & l ) && c ) *f_log << x
 
 /*--------------------------------------------------------------------------*/
 /*----------------------------- STATIC MEMBERS -----------------------------*/
@@ -73,100 +63,126 @@ SMSpp_insert_in_factory_cpp_0( BundleSolver );
 
 /*--------------------------------------------------------------------------*/
 // define and initialize here the vector of int parameters names
-const std::vector< std::string > BundleSolver::int_pars_str =
-             { "intBPar1" , "intBPar6" ,
-               "intMnSSC" , "intMnNSC" ,
-               "inttSPar1" , "intMaxNrEvls" , "intKpBstL" , "intMPName" ,
-			   "intMPlvl" , "intQPmp1" ,  "intQPmp2",
-			   "OSImp1" , "OSImp2" , "OSImp3" , "OSImp4" , "OSImp5"  };
+const std::vector< std::string > BundleSolver::int_pars_str = {
+ "intBPar1" ,
+ "intBPar2" ,
+ "intBPar3" ,
+ "intBPar4" ,
+ "intBPar6" ,
+ "intMnSSC" ,
+ "intMnNSC" ,
+ "inttSPar1" ,
+ "intMaxNrEvls" ,
+ "intMPName" ,
+ "intMPlvl" ,
+ "intQPmp1" ,
+ "intQPmp2",
+ "OSImp1" ,
+ "OSImp2" ,
+ "OSImp3"
+ };
 
 // define and initialize here the vector of double parameters names
-const std::vector< std::string > BundleSolver::dbl_pars_str =
-		     { "dbltStar"  , "dblEInit" ,
-		       "dblBPar3" ,  "dblBPar4"  ,
-		       "dblBPar5"  , "dblm1" , "dblm3" ,
-			   "dblmxIncr" ,  "dblmnIncr" ,  "dblmxDecr" ,
-			   "dblmnDecr" ,  "dbltMaior" ,  "dbltMinor" ,
-			   "dbltInit" ,  "dbltSPar2" , "dblQPmp1" };
+const std::vector< std::string > BundleSolver::dbl_pars_str = {
+ "dbltStar" ,
+ "dblRelMPAcc" ,
+ "dblRMPAccSol" ,
+ "dblBPar5" ,
+ "dblm1" ,
+ "dblm2" ,
+ "dblm3" ,
+ "dblmxIncr" ,
+ "dblmnIncr" ,
+ "dblmxDecr" ,
+ "dblmnDecr" ,
+ "dbltMaior" ,
+ "dbltMinor" ,
+ "dbltInit" ,
+ "dbltSPar2" ,
+ "dblCtOff"
+ };
 
 // define and initialize here the map for int parameters names
-const std::map< std::string , BundleSolver::idx_type > BundleSolver::int_pars_map =
-                   { { "intBPar1"  , BundleSolver::intBPar1  } ,
-		     { "intBPar6" , BundleSolver::intBPar6 } ,
-		     { "intMnSSC" , BundleSolver::intMnSSC } ,
-		     { "intMnNSC" , BundleSolver::intMnNSC } ,
-		     { "inttSPar1" , BundleSolver::inttSPar1 } ,
-			 { "intMaxNrEvls" , BundleSolver::intMaxNrEvls } ,
-		     { "intKpBstL" , BundleSolver::intKpBstL } ,
-			 { "intMPName" , BundleSolver::intMPName } ,
-			 { "intMPlvl" , BundleSolver::intMPlvl } ,
-			 { "intQPmp1" , BundleSolver::intQPmp1 } ,
-			 { "intQPmp2" , BundleSolver::intQPmp2 } ,
-			 { "intOSImp1" , BundleSolver::intOSImp1 } ,
-			 { "intOSImp2" , BundleSolver::intOSImp2 } ,
-			 { "intOSImp3" , BundleSolver::intOSImp3 } ,
-			 { "intOSImp4" , BundleSolver::intOSImp4 } ,
-			 { "intOSImp5" , BundleSolver::intOSImp5 } ,
-              };
+const std::map< std::string , BundleSolver::idx_type >
+ BundleSolver::int_pars_map = {
+ { "intBPar1" , BundleSolver::intBPar1  } ,
+ { "intBPar2" , BundleSolver::intBPar2  } ,
+ { "intBPar3" , BundleSolver::intBPar3 } ,
+ { "intBPar4" , BundleSolver::intBPar4 } ,
+ { "intBPar6" , BundleSolver::intBPar6 } ,
+ { "intMnSSC" , BundleSolver::intMnSSC } ,
+ { "intMnNSC" , BundleSolver::intMnNSC } ,
+ { "inttSPar1" , BundleSolver::inttSPar1 } ,
+ { "intMaxNrEvls" , BundleSolver::intMaxNrEvls } ,
+ { "intMPName" , BundleSolver::intMPName } ,
+ { "intMPlvl" , BundleSolver::intMPlvl } ,
+ { "intQPmp1" , BundleSolver::intQPmp1 } ,
+ { "intQPmp2" , BundleSolver::intQPmp2 } ,
+ { "intOSImp1" , BundleSolver::intOSImp1 } ,
+ { "intOSImp2" , BundleSolver::intOSImp2 } ,
+ { "intOSImp3" , BundleSolver::intOSImp3 } ,
+ };
 
 // define and initialize here the map for double parameters names
-const std::map< std::string , BundleSolver::idx_type > BundleSolver::dbl_pars_map =
-                   { { "dbltStar" , BundleSolver::dbltStar } ,
-		     { "dblEInit" , BundleSolver::dblEInit } ,
-			 { "dblBPar3" , BundleSolver::dblBPar3 } ,
-			 { "dblBPar4" , BundleSolver::dblBPar4 } ,
-			 { "dblBPar5" , BundleSolver::dblBPar5 } ,
-			 { "dblm1" , BundleSolver::dblm1 } ,
-			 { "dblm3" , BundleSolver::dblm3 } ,
-			 { "dblmxIncr" , BundleSolver::dblmxIncr } ,
-			 { "dblmnIncr" , BundleSolver::dblmnIncr } ,
-			 { "dblmxDecr" , BundleSolver::dblmxDecr } ,
-			 { "dblmnDecr" , BundleSolver::dblmnDecr } ,
-			 { "dbltMaior" , BundleSolver::dbltMaior } ,
-			 { "dbltMinor" , BundleSolver::dbltMinor } ,
-			 { "dbltInit" , BundleSolver::dbltInit } ,
-			 { "dbltSPar2" , BundleSolver::dbltSPar2 } ,
-			 { "dblQPmp1" , BundleSolver::dblQPmp1 } };
+const std::map< std::string , BundleSolver::idx_type >
+ BundleSolver::dbl_pars_map = {
+ { "dbltStar" , BundleSolver::dbltStar } ,
+ { "dblRelMPAcc" , BundleSolver::dblRelMPAcc } ,
+ { "dblRMPAccSol" , BundleSolver::dblRMPAccSol } ,
+ { "dblBPar5" , BundleSolver::dblBPar5 } ,
+ { "dblm1" , BundleSolver::dblm1 } ,
+ { "dblm2" , BundleSolver::dblm2 } ,
+ { "dblm3" , BundleSolver::dblm3 } ,
+ { "dblmxIncr" , BundleSolver::dblmxIncr } ,
+ { "dblmnIncr" , BundleSolver::dblmnIncr } ,
+ { "dblmxDecr" , BundleSolver::dblmxDecr } ,
+ { "dblmnDecr" , BundleSolver::dblmnDecr } ,
+ { "dbltMaior" , BundleSolver::dbltMaior } ,
+ { "dbltMinor" , BundleSolver::dbltMinor } ,
+ { "dbltInit" , BundleSolver::dbltInit } ,
+ { "dbltSPar2" , BundleSolver::dbltSPar2 } ,
+ { "dblCtOff" , BundleSolver::dblCtOff }
+ };
 
 // define and initialize here the default int parameters
-const std::vector<int> BundleSolver::dflt_int_par =
-        {    10 ,  // intBPar1
-			  0 ,  // intBPar6
-			  0 ,  // intMnSSC
-			  3 ,  // intMnNSC
-			 12 ,  // inttSPar1
-			  2 ,  // intMaxNrEvls
-			  0 ,  // intKpBstL
-			  1 ,  // intMPName
-			  0 ,  // intMPlvl
-			  0 ,  // intQPmp1
-			  0 ,  // intQPmp2
-			  4 ,  // intOSImp1
-			  0 ,  // intOSImp2
-			  1 ,  // intOSImp3
-			  3 ,  // intOSImp4
-			  1    // intOSImp5
-		};
+const std::vector< int > BundleSolver::dflt_int_par = {
+ 10 ,  // intBPar1
+100 ,  // intBPar2
+  1 ,  // intBPar3
+  1 ,  // intBPar4
+  0 ,  // intBPar6
+  0 ,  // intMnSSC
+  3 ,  // intMnNSC
+ 12 ,  // inttSPar1
+  2 ,  // intMaxNrEvls
+  1 ,  // intMPName
+  0 ,  // intMPlvl
+  0 ,  // intQPmp1
+  0 ,  // intQPmp2
+  4 ,  // intOSImp1
+  0 ,  // intOSImp2
+  1 ,  // intOSImp3
+ };
 
 // define and initialize here the default double parameters
-const std::vector<double> BundleSolver::dflt_dbl_par =
-           { 1e2 ,    // dbltStar
-			 1e-2 ,   // dblEInit
-			 - 1 ,    // dblBPar3
-			 - 1 ,    // dblBPar4
-			 30 ,     // dblBPar5
-			 0.1 ,    // dblm1
-			 3 ,      // dblm3
-			 10 ,     // dblmxIncr
-			 1.5 ,    // dblmnIncr
-			 0.1 ,    // dblmxDecr
-			 0.66 ,   // dblmmDecr
-			 1e6 ,    // dbltMaior
-			 1e-6,    // dbltMinor
-			  1 ,     // dbltInit
-			0.001 ,   // dbltSPar2
-			0.1       // dblQPmp1
-               };
+const std::vector<double> BundleSolver::dflt_dbl_par = {
+ 1e+2 ,   // dbltStar
+ 1e-8 ,   // dblRelMPAcc
+ 1e-8 ,   // dblRMPAccSol
+ 30 ,     // dblBPar5
+ 0.01 ,   // dblm1
+ 0.99 ,   // dblm2
+ 0.99 ,   // dblm3
+ 10 ,     // dblmxIncr
+ 1.5 ,    // dblmnIncr
+ 0.1 ,    // dblmxDecr
+ 0.66 ,   // dblmmDecr
+ 1e+6 ,   // dbltMaior
+ 1e-6,    // dbltMinor
+ 1 ,      // dbltInit
+ 1e-3 ,   // dbltSPar2
+ 1e-1     // dblCtOff
+ };
 
 /*--------------------------------------------------------------------------*/
 
@@ -194,9 +210,6 @@ static cIndex InINF = SMSpp_di_unipi_it::Inf<Index>();
 
 int BundleSolver::compute( bool changedvars )
 {
- // first, process any outstanding Modification
- process_outstanding_Modification();
-
  // basic sanity checks - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -206,23 +219,10 @@ int BundleSolver::compute( bool changedvars )
  if( v_c05f.empty() )
   throw( std::logic_error( "C05Function is not set yet" ) );
 
- // get the stabilitazion's type  - - - - - - - - - - - - - - - - - - - - - -
+ // first, process any outstanding Modification - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- bool MPisQuad;
- if( MPName )
-  MPisQuad = true;
- else
-  if( stblztn == OSIMPSolver::quadratic )
-   MPisQuad = true;
-  else
-   MPisQuad = false;
-
- // set log - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
- // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
- if( !log_chgd )
-  Master->SetMPLog( f_log , MPlvl );
+ process_outstanding_Modification();
 
  // initializations - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -240,18 +240,29 @@ int BundleSolver::compute( bool changedvars )
 
   FormD();
 
-  if( !CheckAlfa() ) {
-   t = std::min( t * mxIncr , tMaior );
-   BLOG( 1 , " ~ noise reduction: t increased to " << t << std::endl );
-   tHasChgd = true;
-   if( t >= tMaior )
-	Result = kError;
-   else
-    continue;
+  if( Result >= kError ) {  // problems in the Master Problem solver
+   BLOG( 1 , " ~ error in the MPSolver" << std::endl );
+   break;
    }
 
-  if( Result >= kError )  // problems in the Master Problem solver
-   break;
+  // Noise Reduction "ex-ante" check: ensure that the \sigma* is "not too
+  // negative", if it is increase t (if possible) and re-solve the MP
+  // Note that this kind of NR only happens if the oracle is "unfaithful",
+  // i.e., it pretends to provide information with the required accuracy
+  // but in fact it does not
+  if( ( Sigma < 0 ) &&  // do not even call ReadDStart() if Sigma >= 0
+      ( Sigma <= - m3 * Master->ReadDStart( t ) ) ) {
+   if( t >= tMaior ) {
+    BLOG( 1 , " ~ NR required but t maximum" << std::endl );
+    Result = kError;
+    break;
+    }
+
+   t = std::min( t * mxIncr , tMaior );
+   BLOG( 2 , " ~ NR: t increased to " << t << std::endl );
+   tHasChgd = true;
+   continue;
+   }
 
   // update out-of-base counters- - - - - - - - - - - - - - - - - - - - - - -
 
@@ -271,11 +282,13 @@ int BundleSolver::compute( bool changedvars )
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
   // the hard long-term t-strategy requires t to increase if the step is too
   // small, and therefore has to be checked before the others
+  // however, it is only viable under a quadratic stabilization
 
-  if( MPisQuad && ( tStar > 0 ) && ( ( tSPar1 & tSP1Msk ) == kHLTTS )
-	   && ( UpFiLmb[NrFi] < Inf<double>() ) ) {
+  if( ( ( ! MPName ) || ( MPName & 4 ) ) &&
+      ( tStar > 0 ) && ( ( tSPar1 & tSP1Msk ) == kHLTTS ) &&
+      ( UpFiLmb[ NrFi ] < Inf<double>() ) ) {
 
-   double AFL = std::abs( UpFiLmb[NrFi] );
+   double AFL = std::abs( UpFiLmb[ NrFi ] );
    if( AFL < 1 )
     AFL = 1;
 
@@ -291,7 +304,7 @@ int BundleSolver::compute( bool changedvars )
 
     double tt;
     if( - vl < Eps<HpNum>() )  // v( t ) is [almost] constant ==> D*_t [~]= 0
-     tt = tStar;       // ==> the CP model is ~bounded
+     tt = tStar;               // ==> the CP model is ~bounded
     else
      tt = std::min( tStar , ( tSPar2 * EpsU * AFL * Nearly + vc ) /
 		            ( - vl ) );
@@ -321,12 +334,13 @@ int BundleSolver::compute( bool changedvars )
 
   // eliminate outdated info- - - - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-  // This is done *after* the call to Master->SensitAnals() in the Hard Long-Term t-strategy and
-  // to FormLambda1(), because elimination of items from the bundle may make
-  // the current solution of the master problem invalid, and therefore all
-  // solution information may be lost. In theory this should not happen, since
-  // only items "out of base" are eliminated, and therefore the solution
-  // remains optimal; however, not all MPSolvers may behave in this respect.
+  // This is done *after* the call to Master->SensitAnals() in the Hard
+  // Long-Term t-strategy and to FormLambda1(), because elimination of items
+  // from the bundle may make the current solution of the master problem
+  // invalid, and therefore all solution information may be lost. In theory
+  // this should not happen, since only items "out of base" are eliminated,
+  // and therefore the solution remains optimal; however, not all MPSolvers
+  // may behave in this respect.
 
   SimpleBStrat();
 
@@ -334,32 +348,27 @@ int BundleSolver::compute( bool changedvars )
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
   Index wFi = 0;
-  CurrNrEvls.assign( NrFi , Index(0) );
+  CurrNrEvls.assign( NrFi , Index( 0 ) );
 
   bool MPchgs = false;  // true if no cycling will occur
   for( ; ; ) {   // ... possibly more than once due to precision issues
 
-   MPchgs = FiAndGi( wFi ); // the component wFi needs more time to be solved
+   MPchgs = FiAndGi( wFi );
    CurrNrEvls[ wFi ]++;
 
-   if( MPchgs ) // if something changes
-	break;                                          // all done
+   if( MPchgs )  // if something changes
+    break;       // all done
 
-   // find next component   - - - - - - - - - - - - - - - - - - - - - - - - -
-   // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+   if( ! FindNext( wFi ) )  // find next component
+    break;                  // if none, end
+   }
 
-   if( !FindNext( wFi ) )
-	break;
-
-   } // end Fi and Gi computation - - - - - - - - - - - - - - - - - - - - - -
-  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
-  if( !MPchgs ) { // noise reduction
+  if( ! MPchgs ) {  // noise reduction
    t = std::min( t * mxIncr , tMaior );
    BLOG( 1 , " ~ noise reduction: t increased to " << t << std::endl );
    tHasChgd = true;
    if( t >= tMaior )
-  	Result = kError;
+    Result = kError;
    }
 
   // check whether the Lower Bounds have changed- - - - - - - - - - - - - - -
@@ -388,14 +397,15 @@ int BundleSolver::compute( bool changedvars )
 
   // check the Lower Bound- - - - - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  // .. but only if Fi( Lambda ) is defined
 
-  if( UpFiLmb[NrFi] < Inf<double>() ) {  // .. but only if Fi( Lambda ) is defined
+  if( UpFiLmb[ NrFi ] < Inf< VarValue >() ) {
    if( TrueLB )
-    if( UpFiBest[NrFi] - RelAcc * std::abs( UpFiBest[NrFi] ) <= LowerBound )
+    if( UpFiBest - max_error() <= LowerBound )
      break;
 
-   if( UpFiBest[NrFi] <= LowerBound *
-                  ( 1 - ( LowerBound > 0 ? RelAcc : - RelAcc ) ) ) {
+   if( UpFiBest <= LowerBound *
+                   ( 1 - ( LowerBound > 0 ? RelAcc : - RelAcc ) ) ) {
     Result = kUnbounded;
     break;
     }
@@ -418,7 +428,7 @@ int BundleSolver::compute( bool changedvars )
   // the NS / SS decision - - - - - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-  SSDone = ( UpFiLmb1[ NrFi ] < UpTrgt )? true : false;
+  SSDone = ( UpFiLmb1[ NrFi ] <= UpTrgt ) ? true : false;
 
   // compute the heuristic t- - - - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -433,9 +443,8 @@ int BundleSolver::compute( bool changedvars )
   if( SSDone ) {  // SS - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
    BLOG( 1 , std::endl << " SS[" << CSSCntr << "]: DFi = " << DeltaFi
- 	          <<  " ~ Up1(" << UpFiLmb1[ NrFi ] << ") < UpTrgt("
-			  << UpTrgt
- 	          << ") ~ Ht = " << tt );
+	     <<  " ~ Up1(" << UpFiLmb1[ NrFi ] << ") <= UpTrgt(" << UpTrgt
+	     << ") ~ Ht = " << tt );
 
    tt = std::min( std::min( tMaior , t * mxIncr ) ,
  		  std::max( t * mnIncr , tt ) );
@@ -452,14 +461,13 @@ int BundleSolver::compute( bool changedvars )
    BLOG( 1 , std::endl );
 
    GotoLambda1();
-   ParSS++;
    CSSCntr++;
    CNSCntr = 0;
    }
   else {        // NS - - - - - - - - - - - - - - - - - - - - - - - - - - - -
    BLOG( 1 , std::endl << " NS[" << CNSCntr << "]: DFi = " << DeltaFi
-		      <<  " ~ Lw1(" << LwFiLmb1[ NrFi ] << ") > LwTrgt("
-		      << LwTrgt << ") ~ Ht = " << tt );
+	     <<  " ~ Lw1(" << LwFiLmb1[ NrFi ] << ") >= LwTrgt(" << LwTrgt
+	     << ") ~ Ht = " << tt );
 
    tt = std::max( std::max( tMinor , t * mxDecr ) ,
  		  std::min( t * mnDecr , tt ) );
@@ -467,7 +475,7 @@ int BundleSolver::compute( bool changedvars )
    if( CNSCntr < MnNSC )  // decreasing t is inhibited
     tt = t;
    else
-    if( Alfa1[ NrFi ] <= m3 * Sigma ) {
+    if( Alfa1[ NrFi ] <= m1 * Sigma ) {
      BLOG( 1 , " ~ small Alfa1" );
      tt = t;
      }
@@ -475,9 +483,9 @@ int BundleSolver::compute( bool changedvars )
      switch( tSPar1 & tSP1Msk ) {
       case( kSLTTS ):
       case( kHLTTS ):
-       if( abs(vStar[ NrFi ]) <= tSPar2 * EpsU * std::max( std::abs( UpFiLmb[NrFi] ) , HpNum( 1 ) ) ) {
+       if( abs( vStar[ NrFi ] ) <= tSPar2 * EpsU * max_error() ) {
         BLOG( 1 , " small v" );
- 	    tt = t;
+	tt = t;
         }
        break;
       case( kBLTTS ):
@@ -503,8 +511,9 @@ int BundleSolver::compute( bool changedvars )
   // actually update t- - - - - - - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-  if( tSPar1 & kEGTTS )  // endgame t-strategy: note the "/ 10"!!
-   if( DSTS < RelAcc * std::max( std::abs( UpFiLmb[NrFi] ) , HpNum( 1 ) ) / 10 ) {
+  if( ( tSPar1 & kEGTTS ) && ( UpFiLmb[ NrFi ] < Inf< VarValue >() ) )
+   // endgame t-strategy: note the "/ 10"!!
+   if( DSTS < max_error() / 10 ) {
     tt = std::max( t * ( mxDecr + mnDecr ) / 2 , tMinor );
     BLOG( 1 , " ~ endgame, t = " << tt );
     }
@@ -580,7 +589,7 @@ void BundleSolver::set_Block( Block * block )
    throw( std::logic_error( "the objective is not a C05Function" ) );
 
   v_c05f.push_back( c05f );
-  linear_function = nullptr;
+  f_lf = nullptr;
 
   }
  else {
@@ -589,14 +598,14 @@ void BundleSolver::set_Block( Block * block )
   // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
   if( f_Block->get_objective() )
-   linear_function =  nullptr;
+   f_lf =  nullptr;
   else {
    auto obj = dynamic_cast< FRealObjective * >( f_Block->get_objective() );
    if( obj == nullptr )
     throw( std::logic_error( "the objective is not a real function" ) );
 
-   linear_function = dynamic_cast<LinearFunction *>( (obj)->get_function() );
-   if( linear_function == nullptr )
+   f_lf = dynamic_cast<LinearFunction *>( (obj)->get_function() );
+   if( f_lf == nullptr )
     throw( std::logic_error( "the objective is not a LinearFunction" ) );
    }
 
@@ -661,11 +670,14 @@ void BundleSolver::set_Block( Block * block )
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
  LamVcblr.resize( NumVar );
- int count = 0;
+ Index count = 0;
  for( auto & el : v_s_Variable )
-  un_any_static( el , [ & ]( ColVariable & static_var ){ LamVcblr[count++]= &static_var; } ,
+  un_any_static( el , [ & ]( ColVariable & static_var ) {
+                       LamVcblr[ count++ ] = & static_var;
+                       } ,
 		  un_any_type<ColVariable>() );
 
+ assert( count == NumVar );
  std::sort( LamVcblr.begin() , LamVcblr.end() );
 
  // no dynaimic variables are allowed  - - - - - - - - - - - - - - - - - - - -
@@ -683,13 +695,6 @@ void BundleSolver::set_Block( Block * block )
  if( f_Block->get_dynamic_constraints().size() )
 	throw( std::logic_error( "dynamic Constraint are not allowed" ) );
 
- // set Bpar2 as the sum of the global pool of the components  - - - - - - - -
- //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
- BPar2 = 0;
- for( auto fun : v_c05f )
-  BPar2 += fun->get_int_par( C05Function::intGPMaxSz );
-
  // read information about the function  - - - - - - - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -700,14 +705,11 @@ void BundleSolver::set_Block( Block * block )
 
  NrEasy = 0;
  if( NrFi > 1 ) {
-
   auto sb = f_Block->get_nested_Blocks();
   std::vector<Index> BNC( NrFi );
 
-  bool HasEasy = false;
   IsEasy.resize( NrFi , false );
   for( Index k = 0 ; k < NrFi ; ++k ) {
-
    // ?? quando i solver distruggere dopo SetDim o
    // con il distruttore della classe??
 
@@ -717,18 +719,35 @@ void BundleSolver::set_Block( Block * block )
     MILP_s[ k ]->set_Block( LagB->get_inner_block() );
     BNC[ k ] = MILP_s[ k ]->get_numcols();
     if( BNC[ k ] ) {
-     IsEasy[ k ] = HasEasy = true;
+     IsEasy[ k ] = true;
      NrEasy++;
      }
     }
    }
 
-   if( ! HasEasy )
-    IsEasy.clear();
-
-   }
+  if( ! NrEasy )
+   IsEasy.clear();
+  }
  else
   MILP_s[ 0 ] = nullptr;
+
+ // set the global pool size to all non-easy functions - - - - - - - - - - - -
+ //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+ if( NrEasy )
+  for( Index i = 0 ; i < NrFi ; ++i ) {
+   if( IsEasy[ i ] )
+    continue;
+   auto gps = v_c05f[ i ]->get_int_par( C05Function::intGPMaxSz );
+   if( gps < BPar2 )
+    v_c05f[ i ]->set_par( C05Function::intGPMaxSz , BPar2 );
+   }
+ else
+  for( auto fun : v_c05f ) {
+   auto gps = fun->get_int_par( C05Function::intGPMaxSz );
+   if( gps < BPar2 )
+    fun->set_par( C05Function::intGPMaxSz , BPar2 );
+   }
 
  // allocate memory- - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -739,27 +758,27 @@ void BundleSolver::set_Block( Block * block )
  Lambda.resize( NumVar );    // the default starting point
  Lambda1.resize( NumVar );   // the tentative point
 
- if( KpBstL )  // best point found so far
-  LmbdBst.resize( NumVar);
+ if( MaxSol > 1 )  // best point found so far
+  LmbdBst.resize( NumVar );
 
- OOBase.resize( BPar2 , Inf<SIndex>() );  // counter for eliminating outdated
-                                          // items: Inf<SIndex>() means empty
+ OOBase.resize( BPar2 * ( NrFi - NrEasy ) , Inf<SIndex>() );
+ // counter for eliminating outdated items: Inf<SIndex>() means empty
 
  FreList = priority_queue<Index>();     // list of free bundle slots
- whisZ.resize( NrFi );          // for each component, the name of its "Z" if it is
-                                // in the bunlde
+ whisZ.resize( NrFi );  // for each component, the name of its "Z" if it is
+                        // in the bunlde
 
  FiStatus.resize( NrFi , kUnEval );
  LowerBound = -Inf<double>(); // lower bounds
  TrueLB = false;
 
- UpFiBest.resize( NrFi + 1 , Inf<OFValue>() ); // best, ...
+ UpFiBest = Inf<VarValue>();     // best, ...
  UpRifFi.resize( NrFi + 1 , 0 ); // and reference Fi() values
  UpFiLmb1.resize( NrFi + 1 );    // upper and lower function value
  LwFiLmb1.resize( NrFi + 1 );    // ... at the tentative point
 
- UpFiLmb.resize( NrFi + 1 , Inf<OFValue>() );  // upper and lower function value
- LwFiLmb.resize( NrFi + 1 , -Inf<OFValue>() ); // ... at the current point
+ UpFiLmb.resize( NrFi + 1 , Inf<VarValue>() );  // upper and lower function value
+ LwFiLmb.resize( NrFi + 1 , -Inf<VarValue>() ); // ... at the current point
 
  whisG1.resize( NrFi , Inf<Index>() );  // no representative yet
 
@@ -785,7 +804,7 @@ void BundleSolver::set_Block( Block * block )
  if( Master )        // a MP solver is set ??? dove metterlo ???
   Master->SetDim();  // clear all its internal state
 
- if( MPName ) {
+ if( ! MPName ) {
   Master = new QPPenaltyMP( );
   QPPenaltyMP *qp = dynamic_cast<QPPenaltyMP*>( Master );
   qp->SetPricing( CtOff );
@@ -793,21 +812,35 @@ void BundleSolver::set_Block( Block * block )
   qp->SetMaxVarRmv( MxRmv );
   }
  else {
+  OSIMPSolver * osi_mps = new OSIMPSolver();
+  Master = osi_mps;
 
-  Master = new OSIMPSolver( );
-  OSIMPSolver *osi_mps = dynamic_cast<OSIMPSolver*>( Master );
-  if( osi_type ) {
+  if( MPName & 2 ) {
    OsiCpxSolverInterface *osicpx = new OsiCpxSolverInterface();
-   osi_mps->SetOsi( osicpx );
    CPXENVptr env = osicpx->getEnvironmentPtr ();
    CPXsetintparam( env , CPX_PARAM_THREADS , threads );
+   // 12.8
+   // CPXsetlogfile( env , NULL );
+   // 12.9
+   // CPXsetlogfilename( env, "/dev/null" , "w" ) ;
+
+   CPXsetintparam( env , CPXPARAM_ScreenOutput , CPX_OFF );
+   CPXsetintparam( env , CPXPARAM_Barrier_Display , 0 );
+   CPXsetintparam( env , CPXPARAM_Simplex_Display , 0 );
+   CPXsetintparam( env , CPXPARAM_Sifting_Display , 0 );
+   CPXsetintparam( env , CPXPARAM_Network_Display , 0 );
+   CPXsetintparam( env , CPXPARAM_ParamDisplay  , CPX_OFF );
+ 
+   osi_mps->SetOsi( osicpx );
    }
-  else {
-   OsiClpSolverInterface *osiclp = new OsiClpSolverInterface();
-   osi_mps->SetOsi( osiclp );
-   }
-  osi_mps->SetStabType( OSIMPSolver::StabFun( stblztn ) );
-  osi_mps->SetAlgo( OSIMPSolver::OsiAlg( algo ) , OSIMPSolver::OsiRed( reduction ) );
+  else
+   osi_mps->SetOsi( new OsiClpSolverInterface() );
+
+  osi_mps->SetStabType( MPName & 4 ? OSIMPSolver::quadratic :
+			             OSIMPSolver::boxstep );
+
+  osi_mps->SetAlgo( OSIMPSolver::OsiAlg( algo ) ,
+		    OSIMPSolver::OsiRed( reduction ) );
   }
 
  InitMP();
@@ -820,16 +853,39 @@ void BundleSolver::set_par( const idx_type par , const int value ) {
 
  switch( par ) {
   case( intMaxIter ):
+   if( value < 0 )
+    throw( std::invalid_argument( "MaxIter must be >= 0" ) );
    MaxIter = value;
    break;
   case( intMaxSol ):
+   if( value < 1 )
+    throw( std::invalid_argument( "MaxSol must be >= 1" ) );
    MaxSol = value;
    break;
   case( intLogVerb ):
    LogVerb = value;
    break;
   case( intBPar1 ):
+   if( value < 1 )
+    throw( std::invalid_argument( "BPar1 must be >= 1" ) );
    BPar1 = value;
+   break;
+  case( intBPar2 ):
+   if( value < 2 )
+    throw( std::invalid_argument( "BPar2 must be >= 2" ) );
+   BPar1 = value;
+   break;
+  case( intBPar3 ):
+   if( value < BPar4 )
+    throw( std::invalid_argument( "BPar3 must be >= BPar4" ) );
+   BPar3 = value;
+   break;
+  case( intBPar4 ):
+   if( value < 1 )
+    throw( std::invalid_argument( "BPar4 must be >= 1" ) );
+   BPar4 = value;
+   if( BPar4 > BPar3 )
+    BPar3 = BPar4;
    break;
   case( intBPar6 ):
    BPar6 = value;
@@ -846,11 +902,10 @@ void BundleSolver::set_par( const idx_type par , const int value ) {
   case( intMaxNrEvls ):
    MaxNrEvls = value;
    break;
-  case( intKpBstL ):
-   KpBstL = value;
-   break;
   case( intMPName ):
-   MPName = bool(value);
+   if( ( value < 0 ) || ( value > 7 ) )
+    throw( std::invalid_argument( "MPName must be in [0, 7]" ) );
+   MPName = value;
    break;
   case( intMPlvl ):
    MPlvl = value;
@@ -870,87 +925,115 @@ void BundleSolver::set_par( const idx_type par , const int value ) {
   case( intOSImp3 ):
    threads = value;
    break;
-  case( intOSImp4 ):
-   stblztn = value;
-   break;
-  case( intOSImp5 ):
-   osi_type = bool(value);
-   break;
   default:
    CDASolver::set_par( par , value );
   }
-
  } // end (BundleSolver::set_par( ) )  - - - - - - - - - - - - - - - - - - - -
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::set_par( const idx_type par , const double value ) {
-
+void BundleSolver::set_par( const idx_type par , const double value )
+{
  switch( par ) {
   case( dblMaxTime ):
+   if( value <= 0 )
+    throw( std::invalid_argument( "dblMaxTime must be > 0" ) );
    MaxTime = value;
    break;
   case( dblRelAcc ):
+   if( ( value <= 0 ) || ( value >= Inf< VarValue >() ) )
+    throw( std::invalid_argument( "RelAcc must be > 0 and finite" ) );
    RelAcc = value;
    break;
   case( dblAbsAcc ):
+   if( value <= 0 )
+    throw( std::invalid_argument( "AbsAcc must be > 0" ) );
    AbsAcc = value;
    break;
   case( dblRAccSol ):
+   if( value <= 0 )
+    throw( std::invalid_argument( "RAccSol must be > 0" ) );
    RAccSol = value;
    break;
   case( dblAAccSol ):
+   if( value <= 0 )
+    throw( std::invalid_argument( "AAccSol must be > 0" ) );
    AAccSol = value;
-   break;
-  case( dblFAccSol  ):
-   FAccSol = value;
    break;
   case( dbltStar ):
    tStar = value;
    break;
-  case( dblEInit ):
-   EInit = value;
+  case( dblRelMPAcc ):
+   if( value <= 0 )
+    throw( std::invalid_argument( "RelMPAcc must be > 0" ) );
+   RelMPAcc = value;
    break;
-  case( dblBPar3 ):
-   BPar3 = value;
-   break;
-  case( dblBPar4 ):
-   BPar4 = value;
+  case( dblRMPAccSol ):
+   if( value <= 0 )
+    throw( std::invalid_argument( "RMPAccSol must be > 0" ) );
+   RMPAccSol = value;
    break;
   case( dblBPar5 ):
    BPar5 = value;
    break;
   case( dblm1 ):
+   if( std::abs( value ) >= 1 )
+    throw( std::invalid_argument( "| m1 | must be in (0, 1)" ) );
    m1 = value;
    break;
+  case( dblm2 ):
+   if( ( value < std::abs( m1 ) ) || ( value >= 1 ) )
+    throw( std::invalid_argument( "m2 must be in [ | m1 |, 1)" ) );
+   m2 = value;
+   break;
   case( dblm3 ):
+  if( ( value <= 0 ) || ( value >= 1 ) )
+    throw( std::invalid_argument( "m3 must be in (0, 1)" ) );
    m3 = value;
    break;
   case( dblmxIncr ):
+  if( value <= 1 )
+    throw( std::invalid_argument( "mxIncr must be > 1" ) );
    mxIncr = value;
    break;
   case( dblmnIncr ):
-   mnIncr = value;
+   if( value <= 1 )
+    throw( std::invalid_argument( "mnIncr must be > 1" ) );
+   mnIncr = std::min( value , mxIncr );
    break;
   case( dblmxDecr ):
+   if( ( value <= 0 ) || ( value > 1 ) )
+    throw( std::invalid_argument( "mxDecr must be in (0, 1)" ) );
    mxDecr = value;
    break;
   case( dblmnDecr ):
-   mnDecr = value;
+   if( ( value <= 0 ) || ( value > 1 ) )
+    throw( std::invalid_argument( "mnDecr must be in (0, 1)" ) );
+   mnDecr = std::max( value , mxDecr );
    break;
   case( dbltMaior ):
+   if( value <= 0 )
+    throw( std::invalid_argument( "tMaior must be > 0" ) );
    tMaior = value;
    break;
   case( dbltMinor ):
+   if( ( value <= 0 ) || ( value > tMaior ) )
+    throw( std::invalid_argument( "tMinor must be in (0, tMaior]" ) );
    tMinor = value;
    break;
   case( dbltInit ):
+   if( ( value < tMinor ) || ( value > tMaior ) )
+    throw( std::invalid_argument( "tInit must be in [tMinor, tMaior]" ) );
    tInit = value;
    break;
   case( dbltSPar2 ):
+   if( value <= 0 )
+    throw( std::invalid_argument( "tSPar2 must be > 0" ) );
    tSPar2 = value;
    break;
-  case( dblQPmp1 ):
+  case( dblCtOff ):
+   if( value < 0 )
+    throw( std::invalid_argument( "CtOff must be >= 0" ) );
    CtOff = value;
    break;
   default:
@@ -963,16 +1046,10 @@ void BundleSolver::set_par( const idx_type par , const double value ) {
 /*--------------------------------- METHODS --------------------------------*/
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::set_log( std::ostream *log_stream )
+void BundleSolver::set_log( std::ostream * log_stream )
 {
  f_log = log_stream;
-
- if( f_log ) {
-  Master->SetMPLog( f_log , MPlvl );
-  log_chgd = true;
-  }
- else
-  log_chgd = false;
+ Master->SetMPLog( f_log , MPlvl );
  }
 
 /*--------------------------------------------------------------------------*/
@@ -986,26 +1063,6 @@ void BundleSolver::get_dual_solution( Configuration *solc ) {
   v_c05f[ i ]->set_important_linearization( std::move(zA[i].second) , zA[i].first );
   }
  } // end ( BundleSolver::get_dual_solution() )  - - - - - - - - - - - - - - -
-
-/*--------------------------------------------------------------------------*/
-
-int BundleSolver::get_dflt_int_par( const idx_type par ) const
-{
- if( ( par >= intBPar1 ) && ( par < intLastBndSlvPar ) )
-  return( dflt_int_par[ par - intBPar1 ] );
- else
-  return( CDASolver::get_dflt_int_par( par ) );
- }
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
-
-double BundleSolver::get_dflt_dbl_par( const idx_type par ) const
-{
- if( ( par >= dbltStar ) && ( par < dblLastBndSlvPar ) )
-  return( dflt_dbl_par[ par - dbltStar ] );
- else
-  return( CDASolver::get_dflt_dbl_par( par ) );
- }
 
 /*--------------------------------------------------------------------------*/
 
@@ -1024,6 +1081,15 @@ int BundleSolver::get_int_par( const idx_type par ) const
   case( intBPar1 ):
    return( BPar1 );
    break;
+  case( intBPar2 ):
+   return( BPar2 );
+   break;
+  case( intBPar3 ):
+   return( BPar3 );
+   break;
+  case( intBPar4 ):
+   return( BPar4 );
+   break;
   case( intBPar6 ):
    return( BPar6 );
    break;
@@ -1039,9 +1105,6 @@ int BundleSolver::get_int_par( const idx_type par ) const
   case( intMaxNrEvls ):
    return( MaxNrEvls );
    break;
-  case( intKpBstL ):
-   return( KpBstL );
-   break;
   case( intMPName ):
    return( MPName );
    break;
@@ -1049,7 +1112,7 @@ int BundleSolver::get_int_par( const idx_type par ) const
    return( MPlvl );
    break;
   case( intQPmp1 ):
-   return( MxAdd );
+   return( CtOff );
    break;
   case( intQPmp2 ):
    return( MxRmv );
@@ -1062,12 +1125,6 @@ int BundleSolver::get_int_par( const idx_type par ) const
    break;
   case( intOSImp3 ):
    return( threads  );
-   break;
-  case( intOSImp4 ):
-   return( threads );
-   break;
-  case( intOSImp5 ):
-   return( stblztn );
    break;
   default:
    return( CDASolver::get_dflt_int_par( par ) );
@@ -1095,26 +1152,23 @@ double BundleSolver::get_dbl_par( const idx_type par ) const
   case( dblAAccSol ):
    return( AAccSol );
    break;
-  case( dblFAccSol  ):
-   return( FAccSol );
-   break;
   case( dbltStar ):
    return( tStar );
    break;
-  case( dblEInit ):
-   return( EInit );
+  case( dblRelMPAcc ):
+   return( RelMPAcc );
    break;
-  case( dblBPar3 ):
-   return( BPar3 );
-   break;
-  case( dblBPar4 ):
-   return( dblBPar4 );
+  case( dblRMPAccSol ):
+   return( RMPAccSol );
    break;
   case( dblBPar5 ):
    return( BPar5 );
    break;
   case( dblm1 ):
    return( m1 );
+   break;
+  case( dblm2 ):
+   return( m2 );
    break;
   case( dblm3 ):
    return( m3 );
@@ -1143,7 +1197,7 @@ double BundleSolver::get_dbl_par( const idx_type par ) const
   case( dbltSPar2 ):
    return( tSPar2 );
    break;
-  case( dblQPmp1 ):
+  case( dblCtOff ):
    return( CtOff );
    break;
   default:
@@ -1151,54 +1205,6 @@ double BundleSolver::get_dbl_par( const idx_type par ) const
   }
 
  } // end( BundleSolver::get_dbl_par ) - - - - - - - - - - - - - - - - - - - -
-
-/*--------------------------------------------------------------------------*/
-
-ThinComputeInterface::idx_type BundleSolver::int_par_str2idx(
-		const std::string & name ) const
-{
- // these may be many enough as to warrant using a map
- const auto it = int_pars_map.find( name );
- if( it != int_pars_map.end() )
-  return( it->second );
- else
- return( CDASolver::int_par_str2idx( name ) );
-
- } // end( BundleSolver::int_par_str2idx ) - - - - - - - - - - - - - - - - - -
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
-
-ThinComputeInterface::idx_type BundleSolver::dbl_par_str2idx( const std::string & name ) const
-{
- // these may be many enough as to warrant using a map
- const auto it = dbl_pars_map.find( name );
- if( it != dbl_pars_map.end() )
-  return( it->second );
- else
-  return( CDASolver::dbl_par_str2idx( name ) );
- } // end( BundleSolver::dbl_par_str2idx ) - - - - - - - - - - - - - - - - - -
-
-/*--------------------------------------------------------------------------*/
-
-const std::string & BundleSolver::int_par_idx2str(
-	const ThinComputeInterface::idx_type idx ) const
-{
- if( ( idx >= intBPar1 ) && ( idx < intLastBndSlvPar ) )
-  return( int_pars_str[ idx - intBPar1 ] );
- else
-  return( CDASolver::int_par_idx2str( idx ) );
- } // end( BundleSolver::int_par_idx2str ) - - - - - - - - - - - - - - - - - -
-
-/*--------------------------------------------------------------------------*/
-
-const std::string & BundleSolver::dbl_par_idx2str( const idx_type idx )
- const
-{
- if( ( idx >= dbltStar ) && ( idx < dblLastBndSlvPar ) )
-  return( dbl_pars_str[ idx - intBPar1 ] );
- else
-  return( CDASolver::dbl_par_idx2str( idx ) );
- } // end( BundleSolver::dbl_par_idx2str ) - - - - - - - - - - - - - - - - - -
 
 /*--------------------------------------------------------------------------*/
 /*----------------------- OTHER PROTECTED METHODS --------------------------*/
@@ -1244,17 +1250,17 @@ void BundleSolver::FormD( void )
 
  // collect and set individual and global lower bounds- - - - - - - - - - - -
 
- if( LBHasChgd && ( UpFiLmb[NrFi] < Inf<double>() ) ) {
+ if( LBHasChgd && ( UpFiLmb[ NrFi ] < Inf<double>() ) ) {
   if( LowerBound > - Inf<double>() )
-   Master->SetLowerBound( LowerBound - UpFiLmb[NrFi] );
+   Master->SetLowerBound( LowerBound - UpFiLmb[ NrFi ] );
   else
    Master->SetLowerBound( - Inf<double>() );
 
   for( Index k = 0 ; k < NrFi ; k++ ) {
-   if( IsEasy.size() && IsEasy[ k ] )  // skip easy components
+   if( NrEasy && IsEasy[ k ] )  // skip easy components
     continue;
 
-  if( LowerBound > - Inf<double>() )
+   if( LowerBound > - Inf<double>() )
     Master->SetLowerBound( LowerBound - UpFiLmb[ k ] , k + 1 );
    else
     Master->SetLowerBound( - Inf<double>() , k + 1 );
@@ -1265,10 +1271,9 @@ void BundleSolver::FormD( void )
 
  // set termination criterion - - - - - - - - - - - - - - - - - - - - - - - -
 
- if( UpFiLmb[NrFi] < Inf<double>() )
+ if( UpFiLmb[ NrFi ] < Inf<double>() )
   Master->SetPar( MPSolver::kZero ,
-		  RelAcc * std::max( std::abs( UpFiLmb[NrFi] ) , double( 1 ) )
-		         / std::max( tStar / t , HpNum( 1 ) ) );
+		  max_error() / std::max( tStar / t , HpNum( 1 ) ) );
 
  for(;;)  // error-handling loop - - - - - - - - - - - - - - - - - - - - - -
  {        // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1373,13 +1378,17 @@ void BundleSolver::FormD( void )
   for( Index k = 0 ; k < NrFi ; k++ )
    vStar[ k ] = Master->ReadFiBLambda( k + 1 );
 
- DSTS = Master->ReadDStart( tStar );           // D_{t*,\beta,x}
-
+ if( tStar > 0 )
+  DSTS = Master->ReadDStart( tStar );                  // D_{t*,\beta,x}
+ else
+  DSTS = std::abs( tStar ) * Master->ReadDStart( 1 );  // | t* | * || z* ||
+  
  // Sigma* + D*_{t*}( -z* ) is the "maximum expected increase" used in
  // the stopping criterion, EpsU is that relative to Fi( Lambda )
 
- if( UpFiLmb[NrFi] < Inf<double>() && tStar > 0 )
-  EpsU = ( DSTS + Sigma ) / std::max( std::abs( UpFiLmb[NrFi] ) , double( 1 ) );
+ if( UpFiLmb[ NrFi ] < Inf<double>() )
+  EpsU = ( DSTS + Sigma ) / std::max( std::abs( UpFiLmb[ NrFi ] ) ,
+				      double( 1 ) );
  else
   EpsU = 1;  // ensure EpsU is initialized somehow
 
@@ -1516,10 +1525,10 @@ void BundleSolver::FormLambda1( HpNum Tau )
  // compute the upper and lower model at the tentative point   - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- if( linear_function ) { // add the linear part to the "full function"
-  linear_function->compute( true );
-  UpFiLmb1[ NrFi ] = linear_function->get_upper_estimate();
-  LwFiLmb1[ NrFi ] = linear_function->get_lower_estimate();
+ if( f_lf ) { // add the linear part to the "full function"
+  f_lf->compute( true );
+  UpFiLmb1[ NrFi ] = f_lf->get_upper_estimate();
+  LwFiLmb1[ NrFi ] = f_lf->get_lower_estimate();
   }
  else
   UpFiLmb1[ NrFi ] = LwFiLmb1[ NrFi ] = 0;
@@ -1531,51 +1540,51 @@ void BundleSolver::FormLambda1( HpNum Tau )
 
    // initialize upper and lower bound for each component  - - - - - - - - - -
 
-   if( v_c05f[ k ]->get_Lipschitz_constant() < Inf<FunctionValue>()
-	   && UpFiLmb[ k ] < Inf<FunctionValue>() )
+   if( v_c05f[ k ]->get_Lipschitz_constant() < Inf<VarValue>()
+	   && UpFiLmb[ k ] < Inf<VarValue>() )
     UpFiLmb1[ k ] = UpRifFi[ k ] + v_c05f[ k ]->get_Lipschitz_constant() * NrmD;
    else
-	UpFiLmb1[ k ] = Inf<FunctionValue>();
+	UpFiLmb1[ k ] = Inf<VarValue>();
 
-   if( LwFiLmb[ k ] > -Inf<FunctionValue>() )
+   if( LwFiLmb[ k ] > -Inf<VarValue>() )
     LwFiLmb1[ k ] = UpRifFi[ k ] + vStar[ k ];
    else
-    LwFiLmb1[ k ] = -Inf<FunctionValue>();
+    LwFiLmb1[ k ] = -Inf<VarValue>();
    }
 
   // sum over the components, the zero-component is already there
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-  if( UpFiLmb1[ NrFi ] < Inf<FunctionValue>() ) {
-   if( UpFiLmb1[ k ] < Inf<FunctionValue>() )
+  if( UpFiLmb1[ NrFi ] < Inf<VarValue>() ) {
+   if( UpFiLmb1[ k ] < Inf<VarValue>() )
     UpFiLmb1[ NrFi ] += UpFiLmb1[ k ];
    else
-	UpFiLmb1[ NrFi ] = Inf<FunctionValue>();
+	UpFiLmb1[ NrFi ] = Inf<VarValue>();
    }
 
-  if( LwFiLmb1[ NrFi ] > -Inf<FunctionValue>() ) {
-   if( LwFiLmb1[ k ] < Inf<FunctionValue>() )
+  if( LwFiLmb1[ NrFi ] > -Inf<VarValue>() ) {
+   if( LwFiLmb1[ k ] < Inf<VarValue>() )
     LwFiLmb1[ NrFi ] += LwFiLmb1[ k ];
    else
-    LwFiLmb1[ NrFi ] = -Inf<FunctionValue>();
+    LwFiLmb1[ NrFi ] = -Inf<VarValue>();
    }
   }
 
  // update the upper and lower targets - - - - - - - - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- if( UpFiLmb[ NrFi ] < Inf<FunctionValue>() )
-  UpTrgt = UpRifFi[ NrFi ] + (1.0 - m2) * vStar[ NrFi ];
+ if( UpFiLmb[ NrFi ] < Inf<VarValue>() )
+  UpTrgt = UpRifFi[ NrFi ] + ( 1.0 - m2 ) * vStar[ NrFi ];
  else
-  UpTrgt = Inf<FunctionValue>();
+  UpTrgt = Inf<VarValue>();
 
- if( LwFiLmb[ NrFi ] > -Inf<FunctionValue>() )
+ if( LwFiLmb[ NrFi ] > -Inf<VarValue>() )
   if( m1 > 0 )
-   LwTrgt = UpRifFi[ NrFi ] + vStar[ NrFi ] - m1 * DeltaStar;
+   LwTrgt = UpRifFi[ NrFi ] + vStar[ NrFi ] + m1 * DeltaStar;
   else
    LwTrgt = UpRifFi[ NrFi ] + ( 1.0 + m1 ) * vStar[ NrFi ];
  else
-  LwTrgt = -Inf<FunctionValue>();
+  LwTrgt = -Inf<VarValue>();
 
  }  // end( BundleSolver::FormLambda1 )  - - - - - - - - - - - - - - - - - - -
 
@@ -1583,7 +1592,6 @@ void BundleSolver::FormLambda1( HpNum Tau )
 
 bool BundleSolver::FiAndGi( Index wFi )
 {
-
  double UpCutOff, LwCutOff, LwFiK, EpsCurr;
 
  if( IsEasy.size() && IsEasy[ wFi ] )
@@ -1591,28 +1599,28 @@ bool BundleSolver::FiAndGi( Index wFi )
 
  LwFiK =  UpRifFi[ wFi ] + vStar[ wFi ];
 
- if( UpFiLmb[ wFi ] < Inf<OFValue>() )
-  if( UpTrgt < Inf<OFValue>() && UpFiLmb1[ NrFi ] < Inf<OFValue>() )
+ if( UpFiLmb[ wFi ] < Inf<VarValue>() )
+  if( UpTrgt < Inf<VarValue>() && UpFiLmb1[ NrFi ] < Inf<VarValue>() )
    UpCutOff = std::max( UpTrgt - ( UpFiLmb1[ NrFi ] - UpFiLmb1[ wFi ] ) ,
    		              LwFiK - m2 * BetaK( wFi ) * vStar[ NrFi ] );
   else
    UpCutOff = LwFiK - m2 * BetaK( wFi ) * vStar[ NrFi ];
  else
-  UpCutOff = Inf<OFValue>();
+  UpCutOff = Inf<VarValue>();
 
- if( LwFiLmb[ wFi ] > -Inf<OFValue>() )
-  if( LwTrgt > -Inf<OFValue>() && LwFiLmb1[ NrFi ] > -Inf<OFValue>() )
+ if( LwFiLmb[ wFi ] > -Inf<VarValue>() )
+  if( LwTrgt > -Inf<VarValue>() && LwFiLmb1[ NrFi ] > -Inf<VarValue>() )
    LwCutOff = std::max( LwTrgt - ( LwFiLmb1[ NrFi ] - LwFiLmb1[ wFi ] ) ,
     		              LwFiK + m1 * BetaK( wFi ) * DeltaStar );
   else
    LwCutOff = LwFiK + m1 * BetaK( wFi ) * DeltaStar;
  else
-  LwCutOff = -Inf<OFValue>();
+  LwCutOff = -Inf<VarValue>();
 
- if( LwCutOff > -Inf<OFValue>() && UpCutOff < Inf<OFValue>() )
+ if( ( LwCutOff > -Inf<VarValue>() ) && ( UpCutOff < Inf<VarValue>() ) )
   EpsCurr = ( UpCutOff - LwCutOff ) / std::max( 1.0 , std::abs(UpRifFi[ wFi ] ) );
  else
-  EpsCurr = EInit;
+  EpsCurr = RelAcc / Nearly;
 
  // assign the cutoff values to the c05Function - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1626,54 +1634,54 @@ bool BundleSolver::FiAndGi( Index wFi )
  else
   FiStatus[ wFi ] = v_c05f[ wFi ]->compute( false );
 
- if( UpFiLmb1[ NrFi ] < Inf<OFValue>() )
+ if( UpFiLmb1[ NrFi ] < Inf<VarValue>() )
   UpFiLmb1[ NrFi ] -= UpFiLmb1[ wFi ];
 
- if( LwFiLmb1[ NrFi ] > -Inf<OFValue>() )
+ if( LwFiLmb1[ NrFi ] > -Inf<VarValue>() )
   LwFiLmb1[ NrFi ] -= LwFiLmb1[ wFi ];
 
  UpFiLmb1[ wFi ] = std::min( v_c05f[ wFi ]->get_upper_estimate() , UpFiLmb1[ wFi ] );
  LwFiLmb1[ wFi ] = std::max( v_c05f[ wFi ]->get_lower_estimate() , LwFiLmb1[ wFi ] );
 
- if( UpFiLmb1[ NrFi ] < Inf<OFValue>() )
+ if( UpFiLmb1[ NrFi ] < Inf<VarValue>() )
   UpFiLmb1[ NrFi ] += UpFiLmb1[ wFi ];
  else
-  if( UpFiLmb1[ wFi ] < Inf<OFValue>() ) {
-   if( linear_function )
-	UpFiLmb1[ NrFi ] = linear_function->get_upper_estimate();
+  if( UpFiLmb1[ wFi ] < Inf<VarValue>() ) {
+   if( f_lf )
+	UpFiLmb1[ NrFi ] = f_lf->get_upper_estimate();
    else
     UpFiLmb1[ NrFi ] = 0;
 
    for( Index k = 0 ; k < NrFi ; k++ )
-	if( UpFiLmb1[ k ] < Inf<OFValue>() )
+	if( UpFiLmb1[ k ] < Inf<VarValue>() )
      UpFiLmb1[ NrFi ] += UpFiLmb1[ wFi ];
 	else {
-     UpFiLmb1[ NrFi ] = Inf<OFValue>();
+     UpFiLmb1[ NrFi ] = Inf<VarValue>();
      break;
 	 }
 
    }
 
- if( LwFiLmb1[ NrFi ] > -Inf<OFValue>() )
+ if( LwFiLmb1[ NrFi ] > -Inf<VarValue>() )
   LwFiLmb1[ NrFi ] += LwFiLmb1[ wFi ];
  else
-  if( LwFiLmb1[ wFi ] > -Inf<OFValue>() ) {
-   if( linear_function )
-    LwFiLmb1[ NrFi ] = linear_function->get_lower_estimate();
+  if( LwFiLmb1[ wFi ] > -Inf<VarValue>() ) {
+   if( f_lf )
+    LwFiLmb1[ NrFi ] = f_lf->get_lower_estimate();
    else
     LwFiLmb1[ NrFi ] = 0;
 
    for( Index k = 0 ; k < NrFi ; k++ )
-    if( LwFiLmb1[ k ] > -Inf<OFValue>() )
+    if( LwFiLmb1[ k ] > -Inf<VarValue>() )
      LwFiLmb1[ NrFi ] += LwFiLmb1[ wFi ];
     else {
-     LwFiLmb1[ NrFi ] = -Inf<OFValue>();
+     LwFiLmb1[ NrFi ] = -Inf<VarValue>();
      break;
      }
    }
 
- if( UpFiLmb1[ NrFi ] == Inf<OFValue>() )  // Fi() is not defined in Lambda1
-  DeltaFi = Inf<OFValue>();
+ if( UpFiLmb1[ NrFi ] == Inf<VarValue>() )  // Fi() is not defined in Lambda1
+  DeltaFi = Inf<VarValue>();
  else
   DeltaFi = UpFiLmb1[ NrFi ] - UpRifFi[ NrFi ];
 
@@ -1681,9 +1689,9 @@ bool BundleSolver::FiAndGi( Index wFi )
 
  // update FiBest, if necessary - - - - - - - - - - - - - - - - - - - - - - -
 
- if( UpFiLmb1[ NrFi ] < UpFiBest[ NrFi ] ) {
-  UpFiBest = UpFiLmb1;
-  if( KpBstL )
+ if( UpFiLmb1[ NrFi ] < UpFiBest ) {
+  UpFiBest = UpFiLmb1[ NrFi ];
+  if( MaxSol > 1 )
    LmbdBst = Lambda1;
   }
 
@@ -1699,7 +1707,7 @@ bool BundleSolver::FiAndGi( Index wFi )
   if( Ftchd ==  0 ) {
 
    // first look for a constraint then for a sub-gradient
-   if( UpFiLmb1[ wFi ] == Inf<OFValue>() ) {
+   if( UpFiLmb1[ wFi ] == Inf<VarValue>() ) {
     HasLinearization = v_c05f[ wFi ]->has_linearization( diagonal = false );
     if( !HasLinearization )
      HasLinearization = v_c05f[ wFi ]->has_linearization( diagonal );
@@ -1710,7 +1718,7 @@ bool BundleSolver::FiAndGi( Index wFi )
    }
   else {
 
-   if( UpFiLmb1[ wFi ] == Inf<OFValue>() ) {
+   if( UpFiLmb1[ wFi ] == Inf<VarValue>() ) {
     HasLinearization = v_c05f[ wFi ]->compute_new_linearization( diagonal = false );
     if( !HasLinearization )
      HasLinearization = v_c05f[ wFi ]->compute_new_linearization( diagonal );
@@ -1795,15 +1803,13 @@ bool BundleSolver::FiAndGi( Index wFi )
    Master->SetItem( wh );      // insert the item in the MP Solver
    OOBase[ wh ] = -1;          // ensure it won't be touched again this round
 
-   #if( LOG_BND )
-    if( LogVerb ) {
-     if( !diagonal )
-      *f_log << std::endl << "New constraint " << wh << ", rhs = " << Alfa1k;
-     else
-      *f_log << std::endl << "New eps-subgradient " << wh << " for Fi[ "
-	     << wFi << " ], eps = " << Alfa1k << ", gd = " << - ScPr1k;
-     }
-   #endif
+   if( LogVerb ) {
+    if( ! diagonal )
+     *f_log << std::endl << "New constraint " << wh << ", rhs = " << Alfa1k;
+    else
+     *f_log << std::endl << "New eps-subgradient " << wh << " for Fi[ "
+	    << wFi << " ], eps = " << Alfa1k << ", gd = " << - ScPr1k;
+    }
    }
 
   // if something was inserted, bookkeeping is needed - - - - - - - - - - - -
@@ -1901,76 +1907,72 @@ void BundleSolver::SimpleBStrat( void )
 
 void BundleSolver::UpdtLowerBound( void )
 {
- double LwrBnd = f_Block->get_valid_lower_bound( false ); // ??
+ // first of all, check if a "hard" lower bound is available
+ double LwrBnd = f_Block->get_valid_lower_bound( false );
  if( LwrBnd > - Inf<double>() )
   TrueLB = true;
  else {
+  // if not, check if at least a "conditional" one is available
   TrueLB = false;
   LwrBnd = f_Block->get_valid_lower_bound( true );
   }
 
-if( LwrBnd != LowerBound ) {
+ if( LwrBnd != LowerBound ) {
   LowerBound = LwrBnd;
   LBHasChgd = true;
   }
-
  } // end( BundleSolver::UpdtLowerBound )  - - - - - - - - - - - - - - - - - -
 
 /*--------------------------------------------------------------------------*/
 
-double BundleSolver::BetaK( Index wFi ) {
-
-return( 1.0 / double( NrEasy ) );
-
-} // end( BundleSolver::BetaK )  - - - - - - - - - - - - - - - - - -
+double BundleSolver::BetaK( Index wFi )
+{
+ return( 1.0 / double( NrEasy ) );
+ }
 
 /*--------------------------------------------------------------------------*/
 
 void BundleSolver::Log1( void )
 {
- #if( LOG_BND )
-  if( LogVerb > 1 ) {
-   *f_log << std::endl << "{" << SCalls << "-" << ParIter << "-"
-	   << Master->MaxName() - FreList.size() << "-" << MBDim << "} t = " << t
-	   << " ~ D*_1( z* ) = " << Master->ReadDStart( 1 )
-	   << " ~ Sigma = " << Sigma << std::endl << "           ";
+ if( LogVerb > 1 ) {
+  *f_log << std::endl << "{" << SCalls << "-" << ParIter << "-"
+	 << Master->MaxName() - FreList.size() << "-" << MBDim << "} t = " << t
+	 << " ~ D*_1( z* ) = " << Master->ReadDStart( 1 )
+	 << " ~ Sigma = " << Sigma << std::endl << "           ";
 
-   *f_log <<  " Fi = ";
+  *f_log <<  " Fi = ";
 
-   if( UpFiLmb[NrFi] == Inf<double>() )
-    *f_log << " - INF";
-   else
-    *f_log << UpFiLmb[NrFi] << " ~ eU = " << EpsU;
+  if( UpFiLmb[NrFi] == Inf<double>() )
+   *f_log << " - INF";
+  else
+   *f_log << UpFiLmb[NrFi] << " ~ eU = " << EpsU;
 
-   if( BPar6 )
-    *f_log << " ~ BP3 = " << aBP3;
-   }
- #endif
+  if( BPar6 )
+   *f_log << " ~ BP3 = " << aBP3;
+  }
  } // end( BundleSolver::Log1 )  - - - - - - - - - - - - - - - - - - - - - - -
 
 /*--------------------------------------------------------------------------*/
 
 void BundleSolver::Log2( void )
 {
- #if( LOG_BND )
-  if( LogVerb > 1 ) {
-   *f_log << std::endl << "           ";
+ if( LogVerb > 1 ) {
+  *f_log << std::endl << "           ";
 
-   if( LowerBound > - Inf<double>() )
-    *f_log << "UB = " << - LowerBound << " ~ ";
+  if( LowerBound > - Inf<double>() )
+   *f_log << "UB = " << - LowerBound << " ~ ";
 
-   *f_log << "Fi1 = ";
+  *f_log << "Fi1 = ";
 
-   if( UpFiLmb1[NrFi] == - Inf<double>() )
-    *f_log << "+ INF => STOP." << std::endl;
+  if( UpFiLmb1[ NrFi ] <= - Inf<double>() )
+   *f_log << "+ INF => STOP." << std::endl;
+  else
+   if( UpFiLmb1[ NrFi ] >= Inf<double>() )
+    *f_log << " - INF" << std::endl;
    else
-    if( UpFiLmb1[NrFi] == Inf<double>() )
-     *f_log << " - INF" << std::endl;
-    else
-     *f_log << UpFiLmb1[NrFi] << " ~ Alfa1 = " << Alfa1[NrFi]
-	     << " ~ Gi1xd = " << - ScPr1[NrFi] << std::endl;
-   }
- #endif
+    *f_log << UpFiLmb1[ NrFi ] << " ~ Alfa1 = " << Alfa1[ NrFi ]
+	   << " ~ Gi1xd = " << - ScPr1[ NrFi ] << std::endl;
+  }
  } // end( BundleSolver::Log2 )  - - - - - - - - - - - - - - - - - - - - - - -
 
 /*--------------------------------------------------------------------------*/
@@ -1984,18 +1986,18 @@ void BundleSolver::InitMP( void )
  // set the size- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
  FakeFi.initialize();
- Master->SetDim( BPar2 , &FakeFi , false );
+ Master->SetDim( BPar2 * ( NrFi - NrEasy ) , &FakeFi , false );
 
- Master->SetPar( MPSolver::kOptEps , RAccSol );
- Master->SetPar( MPSolver::kFsbEps , FAccSol );
+ Master->SetPar( MPSolver::kOptEps , RelMPAcc );
+ Master->SetPar( MPSolver::kFsbEps , RMPAccSol );
 
  // insert the constant subgradient of the 0-th component - - - - - - - - - -
+ // TODO: check if the 0-th component is sparse, if so pass a proper base
+ //       to the MPSolver
 
-
- if( linear_function ) {
-  linear_function->get_linearization_coefficients( Master->GetItem( 0 ) );
-  const Index* SGBse = nullptr;
-  Master->SetItemBse( SGBse , NumVar );
+ if( f_lf ) {
+  f_lf->get_linearization_coefficients( Master->GetItem( 0 ) );
+  Master->SetItemBse( nullptr , NumVar );
   Master->SetItem( InINF );
   }
 
@@ -2005,28 +2007,25 @@ void BundleSolver::InitMP( void )
 
 /*--------------------------------------------------------------------------*/
 
-bool BundleSolver::FindNext( Index &wFi ) {
-
+bool BundleSolver::FindNext( Index & wFi )
+{
  Index PrWFi = wFi;
  bool NextIsAccepted = false;
  do {
-  wFi = ( wFi == NrFi - 1 )? 0 : wFi + 1;
+  wFi = ( wFi + 1 ) % NrFi;
   if( ( FiStatus[ wFi ] == kUnEval ) ||
-	 ( FiStatus[ wFi ] < kError && FiStatus[ wFi ] > kOK
-	         && CurrNrEvls[ wFi ] != MaxNrEvls ) )
+      ( ( FiStatus[ wFi ] < kError ) && ( FiStatus[ wFi ] > kOK ) &&
+	( CurrNrEvls[ wFi ] < MaxNrEvls ) ) )
    NextIsAccepted = true;
-  } while( !NextIsAccepted && ( wFi != PrWFi ) );
+  } while( ( ! NextIsAccepted ) && ( wFi != PrWFi ) );
 
- if( NextIsAccepted )
-  return( true );
- else
-  return( false );
+ return( NextIsAccepted );
 
  } // end( BundleSolver::FindNext( ) )  - - - - - - - - - - - - - - - - - - - -
 
 /*--------------------------------------------------------------------------*/
 
-Index BundleSolver::BStrategy( cIndex wFi )
+Index BundleSolver::BStrategy( Index wFi )
 {
  // this method implements the B-strategies of the code, i.e., which "old"
  // items are discarded if the bundle is full and a new item belonging to
@@ -2039,7 +2038,9 @@ Index BundleSolver::BStrategy( cIndex wFi )
  // required; picking a specific spot in the free space is the task of
  // FindAPlace(), which however is not called right away because the place
  // may end up not being needed
- if( FreList.size() || ( Master->MaxName() < Index( BPar2 ) ) )
+
+ if( ( ! FreList.empty() ) || ( Master->MaxName() <
+				Index( BPar2 * ( NrFi - NrEasy ) ) ) )
   return( InINF );
 
  // there is not plenty of space- - - - - - - - - - - - - - - - - - - - - - -
@@ -2052,7 +2053,7 @@ Index BundleSolver::BStrategy( cIndex wFi )
 
  Index wh = 0;
  cHpRow tA = Master->ReadLinErr();
- for( Index i = 0 ; ++i < Index( BPar2 ) ; )
+ for( Index i = 0 ; ++i < Index( BPar2 * ( NrFi - NrEasy ) ) ; )
   if( ( OOBase[ i ] > OOBase[ wh ] ) ||
       ( ( OOBase[ i ] == OOBase[ wh ] ) && ( tA[ i ] > tA[ wh ] ) ) )
    wh = i;
@@ -2188,7 +2189,8 @@ Index BundleSolver::FindAPlace( cIndex wFi )
   FreList.pop();
   }
  else                                       // there are no deleted items ...
-  if( Master->MaxName() < Index( BPar2 ) )  // ... but there is still space
+  if( Master->MaxName() < Index( BPar2 * ( NrFi - NrEasy ) ) )
+                                            // ... but there is still space
    wh = Master->MaxName();                  // next name
 
  assert( Master->MaxName() >= FreList.size() );
@@ -2284,10 +2286,10 @@ void BundleSolver::RemoveItems( void )
 	fun->delete_linearization( i );
     }
 
- if( linear_function ) {
-  int GPMaxSz = linear_function->get_int_par( C05Function::intGPMaxSz );
+ if( f_lf ) {
+  int GPMaxSz = f_lf->get_int_par( C05Function::intGPMaxSz );
   for( Index i = 0 ; i < GPMaxSz ; i++ )
-   linear_function->delete_linearization( i );
+   f_lf->delete_linearization( i );
   }
 
  FreList = priority_queue<Index>();
@@ -2322,7 +2324,7 @@ void BundleSolver::guts_of_destructor( void )
 void BundleSolver::ReSetAlg( unsigned char RstLvl )
 {
  if( ! ( RstLvl & RstAlg ) ) {  // reset algorithmic parameters - - - - - - -
-  ParIter = ParSS = 0;     // reset iterations count
+  ParIter = 0;             // reset iterations count
   CSSCntr = CNSCntr = 0;   // ... comprised consecutive NS/SS count
 
   if( t != tInit ) {       // reset t
@@ -2330,8 +2332,11 @@ void BundleSolver::ReSetAlg( unsigned char RstLvl )
    tHasChgd = true;
    }
 
-  CmptaBPX();  // reset the dynamic number of fetched items
-
+  // reset the dynamic number of fetched items
+  if( BPar6 && ( BPar5 > 0 ) )
+   aBP3 = BPar4;
+  else
+   aBP3 = BPar3;
   }
 
  //!! check if MPSolver != NULL !!
@@ -2349,7 +2354,7 @@ void BundleSolver::ReSetAlg( unsigned char RstLvl )
     else
      for( Index i = Master->MaxName() ; i-- ; )
       if( Master->IsSubG( i ) ) {
-       v_c05f[ Master->WComponent( i ) - 1 ]->delete_linearization( i ); // se e' di una linear??
+       v_c05f[ Master->WComponent( i ) - 1 ]->delete_linearization( i );
        Delete( i );
        }
     }
@@ -2363,13 +2368,13 @@ void BundleSolver::ReSetAlg( unsigned char RstLvl )
      else
       for( Index i = Master->MaxName() ; i-- ; )
        if( ! Master->IsSubG( i ) ) {
-    	v_c05f[ Master->WComponent( i ) - 1 ]->delete_linearization( i ); // se e' di una linear??
-	    Delete( i );
+    	v_c05f[ Master->WComponent( i ) - 1 ]->delete_linearization( i );
+	Delete( i );
         }
      }
 
  if( ! ( RstLvl & RstFiV ) )  // reset the current value of Fi( Lambda ) - - -
-  UpFiLmb[NrFi] = Inf<double>();
+  UpFiLmb[ NrFi ] = Inf< VarValue >();
 
  }  // end( BundleSolver::ReSetAlg ) - - - - - - - - - - - - - - - - - - - - -
 
@@ -2420,26 +2425,27 @@ void BundleSolver::Delete( cIndex i )
 
 void BundleSolver::UpdtaBP3( void )
 {
- const Index tBP3 = ( BPar3 >= 0 ? Index( std::ceil( BPar3 ) ) :
-		              Index( std::ceil( NrFi * ( - BPar3 ) ) ) );
+ if( BPar5 == 0 )
+  return;
+
  switch( BPar6 ) {
   case( 4 ):
-   if( UpFiLmb[NrFi] > -Inf<double>() )
-    aBP3 = ( BPar5 > 0 ? aBP4 : tBP3 ) +
+   if( UpFiLmb[ NrFi ] > -Inf<double>() )
+    aBP3 = ( BPar5 > 0 ? BPar4 : BPar3 ) +
            Index( BPar5 / std::log10( EpsU / RelAcc ) );
-    break;
+   break;
   case( 3 ):
    if( UpFiLmb[NrFi] > -Inf<double>() )
-    aBP3 = ( BPar5 > 0 ? aBP4 : tBP3 ) +
-                         Index( BPar5 / std::sqrt( EpsU / RelAcc ) );
+    aBP3 = ( BPar5 > 0 ? BPar4 : BPar3 ) +
+           Index( BPar5 / std::sqrt( EpsU / RelAcc ) );
    break;
   case( 2 ):
    if( UpFiLmb[NrFi] > -Inf<double>() )
-    aBP3 = ( BPar5 > 0 ? aBP4 : tBP3 ) +
+    aBP3 = ( BPar5 > 0 ? BPar4 : BPar3 ) +
            Index( BPar5 * ( RelAcc / EpsU ) );
    break;
   case( 1 ):
-   if( BPar5 && ( ! ( ParIter % Index( std::abs( BPar5 ) ) ) ) ) {
+   if( ! ( ParIter % Index( std::abs( BPar5 ) ) ) ) {
     if( BPar5 > 0 )
      aBP3++;
     else
@@ -2447,50 +2453,31 @@ void BundleSolver::UpdtaBP3( void )
     }
   }
 
- if( aBP3 > tBP3 )
-  aBP3 = tBP3;
+ if( aBP3 > BPar3 )
+  aBP3 = BPar3;
  else
-  if( aBP3 < aBP4 )
-   aBP3 = aBP4;
+  if( aBP3 < BPar4 )
+   aBP3 = BPar4;
 
  }  // end( BundleSolver::UpdtaBP3 ) - - - - - - - - - - - - - - - - - - - - -
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::CmptaBPX( void )
-{
- aBP3 = ( BPar3 >= 0 ? Index( ceil( BPar3 ) ) :
-                       Index( ceil( NrFi * ( - BPar3 ) ) ) );
-
- aBP4 = std::min( aBP3 , ( BPar4 >= 0 ? Index( ceil( BPar4 ) ) :
-			                Index( ceil( NrFi * ( - BPar4 ) ) ) )
-		  );
-
- if( BPar6 && ( BPar5 > 0 ) )
-  aBP3 = aBP4;
- }  // end( BundleSolver::CmptaBPX() ) - - - - - - - - - - - - - - - - - - - -
-
-/*--------------------------------------------------------------------------*/
-
 bool BundleSolver::IsOptimal( double eps ) const
 {
- double FiL = UpFiLmb[0];
+ if( eps <= 0 )
+  eps = RelAcc;
 
- if( FiL == Inf<double>() || vStar[ NrFi ] == Inf<double>() )
+ c_VarValue err = max_error( eps );
+ if( err >= Inf< VarValue >() )
   return( false );
- else {
-  if( FiL < 0 ) FiL = - FiL;
-  if( FiL < 1 ) FiL = 1;
 
-  if( eps <= 0 )
-   eps = RelAcc;
+ if( tStar > 0 )
+  return( DSTS + Sigma <= err );
+ else
+  return( ( Sigma <= err ) &&
+	  ( DSTS <= std::min( AAccSol , RAccSol * std::abs( tStar ) ) ) );
 
-  if( tStar > 0 )
-   return( DSTS + Sigma <= eps * FiL );
-  else
-   return( ( Master->ReadDStart( 1 ) <= AAccSol ) && ( Sigma <= eps * FiL ) );
-
-  }
  } // end( BundleSolver::IsOptimal() ) - - - - - - - - - - - - - - - - - - - -
 
 /*--------------------------------------------------------------------------*/
@@ -2641,14 +2628,14 @@ void BundleSolver::process_outstanding_Modification( void )
      Index wFi = get_index_of_component(tmod->function());
      if( wFi == Inf<Index>() ) { // 0th component
       double * G1 = Master->GetItem( 0 );
-      linear_function->get_linearization_coefficients( G1 );
+      f_lf->get_linearization_coefficients( G1 );
       for( Index i = 0 ; i < tmod->vars().size() ; ++i )
-       G1[ linear_function->is_active(tmod->vars()[i]) ] +=
+       G1[ f_lf->is_active(tmod->vars()[i]) ] +=
         tmod->delta()[ i ];
       const Index* SGBse = nullptr;
       Master->SetItemBse( SGBse , NumVar );
       Master->SetItem( InINF );
-      } // end if( linear_function )
+      } // end if( f_lf )
      else
       for( Index i = 0 ; i < Master->MaxName(wFi+1) ; i++ )
        if( Master->WComponent( i ) == wFi+1 ) {
@@ -2680,111 +2667,125 @@ void BundleSolver::process_outstanding_Modification( void )
 BundleSolver::FakeFiOracle::FakeFiOracle( BundleSolver *solver ) : FiOracle()
 {
  bslv = solver;
- } // end ( FakeFiOracle::FakeFiOracle( ) )  - - - - - - - - - - - - - - - - -
+ }
 
 /*--------------------------------------------------------------------------*/
 /*-------------------------- OTHER INITIALIZATIONS -------------------------*/
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::FakeFiOracle::SetNDOSolver( NDOSolver *NwSlvr ) {
+void BundleSolver::FakeFiOracle::SetNDOSolver( NDOSolver * NwSlvr )
+{
  throw( std::logic_error( "this method cannot be called" ) );
- } // end ( FakeFiOracle::SetNDOSolver() ) - - - - - - - - - - - - - - - - - -
+ }
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::FakeFiOracle::SetFiLog( ostream *outs , const char lvl ) {
+void BundleSolver::FakeFiOracle::SetFiLog( ostream *outs , const char lvl )
+{
  throw( std::logic_error( "this method cannot be called" ) );
- } // end ( FakeFiOracle::SetFiLog() ) - - - - - - - - - - - - - - - - - - - -
+ }
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::FakeFiOracle::SetFiTime( const bool TimeIt ) {
+void BundleSolver::FakeFiOracle::SetFiTime( const bool TimeIt )
+{
  throw( std::logic_error( "this method cannot be called" ) );
- } // end ( FakeFiOracle::SetFiTime() )  - - - - - - - - - - - - - - - - - - -
+ }
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::FakeFiOracle::SetMaxName( cIndex MxNme ) {
+void BundleSolver::FakeFiOracle::SetMaxName( cIndex MxNme )
+{
  throw( std::logic_error( "this method cannot be called" ) );
- } // end ( FakeFiOracle::SetMaxName() ) - - - - - - - - - - - - - - - - - - -
+ }
 
 /*--------------------------------------------------------------------------*/
 /*-------------- METHODS FOR READING THE DATA OF THE PROBLEM ---------------*/
 /*--------------------------------------------------------------------------*/
 
-Index BundleSolver::FakeFiOracle::GetNumVar( void ) const {
+Index BundleSolver::FakeFiOracle::GetNumVar( void ) const
+{
  return( bslv->NumVar );
- } // end ( FakeFiOracle::GetNumVar() )  - - - - - - - - - - - - - - - - - - -
+ }
 
 /*--------------------------------------------------------------------------*/
 
-Index BundleSolver::FakeFiOracle::GetNrFi( void ) const {
- return( bslv->v_c05f.size( ) );
- } // end ( FakeFiOracle::GetNrFi() )  - - - - - - - - - - - - - - - - - - - -
+Index BundleSolver::FakeFiOracle::GetNrFi( void ) const
+{
+ return( bslv->v_c05f.size() );
+ }
 
 /*--------------------------------------------------------------------------*/
 
-Index BundleSolver::FakeFiOracle::GetMaxName( void ) const {
- return( bslv->BPar2 );
- } // end ( FakeFiOracle::GetMaxName() ) - - - - - - - - - - - - - - - - - - -
+Index BundleSolver::FakeFiOracle::GetMaxName( void ) const
+{
+ return( bslv->BPar2 * ( bslv->NrFi - bslv->NrEasy ) );
+ }
 
 /*--------------------------------------------------------------------------*/
 
-HpNum BundleSolver::FakeFiOracle::GetMinusInfinity( void ) {
+HpNum BundleSolver::FakeFiOracle::GetMinusInfinity( void )
+{
  throw( std::logic_error( "this method cannot be called" ) );
- } // end ( FakeFiOracle::GetMinusInfinity() ) - - - - - - - - - - - - - - - -
+ }
 
 /*--------------------------------------------------------------------------*/
 
-Index BundleSolver::FakeFiOracle::GetMaxNZ( cIndex wFi ) const {
+Index BundleSolver::FakeFiOracle::GetMaxNZ( cIndex wFi ) const
+{
  if( wFi != Inf<Index>() )
   throw( std::logic_error( "GetMaxNZ can be called with wFi = Inf only" ) );
+
  return( bslv->NumVar );
- } // end ( FakeFiOracle::GetMaxNZ() ) - - - - - - - - - - - - - - - - - - - -
+ }
 
 /*--------------------------------------------------------------------------*/
 
-Index BundleSolver::FakeFiOracle::GetMaxCNZ( cIndex wFi ) const {
+Index BundleSolver::FakeFiOracle::GetMaxCNZ( cIndex wFi ) const
+{
  throw( std::logic_error( "this method cannot be called" ) );
- } // end ( FakeFiOracle::GetMaxCNZ() )  - - - - - - - - - - - - - - - - - - -
+ }
 
 /*--------------------------------------------------------------------------*/
 
-bool BundleSolver::FakeFiOracle::GetUC( cIndex i ) {
-
+bool BundleSolver::FakeFiOracle::GetUC( cIndex i )
+{
  double lb_value = bslv->LamVcblr[ i ]->get_lb();
  if( lb_value == -Inf<ColVariable::VarValue>() )
   return( true );
 
- if( lb_value != ColVariable::VarValue(0) )
+ if( lb_value != ColVariable::VarValue( 0 ) )
   throw( std::logic_error( "any value different from zero is not allowed" ) );
 
  return( false );
- } // end ( FakeFiOracle::GetUC() )  - - - - - - - - - - - - - - - - - - - - -
+ }
 
 /*--------------------------------------------------------------------------*/
 
-LMNum BundleSolver::FakeFiOracle::GetUB( cIndex i ) {
+LMNum BundleSolver::FakeFiOracle::GetUB( cIndex i )
+{
  return( bslv->LamVcblr[ i ]->get_ub() );
- } // end ( FakeFiOracle::GetUB() )  - - - - - - - - - - - - - - - - - - - - -
+ }
 
 /*--------------------------------------------------------------------------*/
 
-LMNum BundleSolver::FakeFiOracle::GetBndEps(  ) {
+LMNum BundleSolver::FakeFiOracle::GetBndEps( void )
+{
  throw( std::logic_error( "this method cannot be called" ) );
- } // end ( FakeFiOracle::GetBndEps() )  - - - - - - - - - - - - - - - - - - -
+ }
 
 /*--------------------------------------------------------------------------*/
 
-HpNum BundleSolver::FakeFiOracle::GetGlobalLipschitz( cIndex wFi ) {
+HpNum BundleSolver::FakeFiOracle::GetGlobalLipschitz( cIndex wFi )
+{
  throw( std::logic_error( "this method cannot be called" ) );
- } // end ( FakeFiOracle::GetGlobalLipschitz() )   - - - - - - - - - - - - - -
+ }
 
 /*--------------------------------------------------------------------------*/
 
-Index BundleSolver::FakeFiOracle::GetBNC( cIndex wFi ) {
-
- if( bslv->NrEasy && bslv->IsEasy[wFi-1] )
+Index BundleSolver::FakeFiOracle::GetBNC( cIndex wFi )
+{
+ if( bslv->NrEasy && bslv->IsEasy[ wFi - 1 ] )
   return( bslv->MILP_s[ wFi - 1 ]->get_numcols() );
  else
   return( 0 );
@@ -2792,73 +2793,78 @@ Index BundleSolver::FakeFiOracle::GetBNC( cIndex wFi ) {
 
 /*--------------------------------------------------------------------------*/
 
-Index BundleSolver::FakeFiOracle::GetBNR( cIndex wFi ) {
+Index BundleSolver::FakeFiOracle::GetBNR( cIndex wFi )
+{
  return( bslv->MILP_s[ wFi -1 ]->get_numrows() );
  }
 
 /*--------------------------------------------------------------------------*/
 
-Index BundleSolver::FakeFiOracle::GetBNZ( cIndex wFi ) {
+Index BundleSolver::FakeFiOracle::GetBNZ( cIndex wFi )
+{
  return( bslv->MILP_s[ wFi -1 ]->get_nzelements() );
  }
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::FakeFiOracle::GetBDesc( cIndex wFi , int *Bbeg , int *Bind , double *Bval ,
- 			  double *lhs , double *rhs , double *cst ,
- 			  double *lbd , double *ubd ) {
-
+void BundleSolver::FakeFiOracle::GetBDesc( cIndex wFi , int *Bbeg ,
+					   int *Bind , double *Bval ,
+					   double *lhs , double *rhs ,
+					   double *cst , double *lbd ,
+					   double *ubd )
+{
  auto MILPSlv = bslv->MILP_s[wFi-1];
 
  int num_col = MILPSlv->get_numcols();
 
- std::copy( MILPSlv->get_matbeg().begin() , MILPSlv->get_matbeg().end() , Bbeg );
- std::copy( MILPSlv->get_matind().begin() , MILPSlv->get_matind().end() , Bind );
- std::copy( MILPSlv->get_matval().begin() , MILPSlv->get_matval().end() , Bval );
+ std::copy( MILPSlv->get_matbeg().begin() , MILPSlv->get_matbeg().end() ,
+	    Bbeg );
+ std::copy( MILPSlv->get_matind().begin() , MILPSlv->get_matind().end() ,
+	    Bind );
+ std::copy( MILPSlv->get_matval().begin() , MILPSlv->get_matval().end() ,
+	    Bval );
 
  std::copy( MILPSlv->get_lb().begin() , MILPSlv->get_lb().end() , lbd );
  std::copy( MILPSlv->get_ub().begin() , MILPSlv->get_ub().end() , ubd );
 
-
  for( Index i = 0 ; i < num_col ; i++ )
-
   if( MILPSlv->get_sense()[ i ] == 'L' ) {
    rhs[ i ] = MILPSlv->get_rhs()[ i ];
    lhs[ i ] = -Inf<double>();
    }
   else
    if( MILPSlv->get_sense()[ i ] == 'E' ) {
-	rhs[ i ] = MILPSlv->get_rhs()[ i ];
-	lhs[ i ] = MILPSlv->get_rhs()[ i ];
+    rhs[ i ] = MILPSlv->get_rhs()[ i ];
+    lhs[ i ] = MILPSlv->get_rhs()[ i ];
     }
-    else
-	 if( bslv->MILP_s[ wFi -1 ]->get_sense()[ i ] == 'G' ) {
-      rhs[ i ] = Inf<double>();
+   else
+    if( bslv->MILP_s[ wFi -1 ]->get_sense()[ i ] == 'G' ) {
+     rhs[ i ] = Inf<double>();
+     lhs[ i ] = MILPSlv->get_rhs()[ i ];
+     }
+    else {
+     double rngval = MILPSlv->get_rngval()[ i ];
+     if( rngval > double(0) ) {
+      rhs[ i ] = MILPSlv->get_rhs()[ i ] + rngval;
       lhs[ i ] = MILPSlv->get_rhs()[ i ];
-	  }
-	 else {
-	  double rngval = MILPSlv->get_rngval()[ i ];
-	  if( rngval > double(0) ) {
-	   rhs[ i ] = MILPSlv->get_rhs()[ i ] + rngval;
-	   lhs[ i ] = MILPSlv->get_rhs()[ i ];
-	   }
-	  else {
-	   rhs[ i ] = MILPSlv->get_rhs()[ i ];
-	   lhs[ i ] = MILPSlv->get_rhs()[ i ] + rngval;
-	   }
-	  }
+      }
+     else {
+      rhs[ i ] = MILPSlv->get_rhs()[ i ];
+      lhs[ i ] = MILPSlv->get_rhs()[ i ] + rngval;
+      }
+     }
 
  } // end ( BundleSolver::FakeFiOracle::GetBDesc() ) - - - - - - - - - - - - -
 
 /*--------------------------------------------------------------------------*/
 
-Index BundleSolver::FakeFiOracle::GetANZ( cIndex wFi , cIndex strt ,
- 			 Index stp ) {
-
- if( !bslv->IsEasy[wFi-1] )
+Index BundleSolver::FakeFiOracle::GetANZ( cIndex wFi ,
+					  cIndex strt , Index stp )
+{
+ if( ! bslv->IsEasy[ wFi - 1 ] )
   throw( std::logic_error( "the Function is not a Lagrangian one" ) );
 
- auto LagB = static_cast<LagBFunction *>( bslv->v_c05f[wFi-1] );
+ auto LagB = static_cast<LagBFunction *>( bslv->v_c05f[ wFi - 1 ] );
  //?? DA FARE return( LagB->get_Amat_nzelements() );
 
  } // end ( BundleSolver::FakeFiOracle::GetANZ() ) - - - - - - - - - - - - - -
@@ -2866,39 +2872,45 @@ Index BundleSolver::FakeFiOracle::GetANZ( cIndex wFi , cIndex strt ,
 /*--------------------------------------------------------------------------*/
 
 void BundleSolver::FakeFiOracle::GetADesc( cIndex wFi , int *Abeg , int *Aind ,
-		double *Aval , cIndex strt , Index stp ) {
-
- if( !bslv->IsEasy[wFi-1] )
+					   double *Aval , cIndex strt ,
+					   Index stp )
+{
+ if( ! bslv->IsEasy[ wFi - 1 ] )
   throw( std::logic_error( "the Function is not a Lagrangian one" ) );
 
- auto LagB = static_cast<LagBFunction *>( bslv->v_c05f[wFi-1] );
+ auto LagB = static_cast<LagBFunction *>( bslv->v_c05f[ wFi - 1 ] );
  //?? DA FARE LagB->get_Amat_desc( Abeg , Aind , Aval , strt , stp );
 
  } // end ( BundleSolver::FakeFiOracle::GetANZ() ) - - - - - - - - - - - - - -
 
 /*--------------------------------------------------------------------------*/
 
-NDOSolver * BundleSolver::FakeFiOracle::GetNDOSolver( void ) {
+NDOSolver * BundleSolver::FakeFiOracle::GetNDOSolver( void )
+{
  throw( std::logic_error( "this method cannot be called" ) );
- } // end ( FakeFiOracle::GetNDOSolver() ) - - - - - - - - - - - - - - - - - -
+ }
 
 /*--------------------------------------------------------------------------*/
 /*---------------------- METHODS FOR SETTING LAMBDA ------------------------*/
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::FakeFiOracle::SetLambda( cLMRow Lmbd ) {
+void BundleSolver::FakeFiOracle::SetLambda( cLMRow Lmbd )
+{
  throw( std::logic_error( "this method cannot be called" ) );
  }
 
 /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  */
 
-void BundleSolver::FakeFiOracle::SetLamBase( cIndex_Set LmbdB  , cIndex LmbdBD ) {
+void BundleSolver::FakeFiOracle::SetLamBase( cIndex_Set LmbdB  ,
+					     cIndex LmbdBD )
+{
  throw( std::logic_error( "this method cannot be called" ) );
  }
 
 /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  */
 
-bool BundleSolver::FakeFiOracle::SetPrecision( HpNum Eps ) {
+bool BundleSolver::FakeFiOracle::SetPrecision( HpNum Eps )
+{
  throw( std::logic_error( "this method cannot be called" ) );
  }
 
@@ -2906,41 +2918,44 @@ bool BundleSolver::FakeFiOracle::SetPrecision( HpNum Eps ) {
 /*------------------------ METHODS FOR COMPUTING Fi() ----------------------*/
 /*--------------------------------------------------------------------------*/
 
-HpNum BundleSolver::FakeFiOracle::Fi( cIndex wFi ) {
+HpNum BundleSolver::FakeFiOracle::Fi( cIndex wFi )
+{
  throw( std::logic_error( "this method cannot be called" ) );
- } // end ( FakeFiOracle::Fi( ) )  - - - - - - - - - - - - - - - - - - - - - -
+ }
 
 /*--------------------------------------------------------------------------*/
 /*------------- METHODS FOR READING SUBGRADIENTS / CONSTRAINTS -------------*/
 /*--------------------------------------------------------------------------*/
 
-bool BundleSolver::FakeFiOracle::NewGi( cIndex wFi ) {
+bool BundleSolver::FakeFiOracle::NewGi( cIndex wFi )
+{
  if( wFi == 0 )
   throw( std::invalid_argument( "asking for the 0th component" ) );
- last_c05 =  wFi-1;
+ last_c05 =  wFi - 1;
  return( true );
- } // end ( FakeFiOracle::NewGi( ) ) - - - - - - - - - - - - - - - - - - - - -
+ }
 
 /*--------------------------------------------------------------------------*/
 
 Index BundleSolver::FakeFiOracle::GetGi( SgRow SubG , cIndex_Set &SGBse ,
-			cIndex Name , cIndex strt , Index stp  ) {
-
- auto range = make_pair(strt, stp);
- bslv->v_c05f[ std::get<1>(GiNameVcblr[Name]) ]->get_linearization_coefficients(
- 	 SubG , range , std::get<0>(GiNameVcblr[Name]) );
-
+					 cIndex Name , cIndex strt , Index stp
+					 )
+{
+ auto range = make_pair( strt , stp );
+ bslv->v_c05f[ std::get< 1 >( GiNameVcblr[ Name ] ) ]->
+  get_linearization_coefficients( SubG , range ,
+				  std::get< 0 >( GiNameVcblr[ Name ] ) );
  SGBse = nullptr;
  return( stp - strt );
- } // end ( FakeFiOracle::GetGi( ) )   - - - - - - - - - - - - - - - - - - - -
+ }
 
 /*--------------------------------------------------------------------------*/
 
 HpNum BundleSolver::FakeFiOracle::GetVal( cIndex Name )
 {
- return( bslv->v_c05f[ std::get<1>(GiNameVcblr[Name]) ]->
- 		 get_linearization_constant( std::get<0>(GiNameVcblr[Name]) ) );
- } // end ( FakeFiOracle::GetVal( ) )  - - - - - - - - - - - - - - - - - - - -
+ return( bslv->v_c05f[ std::get< 1 >( GiNameVcblr[ Name ] ) ]->
+	 get_linearization_constant( std::get< 0 >( GiNameVcblr[ Name ] ) ) );
+ }
 
 /*--------------------------------------------------------------------------*/
 
@@ -2956,7 +2971,7 @@ void BundleSolver::FakeFiOracle::SetGiName( cIndex Name )
  if( it == GiNameVcblr.end() )
   throw( std::invalid_argument( "the global pool is full" ) );
 
- bslv->v_c05f[ last_c05 ]->store_linearization( std::get<0>( *it ) );
+ bslv->v_c05f[ last_c05 ]->store_linearization( std::get< 0 >( *it ) );
 
  } // end ( FakeFiOracle::SetGiName( ) ) - - - - - - - - - - - - - - - - - - -
 
@@ -2964,45 +2979,48 @@ void BundleSolver::FakeFiOracle::SetGiName( cIndex Name )
 /*-------------------- METHODS FOR READING OTHER RESULTS -------------------*/
 /*--------------------------------------------------------------------------*/
 
-HpNum BundleSolver::FakeFiOracle::GetLowerBound( cIndex wFi ) {
+HpNum BundleSolver::FakeFiOracle::GetLowerBound( cIndex wFi )
+{
  throw( std::logic_error( "this method cannot be called" ) );
- }  // end ( FakeFiOracle::GetLowerBound( ) )  - - - - - - - - - - - - - - - -
+ }
 
 /*--------------------------------------------------------------------------*/
 
-FiOracle::FiStatus BundleSolver::FakeFiOracle::GetFiStatus( Index wFi ) {
+FiOracle::FiStatus BundleSolver::FakeFiOracle::GetFiStatus( Index wFi )
+{
  throw( std::logic_error( "this method cannot be called" ) );
- }  // end ( FakeFiOracle::GetFiStatus( ) )  - - - - - - - - - - - - - - - - -
+ }
 
 /*--------------------------------------------------------------------------*/
 /*------------- METHODS FOR ADDING / REMOVING / CHANGING DATA --------------*/
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::FakeFiOracle::Deleted( cIndex i ) {
+void BundleSolver::FakeFiOracle::Deleted( cIndex i )
+{
+ bslv->v_c05f[ std::get< 1 >( GiNameVcblr[ i ] ) ]->
+  delete_linearization( std::get< 0 >( GiNameVcblr[ i ] ) );
 
- bslv->v_c05f[ std::get<1>(GiNameVcblr[i]) ]->
-     delete_linearization( std::get<0>(GiNameVcblr[i]) );
-
- std::get<2>(GiNameVcblr[i]) = true;
- } // end ( FakeFiOracle::Deleted( ) ) - - - - - - - - - - - - - - - - - - - -
+ std::get< 2 >( GiNameVcblr[ i ] ) = true;
+ }
 
 /*--------------------------------------------------------------------------*/
 
 void BundleSolver::FakeFiOracle::Aggregate( cHpRow Mlt , cIndex_Set NmSt ,
-		cIndex Dm , cIndex NwNm ) {
+					    cIndex Dm , cIndex NwNm )
+{
  throw( std::logic_error( "this method cannot be called" ) );
- }  // end ( FakeFiOracle::Aggregate( ) )  - - - - - - - - - - - - - - - - - -
+ }
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::FakeFiOracle::initialize( void ) {
- GiNameVcblr.resize( bslv->BPar2 );
+void BundleSolver::FakeFiOracle::initialize( void )
+{
+ GiNameVcblr.resize( GetMaxName() );
  auto it =  GiNameVcblr.begin();
  for( Index i = 0 ; i < bslv->v_c05f.size() ; ++i )
-  for( Index j = 0 ; j < bslv->v_c05f[i]->get_int_par( C05Function::intGPMaxSz);
-	       j++ )
-	*it = std::make_tuple( j , i , true );
- }  // end ( FakeFiOracle::Aggregate( ) )  - - - - - - - - - - - - - - - - - -
+  for( Index j = 0 ; j < bslv->BPar2 ; ++j )
+   *it = std::make_tuple( j , i , true );
+ }
 
 /*--------------------------------------------------------------------------*/
 /*----------------------- End File BundleSolver.cpp ------------------------*/
