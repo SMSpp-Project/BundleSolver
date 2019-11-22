@@ -1514,8 +1514,12 @@ void BundleSolver::FormLambda1( HpNum Tau )
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
  FiStatus.assign( NrFi ,  kUnEval );
- for( Index i = 0 ; i < NumVar ; i++ )
-  LamVcblr[ i ]->set_value( Lambda1[i] );
+
+ if( UpFiLmb[ NrFi ] < Inf<VarValue>() ) {
+  for( Index i = 0 ; i < NumVar ; i++ )
+   LamVcblr[ i ]->set_value( Lambda1[i] );
+   }
+
 
  // compute the upper and lower model at the tentative point   - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
