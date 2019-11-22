@@ -1519,7 +1519,9 @@ void BundleSolver::FormLambda1( HpNum Tau )
   for( Index i = 0 ; i < NumVar ; i++ )
    LamVcblr[ i ]->set_value( Lambda1[i] );
    }
-
+ else
+  for( Index i = 0 ; i < NumVar ; i++ )
+   Lambda1[i] = LamVcblr[ i ]->get_value( );
 
  // compute the upper and lower model at the tentative point   - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1744,7 +1746,7 @@ bool BundleSolver::FiAndGi( Index wFi )
 
   cIndex_Set SGBse = nullptr;
   v_c05f[ wFi ]->get_linearization_coefficients( G1 );
-  HpNum Alfa1k = v_c05f[ wFi ]->get_linearization_constant();
+  HpNum eps = v_c05f[ wFi ]->get_linearization_constant();
 
   GiEvaltns++;
 
@@ -1759,8 +1761,10 @@ bool BundleSolver::FiAndGi( Index wFi )
 
   // update alpha value at Lambda1 point  - - - - - - - - - - - - - - - - - -
 
-  Alfa1k = UpFiLmb1[ wFi ] - Alfa1k
+  eps = UpFiLmb1[ wFi ] - eps
 		  - std::inner_product( Lambda1.begin() , Lambda1.end() , G1 , double(0) );
+
+  HpNum Alfa1k = eps;
 
   if( !diagonal )  // it is a constraint
    cp = Master->CheckCnst( Alfa1k , ScPr1k , Lambda.data() );
@@ -1807,7 +1811,8 @@ bool BundleSolver::FiAndGi( Index wFi )
      *f_log << std::endl << "New constraint " << wh << ", rhs = " << Alfa1k;
     else
      *f_log << std::endl << "New eps-subgradient " << wh << " for Fi[ "
-	    << wFi << " ], eps = " << Alfa1k << ", gd = " << - ScPr1k;
+	    << wFi << " ] , eps = " << eps <<
+	    " , Alfa1 = " << Alfa1k << ", gd = " << - ScPr1k;
     }
    }
 
