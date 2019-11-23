@@ -61,7 +61,7 @@
  *
  * \version 0.10
  *
- * \date 19 - 11 - 2019
+ * \date 23 - 11 - 2019
  *
  * \author Antonio Frangioni \n
  *         Operations Research Group \n
@@ -258,6 +258,8 @@ public:
  intOSImp2 ,  ///< reduction parameter for OsiMP solver only
 
  intOSImp3 ,  ///< threads parameter for OsiMP solver only
+
+ intRstAlg ,  ///< reset parameter
 
  intLastBndSlvPar  ///< first allowed new int parameter for derived classes
                    /**< Convenience value for easily allow derived classes
@@ -536,7 +538,17 @@ public:
   *
   * - intOSImp2 [0]: reduction parameter ( for OsiMP solver only )
   *
-  * - intOSImp3 [1]: number of threads ( for OsiMP solver only ) */
+  * - intOSImp3 [1]: number of threads ( for OsiMP solver only )
+  *
+  * - intRstAlg [ ]: parameter to handle the reset of the algorithm
+  *                  bit-wise coded:
+  *
+  *                  0 bit -> true if don't reset algorithmic parameters
+  *                  1 bit -> true if don't reset current point
+  *                  2 bit -> true if don't reset subgradients
+  *                  3 bit -> true if don't reset constraints
+  *                  4 bit -> true if don't reset FiVals
+  *                  5 bit -> true if don't get an initial point  */
 
  void set_par( const idx_type par , const int value ) override;
 
@@ -1167,6 +1179,8 @@ public:
  bool SSDone;         ///< true if the laste step was a SS
 
  Subset FiStatus;
+
+ int RstAlgPrm; // reset parameter bt-wise coded
 
 /*--------------------------------------------------------------------------*/
 

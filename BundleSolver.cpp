@@ -6,7 +6,7 @@
  *
  * \version 0.01
  *
- * \date 28 - 08 - 2019
+ * \date 23 - 11 - 2019
  *
  * \author Antonio Frangioni \n
  *         Operations Research Group \n
@@ -79,7 +79,8 @@ const std::vector< std::string > BundleSolver::int_pars_str = {
  "intQPmp2",
  "OSImp1" ,
  "OSImp2" ,
- "OSImp3"
+ "OSImp3" ,
+ "intRstAlg"
  };
 
 // define and initialize here the vector of double parameters names
@@ -121,6 +122,7 @@ const std::map< std::string , BundleSolver::idx_type >
  { "intOSImp1" , BundleSolver::intOSImp1 } ,
  { "intOSImp2" , BundleSolver::intOSImp2 } ,
  { "intOSImp3" , BundleSolver::intOSImp3 } ,
+ { "intRstAlg" , BundleSolver::intRstAlg } ,
  };
 
 // define and initialize here the map for double parameters names
@@ -162,6 +164,7 @@ const std::vector< int > BundleSolver::dflt_int_par = {
   4 ,  // intOSImp1
   0 ,  // intOSImp2
   1 ,  // intOSImp3
+  62  // intRstAlg
  };
 
 // define and initialize here the default double parameters
@@ -203,6 +206,7 @@ static const unsigned char RstCrr =  2;  // don't reset current point
 static const unsigned char RstSbg =  4;  // don't reset subgradients
 static const unsigned char RstCnt =  8;  // don't reset constraints
 static const unsigned char RstFiV = 16;  // don't reset FiVals
+static const unsigned char NoStPt = 32;  // don't get an initial point
 
 static cIndex InINF = SMSpp_di_unipi_it::Inf<Index>();
 
@@ -784,8 +788,6 @@ void BundleSolver::set_Block( Block * block )
  Result = kError;
  SSDone = false;
 
- ReSetAlg( RstCrr | RstSbg | RstCnt );  // Fi( Lambda ) is reset inside
-
  // warning: the following things can only be done *after* that
  // Oracle->SetMaxName() has been invoked, because they use methods of the
  // oracle which depends on knowledge of the MaxName to work properly
@@ -795,6 +797,7 @@ void BundleSolver::set_Block( Block * block )
  // b0 = Oracle->GetVal( BPar2 );
 
  // initialize the MP Solver, if any - - - - - - - - - - - - - - - - - - - -
+ // - - - -  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
  if( Master )        // a MP solver is set ??? dove metterlo ???
   Master->SetDim();  // clear all its internal state
@@ -839,6 +842,12 @@ void BundleSolver::set_Block( Block * block )
   }
 
  InitMP();
+
+ // reset algorithm  - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // - - - -  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+ // default value  RstCrr | RstSbg | RstCnt | RstFiV | NoStPt = 62
+ ReSetAlg( RstAlgPrm );  // Fi( Lambda ) is reset inside
 
  }  // end( BundleSolver::set_Block )  - - - - - - - - - - - - - - - - - - - -
 
@@ -919,6 +928,9 @@ void BundleSolver::set_par( const idx_type par , const int value ) {
    break;
   case( intOSImp3 ):
    threads = value;
+   break;
+  case( intRstAlg ):
+   RstAlgPrm = value;
    break;
   default:
    CDASolver::set_par( par , value );
@@ -1120,6 +1132,9 @@ int BundleSolver::get_int_par( const idx_type par ) const
    break;
   case( intOSImp3 ):
    return( threads  );
+   break;
+  case( intRstAlg ):
+   return( RstAlgPrm  );
    break;
   default:
    return( CDASolver::get_dflt_int_par( par ) );
@@ -1514,14 +1529,8 @@ void BundleSolver::FormLambda1( HpNum Tau )
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
  FiStatus.assign( NrFi ,  kUnEval );
-
- if( UpFiLmb[ NrFi ] < Inf<VarValue>() ) {
-  for( Index i = 0 ; i < NumVar ; i++ )
-   LamVcblr[ i ]->set_value( Lambda1[i] );
-   }
- else
-  for( Index i = 0 ; i < NumVar ; i++ )
-   Lambda1[i] = LamVcblr[ i ]->get_value( );
+ for( Index i = 0 ; i < NumVar ; i++ )
+  LamVcblr[ i ]->set_value( Lambda1[i] );
 
  // compute the upper and lower model at the tentative point   - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -2383,6 +2392,12 @@ void BundleSolver::ReSetAlg( unsigned char RstLvl )
 
  if( ! ( RstLvl & RstFiV ) )  // reset the current value of Fi( Lambda ) - - -
   UpFiLmb[ NrFi ] = Inf< VarValue >();
+
+ if( !( RstLvl & NoStPt ) ) {  // get an initial point
+  UpFiLmb[ NrFi ] = Inf< VarValue >();
+  for( Index i = 0 ; i < NumVar ; i++ )
+   Lambda[i] = LamVcblr[ i ]->get_value( );
+  }
 
  }  // end( BundleSolver::ReSetAlg ) - - - - - - - - - - - - - - - - - - - - -
 
