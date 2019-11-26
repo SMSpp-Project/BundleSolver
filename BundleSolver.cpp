@@ -6,7 +6,7 @@
  *
  * \version 0.01
  *
- * \date 23 - 11 - 2019
+ * \date 26 - 11 - 2019
  *
  * \author Antonio Frangioni \n
  *         Operations Research Group \n
@@ -657,11 +657,11 @@ void BundleSolver::set_Block( Block * block )
  auto v_s_Variable = f_Block->get_static_variables();
  for( auto & el : v_s_Variable ) {
   if( un_any_thing_0( ColVariable , el , ++NumVar ) )
-   break;
+   continue;
   if( un_any_thing_1( ColVariable , el , NumVar += var.size() ) )
-   break;
-  if( un_any_thing_K( ColVariable , el , NumVar += var.size() ) )
-   break;
+   continue;
+  if( un_any_thing_K( ColVariable , el , NumVar += var.num_elements() ) )
+   continue;
   throw( std::logic_error( "some static Variable is not a ColVariable" ) );
   }
 
