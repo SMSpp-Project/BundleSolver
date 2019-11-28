@@ -6,7 +6,7 @@
  *
  * \version 0.01
  *
- * \date 26 - 11 - 2019
+ * \date 28 - 11 - 2019
  *
  * \author Antonio Frangioni \n
  *         Operations Research Group \n
@@ -214,6 +214,10 @@ static cIndex InINF = SMSpp_di_unipi_it::Inf<Index>();
 
 int BundleSolver::compute( bool changedvars )
 {
+
+ if( MaxIter == 0 )  // No iteration must be performed
+  return kStopIter;
+
  // basic sanity checks - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -231,7 +235,8 @@ int BundleSolver::compute( bool changedvars )
  // initializations - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- Result = kOK;
+ ParIter = 0;
+ Result = kStopIter;
  SCalls++;
 
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -252,8 +257,10 @@ int BundleSolver::compute( bool changedvars )
   // check for optimality - - - - - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-  if( IsOptimal() )
+  if( IsOptimal() ) {
+   Result = kOK;
    break;
+  }
 
   // check if "ex-ante" Noise Reduction is needed - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -530,14 +537,11 @@ int BundleSolver::compute( bool changedvars )
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-  } while( ( ! MaxIter ) || ( ParIter < MaxIter ) );
+  } while( ParIter < MaxIter );
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 // main cycle ends here- - - - - - - - - - - - - - - - - - - - - - - - - - -
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
-if( MaxIter && ( ParIter >= MaxIter ) && ( ! Result ) )
- Result = kStopIter;
 
 return( Result );
 
