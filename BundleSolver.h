@@ -330,7 +330,7 @@ public:
   tHasChgd( true ) , LowerBound( - Inf< VarValue >() ) , t( 0 ) ,
   Prevt( 0 ) , Sigma( 0 ) , DSTS( 0 ) , vStar( 0 ) , DeltaFi( 0 ) ,
   EpsU( 0 ) , CSSCntr( 0 ) , CNSCntr( 0 ) , TrueLB( false ) ,
-  LBHasChgd( true ) , SSDone( true ) , MBDim( 0 ) , aBP3( 0 ) , 
+  LBHasChgd( false ) , SSDone( true ) , MBDim( 0 ) , aBP3( 0 ) , 
   f_lf( nullptr ) , Master( nullptr ) , UpTrgt( 0 ) , LwTrgt( 0 ) ,
   UpFiBest( Inf< VarValue >() ) , MaxNrEvls( 0 ) , DeltaStar( 0 ) , NrmD( 0 )
  {

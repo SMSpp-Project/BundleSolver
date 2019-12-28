@@ -254,6 +254,10 @@ int BundleSolver::compute( bool changedvars )
    break;
    }
 
+  // some log - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+  Log1();
+
   // check for optimality - - - - - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -286,10 +290,6 @@ int BundleSolver::compute( bool changedvars )
   // update out-of-base counters- - - - - - - - - - - - - - - - - - - - - - -
 
   UpdtCntrs();
-
-  // some log - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
-  Log1();
 
   // Hard Long-Term t-strategy for quadratic stabilization- - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1265,23 +1265,21 @@ void BundleSolver::FormD( void )
  // collect and set individual and global lower bounds- - - - - - - - - - - -
 
  if( LBHasChgd && ( UpFiLmb[ NrFi ] < Inf<double>() ) ) {
-  if( LowerBound > - Inf<double>() )
+  if( TrueLB && ( LowerBound > - Inf<double>() ) )
    Master->SetLowerBound( LowerBound - UpFiLmb[ NrFi ] );
   else
    Master->SetLowerBound( - Inf<double>() );
 
-  for( Index k = 0 ; k < NrFi ; k++ ) {
-   if( NrEasy && IsEasy[ k ] )  // skip easy components
-    continue;
+  if( MPName )  // QPPenaltyMP does not allow individual lower bounds
+   for( Index k = 0 ; k < NrFi ; k++ ) {
+    if( NrEasy && IsEasy[ k ] )  // skip easy components
+     continue;
 
-   if( ! MPName )  // QPPenaltyMP
-    continue;      // does not allow individual lower bounds
-
-   if( LowerBound > - Inf<double>() )
-    Master->SetLowerBound( LowerBound - UpFiLmb[ k ] , k + 1 );
-   else
-    Master->SetLowerBound( - Inf<double>() , k + 1 );
-   }
+    if( TrueLB && ( LowerBound > - Inf<double>() ) )
+     Master->SetLowerBound( LowerBound - UpFiLmb[ k ] , k + 1 );
+    else
+     Master->SetLowerBound( - Inf<double>() , k + 1 );
+    }
 
   LBHasChgd = false;
   }
@@ -1927,19 +1925,25 @@ void BundleSolver::SimpleBStrat( void )
 
 void BundleSolver::UpdtLowerBound( void )
 {
+ // note: set LBHasChgd only if the new lower bound has to be set into the
+ //       MPSolver, which only happens if a new non-conditional lower bound
+ //       if found or if a previously non-conditional lower bound disappears
+ //       and only leaves a conditional one (in the latter case, the lower
+ //       bound in the MPSolver has to be set to -INF)
+
  // first of all, check if a "hard" lower bound is available
  double LwrBnd = f_Block->get_valid_lower_bound( false );
- if( LwrBnd > - Inf<double>() )
+ if( LwrBnd > - Inf<double>() ) {
+  LBHasChgd = ( ! TrueLB ) || ( LwrBnd != LowerBound );
+  LowerBound = LwrBnd;
   TrueLB = true;
+  }
  else {
   // if not, check if at least a "conditional" one is available
-  TrueLB = false;
   LwrBnd = f_Block->get_valid_lower_bound( true );
-  }
-
- if( LwrBnd != LowerBound ) {
+  LBHasChgd = TrueLB;
   LowerBound = LwrBnd;
-  LBHasChgd = true;
+  TrueLB = false;
   }
  } // end( BundleSolver::UpdtLowerBound )  - - - - - - - - - - - - - - - - - -
 
@@ -2025,7 +2029,8 @@ void BundleSolver::InitMP( void )
   Master->SetItem( InINF );
   }
 
- tHasChgd = LBHasChgd = true;
+ tHasChgd = true;
+ LBHasChgd = false;
 
  }  // end( BundleSolver::InitMP( ) )  - - - - - - - - - - - - - - - - - - - -
 
