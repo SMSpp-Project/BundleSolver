@@ -1274,6 +1274,9 @@ void BundleSolver::FormD( void )
    if( NrEasy && IsEasy[ k ] )  // skip easy components
     continue;
 
+   if( ! MPName )  // QPPenaltyMP
+    continue;      // does not allow individual lower bounds
+
    if( LowerBound > - Inf<double>() )
     Master->SetLowerBound( LowerBound - UpFiLmb[ k ] , k + 1 );
    else
