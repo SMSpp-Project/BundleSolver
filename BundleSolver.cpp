@@ -214,7 +214,6 @@ static cIndex InINF = SMSpp_di_unipi_it::Inf<Index>();
 
 int BundleSolver::compute( bool changedvars )
 {
-
  if( MaxIter == 0 )  // No iteration must be performed
   return kStopIter;
 
@@ -1397,7 +1396,7 @@ void BundleSolver::FormD( void )
   DSTS = Master->ReadDStart( tStar );                  // D_{t*,\beta,x}
  else
   DSTS = std::abs( tStar ) * Master->ReadDStart( 1 );  // | t* | * || z* ||
-  
+
  // Sigma* + D*_{t*}( -z* ) is the "maximum expected increase" used in
  // the stopping criterion, EpsU is that relative to Fi( Lambda )
 
@@ -2564,7 +2563,30 @@ void BundleSolver::process_outstanding_Modification( void )
     if( tmod ) {
      Index wFi = get_index_of_component(tmod->function());
      std::vector<double> Alfa1;
+     if( tmod->shift() == INFshift ) { // reset upper function values
+      UpFiLmb[ wFi ] = Inf<VarValue>();
+      UpFiLmb[ NrFi ] = Inf<VarValue>();
+      }
+     else
+      if( tmod->shift() == -INFshift ) { // reset lower function values
+       LwFiLmb[ wFi ] = -Inf<VarValue>();
+       LwFiLmb[ NrFi ] = -Inf<VarValue>();
+       }
+      else
+       if( std::isnan( tmod->shift() ) ) { // reset of both function values
+    	UpFiLmb[ wFi ] = Inf<VarValue>();
+    	LwFiLmb[ wFi ] = -Inf<VarValue>();
+        UpFiLmb[ NrFi ] = Inf<VarValue>();
+        LwFiLmb[ NrFi ] = -Inf<VarValue>();
+        }
+       else {
+    	UpFiLmb[ wFi ] += tmod->shift();
+    	LwFiLmb[ wFi ] += tmod->shift();
+    	UpFiLmb[ NrFi ] += tmod->shift();
+    	LwFiLmb[ NrFi ] += tmod->shift();
+        }
      switch( tmod->type() ) {
+      case( C05FunctionMod::NothingChanged ) :   ///< both \alpha and g are still
       case( C05FunctionMod::AllLinearizationChanged ):
 	   Master->ChgSubG( 0 , NumVar , wFi+1 );
       case( C05FunctionMod::AlphaChanged ):

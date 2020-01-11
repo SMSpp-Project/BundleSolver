@@ -217,6 +217,16 @@ public:
  using LinearCombination = C05Function::LinearCombination;
  using c_LinearCombination = C05Function::c_LinearCombination;
 
+/*----------------------------- CONSTANTS ----------------------------------*/
+
+ static constexpr Function::FunctionValue NaNshift
+                             = std::numeric_limits<Function::FunctionValue>::quiet_NaN();
+ ///< convenience constexpr for "NaN", *not* to be used with ==
+
+ static constexpr Function::FunctionValue INFshift
+                              = std::numeric_limits<Function::FunctionValue>::infinity();
+ ///< convenience constexpr for "Infty"
+
 /*--------------------------------------------------------------------------*/
  /// public enum for the int algorithmic parameters
  /** Public enum describing the different types of algorithmic parameters
