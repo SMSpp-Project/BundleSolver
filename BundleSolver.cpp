@@ -3075,9 +3075,11 @@ void BundleSolver::FakeFiOracle::initialize( void )
  GiNameVcblr.resize( GetMaxName() );
  auto it =  GiNameVcblr.begin();
  for( Index i = 0 ; i < bslv->v_c05f.size() ; ++i )
-  for( Index j = 0 ; j < bslv->BPar2 ; ++j )
-   *it = std::make_tuple( j , i , true );
- }
+  for( Index j = 0 ; j < bslv->BPar2 ; ++j ) {
+   *(it++) = std::make_tuple( j , i , true );
+   }
+
+ } // (end BundleSolver::FakeFiOracle::initialize )  - - - - - - - - - - - - -
 
 /*--------------------------------------------------------------------------*/
 /*----------------------- End File BundleSolver.cpp ------------------------*/
