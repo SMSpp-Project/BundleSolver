@@ -2922,7 +2922,7 @@ Index BundleSolver::FakeFiOracle::GetANZ( cIndex wFi ,
   throw( std::logic_error( "the Function is not a Lagrangian one" ) );
 
  auto LagB = static_cast<LagBFunction *>( bslv->v_c05f[ wFi - 1 ] );
- //?? DA FARE return( LagB->get_Amat_nzelements() );
+ return( LagB->get_NzMat() );
 
  } // end ( BundleSolver::FakeFiOracle::GetANZ() ) - - - - - - - - - - - - - -
 
@@ -2936,7 +2936,7 @@ void BundleSolver::FakeFiOracle::GetADesc( cIndex wFi , int *Abeg , int *Aind ,
   throw( std::logic_error( "the Function is not a Lagrangian one" ) );
 
  auto LagB = static_cast<LagBFunction *>( bslv->v_c05f[ wFi - 1 ] );
- //?? DA FARE LagB->get_Amat_desc( Abeg , Aind , Aval , strt , stp );
+ LagB->get_MatDesc( Abeg , Aind , Aval , strt , stp );
 
  } // end ( BundleSolver::FakeFiOracle::GetANZ() ) - - - - - - - - - - - - - -
 
