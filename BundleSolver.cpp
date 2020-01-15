@@ -261,9 +261,10 @@ int BundleSolver::compute( bool changedvars )
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
   if( IsOptimal() ) {
+   BLOG( 1 , " ~ stop (optimal)" << std::endl );
    Result = kOK;
    break;
-  }
+   }
 
   // check if "ex-ante" Noise Reduction is needed - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -304,7 +305,7 @@ int BundleSolver::compute( bool changedvars )
    if( AFL < 1 )
     AFL = 1;
 
-   if( abs(vStar[ NrFi ]) <= tSPar2 * EpsU * AFL ) {
+   if( abs( vStar[ NrFi ] ) <= tSPar2 * EpsU * AFL ) {
     BLOG( 1 , "small v => increase t" << std::endl << "           " );
 
     // collect two numbers vc and vl such that v( tNew ) >= vc + tNew * vl
@@ -327,7 +328,7 @@ int BundleSolver::compute( bool changedvars )
      }
     }
    }  // end if( Hard t-strategy )  - - - - - - - - - - - - - - - - - - - - -
-  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+      //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
   // a real iteration (iterations where Fi() is not evaluated do not count) -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -383,6 +384,28 @@ int BundleSolver::compute( bool changedvars )
     Result = kError;
    }
 
+  // compute the "aggregated" Alfa1 and ScPr1 - - - - - - - - - - - - - - - -
+  // ... using the "representatives" of all components: these are used in
+  // some "global" formulae, such as the t heuristics
+
+  Alfa1[ NrFi ] = 0;
+  ScPr1[ NrFi ] = Master->ReadGid();
+
+  for( Index k = 0 ; k < NrFi ; k++ )
+   if( whisG1[ k ] < InINF ) {
+    if( Alfa1[ k ] == Inf<double>() )
+     Alfa1[ k ] = (Master->ReadLinErr())[ whisG1[ k ] ];
+
+    Alfa1[ NrFi ] += Alfa1[ k ];
+
+    if( ScPr1[ k ] == Inf<double>() )
+     ScPr1[ k ] = Master->ReadGid( whisG1[ k ] );
+
+    ScPr1[ NrFi ] += ScPr1[ k ];
+    }
+   else
+    Alfa1[ k ] = ScPr1[ k ] = 0;
+
   // check whether the Lower Bounds have changed- - - - - - - - - - - - - - -
 
   UpdtLowerBound();
@@ -396,16 +419,21 @@ int BundleSolver::compute( bool changedvars )
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
   if( UpFiLmb1[NrFi] == - Inf<double>() ) {
+   BLOG( 1 , " ~ stop (unbounded)" << std::endl );
    Result = kUnbounded;
    break;
    }
 
-  if( ( Result == kError ) || ( Result == kStopTime ) )
+  if( ( Result == kError ) || ( Result == kStopTime ) ) {
+   BLOG2( 1 , ( Result == kError ) , " ~ stop (error)" << std::endl );
+   BLOG2( 1 , ( Result == kStopTime ) , " ~ stop (time)" << std::endl );
    break;
+   }
 
-  if( tHasChgd )  // "noise reduction": t has changed,
-   continue;                      // so go solve the master problem again
-                                  // (no NS/SS decision can be made)
+  if( tHasChgd ) {  // "noise reduction": t has changed
+   BLOG( 1 , " ~ NR" << std::endl );  // so go solve the master problem again
+   continue;                          // (no NS/SS decision can be made)
+   }
 
   // check for the conditional lower bound- - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -423,11 +451,12 @@ int BundleSolver::compute( bool changedvars )
   // largest value that would have produced a feasible point, i.e.
   // t := *Alfa1 / ( - *ScPr1 )
 
-  if( UpFiLmb1[NrFi] == Inf<double>() )  // ???
+  if( UpFiLmb1[ NrFi ] == Inf<double>() )  // ???
    continue;
   else
-   if( UpFiLmb[NrFi] == Inf<double>() ) {  // if reached feasibility  - - - - -
-	GotoLambda1();             // go to the feasible point
+   if( UpFiLmb[ NrFi ] == Inf<double>() ) {  // if reached feasibility- - - -
+    BLOG( 1 , "           Fi1 < INF ==> SS " << std::endl );
+    GotoLambda1();             // go to the feasible point
     continue;                  // and start the actual minimization of Fi()
     }
 
@@ -1383,7 +1412,7 @@ void BundleSolver::FormD( void )
    else
     vStar[ k ] = Master->ReadFiBLambda( k + 1 );
 
-  if( UpFiLmb[NrFi] < Inf<double>() )
+  if( UpFiLmb[ NrFi ] < Inf<double>() )
    for( Index k = 0 ; k < NrFi ; k++ )
     if( IsEasy[ k ] )
      vStar[ NrFi ] += UpRifFi[ k ];
@@ -1526,15 +1555,14 @@ void BundleSolver::FormLambda1( HpNum Tau )
   Lambda1 = tL1;
   }  // end( if( the bounds have to be enforced ) )
 
-
- whisG1.assign( NrFi , Inf<Index>() );
-
  // Lambda has changed, pass the new one to the oracle - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- FiStatus.assign( NrFi ,  kUnEval );
+ FiStatus.assign( NrFi , kUnEval );
+ whisG1.assign( NrFi , Inf<Index>() );
+
  for( Index i = 0 ; i < NumVar ; i++ )
-  LamVcblr[ i ]->set_value( Lambda1[i] );
+  LamVcblr[ i ]->set_value( Lambda1[ i ] );
 
  // compute the upper and lower model at the tentative point   - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1551,14 +1579,13 @@ void BundleSolver::FormLambda1( HpNum Tau )
   if( IsEasy.size() && IsEasy[ k ] )  // if k is an easy component
    UpFiLmb1[ k ] =  LwFiLmb1[ k ] = Master->ReadFiBLambda( k );
   else {
-
    // initialize upper and lower bound for each component  - - - - - - - - - -
 
-   if( v_c05f[ k ]->get_Lipschitz_constant() < Inf<VarValue>()
-	   && UpFiLmb[ k ] < Inf<VarValue>() )
-    UpFiLmb1[ k ] = UpRifFi[ k ] + v_c05f[ k ]->get_Lipschitz_constant() * NrmD;
+   c_VarValue Lk = v_c05f[ k ]->get_Lipschitz_constant();
+   if( ( Lk < Inf<VarValue>() ) && ( UpFiLmb[ k ] < Inf<VarValue>() ) )
+    UpFiLmb1[ k ] = UpRifFi[ k ] + Lk * NrmD;
    else
-	UpFiLmb1[ k ] = Inf<VarValue>();
+    UpFiLmb1[ k ] = Inf<VarValue>();
 
    if( LwFiLmb[ k ] > -Inf<VarValue>() )
     LwFiLmb1[ k ] = UpRifFi[ k ] + vStar[ k ];
@@ -1573,7 +1600,7 @@ void BundleSolver::FormLambda1( HpNum Tau )
    if( UpFiLmb1[ k ] < Inf<VarValue>() )
     UpFiLmb1[ NrFi ] += UpFiLmb1[ k ];
    else
-	UpFiLmb1[ NrFi ] = Inf<VarValue>();
+    UpFiLmb1[ NrFi ] = Inf<VarValue>();
    }
 
   if( LwFiLmb1[ NrFi ] > -Inf<VarValue>() ) {
@@ -1616,7 +1643,7 @@ bool BundleSolver::FiAndGi( Index wFi )
  if( UpFiLmb[ wFi ] < Inf<VarValue>() )
   if( UpTrgt < Inf<VarValue>() && UpFiLmb1[ NrFi ] < Inf<VarValue>() )
    UpCutOff = std::max( UpTrgt - ( UpFiLmb1[ NrFi ] - UpFiLmb1[ wFi ] ) ,
-   		              LwFiK - m2 * BetaK( wFi ) * vStar[ NrFi ] );
+			LwFiK - m2 * BetaK( wFi ) * vStar[ NrFi ] );
   else
    UpCutOff = LwFiK - m2 * BetaK( wFi ) * vStar[ NrFi ];
  else
@@ -1625,28 +1652,31 @@ bool BundleSolver::FiAndGi( Index wFi )
  if( LwFiLmb[ wFi ] > -Inf<VarValue>() )
   if( LwTrgt > -Inf<VarValue>() && LwFiLmb1[ NrFi ] > -Inf<VarValue>() )
    LwCutOff = std::max( LwTrgt - ( LwFiLmb1[ NrFi ] - LwFiLmb1[ wFi ] ) ,
-    		              LwFiK + m1 * BetaK( wFi ) * DeltaStar );
+			LwFiK + m1 * BetaK( wFi ) * DeltaStar );
   else
    LwCutOff = LwFiK + m1 * BetaK( wFi ) * DeltaStar;
  else
   LwCutOff = -Inf<VarValue>();
 
  if( ( LwCutOff > -Inf<VarValue>() ) && ( UpCutOff < Inf<VarValue>() ) )
-  EpsCurr = ( UpCutOff - LwCutOff ) / std::max( 1.0 , std::abs(UpRifFi[ wFi ] ) );
+  EpsCurr = ( UpCutOff - LwCutOff ) / std::max( 1.0 ,
+						std::abs( UpRifFi[ wFi ] ) );
  else
   EpsCurr = RelAcc / Nearly;
 
- // assign the cutoff values to the c05Function - - - - - - - - - - - - - - -
+ // assign the cutoff values to the C05Function - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- v_c05f[ wFi ]->set_par( dblUpCutOff , UpCutOff );
- v_c05f[ wFi ]->set_par( dblLwCutOff , LwCutOff );
- v_c05f[ wFi ]->set_par( dblRelAcc , EpsCurr );
+ auto fwFi = v_c05f[ wFi ];
 
- if( FiStatus[ wFi ] ==  kUnEval )
-  FiStatus[ wFi ] = v_c05f[ wFi ]->compute( true );
- else
-  FiStatus[ wFi ] = v_c05f[ wFi ]->compute( false );
+ fwFi->set_par( dblUpCutOff , UpCutOff );
+ fwFi->set_par( dblLwCutOff , LwCutOff );
+ fwFi->set_par( dblRelAcc , EpsCurr );
+
+ // now compute the C05Function and retrieve upper and lower estimates- - - -
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+ FiStatus[ wFi ] = fwFi->compute( ( FiStatus[ wFi ] == kUnEval ) );
 
  if( UpFiLmb1[ NrFi ] < Inf<VarValue>() )
   UpFiLmb1[ NrFi ] -= UpFiLmb1[ wFi ];
@@ -1654,26 +1684,25 @@ bool BundleSolver::FiAndGi( Index wFi )
  if( LwFiLmb1[ NrFi ] > -Inf<VarValue>() )
   LwFiLmb1[ NrFi ] -= LwFiLmb1[ wFi ];
 
- UpFiLmb1[ wFi ] = std::min( v_c05f[ wFi ]->get_upper_estimate() , UpFiLmb1[ wFi ] );
- LwFiLmb1[ wFi ] = std::max( v_c05f[ wFi ]->get_lower_estimate() , LwFiLmb1[ wFi ] );
+ UpFiLmb1[ wFi ] = std::min( fwFi->get_upper_estimate() , UpFiLmb1[ wFi ] );
+ LwFiLmb1[ wFi ] = std::max( fwFi->get_lower_estimate() , LwFiLmb1[ wFi ] );
 
  if( UpFiLmb1[ NrFi ] < Inf<VarValue>() )
   UpFiLmb1[ NrFi ] += UpFiLmb1[ wFi ];
  else
   if( UpFiLmb1[ wFi ] < Inf<VarValue>() ) {
    if( f_lf )
-	UpFiLmb1[ NrFi ] = f_lf->get_upper_estimate();
+    UpFiLmb1[ NrFi ] = f_lf->get_upper_estimate();
    else
     UpFiLmb1[ NrFi ] = 0;
 
    for( Index k = 0 ; k < NrFi ; k++ )
-	if( UpFiLmb1[ k ] < Inf<VarValue>() )
+    if( UpFiLmb1[ k ] < Inf<VarValue>() )
      UpFiLmb1[ NrFi ] += UpFiLmb1[ wFi ];
-	else {
+    else {
      UpFiLmb1[ NrFi ] = Inf<VarValue>();
      break;
-	 }
-
+     }
    }
 
  if( LwFiLmb1[ NrFi ] > -Inf<VarValue>() )
@@ -1709,39 +1738,37 @@ bool BundleSolver::FiAndGi( Index wFi )
    LmbdBst = Lambda1;
   }
 
- // get a new linearization - - - - - - - - - - - - - - - - - - - - - - - - -
+ // get new linearizations- - - - - - - - - - - - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
  bool HasLinearization;
  bool diagonal;
 
  for( Index Ftchd = 0 ; Ftchd < aBP3 ; ) {
-
   diagonal = true;
-  if( Ftchd ==  0 ) {
 
+  if( Ftchd == 0 ) {
    // first look for a constraint then for a sub-gradient
+
    if( UpFiLmb1[ wFi ] == Inf<VarValue>() ) {
-    HasLinearization = v_c05f[ wFi ]->has_linearization( diagonal = false );
-    if( !HasLinearization )
-     HasLinearization = v_c05f[ wFi ]->has_linearization( diagonal );
+    HasLinearization = fwFi->has_linearization( diagonal = false );
+    if( ! HasLinearization )
+     HasLinearization = fwFi->has_linearization( diagonal );
     }
    else
-	HasLinearization = v_c05f[ wFi ]->has_linearization( diagonal );
-
+    HasLinearization = fwFi->has_linearization( diagonal );
    }
   else {
-
    if( UpFiLmb1[ wFi ] == Inf<VarValue>() ) {
-    HasLinearization = v_c05f[ wFi ]->compute_new_linearization( diagonal = false );
-    if( !HasLinearization )
-     HasLinearization = v_c05f[ wFi ]->compute_new_linearization( diagonal );
+    HasLinearization = fwFi->compute_new_linearization( diagonal = false );
+    if( ! HasLinearization )
+     HasLinearization = fwFi->compute_new_linearization( diagonal );
     }
    else
-	HasLinearization = v_c05f[ wFi ]->compute_new_linearization( diagonal );
+    HasLinearization = fwFi->compute_new_linearization( diagonal );
    }
 
-  if( !HasLinearization )
+  if( ! HasLinearization )
    break;
 
   // check if aggregation has to be performed - - - - - - - - - - - - - - - -
@@ -1753,13 +1780,13 @@ bool BundleSolver::FiAndGi( Index wFi )
 
   // get the space for the item from the MPSolver - - - - - - - - - - - - - -
 
-  double* G1 = Master->GetItem( wFi + 1 );
+  double *G1 = Master->GetItem( wFi + 1 );
 
   // fetch the item from the Oracle - - - - - - - - - - - - - - - - - - - - -
 
   cIndex_Set SGBse = nullptr;
-  v_c05f[ wFi ]->get_linearization_coefficients( G1 );
-  HpNum eps = v_c05f[ wFi ]->get_linearization_constant();
+  fwFi->get_linearization_coefficients( G1 );
+  auto eps = fwFi->get_linearization_constant();
 
   GiEvaltns++;
 
@@ -1772,18 +1799,18 @@ bool BundleSolver::FiAndGi( Index wFi )
   Index cp;
   HpNum ScPr1k;
 
-  // update alpha value at Lambda1 point  - - - - - - - - - - - - - - - - - -
+  // update alpha value at Lambda1 point- - - - - - - - - - - - - - - - - - -
 
-  eps = UpFiLmb1[ wFi ] - eps
-		  - std::inner_product( Lambda1.begin() , Lambda1.end() , G1 , double(0) );
+  eps = UpFiLmb1[ wFi ] - eps -
+   std::inner_product( Lambda1.begin() , Lambda1.end() , G1 , double( 0 ) );
 
   HpNum Alfa1k = eps;
 
-  if( !diagonal )  // it is a constraint
+  if( ! diagonal )                 // it is a constraint
    cp = Master->CheckCnst( Alfa1k , ScPr1k , Lambda.data() );
   else                             // it is a subgradient
    cp = Master->CheckSubG( UpFiLmb1[ wFi ] - UpRifFi[ wFi ] ,
-                          t , Alfa1k , ScPr1k );
+			   t , Alfa1k , ScPr1k );
 
   if( cp < InINF ) {  // the item is a copy- - - - - - - - - - - - - -
    BLOGb( LogBnd , std::endl << "New item is a copy of " << cp );
@@ -1821,19 +1848,19 @@ bool BundleSolver::FiAndGi( Index wFi )
 
    if( f_log && LogVerb ) {
     if( ! diagonal )
-     *f_log << std::endl << "New constraint " << wh << ", rhs = " << Alfa1k;
+     *f_log << std::endl << "New constraint " << wh << " ~ rhs = " << Alfa1k;
     else
      *f_log << std::endl << "New eps-subgradient " << wh << " for Fi[ "
-	    << wFi << " ] , eps = " << eps <<
-	    " , Alfa1 = " << Alfa1k << ", gd = " << - ScPr1k;
+	    << wFi << " ] ~ eps = " << eps <<
+	    " ~ Alfa1 = " << Alfa1k << " ~ gd = " << - ScPr1k;
     }
    }
 
   // if something was inserted, bookkeeping is needed - - - - - - - - - - - -
 
   if( wh < InINF ) {
-   Ftchd++;                    // one more item
-   v_c05f[ wFi ]->store_linearization( wh ); // tell the name of the item to the FiOracle
+   Ftchd++;                          // one more item
+   fwFi->store_linearization( wh );  // tell the name of the item to Fi
 
    if( UpFiLmb1[ wFi ] < Inf<double>() ) {  // it is a subgradient
     if( ( whisG1[ wFi ] == InINF ) || ( Alfa1k < Alfa1[ wFi ] ) ||
@@ -1845,41 +1872,16 @@ bool BundleSolver::FiAndGi( Index wFi )
     }
    else
     OOBase[ wh ] = - Inf<SIndex>();
-     /* if the item is a constraint, mark it as permanently fixed: this may be
-       a bad choice in practice, although it is required by the theory
-       (we'll see ...) */
+   /* if the item is a constraint, mark it as permanently fixed: this may be
+      a bad choice in practice, although it is required by the theory
+      (we'll see ...) */
    }
-
-  // compute *Alfa1 and *ScPr1 - - - - - - - - - - - - - - - - - - - - - - - -
-  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
-  Alfa1[NrFi] = 0;
-  ScPr1[NrFi] = Master->ReadGid();
-
-  for( Index k = 0 ; k < NrFi ; k++ )
-   if( whisG1[ k ] < InINF ) {
-    if( Alfa1[ k ] == Inf<double>() )
-     Alfa1[ k ] = (Master->ReadLinErr())[ whisG1[ k ] ];
-
-    Alfa1[NrFi] += Alfa1[ k ];
-
-    if( ScPr1[ k ] == Inf<double>() )
-     ScPr1[ k ] = Master->ReadGid( whisG1[ k ] );
-
-    ScPr1[NrFi] += ScPr1[ k ];
-    }
-   else
-    Alfa1[ k ] = ScPr1[ k ] = 0;
-
-  }
+  }  // end( items-collecting loop )- - - - - - - - - - - - - - - - - - - - -
 
  // update lower and upper estimates  - - - - - - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- if( ( LwFiLmb1[ NrFi ] > LwTrgt ) || ( UpFiLmb1[ NrFi ] < UpTrgt ) )
-  return( true );
- else
-  return( false );
+ return( ( LwFiLmb1[ NrFi ] > LwTrgt ) || ( UpFiLmb1[ NrFi ] < UpTrgt ) );
 
  }  // end( BundleSolver::FiAndGi() )  - - - - - - - - - - - - - - - - - - - -
 
@@ -2561,54 +2563,59 @@ void BundleSolver::process_outstanding_Modification( void )
    {
     const auto tmod = std::dynamic_pointer_cast<C05FunctionMod>( mod );
     if( tmod ) {
-     Index wFi = get_index_of_component(tmod->function());
-     std::vector<double> Alfa1;
-     if( tmod->shift() == INFshift ) { // reset upper function values
-      UpFiLmb[ wFi ] = Inf<VarValue>();
+     Index wFi = get_index_of_component( tmod->function() );
+
+     if( tmod->shift() == INFshift ) {     // function changed monotonically up
+      UpFiLmb[ wFi ] = Inf<VarValue>();    // reset upper function values
       UpFiLmb[ NrFi ] = Inf<VarValue>();
       }
      else
-      if( tmod->shift() == -INFshift ) { // reset lower function values
-       LwFiLmb[ wFi ] = -Inf<VarValue>();
+      if( tmod->shift() == -INFshift ) {   // function changed monotonically dn
+       LwFiLmb[ wFi ] = -Inf<VarValue>();  // reset lower function values
        LwFiLmb[ NrFi ] = -Inf<VarValue>();
        }
       else
-       if( std::isnan( tmod->shift() ) ) { // reset of both function values
-    	UpFiLmb[ wFi ] = Inf<VarValue>();
+       if( std::isnan( tmod->shift() ) ) {  // function changed unpredictably
+    	UpFiLmb[ wFi ] = Inf<VarValue>();   // reset both function values
     	LwFiLmb[ wFi ] = -Inf<VarValue>();
         UpFiLmb[ NrFi ] = Inf<VarValue>();
         LwFiLmb[ NrFi ] = -Inf<VarValue>();
         }
-       else {
-    	UpFiLmb[ wFi ] += tmod->shift();
+       else {                               // function changed by shift()
+    	UpFiLmb[ wFi ] += tmod->shift();    // just update everything
     	LwFiLmb[ wFi ] += tmod->shift();
     	UpFiLmb[ NrFi ] += tmod->shift();
     	LwFiLmb[ NrFi ] += tmod->shift();
         }
+
      switch( tmod->type() ) {
-      case( C05FunctionMod::NothingChanged ) :   ///< both \alpha and g are still
-      case( C05FunctionMod::AllLinearizationChanged ):
-	   Master->ChgSubG( 0 , NumVar , wFi+1 );
-      case( C05FunctionMod::AlphaChanged ):
-	   // a finite f_shift should be treated in a different way but
-	   // as of now the finite shifts are ignored by MPSolver
-	   Alfa1.resize( Master->MaxName(wFi+1) );
-       for( Index i = 0 ; i < Master->MaxName(wFi+1) ; i++ )
-        if( Master->WComponent( i ) == wFi+1 ) {
+      case( C05FunctionMod::NothingChanged ):   // both \alpha and g are OK
+       break;                                   // nothing to do
+      case( C05FunctionMod::AllLinearizationChanged ):  // everything changed
+      case( C05FunctionMod::AllEntriesChanged ):        // only g changed
+       Master->ChgSubG( 0 , NumVar , wFi + 1 );
+       break;
+      case( C05FunctionMod::AlphaChanged ): {
+       // a finite f_shift should be treated in a different way but
+       // as of now the finite shifts are ignored by MPSolver
+       std::vector< VarValue > Alfa1( Master->MaxName( wFi + 1 ) );
+       for( Index i = 0 ; i < Master->MaxName( wFi + 1 ) ; i++ )
+        if( Master->WComponent( i ) == wFi + 1 ) {
          Alfa1[ i ] = v_c05f[wFi]->get_linearization_constant( i );
          // alpha has to be referred to \Lambda
-         std::vector<double> G1(NumVar);
-         Range range = make_pair( 0, NumVar );
-         v_c05f[ wFi ]->get_linearization_coefficients( G1.data() , range, i );
+         std::vector< VarValue > G1( NumVar );
+         v_c05f[ wFi ]->get_linearization_coefficients( G1.data() ,
+							Range( 0 , NumVar ) , i
+							);
          Alfa1[ i ] = UpRifFi[ wFi ] - Alfa1[ i ]
-          		  - std::inner_product( Lambda.begin() , Lambda.end() , G1.data() , double(0) );
+          	      - std::inner_product( Lambda.begin() , Lambda.end() ,
+					    G1.data() , VarValue( 0 ) );
          Master->ChgAlfa( Alfa1.data() , wFi );
+         }
         }
-       break;
-      case( C05FunctionMod::AllEntriesChanged ):
-       Master->ChgSubG( 0 , NumVar , wFi+1 );
-       break;
       } // switch( tmod->f_type )
+
+     return;
      }  // end  if( tmod )
     } // end C05FunctionMod  - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -2617,7 +2624,7 @@ void BundleSolver::process_outstanding_Modification( void )
     const auto tmod = std::dynamic_pointer_cast<C05FunctionModRngd>( mod );
     if( tmod ) {
      Index wFi = get_index_of_component(tmod->function());
-     std::vector<double> Alfa1;
+     std::vector< VarValue > Alfa1;
      switch( tmod->type() ) {
       case( C05FunctionMod::AllLinearizationChanged ):
         Master->ChgSubG( tmod->range().first , tmod->range().second , wFi+1 );
@@ -2708,7 +2715,7 @@ void BundleSolver::process_outstanding_Modification( void )
     } // end C05FunctionModLin   - - - - - - - - - - - - - - - - - - - - - - -
 
    };  // end( guts_of_poM ) - - - - - - - - - - - - - - - - - - - - - - - - -
-  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+       //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
   // finally, call the "guts of" - - - - - - - - - - - - - - - - - - - - - - -
 
