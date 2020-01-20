@@ -2525,29 +2525,29 @@ bool BundleSolver::CheckAlfa( const bool All )
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::FModChg( C05FunctionMod tmod , Index wFi ) {
+void BundleSolver::FModChg( VarValue f_shift , Index wFi ) {
 
- if( tmod.shift() == INFshift ) {     // function changed monotonically up
+ if( f_shift == INFshift ) {     // function changed monotonically up
   UpFiLmb[ wFi ] = Inf<VarValue>();    // reset upper function values
   UpFiLmb[ NrFi ] = Inf<VarValue>();
   }
  else
-  if( tmod.shift() == -INFshift ) {   // function changed monotonically dn
+  if( f_shift == -INFshift ) {   // function changed monotonically dn
    LwFiLmb[ wFi ] = -Inf<VarValue>();  // reset lower function values
    LwFiLmb[ NrFi ] = -Inf<VarValue>();
    }
   else
-   if( std::isnan( tmod.shift() ) ) {  // function changed unpredictably
+   if( std::isnan( f_shift ) ) {  // function changed unpredictably
     UpFiLmb[ wFi ] = Inf<VarValue>();   // reset both function values
     LwFiLmb[ wFi ] = -Inf<VarValue>();
     UpFiLmb[ NrFi ] = Inf<VarValue>();
     LwFiLmb[ NrFi ] = -Inf<VarValue>();
     }
    else {                               // function changed by shift()
-    UpFiLmb[ wFi ] += tmod.shift();    // just update everything
-    LwFiLmb[ wFi ] += tmod.shift();
-    UpFiLmb[ NrFi ] += tmod.shift();
-    LwFiLmb[ NrFi ] += tmod.shift();
+    UpFiLmb[ wFi ] += f_shift;    // just update everything
+    LwFiLmb[ wFi ] += f_shift;
+    UpFiLmb[ NrFi ] += f_shift;
+    LwFiLmb[ NrFi ] += f_shift;
     }
 
  } // end ( BundleSolver::FModChg )  - - - - - - - - - - - - - - - - - - - - -
@@ -2593,7 +2593,7 @@ void BundleSolver::process_outstanding_Modification( void )
    if( tmod ) {
     Index wFi = get_index_of_component(tmod->function());
 
-    FModChg( *tmod , wFi );
+    FModChg( tmod->shift() , wFi );
 
     std::vector< VarValue > Alfa1;
     switch( tmod->type() ) {
@@ -2630,7 +2630,7 @@ void BundleSolver::process_outstanding_Modification( void )
    if( tmod ) {
     Index wFi = get_index_of_component(tmod->function());
 
-    FModChg( *tmod , wFi );
+    FModChg( tmod->shift() , wFi );
 
     std::vector<double> Alfa1;
     switch( tmod->type() ) {
@@ -2669,7 +2669,7 @@ void BundleSolver::process_outstanding_Modification( void )
    if( tmod ) {
     Index wFi = get_index_of_component( tmod->function() );
 
-    FModChg( *tmod , wFi );
+    FModChg( tmod->shift() , wFi );
 
     switch( tmod->type() ) {
      case( C05FunctionMod::NothingChanged ):   // both \alpha and g are OK
