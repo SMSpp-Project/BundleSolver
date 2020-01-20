@@ -2525,12 +2525,40 @@ bool BundleSolver::CheckAlfa( const bool All )
 
 /*--------------------------------------------------------------------------*/
 
+void BundleSolver::FModChg( C05FunctionMod tmod , Index wFi ) {
+
+ if( tmod.shift() == INFshift ) {     // function changed monotonically up
+  UpFiLmb[ wFi ] = Inf<VarValue>();    // reset upper function values
+  UpFiLmb[ NrFi ] = Inf<VarValue>();
+  }
+ else
+  if( tmod.shift() == -INFshift ) {   // function changed monotonically dn
+   LwFiLmb[ wFi ] = -Inf<VarValue>();  // reset lower function values
+   LwFiLmb[ NrFi ] = -Inf<VarValue>();
+   }
+  else
+   if( std::isnan( tmod.shift() ) ) {  // function changed unpredictably
+    UpFiLmb[ wFi ] = Inf<VarValue>();   // reset both function values
+    LwFiLmb[ wFi ] = -Inf<VarValue>();
+    UpFiLmb[ NrFi ] = Inf<VarValue>();
+    LwFiLmb[ NrFi ] = -Inf<VarValue>();
+    }
+   else {                               // function changed by shift()
+    UpFiLmb[ wFi ] += tmod.shift();    // just update everything
+    LwFiLmb[ wFi ] += tmod.shift();
+    UpFiLmb[ NrFi ] += tmod.shift();
+    LwFiLmb[ NrFi ] += tmod.shift();
+    }
+
+ } // end ( BundleSolver::FModChg )  - - - - - - - - - - - - - - - - - - - - -
+
+/*--------------------------------------------------------------------------*/
+
 void BundleSolver::process_outstanding_Modification( void )
 {
  // no-frills loop: do them in order, with no attempt at optimizing
  while( ! v_mod.empty() ) {
   auto mod = v_mod.front();  // pick (a reference to) the first Modification
-
 
   /* Use a Lambda to define a "guts" of the method that can be called
      recursively. Note the trick of defining the std::function object and
@@ -2542,148 +2570,137 @@ void BundleSolver::process_outstanding_Modification( void )
   std::function< void( sp_Mod )> guts_of_poM;
   guts_of_poM = [ this , & guts_of_poM ]( sp_Mod mod ) {
 
-   // process Modification - - - - - - - - - - - - - - - - - - - - - - - - - -
-   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-   /* This requires to patiently sift through the possible Modification types
+  // process Modification - - - - - - - - - - - - - - - - - - - - - - - - - -
+  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  /* This requires to patiently sift through the possible Modification types
        to find what this Modification exactly is, and call the appropriate
        method. */
 
-   // GroupModification- - - - - - - - - - - - - - - - - - - - - - - - - - - -
-   {
-    const auto tmod = std::dynamic_pointer_cast<GroupModification>( mod );
-    if( tmod ) {
-     for( const auto & submod : tmod->v_sub_Modifications )
-      guts_of_poM( submod );
+  // GroupModification- - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  {
+   const auto tmod = std::dynamic_pointer_cast<GroupModification>( mod );
+   if( tmod ) {
+    for( const auto & submod : tmod->v_sub_Modifications )
+     guts_of_poM( submod );
 
-     return;
-     }
-    } // end GroupModification - - - - - - - - - - - - - - - - - - - - - - - -
+    return;
+    }
+   } // end GroupModification - - - - - - - - - - - - - - - - - - - - - - - -
 
-   // C05FunctionMod - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-   {
-    const auto tmod = std::dynamic_pointer_cast<C05FunctionMod>( mod );
-    if( tmod ) {
-     Index wFi = get_index_of_component( tmod->function() );
+  // C05FunctionModRngd - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  {
+   const auto tmod = std::dynamic_pointer_cast<C05FunctionModRngd>( mod );
+   if( tmod ) {
+    Index wFi = get_index_of_component(tmod->function());
 
-     if( tmod->shift() == INFshift ) {     // function changed monotonically up
-      UpFiLmb[ wFi ] = Inf<VarValue>();    // reset upper function values
-      UpFiLmb[ NrFi ] = Inf<VarValue>();
-      }
-     else
-      if( tmod->shift() == -INFshift ) {   // function changed monotonically dn
-       LwFiLmb[ wFi ] = -Inf<VarValue>();  // reset lower function values
-       LwFiLmb[ NrFi ] = -Inf<VarValue>();
-       }
-      else
-       if( std::isnan( tmod->shift() ) ) {  // function changed unpredictably
-    	UpFiLmb[ wFi ] = Inf<VarValue>();   // reset both function values
-    	LwFiLmb[ wFi ] = -Inf<VarValue>();
-        UpFiLmb[ NrFi ] = Inf<VarValue>();
-        LwFiLmb[ NrFi ] = -Inf<VarValue>();
+    FModChg( *tmod , wFi );
+
+    std::vector< VarValue > Alfa1;
+    switch( tmod->type() ) {
+     case( C05FunctionMod::AllLinearizationChanged ):
+       Master->ChgSubG( tmod->range().first , tmod->range().second , wFi+1 );
+     case( C05FunctionMod::AlphaChanged ):
+      // a finite f_shift should be treated in a different way but
+      // as of now the finite shifts are ignored by MPSolver
+      Alfa1.resize( Master->MaxName(wFi+1) );
+      for( Index i = 0 ; i < Master->MaxName(wFi+1) ; i++ )
+       if( Master->WComponent( i ) == wFi+1 ) {
+        Alfa1[ i ] = v_c05f[wFi]->get_linearization_constant( i );
+        // alpha has to be referred to \Lambda
+        std::vector<double> G1(NumVar);
+        Range range = make_pair( 0, NumVar );
+        v_c05f[ wFi ]->get_linearization_coefficients( G1.data() , range , i );
+        Alfa1[ i ] = UpRifFi[ wFi ] - Alfa1[ i ]
+		          		  - std::inner_product( Lambda.begin() , Lambda.end() , G1.data() , double(0) );
+        Master->ChgAlfa( Alfa1.data() , wFi );
         }
-       else {                               // function changed by shift()
-    	UpFiLmb[ wFi ] += tmod->shift();    // just update everything
-    	LwFiLmb[ wFi ] += tmod->shift();
-    	UpFiLmb[ NrFi ] += tmod->shift();
-    	LwFiLmb[ NrFi ] += tmod->shift();
-        }
+      break;
+     case( C05FunctionMod::AllEntriesChanged ):
+      Master->ChgSubG( tmod->range().first , tmod->range().second , wFi+1 );
+      break;
+     } // switch( tmod->f_type )
 
-     switch( tmod->type() ) {
-      case( C05FunctionMod::NothingChanged ):   // both \alpha and g are OK
-       break;                                   // nothing to do
-      case( C05FunctionMod::AllLinearizationChanged ):  // everything changed
-      case( C05FunctionMod::AllEntriesChanged ):        // only g changed
-       Master->ChgSubG( 0 , NumVar , wFi + 1 );
-       break;
-      case( C05FunctionMod::AlphaChanged ): {
-       // a finite f_shift should be treated in a different way but
-       // as of now the finite shifts are ignored by MPSolver
-       std::vector< VarValue > Alfa1( Master->MaxName( wFi + 1 ) );
-       for( Index i = 0 ; i < Master->MaxName( wFi + 1 ) ; i++ )
-        if( Master->WComponent( i ) == wFi + 1 ) {
-         Alfa1[ i ] = v_c05f[wFi]->get_linearization_constant( i );
-         // alpha has to be referred to \Lambda
-         std::vector< VarValue > G1( NumVar );
-         v_c05f[ wFi ]->get_linearization_coefficients( G1.data() ,
+    return;
+    }  // end  if( tmod )
+   } // end C05FunctionModRngd  - - - - - - - - - - - - - - - - - - - - - - -
+
+  // C05FunctionModSbst - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  {
+   const auto tmod = std::dynamic_pointer_cast<C05FunctionModSbst>( mod );
+   if( tmod ) {
+    Index wFi = get_index_of_component(tmod->function());
+
+    FModChg( *tmod , wFi );
+
+    std::vector<double> Alfa1;
+    switch( tmod->type() ) {
+     case( C05FunctionMod::AllLinearizationChanged ):
+      Master->ChgSubG( v_c05f[wFi]->is_active(tmod->vars()[0]) ,
+            v_c05f[wFi]->is_active(tmod->vars()[tmod->vars().size()-1]) , wFi+1 );
+     case( C05FunctionMod::AlphaChanged ):
+      // a finite f_shift should be treated in a different way but
+      // as of now the finite shifts are ignored by MPSolver
+      Alfa1.resize( Master->MaxName(wFi+1) );
+      for( Index i = 0 ; i < Master->MaxName(wFi+1) ; i++ )
+       if( Master->WComponent( i ) == wFi+1 ) {
+        Alfa1[ i ] = v_c05f[wFi]->get_linearization_constant( i );
+        // alpha has to be referred to \Lambda
+        std::vector<double> G1(NumVar);
+        Range range = make_pair( 0, NumVar );
+        v_c05f[ wFi ]->get_linearization_coefficients( G1.data() , range , i );
+        Alfa1[ i ] = UpRifFi[ wFi ] - Alfa1[ i ]
+		          		  - std::inner_product( Lambda.begin() , Lambda.end() , G1.data() , double(0) );
+        Master->ChgAlfa( Alfa1.data() , wFi );
+        }
+      break;
+     case( C05FunctionMod::AllEntriesChanged ):
+      Master->ChgSubG( v_c05f[wFi]->is_active(tmod->vars()[0]) ,
+            v_c05f[wFi]->is_active(tmod->vars()[tmod->vars().size()-1]) , wFi+1 );
+      break;
+     } // switch( tmod->f_type )
+
+    return;
+    }  // end  if( tmod )
+   } // end C05FunctionModSbst  - - - - - - - - - - - - - - - - - - - - - - -
+
+  // C05FunctionMod - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  {
+   const auto tmod = std::dynamic_pointer_cast<C05FunctionMod>( mod );
+   if( tmod ) {
+    Index wFi = get_index_of_component( tmod->function() );
+
+    FModChg( *tmod , wFi );
+
+    switch( tmod->type() ) {
+     case( C05FunctionMod::NothingChanged ):   // both \alpha and g are OK
+      break;                                   // nothing to do
+     case( C05FunctionMod::AllLinearizationChanged ):  // everything changed
+     case( C05FunctionMod::AllEntriesChanged ):        // only g changed
+      Master->ChgSubG( 0 , NumVar , wFi + 1 );
+      break;
+     case( C05FunctionMod::AlphaChanged ): {
+      // a finite f_shift should be treated in a different way but
+      // as of now the finite shifts are ignored by MPSolver
+      std::vector< VarValue > Alfa1( Master->MaxName( wFi + 1 ) );
+      for( Index i = 0 ; i < Master->MaxName( wFi + 1 ) ; i++ )
+       if( Master->WComponent( i ) == wFi + 1 ) {
+        Alfa1[ i ] = v_c05f[wFi]->get_linearization_constant( i );
+        // alpha has to be referred to \Lambda
+        std::vector< VarValue > G1( NumVar );
+        v_c05f[ wFi ]->get_linearization_coefficients( G1.data() ,
 							Range( 0 , NumVar ) , i
 							);
-         Alfa1[ i ] = UpRifFi[ wFi ] - Alfa1[ i ]
+        Alfa1[ i ] = UpRifFi[ wFi ] - Alfa1[ i ]
           	      - std::inner_product( Lambda.begin() , Lambda.end() ,
 					    G1.data() , VarValue( 0 ) );
-         Master->ChgAlfa( Alfa1.data() , wFi );
-         }
+        Master->ChgAlfa( Alfa1.data() , wFi );
         }
-      } // switch( tmod->f_type )
+       }
+     } // switch( tmod->f_type )
 
-     return;
-     }  // end  if( tmod )
-    } // end C05FunctionMod  - - - - - - - - - - - - - - - - - - - - - - - - -
-
-   // C05FunctionModRngd - - - - - - - - - - - - - - - - - - - - - - - - - - -
-   {
-    const auto tmod = std::dynamic_pointer_cast<C05FunctionModRngd>( mod );
-    if( tmod ) {
-     Index wFi = get_index_of_component(tmod->function());
-     std::vector< VarValue > Alfa1;
-     switch( tmod->type() ) {
-      case( C05FunctionMod::AllLinearizationChanged ):
-        Master->ChgSubG( tmod->range().first , tmod->range().second , wFi+1 );
-      case( C05FunctionMod::AlphaChanged ):
-       // a finite f_shift should be treated in a different way but
-       // as of now the finite shifts are ignored by MPSolver
-       Alfa1.resize( Master->MaxName(wFi+1) );
-       for( Index i = 0 ; i < Master->MaxName(wFi+1) ; i++ )
-        if( Master->WComponent( i ) == wFi+1 ) {
-         Alfa1[ i ] = v_c05f[wFi]->get_linearization_constant( i );
-         // alpha has to be referred to \Lambda
-         std::vector<double> G1(NumVar);
-         Range range = make_pair( 0, NumVar );
-         v_c05f[ wFi ]->get_linearization_coefficients( G1.data() , range , i );
-         Alfa1[ i ] = UpRifFi[ wFi ] - Alfa1[ i ]
-		          		  - std::inner_product( Lambda.begin() , Lambda.end() , G1.data() , double(0) );
-         Master->ChgAlfa( Alfa1.data() , wFi );
-         }
-       break;
-      case( C05FunctionMod::AllEntriesChanged ):
-       Master->ChgSubG( tmod->range().first , tmod->range().second , wFi+1 );
-       break;
-      } // switch( tmod->f_type )
-     }  // end  if( tmod )
-    } // end C05FunctionModRngd  - - - - - - - - - - - - - - - - - - - - - - -
-
-   // C05FunctionModSbst - - - - - - - - - - - - - - - - - - - - - - - - - - -
-   {
-    const auto tmod = std::dynamic_pointer_cast<C05FunctionModSbst>( mod );
-    if( tmod ) {
-     Index wFi = get_index_of_component(tmod->function());
-     std::vector<double> Alfa1;
-     switch( tmod->type() ) {
-      case( C05FunctionMod::AllLinearizationChanged ):
-       Master->ChgSubG( v_c05f[wFi]->is_active(tmod->vars()[0]) ,
-               v_c05f[wFi]->is_active(tmod->vars()[tmod->vars().size()-1]) , wFi+1 );
-      case( C05FunctionMod::AlphaChanged ):
-       // a finite f_shift should be treated in a different way but
-       // as of now the finite shifts are ignored by MPSolver
-       Alfa1.resize( Master->MaxName(wFi+1) );
-       for( Index i = 0 ; i < Master->MaxName(wFi+1) ; i++ )
-        if( Master->WComponent( i ) == wFi+1 ) {
-         Alfa1[ i ] = v_c05f[wFi]->get_linearization_constant( i );
-         // alpha has to be referred to \Lambda
-         std::vector<double> G1(NumVar);
-         Range range = make_pair( 0, NumVar );
-         v_c05f[ wFi ]->get_linearization_coefficients( G1.data() , range , i );
-         Alfa1[ i ] = UpRifFi[ wFi ] - Alfa1[ i ]
-		          		  - std::inner_product( Lambda.begin() , Lambda.end() , G1.data() , double(0) );
-         Master->ChgAlfa( Alfa1.data() , wFi );
-         }
-       break;
-      case( C05FunctionMod::AllEntriesChanged ):
-       Master->ChgSubG( v_c05f[wFi]->is_active(tmod->vars()[0]) ,
-               v_c05f[wFi]->is_active(tmod->vars()[tmod->vars().size()-1]) , wFi+1 );
-       break;
-      } // switch( tmod->f_type )
-     }  // end  if( tmod )
-    } // end C05FunctionModSbst  - - - - - - - - - - - - - - - - - - - - - - -
+    return;
+    }  // end  if( tmod )
+   } // end C05FunctionMod  - - - - - - - - - - - - - - - - - - - - - - - - -
 
    // C05FunctionModLin  - - - - - - - - - - - - - - - - - - - - - - - - - - -
    {

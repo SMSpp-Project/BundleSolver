@@ -1601,6 +1601,7 @@ class FakeFiOracle : public FiOracle
 /*--------------------------------------------------------------------------*/
 
  void process_outstanding_Modification( void );
+ void FModChg( C05FunctionMod tmod , Index wFi );
 
 /*--------------------------------------------------------------------------*/
 /*------------------------------ PRIVATE FIELDS  ---------------------------*/
