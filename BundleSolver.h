@@ -220,11 +220,11 @@ public:
 /*----------------------------- CONSTANTS ----------------------------------*/
 
  static constexpr Function::FunctionValue NaNshift
-                             = std::numeric_limits<Function::FunctionValue>::quiet_NaN();
+                  = std::numeric_limits<Function::FunctionValue>::quiet_NaN();
  ///< convenience constexpr for "NaN", *not* to be used with ==
 
  static constexpr Function::FunctionValue INFshift
-                              = std::numeric_limits<Function::FunctionValue>::infinity();
+                   = std::numeric_limits<Function::FunctionValue>::infinity();
  ///< convenience constexpr for "Infty"
 
 /*--------------------------------------------------------------------------*/
@@ -255,7 +255,7 @@ public:
 
  intMaxNrEvls ,  ///< max number of function evaluation for each iteration
 
- intMPName,  ///< true == MP solver is QPPenalty, false == MP is OSiMPSolver
+ intMPName,  ///< whether the MP solver is QPPenalty or OSIMPSolver
 
  intMPlvl ,  ///< log verbosity of Master Problem
 
@@ -419,6 +419,10 @@ public:
   *   termination is not it).
   *
   * - intLogVerb [0]: "verbosity" of the BundleSolver log
+  *                   0 = no log
+  *                   1 = only final state of the call and errors
+  *                   2 = detailed step-by-step log
+  *                   3 = as 2 + print every linearization added/removed
   *
   * - intBPar1 [10]: if an item has had a zero multiplier for the last
   *                  intBPar1 steps, it is eliminated; if intBPar1 is "too
@@ -535,8 +539,9 @@ public:
   *
   * - intMPName [1]: bit-wise encoding of which MPSolver is used:
   *                  bit 0: 0 = QPPenalty, 1 = OSiMPSolver
-  *                  bit 1 = 1 OsiCpxInterface, bit 1 = 0 OsiCLPInterface
-  *                  bit 2 = 1 Quadratic, bit 2 = 0 BoxStep
+  *                  bit 1: 1 = OsiCpxInterface, 0 = OsiCLPInterface
+  *                  bit 2: 1 = Quadratic, 0 = BoxStep
+  *                  bit 3: 1 = CheckIdentical( true ) is called, 0 = not
   *
   * - intMPlvl [0]: log verbosity of Master Problem solver
   *
@@ -1029,7 +1034,7 @@ public:
  void GotoLambda1( void );
 
 /*--------------------------------------------------------------------------*/
- /// Eliminate outdated items, i.e., these with "large" out-of-base counter.
+ /* Eliminate outdated items, i.e., these with "large" out-of-base counter. */
 
  void SimpleBStrat( void );
 
@@ -1045,18 +1050,38 @@ public:
 
  void Log1( void );
 
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+
  void Log2( void );
 
 /*--------------------------------------------------------------------------*/
 
- VarValue max_error( VarValue releps ) const {
-  VarValue FiL = UpFiLmb[ NrFi ];
+ VarValue eps_fi( VarValue fi , VarValue releps ) const
+ {
+  if( fi < 0 ) fi = - fi;
+  if( fi < 1 ) fi = 1;
+  return( releps * fi );
+  }
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+
+ VarValue max_error( VarValue fi , VarValue releps ) const
+ {
+  return( std::min( eps_fi( fi , releps ) , AbsAcc ) );
+  }
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+
+ VarValue max_error( VarValue releps ) const
+ {
+  c_VarValue FiL = UpFiLmb[ NrFi ];
   if( ( FiL >= Inf< VarValue >() ) || ( FiL <= - Inf< VarValue >() ) )
    return( Inf< VarValue >() );
-  if( FiL < 0 ) FiL = - FiL;
-  if( FiL < 1 ) FiL = 1;
-  return( std::min( releps * FiL , RelAcc ) );
+  else
+   return( max_error( FiL , releps ) );
   }
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
  VarValue max_error( void ) const { return( max_error( RelAcc ) ); }
 
@@ -1601,6 +1626,7 @@ class FakeFiOracle : public FiOracle
 /*--------------------------------------------------------------------------*/
 
  void process_outstanding_Modification( void );
+
  void FModChg( VarValue f_shift , Index wFi );
 
 /*--------------------------------------------------------------------------*/

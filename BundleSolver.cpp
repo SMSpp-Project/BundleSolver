@@ -4,9 +4,9 @@
 /** @file
  * Implementation of the BunldeSolver class.
  *
- * \version 0.01
+ * \version 0.10
  *
- * \date 28 - 11 - 2019
+ * \date 29 - 01 - 2020
  *
  * \author Antonio Frangioni \n
  *         Operations Research Group \n
@@ -18,7 +18,7 @@
  *         Dipartimento di Informatica \n
  *         Universita' di Pisa \n
  *
- * Copyright &copy 2019 by Antonio Frangioni
+ * Copyright &copy 2019 - 2020 by Antonio Frangioni, Enrico Gorgone
  */
 /*--------------------------------------------------------------------------*/
 /*---------------------------- IMPLEMENTATION ------------------------------*/
@@ -49,10 +49,6 @@ using namespace SMSpp_di_unipi_it;
 #define BLOG( l , x ) if( f_log && ( LogVerb > l ) ) *f_log << x
 
 #define BLOG2( l , c , x ) if( f_log && ( LogVerb > l ) && c ) *f_log << x
-
-#define BLOGb( l , x ) if( f_log && ( LogVerb & l ) ) *f_log << x
-
-#define BLOG2b( l , c , x ) if( f_log && ( LogVerb & l ) && c ) *f_log << x
 
 /*--------------------------------------------------------------------------*/
 /*----------------------------- STATIC MEMBERS -----------------------------*/
@@ -157,7 +153,7 @@ const std::vector< int > BundleSolver::dflt_int_par = {
   3 ,  // intMnNSC
  12 ,  // inttSPar1
   2 ,  // intMaxNrEvls
-  1 ,  // intMPName
+  0 ,  // intMPName
   0 ,  // intMPlvl
   0 ,  // intQPmp1
   0 ,  // intQPmp2
@@ -272,8 +268,11 @@ int BundleSolver::compute( bool changedvars )
   // possible) and re-solve the MP; note that this kind of NR only happens if
   // the oracle is "unfaithful", i.e., it pretends to provide information with
   // the required accuracy but in fact it does not
+  //
+  // do the check only if Sigma is "negative enough to matter", otherwise do
+  // not even call ReadDStart()
 
-  if( ( Sigma < 0 ) &&  // do not even call ReadDStart() if Sigma >= 0
+  if( ( Sigma < - max_error( UpRifFi[ NrFi ] , RelAcc ) ) &&
       ( Sigma <= - m3 * Master->ReadDStart( t ) ) ) {
    if( t >= tMaior ) {
     BLOG( 1 , " ~ NR required but t maximum" << std::endl );
@@ -297,7 +296,7 @@ int BundleSolver::compute( bool changedvars )
   // small, and therefore has to be checked before the others
   // however, it is only viable under a quadratic stabilization
 
-  if( ( ( ! MPName ) || ( MPName & 4 ) ) &&
+  if( ( ( ! ( MPName & 1 ) ) || ( MPName & 4 ) ) &&
       ( tStar > 0 ) && ( ( tSPar1 & tSP1Msk ) == kHLTTS ) &&
       ( UpFiLmb[ NrFi ] < Inf<double>() ) ) {
 
@@ -834,7 +833,7 @@ void BundleSolver::set_Block( Block * block )
  if( Master )        // a MP solver is set ??? dove metterlo ???
   Master->SetDim();  // clear all its internal state
 
- if( ! MPName ) {
+ if( ! ( MPName & 1 ) ) {
   Master = new QPPenaltyMP( );
   QPPenaltyMP *qp = dynamic_cast<QPPenaltyMP*>( Master );
   qp->SetPricing( CtOff );
@@ -939,8 +938,8 @@ void BundleSolver::set_par( const idx_type par , const int value ) {
    MaxNrEvls = value;
    break;
   case( intMPName ):
-   if( ( value < 0 ) || ( value > 7 ) )
-    throw( std::invalid_argument( "MPName must be in [0, 7]" ) );
+   if( ( value < 0 ) || ( value > 15 ) )
+    throw( std::invalid_argument( "MPName must be in [0, 15]" ) );
    MPName = value;
    break;
   case( intMPlvl ):
@@ -1298,7 +1297,7 @@ void BundleSolver::FormD( void )
   else
    Master->SetLowerBound( - Inf<double>() );
 
-  if( MPName )  // QPPenaltyMP does not allow individual lower bounds
+  if( MPName & 1 )  // QPPenaltyMP does not allow individual lower bounds
    for( Index k = 0 ; k < NrFi ; k++ ) {
     if( NrEasy && IsEasy[ k ] )  // skip easy components
      continue;
@@ -1312,12 +1311,12 @@ void BundleSolver::FormD( void )
   LBHasChgd = false;
   }
 
- // set termination criterion - - - - - - - - - - - - - - - - - - - - - - - -
+ /* set termination criterion - - - - - - - - - - - - - - - - - - - - - - - -
 
  if( UpFiLmb[ NrFi ] < Inf<double>() )
   Master->SetPar( MPSolver::kZero ,
 		  max_error() / std::max( tStar / t , HpNum( 1 ) ) );
-
+ */
  for(;;)  // error-handling loop - - - - - - - - - - - - - - - - - - - - - -
  {        // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -1813,17 +1812,19 @@ bool BundleSolver::FiAndGi( Index wFi )
 			   t , Alfa1k , ScPr1k );
 
   if( cp < InINF ) {  // the item is a copy- - - - - - - - - - - - - -
-   BLOGb( LogBnd , std::endl << "New item is a copy of " << cp );
+   BLOG( 2 , std::endl << "            New " );
+   BLOG2( 2 , diagonal , "subgradient" );
+   BLOG2( 2 , ! diagonal , "constraint" );
+   BLOG( 2 , " for Fi[ " << wFi << "is a copy of " << cp );
 
    cHpNum OrigA1k = (Master->ReadLinErr())[ cp ];
 
-   if( OrigA1k > Alfa1k ) {        // if the copy has smaller Alfa than the
-    Master->SubstItem( wh = cp );  // original, substitute it
-
-    BLOGb( LogBnd , " with smaller Alfa" );
+   if( OrigA1k > Alfa1k ) {   // the copy has smaller Alfa than the original
+    BLOG( 2 , " with smaller Alfa" );
+    Master->SubstItem( cp );  // substitute it
     }
-   else
-    wh = InINF;               // otherwise, nothing new has happened
+
+   wh = cp;           // anyhow, this counts as a new item
    }
   else {              // insert the item, if there is space - - - - - - - - -
    if( wh < InINF )     // someone has been selected in BStrategy()
@@ -1846,13 +1847,13 @@ bool BundleSolver::FiAndGi( Index wFi )
    Master->SetItem( wh );      // insert the item in the MP Solver
    OOBase[ wh ] = -1;          // ensure it won't be touched again this round
 
-   if( f_log && LogVerb ) {
+   if( f_log && ( LogVerb > 2 ) ) {
+    *f_log << std::endl << "            New ";
     if( ! diagonal )
-     *f_log << std::endl << "New constraint " << wh << " ~ rhs = " << Alfa1k;
+     *f_log << "constraint " << wh << " ~ rhs = " << Alfa1k;
     else
-     *f_log << std::endl << "New eps-subgradient " << wh << " for Fi[ "
-	    << wFi << " ] ~ eps = " << eps <<
-	    " ~ Alfa1 = " << Alfa1k << " ~ gd = " << - ScPr1k;
+     *f_log << "eps-subgradient " << wh << " for Fi[ " << wFi << " ] ~ eps = "
+	    << eps << " ~ Alfa1 = " << Alfa1k << " ~ gd = " << - ScPr1k;
     }
    }
 
@@ -1986,7 +1987,7 @@ void BundleSolver::Log2( void )
  if( ( ! f_log ) || ( LogVerb <= 1 ) )
   return;
 
- *f_log << std::endl << "           ";
+ *f_log << std::endl << "            ";
 
  if( LowerBound > - Inf<double>() )
   *f_log << "LB = " << LowerBound << " ~ ";
@@ -2033,6 +2034,9 @@ void BundleSolver::InitMP( void )
  tHasChgd = true;
  LBHasChgd = false;
 
+ if( MPName & 8 )
+  Master->CheckIdentical();
+ 
  }  // end( BundleSolver::InitMP( ) )  - - - - - - - - - - - - - - - - - - - -
 
 /*--------------------------------------------------------------------------*/
@@ -2278,7 +2282,7 @@ void BundleSolver::AggregateZ( cHpRow Mlt , cIndex_Set MBse , Index MBDm ,
  whisZ[ wFi ] = whr;      // Z[ wFi ] is in the bundle ...
  OOBase[ whr ] = -1;      // ... and it won't be removed in this iteration
 
- BLOGb( LogBnd , std::endl << "Aggregation performed into " << whr );
+ BLOG( 2 , std::endl << "Aggregation performed into " << whr );
 
  }  // end( BundleSolver::AggregateZ() ) - - - - - - - - - - - - - - - - - - -
 
@@ -2432,7 +2436,7 @@ void BundleSolver::Delete( cIndex i )
   Master->RmvItem( i );
   }
 
- BLOGb( LogBnd , std::endl << "Item " << i << " removed" );
+ BLOG( 2 , std::endl << "Item " << i << " removed" );
 
  // bookkeeping of internal data structures - - - - - - - - - - - - - - - - -
 
@@ -2525,30 +2529,36 @@ bool BundleSolver::CheckAlfa( const bool All )
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::FModChg( VarValue f_shift , Index wFi ) {
-
- if( f_shift == INFshift ) {     // function changed monotonically up
+void BundleSolver::FModChg( VarValue f_shift , Index wFi )
+{
+ if( f_shift == INFshift ) {           // function changed monotonically up
   UpFiLmb[ wFi ] = Inf<VarValue>();    // reset upper function values
   UpFiLmb[ NrFi ] = Inf<VarValue>();
+  UpFiBest = Inf<VarValue>();          // comprised best one
+  return;
   }
- else
-  if( f_shift == -INFshift ) {   // function changed monotonically dn
-   LwFiLmb[ wFi ] = -Inf<VarValue>();  // reset lower function values
-   LwFiLmb[ NrFi ] = -Inf<VarValue>();
-   }
-  else
-   if( std::isnan( f_shift ) ) {  // function changed unpredictably
-    UpFiLmb[ wFi ] = Inf<VarValue>();   // reset both function values
-    LwFiLmb[ wFi ] = -Inf<VarValue>();
-    UpFiLmb[ NrFi ] = Inf<VarValue>();
-    LwFiLmb[ NrFi ] = -Inf<VarValue>();
-    }
-   else {                               // function changed by shift()
-    UpFiLmb[ wFi ] += f_shift;    // just update everything
-    LwFiLmb[ wFi ] += f_shift;
-    UpFiLmb[ NrFi ] += f_shift;
-    LwFiLmb[ NrFi ] += f_shift;
-    }
+
+ if( f_shift == -INFshift ) {          // function changed monotonically dn
+  LwFiLmb[ wFi ] = -Inf<VarValue>();   // reset lower function values
+  LwFiLmb[ NrFi ] = -Inf<VarValue>();
+  return;
+  }
+
+ if( std::isnan( f_shift ) ) {         // function changed unpredictably
+  UpFiLmb[ wFi ] = Inf<VarValue>();    // reset both upper ...
+  LwFiLmb[ wFi ] = -Inf<VarValue>();   // ... and lower function values
+  UpFiLmb[ NrFi ] = Inf<VarValue>();
+  LwFiLmb[ NrFi ] = -Inf<VarValue>();
+  UpFiBest = Inf<VarValue>();          // and of course best one
+  return;
+  }
+
+ // function changed by shift():  just update everything
+ UpFiLmb[ wFi ] += f_shift;
+ LwFiLmb[ wFi ] += f_shift;
+ UpFiLmb[ NrFi ] += f_shift;
+ LwFiLmb[ NrFi ] += f_shift;
+ UpFiBest += f_shift;
 
  } // end ( BundleSolver::FModChg )  - - - - - - - - - - - - - - - - - - - - -
 
