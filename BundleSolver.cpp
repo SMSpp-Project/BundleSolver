@@ -1815,7 +1815,7 @@ bool BundleSolver::FiAndGi( Index wFi )
    BLOG( 2 , std::endl << "            New " );
    BLOG2( 2 , diagonal , "subgradient" );
    BLOG2( 2 , ! diagonal , "constraint" );
-   BLOG( 2 , " for Fi[ " << wFi << "is a copy of " << cp );
+   BLOG( 2 , " for Fi[ " << wFi << " ] is a copy of " << cp );
 
    cHpNum OrigA1k = (Master->ReadLinErr())[ cp ];
 
