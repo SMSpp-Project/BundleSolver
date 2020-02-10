@@ -37,18 +37,27 @@
 #include "OsiClpSolverInterface.hpp"
 
 /*--------------------------------------------------------------------------*/
-/*------------------------- NAMESPACE AND USING ----------------------------*/
-/*--------------------------------------------------------------------------*/
-
-using namespace SMSpp_di_unipi_it;
-
-/*--------------------------------------------------------------------------*/
 /*-------------------------------- MACROS ----------------------------------*/
 /*--------------------------------------------------------------------------*/
 
 #define BLOG( l , x ) if( f_log && ( LogVerb > l ) ) *f_log << x
 
 #define BLOG2( l , c , x ) if( f_log && ( LogVerb > l ) && c ) *f_log << x
+
+#define USE_MPTESTER 0
+
+// if USE_MPTESTER is nonzero, the MPSolver is a MPTester whose master is
+// an OSIMPSolver and whose slave is a QPPenaltyMP
+
+#if USE_MPTESTER
+ #include "MPTester.h"
+#endif
+
+/*--------------------------------------------------------------------------*/
+/*------------------------- NAMESPACE AND USING ----------------------------*/
+/*--------------------------------------------------------------------------*/
+
+using namespace SMSpp_di_unipi_it;
 
 /*--------------------------------------------------------------------------*/
 /*----------------------------- STATIC MEMBERS -----------------------------*/
@@ -833,44 +842,52 @@ void BundleSolver::set_Block( Block * block )
  if( Master )        // a MP solver is set ??? dove metterlo ???
   Master->SetDim();  // clear all its internal state
 
- if( ! ( MPName & 1 ) ) {
-  Master = new QPPenaltyMP( );
-  QPPenaltyMP *qp = dynamic_cast<QPPenaltyMP*>( Master );
-  qp->SetPricing( CtOff );
-  qp->SetMaxVarAdd( MxAdd );
-  qp->SetMaxVarRmv( MxRmv );
-  }
- else {
-  OSIMPSolver * osi_mps = new OSIMPSolver();
-  Master = osi_mps;
+ #if( ! USE_MPTESTER )
+  if( MPName & 1 ) {  // the MPSolver is a OSIMPSolver
+ #endif
+   OSIMPSolver * osi_mps = new OSIMPSolver();
+   Master = osi_mps;
 
-  if( MPName & 2 ) {
-   OsiCpxSolverInterface *osicpx = new OsiCpxSolverInterface();
-   CPXENVptr env = osicpx->getEnvironmentPtr ();
-   CPXsetintparam( env , CPX_PARAM_THREADS , threads );
-   // 12.8
-   // CPXsetlogfile( env , NULL );
-   // 12.9
-   // CPXsetlogfilename( env, "/dev/null" , "w" ) ;
+   if( MPName & 2 ) {
+    OsiCpxSolverInterface *osicpx = new OsiCpxSolverInterface();
+    CPXENVptr env = osicpx->getEnvironmentPtr ();
+    CPXsetintparam( env , CPX_PARAM_THREADS , threads );
+    // 12.8
+    // CPXsetlogfile( env , NULL );
+    // 12.9
+    // CPXsetlogfilename( env, "/dev/null" , "w" ) ;
 
-   CPXsetintparam( env , CPXPARAM_ScreenOutput , CPX_OFF );
-   CPXsetintparam( env , CPXPARAM_Barrier_Display , 0 );
-   CPXsetintparam( env , CPXPARAM_Simplex_Display , 0 );
-   CPXsetintparam( env , CPXPARAM_Sifting_Display , 0 );
-   CPXsetintparam( env , CPXPARAM_Network_Display , 0 );
-   CPXsetintparam( env , CPXPARAM_ParamDisplay  , CPX_OFF );
+    CPXsetintparam( env , CPXPARAM_ScreenOutput , CPX_OFF );
+    CPXsetintparam( env , CPXPARAM_Barrier_Display , 0 );
+    CPXsetintparam( env , CPXPARAM_Simplex_Display , 0 );
+    CPXsetintparam( env , CPXPARAM_Sifting_Display , 0 );
+    CPXsetintparam( env , CPXPARAM_Network_Display , 0 );
+    CPXsetintparam( env , CPXPARAM_ParamDisplay  , CPX_OFF );
  
-   osi_mps->SetOsi( osicpx );
+    osi_mps->SetOsi( osicpx );
+    }
+   else
+    osi_mps->SetOsi( new OsiClpSolverInterface() );
+
+   osi_mps->SetStabType( MPName & 4 ? OSIMPSolver::quadratic :
+			              OSIMPSolver::boxstep );
+
+   osi_mps->SetAlgo( OSIMPSolver::OsiAlg( algo ) ,
+		     OSIMPSolver::OsiRed( reduction ) );
+ #if( ! USE_MPTESTER )
    }
-  else
-   osi_mps->SetOsi( new OsiClpSolverInterface() );
-
-  osi_mps->SetStabType( MPName & 4 ? OSIMPSolver::quadratic :
-			             OSIMPSolver::boxstep );
-
-  osi_mps->SetAlgo( OSIMPSolver::OsiAlg( algo ) ,
-		    OSIMPSolver::OsiRed( reduction ) );
-  }
+  else {  // the MPSolver is a QPPenaltyMP
+ #endif
+   QPPenaltyMP *qp = new QPPenaltyMP();
+   qp->SetPricing( CtOff );
+   qp->SetMaxVarAdd( MxAdd );
+   qp->SetMaxVarRmv( MxRmv );
+ #if( USE_MPTESTER )
+   Master = new MPTester( Master , qp );
+ #else
+   Master = qp;
+   }
+ #endif
 
  InitMP();
 
