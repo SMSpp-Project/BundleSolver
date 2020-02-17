@@ -23,7 +23,7 @@ list(APPEND CMAKE_MODULE_PATH ${BundleSolver_CMAKE_DIR})
 
 find_dependency(SMSpp REQUIRED)
 find_dependency(MILPSolver REQUIRED)
-find_dependency(NdoFiOracle REQUIRED)
+find_dependency(NDOFiOracle REQUIRED)
 
 list(REMOVE_AT CMAKE_MODULE_PATH -1)
 
