@@ -19,5 +19,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - First test release.
 
-[Unreleased]: https://gitlab.com/smspp/bundlesolver/-/compare/0.1.0...develop
+[Unreleased]: https://gitlab.com/smspp/bundlesolver/-/compare/0.1.1...develop
+[0.1.0]: https://gitlab.com/smspp/bundlesolver/-/tags/0.1.1
 [0.1.0]: https://gitlab.com/smspp/bundlesolver/-/tags/0.1.0
