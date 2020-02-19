@@ -2632,15 +2632,19 @@ void BundleSolver::process_outstanding_Modification( void )
       Alfa1.resize( Master->MaxName(wFi+1) );
       for( Index i = 0 ; i < Master->MaxName(wFi+1) ; i++ )
        if( Master->WComponent( i ) == wFi+1 ) {
-        Alfa1[ i ] = v_c05f[wFi]->get_linearization_constant( i );
-        // alpha has to be referred to \Lambda
-        std::vector<double> G1(NumVar);
-        Range range = make_pair( 0, NumVar );
-        v_c05f[ wFi ]->get_linearization_coefficients( G1.data() , range , i );
-        Alfa1[ i ] = UpRifFi[ wFi ] - Alfa1[ i ]
-		          		  - std::inner_product( Lambda.begin() , Lambda.end() , G1.data() , double(0) );
-        Master->ChgAlfa( Alfa1.data() , wFi );
+        if( std::isnan( v_c05f[wFi]->get_linearization_constant( i ) ) )
+         Delete( i );
+        else {
+         Alfa1[ i ] = v_c05f[wFi]->get_linearization_constant( i );
+    	 // alpha has to be referred to \Lambda
+    	 std::vector<double> G1(NumVar);
+    	 Range range = make_pair( 0, NumVar );
+    	 v_c05f[ wFi ]->get_linearization_coefficients( G1.data() , range , i );
+    	 Alfa1[ i ] = UpRifFi[ wFi ] - Alfa1[ i ]
+      		  - std::inner_product( Lambda.begin() , Lambda.end() , G1.data() , double(0) );
+         }
         }
+      Master->ChgAlfa( Alfa1.data() , wFi );
       break;
      case( C05FunctionMod::AllEntriesChanged ):
       Master->ChgSubG( tmod->range().first , tmod->range().second , wFi+1 );
@@ -2670,15 +2674,19 @@ void BundleSolver::process_outstanding_Modification( void )
       Alfa1.resize( Master->MaxName(wFi+1) );
       for( Index i = 0 ; i < Master->MaxName(wFi+1) ; i++ )
        if( Master->WComponent( i ) == wFi+1 ) {
-        Alfa1[ i ] = v_c05f[wFi]->get_linearization_constant( i );
-        // alpha has to be referred to \Lambda
-        std::vector<double> G1(NumVar);
-        Range range = make_pair( 0, NumVar );
-        v_c05f[ wFi ]->get_linearization_coefficients( G1.data() , range , i );
-        Alfa1[ i ] = UpRifFi[ wFi ] - Alfa1[ i ]
+    	if( std::isnan( v_c05f[wFi]->get_linearization_constant( i ) ) )
+    	 Delete( i );
+    	else {
+         Alfa1[ i ] = v_c05f[wFi]->get_linearization_constant( i );
+         // alpha has to be referred to \Lambda
+         std::vector<double> G1(NumVar);
+         Range range = make_pair( 0, NumVar );
+         v_c05f[ wFi ]->get_linearization_coefficients( G1.data() , range , i );
+         Alfa1[ i ] = UpRifFi[ wFi ] - Alfa1[ i ]
 		          		  - std::inner_product( Lambda.begin() , Lambda.end() , G1.data() , double(0) );
-        Master->ChgAlfa( Alfa1.data() , wFi );
+         }
         }
+      Master->ChgAlfa( Alfa1.data() , wFi );
       break;
      case( C05FunctionMod::AllEntriesChanged ):
       Master->ChgSubG( v_c05f[wFi]->is_active(tmod->vars()[0]) ,
@@ -2711,17 +2719,21 @@ void BundleSolver::process_outstanding_Modification( void )
       std::vector< VarValue > Alfa1( Master->MaxName( wFi + 1 ) );
       for( Index i = 0 ; i < Master->MaxName( wFi + 1 ) ; i++ )
        if( Master->WComponent( i ) == wFi + 1 ) {
-        Alfa1[ i ] = v_c05f[wFi]->get_linearization_constant( i );
-        // alpha has to be referred to \Lambda
-        std::vector< VarValue > G1( NumVar );
-        v_c05f[ wFi ]->get_linearization_coefficients( G1.data() ,
+        if( std::isnan( v_c05f[wFi]->get_linearization_constant( i ) ) )
+    	 Delete( i );
+        else {
+         Alfa1[ i ] = v_c05f[wFi]->get_linearization_constant( i );
+         // alpha has to be referred to \Lambda
+         std::vector< VarValue > G1( NumVar );
+         v_c05f[ wFi ]->get_linearization_coefficients( G1.data() ,
 							Range( 0 , NumVar ) , i
 							);
-        Alfa1[ i ] = UpRifFi[ wFi ] - Alfa1[ i ]
+         Alfa1[ i ] = UpRifFi[ wFi ] - Alfa1[ i ]
           	      - std::inner_product( Lambda.begin() , Lambda.end() ,
 					    G1.data() , VarValue( 0 ) );
-        Master->ChgAlfa( Alfa1.data() , wFi );
+         }
         }
+       Master->ChgAlfa( Alfa1.data() , wFi );
        }
      } // switch( tmod->f_type )
 
