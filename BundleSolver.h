@@ -106,13 +106,10 @@
 /*-------------------------- NAMESPACE & USING -----------------------------*/
 /*--------------------------------------------------------------------------*/
 
-#if( OPT_USE_NAMESPACES )
- using namespace NDO_di_unipi_it;
-#endif
-
 /// namespace for the Structured Modeling System++ (SMS++)
 namespace SMSpp_di_unipi_it
 {
+ using namespace NDO_di_unipi_it;
 
 /*--------------------------------------------------------------------------*/
 /*------------------------------- CLASSES ----------------------------------*/
