@@ -280,8 +280,13 @@ int BundleSolver::compute( bool changedvars )
   //
   // do the check only if Sigma is "negative enough to matter", otherwise do
   // not even call ReadDStart()
+  //
+  // however, avoid doing any of this if Fi( Lambda ) is defined, because if
+  // not then negative linearization errors are "normal" (the reference value
+  // is "random" and there is no reason to believe it's >= than the true value)
 
-  if( ( Sigma < - max_error( UpRifFi[ NrFi ] , RelAcc ) ) &&
+  if( ( UpFiLmb[ NrFi ] < Inf<double>() ) &&
+      ( Sigma < - max_error( UpRifFi[ NrFi ] , RelAcc ) ) &&
       ( Sigma <= - m3 * Master->ReadDStart( t ) ) ) {
    if( t >= tMaior ) {
     BLOG( 1 , " ~ NR required but t maximum" << std::endl );
