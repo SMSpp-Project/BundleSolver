@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2020-03-06
+
+### Fixed
+
+- Minor fixes.
+
 ## [0.1.2] - 2020-03-02
 
 ### Fixed
@@ -25,7 +31,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - First test release.
 
-[Unreleased]: https://gitlab.com/smspp/bundlesolver/-/compare/0.1.2...develop
-[0.1.2]: https://gitlab.com/smspp/bundlesolver/-/tags/0.1.2
-[0.1.1]: https://gitlab.com/smspp/bundlesolver/-/tags/0.1.1
+[Unreleased]: https://gitlab.com/smspp/bundlesolver/-/compare/0.2.0...develop
+[0.2.0]: https://gitlab.com/smspp/bundlesolver/-/compare/0.1.2...0.2.0
+[0.1.2]: https://gitlab.com/smspp/bundlesolver/-/compare/0.1.1...0.1.2
+[0.1.1]: https://gitlab.com/smspp/bundlesolver/-/compare/0.1.0...0.1.1
 [0.1.0]: https://gitlab.com/smspp/bundlesolver/-/tags/0.1.0
