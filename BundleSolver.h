@@ -59,9 +59,9 @@
  * In that case, the LagBFunction is never evaluated, which means that there
  * is no need for a Solver to be attached to the inner Block.
  *
- * \version 0.10
+ * \version 0.12
  *
- * \date 23 - 11 - 2019
+ * \date 13 - 04 - 2020
  *
  * \author Antonio Frangioni \n
  *         Operations Research Group \n
@@ -1193,7 +1193,14 @@ public:
 
  int CNSCntr;          ///< counter of consecutive NS
 
+ int TotalBpar2;       ///< the sum of the BPar2 except those of the easy componåents
  std::priority_queue<Index> FreList;  ///< list of free positions
+ std::vector< Index > NrItems;  ///< Number of items for component
+ std::vector< Index > DeletedItems;
+ std::vector< std::tuple< Index , Index , bool > > ItemVcblr;
+                     ///< vocabulary of items: the first
+                     ///< element is the component name
+                     ///< the second one is the name in the pool
 
  Vec_SIndex OOBase;   /**< Out-Of-Base counters:
 		       * = Inf<SIndex>() means no item is there
@@ -1499,11 +1506,7 @@ class FakeFiOracle : public FiOracle
 /** @name Destructor
     @{ */
 
-   virtual ~FakeFiOracle() { GiNameVcblr.clear();  }
-
-/*--------------------------------------------------------------------------*/
-
-   void initialize( void );
+   virtual ~FakeFiOracle() { }
 
 /*@} -----------------------------------------------------------------------*/
 /*-------------------- PROTECTED PART OF THE CLASS -------------------------*/
@@ -1512,8 +1515,6 @@ class FakeFiOracle : public FiOracle
  protected:
 
   BundleSolver *bslv;
-
-  std::vector< std::tuple< Index , Index , bool > >  GiNameVcblr;
 
   /* vocabulary
      for handling the items name; this is done to map the item name
@@ -1619,6 +1620,10 @@ class FakeFiOracle : public FiOracle
 
   throw( std::logic_error( "Modifiction from unknonw Function" ) );
   }
+
+/*--------------------------------------------------------------------------*/
+
+ void SetItemName( Index wFi , Index wh );
 
 /*--------------------------------------------------------------------------*/
 

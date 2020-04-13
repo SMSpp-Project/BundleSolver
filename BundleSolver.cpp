@@ -4,9 +4,9 @@
 /** @file
  * Implementation of the BunldeSolver class.
  *
- * \version 0.10
+ * \version 0.12
  *
- * \date 29 - 01 - 2020
+ * \date 13 - 04 - 2020
  *
  * \author Antonio Frangioni \n
  *         Operations Research Group \n
@@ -805,8 +805,16 @@ void BundleSolver::set_Block( Block * block )
  if( MaxSol > 1 )  // best point found so far
   LmbdBst.resize( NumVar );
 
- OOBase.resize( BPar2 * ( NrFi - NrEasy ) , Inf<SIndex>() );
+ TotalBpar2 = BPar2 * ( NrFi - NrEasy);
+ OOBase.resize( TotalBpar2 , Inf<SIndex>() );
  // counter for eliminating outdated items: Inf<SIndex>() means empty
+
+ ItemVcblr.resize( TotalBpar2 );
+ for( Index i = 0 ; i < TotalBpar2 ; i++ )
+  ItemVcblr[ i ] = make_tuple( InINF , InINF , true );
+
+ NrItems.resize( NrFi , 0 );
+ DeletedItems.resize( NrFi , 0 );
 
  FreList = priority_queue<Index>();     // list of free bundle slots
  whisZ.resize( NrFi );  // for each component, the name of its "Z" if it is
@@ -824,7 +832,7 @@ void BundleSolver::set_Block( Block * block )
  UpFiLmb.resize( NrFi + 1 , Inf<VarValue>() );  // upper and lower function value
  LwFiLmb.resize( NrFi + 1 , -Inf<VarValue>() ); // ... at the current point
 
- whisG1.resize( NrFi , Inf<Index>() );  // no representative yet
+ whisG1.resize( NrFi , InINF );  // no representative yet
 
  ScPr1.resize( NrFi + 1 , 0 );
  Alfa1.resize( NrFi + 1 , 0 );
@@ -1459,7 +1467,7 @@ void BundleSolver::FormD( void )
  // the z[ i ] have changed, so in principle they are no longer in the
  // bundle: it may be the case that they actually are, but this is
  // taken care of in UpdtCntrs()
- whisZ.assign( NrFi , Inf<Index>() );
+ whisZ.assign( NrFi , InINF );
 
  // the scalar products have changed
  ScPr1.assign( NrFi , Inf<double>() );
@@ -1580,7 +1588,7 @@ void BundleSolver::FormLambda1( HpNum Tau )
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
  FiStatus.assign( NrFi , kUnEval );
- whisG1.assign( NrFi , Inf<Index>() );
+ whisG1.assign( NrFi , InINF );
 
  for( Index i = 0 ; i < NumVar ; i++ )
   LamVcblr[ i ]->set_value( Lambda1[ i ] );
@@ -1843,14 +1851,23 @@ bool BundleSolver::FiAndGi( Index wFi )
 
    if( OrigA1k > Alfa1k ) {   // the copy has smaller Alfa than the original
     BLOG( 2 , " with smaller Alfa" );
-    Master->SubstItem( cp );  // substitute it
+    Master->SubstItem( wh = cp );  // substitute it
+    DeletedItems[ wFi ]++; // counters updating
+    NrItems[ wFi ]--;
+    std::get<2>(ItemVcblr[ cp ]) = true;
     }
-
-   wh = cp;           // anyhow, this counts as a new item
+   else {
+	wh = InINF;    // otherwise, nothing new has happened
+	Ftchd++;       // anyhow, this counts as a new item
+    }
    }
-  else {              // insert the item, if there is space - - - - - - - - -
-   if( wh < InINF )     // someone has been selected in BStrategy()
-    Master->RmvItem( wh );     // remove it from the MP
+  else {               // insert the item, if there is space - - - - - - - - -
+   if( wh < InINF ) {  // someone has been selected in BStrategy()
+    Master->RmvItem( wh ); // remove it from the MP
+    DeletedItems[ wFi ]++; // and update the counters
+    NrItems[ wFi ]--;
+    std::get<2>(ItemVcblr[ wh ]) = true;
+    }
    else
     wh = FindAPlace( wFi );    // find a spot in the bundle
 
@@ -1883,7 +1900,9 @@ bool BundleSolver::FiAndGi( Index wFi )
 
   if( wh < InINF ) {
    Ftchd++;              // one more item
-   fwFi->store_linearization( wh % BPar2 );  // tell the name of the item to Fi
+
+   SetItemName( wFi , wh );
+   v_c05f[ wFi ]->store_linearization( std::get<1>(ItemVcblr[wh]) );
 
    if( UpFiLmb1[ wFi ] < Inf<double>() ) {  // it is a subgradient
     if( ( whisG1[ wFi ] == InINF ) || ( Alfa1k < Alfa1[ wFi ] ) ||
@@ -1940,7 +1959,6 @@ void BundleSolver::SimpleBStrat( void )
  for( SIndex* tOO = OOBase.data() + Master->MaxName() ; tOO-- > OOBase.data() ; )
   if( ( *tOO < Inf<SIndex>() ) && ( *tOO > SIndex( BPar1 ) ) ) {
    const Index h = tOO - OOBase.data();
-   v_c05f[ Master->WComponent( h ) - 1 ]->delete_linearization( h );
    Delete( h );
    }
  }  // end( BundleSolver::SimpleBStrat ) - - - - - - - - - - - - - - - - - - -
@@ -2037,7 +2055,7 @@ void BundleSolver::InitMP( void )
  // have been set, and it is re-called each time any one of the two changes
  // set the size- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- Master->SetDim( BPar2 * ( NrFi - NrEasy ) , &FakeFi , false );
+ Master->SetDim( TotalBpar2 , &FakeFi , false );
 
  Master->SetPar( MPSolver::kOptEps , RelMPAcc );
  Master->SetPar( MPSolver::kFsbEps , RMPAccSol );
@@ -2094,8 +2112,7 @@ Index BundleSolver::BStrategy( Index wFi )
  // FindAPlace(), which however is not called right away because the place
  // may end up not being needed
 
- if( ( ! FreList.empty() ) || ( Master->MaxName() <
-				Index( BPar2 * ( NrFi - NrEasy ) ) ) )
+ if( NrItems[ wFi ] < BPar2 )
   return( InINF );
 
  // there is not plenty of space- - - - - - - - - - - - - - - - - - - - - - -
@@ -2226,7 +2243,6 @@ Index BundleSolver::BStrategy( Index wFi )
   }  // end for( wFi2 ) - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
  return( wh );
-
  }  // end( BundleSolver::BStrategy )  - - - - - - - - - - - - - - - - - - - -
 
 /*--------------------------------------------------------------------------*/
@@ -2242,9 +2258,12 @@ Index BundleSolver::FindAPlace( cIndex wFi )
  if( FreList.size() ) {              // there are deleted items
   wh = FreList.top();   // pick one
   FreList.pop();
+
+  // throw( std::logic_error( "Fre List" ) );
+
   }
  else                                       // there are no deleted items ...
-  if( Master->MaxName() < Index( BPar2 * ( NrFi - NrEasy ) ) )
+  if( Master->MaxName() < Index( TotalBpar2 ) )
                                             // ... but there is still space
    wh = Master->MaxName();                  // next name
 
@@ -2272,7 +2291,8 @@ void BundleSolver::AggregateZ( cHpRow Mlt , cIndex_Set MBse , Index MBDm ,
   coefficients[i].second =  Mlt[ i ];
   }
 
- v_c05f[ wFi ]->store_combination_of_linearizations( coefficients , whr );
+ SetItemName( wFi , whr );
+ v_c05f[ wFi ]->store_combination_of_linearizations( coefficients , std::get<1>(ItemVcblr[whr]) );
 
  // ask the MPSolver the memory for keeping Z[ wFi ]- - - - - - - - - - - - -
  // note: Mlt and MBse could very well be "temporary" memory belonging to the
@@ -2336,18 +2356,18 @@ void BundleSolver::RemoveItems( void )
 
  if( v_c05f.size() )
   for( auto & fun : v_c05f ) { // tell the c05Function (if any) about it
-   int GPMaxSz = fun->get_int_par( C05Function::intGPMaxSz );
-   for( Index i = 0 ; i < GPMaxSz ; i++ )
+   for( Index i = 0 ; i < BPar2 ; i++ )
 	fun->delete_linearization( i );
-    }
-
- if( f_lf ) {
-  int GPMaxSz = f_lf->get_int_par( C05Function::intGPMaxSz );
-  for( Index i = 0 ; i < GPMaxSz ; i++ )
-   f_lf->delete_linearization( i );
-  }
+   }
 
  FreList = priority_queue<Index>();
+
+ ItemVcblr.resize( TotalBpar2 );
+  for( Index i = 0 ; i < TotalBpar2 ; i++ )
+   ItemVcblr[ i ] = make_tuple ( InINF , InINF , true );
+
+ NrItems.resize( NrFi , 0 );
+ DeletedItems.resize( NrFi , 0 );
 
  }  // end( BundleSolver::RemoveItems )  - - - - - - - - - - - - - - - - - - -
 
@@ -2368,6 +2388,11 @@ void BundleSolver::guts_of_destructor( void )
  whisZ.clear();
  FreList = priority_queue<Index>();
  OOBase.clear();
+ NrItems.clear();
+ DeletedItems.clear();
+
+ ItemVcblr.clear();
+ LamVcblr.clear();
 
  if( !IsEasy.empty() )
   IsEasy.clear();
@@ -2408,10 +2433,8 @@ void BundleSolver::ReSetAlg( unsigned char RstLvl )
      RemoveItems();              // remove everything
     else
      for( Index i = Master->MaxName() ; i-- ; )
-      if( Master->IsSubG( i ) ) {
-       v_c05f[ Master->WComponent( i ) - 1 ]->delete_linearization( i );
+      if( Master->IsSubG( i ) )
        Delete( i );
-       }
     }
    }
   else
@@ -2422,10 +2445,8 @@ void BundleSolver::ReSetAlg( unsigned char RstLvl )
       RemoveItems();           // remove everything
      else
       for( Index i = Master->MaxName() ; i-- ; )
-       if( ! Master->IsSubG( i ) ) {
-    	v_c05f[ Master->WComponent( i ) - 1 ]->delete_linearization( i );
-	Delete( i );
-        }
+       if( ! Master->IsSubG( i ) )
+    	Delete( i );
      }
 
  if( ! ( RstLvl & RstFiV ) )  // reset the current value of Fi( Lambda ) - - -
@@ -2463,7 +2484,17 @@ void BundleSolver::Delete( cIndex i )
 
  FreList.push( i );
  OOBase[ i ] = Inf<SIndex>();
- v_c05f[ i / BPar2 ]->delete_linearization( i % BPar2 );
+
+ // because of the deletion, if the item is the last one
+ // in the pool the updating of max item must be performed
+ // in any case update the max item of the pool
+
+ if( !std::isnan( v_c05f[std::get<0>(ItemVcblr[ i ])]->get_linearization_constant( std::get<1>(ItemVcblr[ i ]) ) ) )
+  v_c05f[ std::get<0>(ItemVcblr[ i ]) ]->delete_linearization( std::get<1>(ItemVcblr[ i ]) );
+ std::get<2>(ItemVcblr[ i ]) = true;   // item i is not
+                                       // assigned anymore
+ NrItems[ std::get<0>(ItemVcblr[ i ]) ]--;    // counters updating
+ DeletedItems[ std::get<0>(ItemVcblr[ i ]) ]++;
 
  // compacting FreList[] if it's too big- - - - - - - - - - - - - - - - - - -
  // remove from FreList[] every name >= Master->MaxName(); note that every
@@ -2586,6 +2617,39 @@ void BundleSolver::FModChg( VarValue f_shift , Index wFi )
 
 /*--------------------------------------------------------------------------*/
 
+void BundleSolver::SetItemName( Index wFi , Index wh ) {
+
+ if( DeletedItems[ wFi] ) {
+  Index i = 0;
+  if( std::get<0>(ItemVcblr[wh]) != wFi
+	 || std::get<2>(ItemVcblr[wh]) == false )
+   for( ; i < TotalBpar2 ; i++  ) {
+    if( std::get<0>(ItemVcblr[ i ]) == wFi
+	   && std::get<2>(ItemVcblr[ i ]) == true ) {
+
+	 std::get<1>(ItemVcblr[wh]) = std::get<1>(ItemVcblr[i]);
+	 std::get<0>(ItemVcblr[i]) = InINF; // substitute item i
+	                                    // with item wh
+     break;
+     }
+   }
+
+  assert( i != TotalBpar2 );
+  DeletedItems[ wFi ]--;  // number of deleted items is decreased
+  }                       // because i is replaced by wh
+ else {
+  assert( NrItems[ wFi ] < BPar2 );
+  std::get<0>(ItemVcblr[wh]) = wFi; // set component name
+  std::get<1>(ItemVcblr[wh]) = NrItems[ wFi ];
+  }
+
+ std::get<2>(ItemVcblr[wh]) = false;
+ NrItems[ wFi ]++; // update the number of item of wFi
+
+ } // end ( BundleSolver::SetItemName )  - - - - - - - - - - - - - - - - - - -
+
+/*--------------------------------------------------------------------------*/
+
 void BundleSolver::process_outstanding_Modification( void )
 {
  // no-frills loop: do them in order, with no attempt at optimizing
@@ -2700,23 +2764,25 @@ void BundleSolver::process_outstanding_Modification( void )
   if( AlphaChgd ) {
    // a finite f_shift should be treated in a different way but
    // as of now the finite shifts are ignored by MPSolver
+
+   for( Index i = 0 ; i < TotalBpar2 ; i++ )
+    if( ( std::get<0>(ItemVcblr[ i ]) == wFi ) && ( std::get<2>(ItemVcblr[ i ]) == false ) )
+	 if( std::isnan( v_c05f[wFi]->get_linearization_constant( std::get<1>(ItemVcblr[ i ]) ) ) )
+	  Delete( i );
+
    std::vector< VarValue > Alfa1( Master->MaxName( wFi + 1 ) );
-   for( Index i = 0 ; i < BPar2 * ( NrFi - NrEasy ) ; i++ )
-    if( ( (i / BPar2) == wFi ) && ( OOBase[ i ] != Inf<SIndex>() ) ) {
-     if( std::isnan( v_c05f[wFi]->get_linearization_constant( i % BPar2 ) ) )
-      Delete( i );
-     else {
-      Alfa1[ i ] = v_c05f[wFi]->get_linearization_constant( i % BPar2 );
-      // alpha has to be referred to \Lambda
-      std::vector< VarValue > G1( NumVar );
+   for( Index i = 0 ; i < TotalBpar2 ; i++ )
+	if( ( std::get<0>(ItemVcblr[ i ]) == wFi ) && ( std::get<2>(ItemVcblr[ i ]) == false ) ) {
+      Alfa1[ i ] = v_c05f[wFi]->get_linearization_constant( std::get<1>(ItemVcblr[ i ]) );
+      std::vector< VarValue > G1( NumVar ); // it must be referred to \Lambda
       v_c05f[ wFi ]->get_linearization_coefficients( G1.data() ,
-		 					Range( 0 , NumVar ) , i % BPar2 );
+		 					Range( 0 , NumVar ) , std::get<1>(ItemVcblr[ i ]) );
       Alfa1[ i ] = UpRifFi[ wFi ] - Alfa1[ i ]
           	      - std::inner_product( Lambda.begin() , Lambda.end() ,
 					    G1.data() , VarValue( 0 ) );
       }
-     }
-   Master->ChgAlfa( Alfa1.data() , wFi );
+
+   Master->ChgAlfa( Alfa1.data() , wFi + 1 );
    }
 
   if( DoReturn )
@@ -2727,7 +2793,7 @@ void BundleSolver::process_outstanding_Modification( void )
    const auto tmod = std::dynamic_pointer_cast<C05FunctionModLin>( mod );
    if( tmod ) {
     wFi = get_index_of_component(tmod->function());
-    if( wFi == Inf<Index>() ) { // 0th component
+    if( wFi == InINF ) { // 0th component
       double * G1 = Master->GetItem( 0 );
       f_lf->get_linearization_coefficients( G1 );
       for( Index i = 0 ; i < tmod->vars().size() ; ++i )
@@ -2820,7 +2886,7 @@ Index BundleSolver::FakeFiOracle::GetNrFi( void ) const
 
 Index BundleSolver::FakeFiOracle::GetMaxName( void ) const
 {
- return( bslv->BPar2 * ( bslv->NrFi - bslv->NrEasy ) );
+ return( bslv->TotalBpar2 );
  }
 
 /*--------------------------------------------------------------------------*/
@@ -2834,7 +2900,7 @@ HpNum BundleSolver::FakeFiOracle::GetMinusInfinity( void )
 
 Index BundleSolver::FakeFiOracle::GetMaxNZ( cIndex wFi ) const
 {
- if( wFi != Inf<Index>() )
+ if( wFi != InINF )
   throw( std::logic_error( "GetMaxNZ can be called with wFi = Inf only" ) );
 
  return( bslv->NumVar );
@@ -3042,51 +3108,35 @@ Index BundleSolver::FakeFiOracle::GetGi( SgRow SubG , cIndex_Set &SGBse ,
 					 cIndex Name , cIndex strt , Index stp
 					 )
 {
- // inzio da rivedere
-
  auto range = make_pair( strt , stp );
- bslv->v_c05f[ Name / bslv->BPar2 ]->
-    get_linearization_coefficients( SubG , range , Name % bslv->BPar2 );
+
+ if( Name == bslv->TotalBpar2 ) // get the zero-component subgradient
+  bslv->f_lf->get_linearization_coefficients( SubG , range );
+ else
+  bslv->v_c05f[ get<0>(bslv->ItemVcblr[ Name ]) ]->
+    get_linearization_coefficients( SubG , range , get<1>(bslv->ItemVcblr[ Name ]) );
+
  SGBse = nullptr;
  return( stp - strt );
 
- // auto range = make_pair( strt , stp );
- // bslv->v_c05f[ std::get< 1 >( GiNameVcblr[ Name ] ) ]->
- //  get_linearization_coefficients( SubG , range ,
- //				  std::get< 0 >( GiNameVcblr[ Name ] ) );
- // SGBse = nullptr;
- // return( stp - strt );
-
- // fine da rivedere
  }
 
 /*--------------------------------------------------------------------------*/
 
 HpNum BundleSolver::FakeFiOracle::GetVal( cIndex Name )
 {
- return( bslv->v_c05f[ Name / bslv->BPar2 ]->
-		 get_linearization_constant( Name % bslv->BPar2 ) );
-
- // return( bslv->v_c05f[ std::get< 1 >( GiNameVcblr[ Name ] ) ]->
- //	 get_linearization_constant( std::get< 0 >( GiNameVcblr[ Name ] ) ) );
+ if( Name == bslv->TotalBpar2 ) // get the zero-component subgradient
+  return( bslv->f_lf->get_linearization_constant( ) );
+ else
+  return( bslv->v_c05f[ get<0>(bslv->ItemVcblr[ Name ]) ]->
+		 get_linearization_constant( get<1>(bslv->ItemVcblr[ Name ]) ) );
  }
 
 /*--------------------------------------------------------------------------*/
 
 void BundleSolver::FakeFiOracle::SetGiName( cIndex Name )
 {
- auto it = GiNameVcblr.begin();
- for( ; it != GiNameVcblr.end() ; ++it  )
-  if( std::get<1>( *it ) == last_c05 && std::get<2>( *it ) == true ) {
-   std::get<2>( *it ) = false;
-   break;
-   }
-
- if( it == GiNameVcblr.end() )
-  throw( std::invalid_argument( "the global pool is full" ) );
-
- bslv->v_c05f[ last_c05 ]->store_linearization( std::get< 0 >( *it ) );
-
+ throw( std::logic_error( "this method cannot be called" ) );
  } // end ( FakeFiOracle::SetGiName( ) ) - - - - - - - - - - - - - - - - - - -
 
 /*--------------------------------------------------------------------------*/
@@ -3111,10 +3161,7 @@ FiOracle::FiStatus BundleSolver::FakeFiOracle::GetFiStatus( Index wFi )
 
 void BundleSolver::FakeFiOracle::Deleted( cIndex i )
 {
- bslv->v_c05f[ std::get< 1 >( GiNameVcblr[ i ] ) ]->
-  delete_linearization( std::get< 0 >( GiNameVcblr[ i ] ) );
-
- std::get< 2 >( GiNameVcblr[ i ] ) = true;
+ throw( std::logic_error( "this method cannot be called" ) );
  }
 
 /*--------------------------------------------------------------------------*/
@@ -3124,19 +3171,6 @@ void BundleSolver::FakeFiOracle::Aggregate( cHpRow Mlt , cIndex_Set NmSt ,
 {
  throw( std::logic_error( "this method cannot be called" ) );
  }
-
-/*--------------------------------------------------------------------------*/
-
-void BundleSolver::FakeFiOracle::initialize( void )
-{
- GiNameVcblr.resize( GetMaxName() );
- auto it =  GiNameVcblr.begin();
- for( Index i = 0 ; i < bslv->v_c05f.size() ; ++i )
-  for( Index j = 0 ; j < bslv->BPar2 ; ++j ) {
-   *(it++) = std::make_tuple( j , i , true );
-   }
-
- } // (end BundleSolver::FakeFiOracle::initialize )  - - - - - - - - - - - - -
 
 /*--------------------------------------------------------------------------*/
 /*----------------------- End File BundleSolver.cpp ------------------------*/
