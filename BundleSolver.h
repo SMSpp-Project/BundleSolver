@@ -244,6 +244,8 @@ public:
 
  intBPar6 ,  ///< control how the min/max number of new linearizations changes
 
+ intBPar7 ,  ///< it decides if delete a linearization
+
  intMnSSC ,  ///< minimum number of consecutive Serious Steps
 
  intMnNSC ,  ///< minimum number of consecutive Null Steps
@@ -350,6 +352,7 @@ public:
   BPar3 = dflt_int_par[ intBPar3 - intLastParCDAS ];
   BPar4 = dflt_int_par[ intBPar4 - intLastParCDAS ];
   BPar6 = dflt_int_par[ intBPar6 - intLastParCDAS ];
+  BPar7 = dflt_int_par[ intBPar7 - intLastParCDAS ];
   MnSSC = dflt_int_par[ intMnSSC - intLastParCDAS ];
   MnNSC = dflt_int_par[ intMnNSC - intLastParCDAS ];
   tSPar1 = dflt_int_par[ inttSPar1 - intLastParCDAS ];
@@ -476,6 +479,10 @@ public:
   *
   *    4: aBP3 is set to
   *       ( BPar5 > 0 ? BPar4 : BPar3 ) + BPar5 / log10( EpsU / RAccSol )
+  *
+  * - intBPar7[ 1 ]: true if BundleSolver has to delete the linearization
+                      of the C05Function, false otherwise
+  *
   *
   * - intMnSSC [0]: minimum number of consecutive SS with the same t that
   *                 have to be performed before t is allowed to grow
@@ -1110,6 +1117,8 @@ public:
  int BPar4;         ///< min number of items fetched from Fi() at each call
  double BPar5;      ///< control how the actual BPar3 changes over time
  int BPar6;         ///< control how the actual BPar3 changes over time
+ int BPar7;        ///< true if BundleSolver has to delete the linearization
+                    ///< of the C05Function, false otherwise
 
  double mxIncr;     ///< max increase t parameter
  double mnIncr;     ///< min increase t parameter
@@ -1196,8 +1205,10 @@ public:
  int TotalBpar2;       ///< the sum of the BPar2 except those of the easy componåents
  std::priority_queue<Index> FreList;  ///< list of free positions
  std::vector< Index > NrItems;  ///< Number of items for component
- std::vector< Index > DeletedItems;
- std::vector< std::tuple< Index , Index , bool > > ItemVcblr;
+ std::vector< Index > RwtItems; ///< Number of rewritable items
+ std::vector< Index > NotRwtItems; ///< Number of rewritable items
+
+ std::vector< std::tuple< Index , Index , Index > > ItemVcblr;
                      ///< vocabulary of items: the first
                      ///< element is the component name
                      ///< the second one is the name in the pool
@@ -1593,7 +1604,7 @@ class FakeFiOracle : public FiOracle
 
 /*--------------------------------------------------------------------------*/
 
- void Delete( cIndex i );
+ void Delete( cIndex i , bool ModDelete = false );
 
 /*--------------------------------------------------------------------------*/
 

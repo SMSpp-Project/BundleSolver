@@ -74,6 +74,7 @@ const std::vector< std::string > BundleSolver::int_pars_str = {
  "intBPar3" ,
  "intBPar4" ,
  "intBPar6" ,
+ "intBPar7" ,
  "intMnSSC" ,
  "intMnNSC" ,
  "inttSPar1" ,
@@ -116,6 +117,7 @@ const std::map< std::string , BundleSolver::idx_type >
  { "intBPar3" , BundleSolver::intBPar3 } ,
  { "intBPar4" , BundleSolver::intBPar4 } ,
  { "intBPar6" , BundleSolver::intBPar6 } ,
+ { "intBPar7" , BundleSolver::intBPar7 } ,
  { "intMnSSC" , BundleSolver::intMnSSC } ,
  { "intMnNSC" , BundleSolver::intMnNSC } ,
  { "inttSPar1" , BundleSolver::inttSPar1 } ,
@@ -158,6 +160,7 @@ const std::vector< int > BundleSolver::dflt_int_par = {
   1 ,  // intBPar3
   1 ,  // intBPar4
   0 ,  // intBPar6
+  1 ,  // intBPar7
   0 ,  // intMnSSC
   3 ,  // intMnNSC
  12 ,  // inttSPar1
@@ -811,10 +814,11 @@ void BundleSolver::set_Block( Block * block )
 
  ItemVcblr.resize( TotalBpar2 );
  for( Index i = 0 ; i < TotalBpar2 ; i++ )
-  ItemVcblr[ i ] = make_tuple( InINF , InINF , true );
+  ItemVcblr[ i ] = make_tuple( InINF , InINF , 0 );
 
  NrItems.resize( NrFi , 0 );
- DeletedItems.resize( NrFi , 0 );
+ RwtItems.resize( NrFi , 0 );
+ NotRwtItems.resize( NrFi , 0 );
 
  FreList = priority_queue<Index>();     // list of free bundle slots
  whisZ.resize( NrFi );  // for each component, the name of its "Z" if it is
@@ -954,6 +958,9 @@ void BundleSolver::set_par( const idx_type par , const int value ) {
    break;
   case( intBPar6 ):
    BPar6 = value;
+   break;
+  case( intBPar7 ):
+   BPar7 = value;
    break;
   case( intMnSSC ):
    MnSSC = value;
@@ -1160,6 +1167,9 @@ int BundleSolver::get_int_par( const idx_type par ) const
    break;
   case( intBPar6 ):
    return( BPar6 );
+   break;
+  case( intBPar7 ):
+   return( BPar7 );
    break;
   case( intMnSSC ):
    return( MnSSC );
@@ -1852,9 +1862,16 @@ bool BundleSolver::FiAndGi( Index wFi )
    if( OrigA1k > Alfa1k ) {   // the copy has smaller Alfa than the original
     BLOG( 2 , " with smaller Alfa" );
     Master->SubstItem( wh = cp );  // substitute it
-    DeletedItems[ wFi ]++; // counters updating
+    if( BPar7 ) {
+     v_c05f[ wFi ]->delete_linearization( std::get<1>(ItemVcblr[ cp ]) );
+     std::get<2>(ItemVcblr[ cp ]) = 0;   // item cancelled and slot can be rewritten
+     RwtItems[ wFi ]++;
+     }
+    else {
+     std::get<2>(ItemVcblr[ cp ]) = 1;   // item cancelled but slot cannot be rewritten
+     NotRwtItems[ wFi ]++;
+     }
     NrItems[ wFi ]--;
-    std::get<2>(ItemVcblr[ cp ]) = true;
     }
    else {
 	wh = InINF;    // otherwise, nothing new has happened
@@ -1864,9 +1881,16 @@ bool BundleSolver::FiAndGi( Index wFi )
   else {               // insert the item, if there is space - - - - - - - - -
    if( wh < InINF ) {  // someone has been selected in BStrategy()
     Master->RmvItem( wh ); // remove it from the MP
-    DeletedItems[ wFi ]++; // and update the counters
+    if( BPar7 ) {
+     v_c05f[ wFi ]->delete_linearization( std::get<1>(ItemVcblr[ wh ]) );
+     std::get<2>(ItemVcblr[ wh ]) = 0;   // item cancelled and slot can be rewritten
+     RwtItems[ wFi ]++;
+     }
+    else {
+     std::get<2>(ItemVcblr[ wh ]) = 1;   // item cancelled but slot cannot be rewritten
+     NotRwtItems[ wFi ]++;
+     }
     NrItems[ wFi ]--;
-    std::get<2>(ItemVcblr[ wh ]) = true;
     }
    else
     wh = FindAPlace( wFi );    // find a spot in the bundle
@@ -2364,10 +2388,11 @@ void BundleSolver::RemoveItems( void )
 
  ItemVcblr.resize( TotalBpar2 );
   for( Index i = 0 ; i < TotalBpar2 ; i++ )
-   ItemVcblr[ i ] = make_tuple ( InINF , InINF , true );
+   ItemVcblr[ i ] = make_tuple ( InINF , InINF , 0 );
 
  NrItems.resize( NrFi , 0 );
- DeletedItems.resize( NrFi , 0 );
+ RwtItems.resize( NrFi , 0 );
+ NotRwtItems.resize( NrFi , 0 );
 
  }  // end( BundleSolver::RemoveItems )  - - - - - - - - - - - - - - - - - - -
 
@@ -2389,7 +2414,7 @@ void BundleSolver::guts_of_destructor( void )
  FreList = priority_queue<Index>();
  OOBase.clear();
  NrItems.clear();
- DeletedItems.clear();
+ RwtItems.clear();
 
  ItemVcblr.clear();
  LamVcblr.clear();
@@ -2462,7 +2487,7 @@ void BundleSolver::ReSetAlg( unsigned char RstLvl )
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::Delete( cIndex i )
+void BundleSolver::Delete( cIndex i , bool ModDelete )
 {
  if( Master ) {
   // check if this item was the "representative" for its component- - - - - -
@@ -2489,12 +2514,24 @@ void BundleSolver::Delete( cIndex i )
  // in the pool the updating of max item must be performed
  // in any case update the max item of the pool
 
- if( !std::isnan( v_c05f[std::get<0>(ItemVcblr[ i ])]->get_linearization_constant( std::get<1>(ItemVcblr[ i ]) ) ) )
-  v_c05f[ std::get<0>(ItemVcblr[ i ]) ]->delete_linearization( std::get<1>(ItemVcblr[ i ]) );
- std::get<2>(ItemVcblr[ i ]) = true;   // item i is not
-                                       // assigned anymore
- NrItems[ std::get<0>(ItemVcblr[ i ]) ]--;    // counters updating
- DeletedItems[ std::get<0>(ItemVcblr[ i ]) ]++;
+
+ if( ModDelete ) {
+  std::get<2>(ItemVcblr[ i ]) = 0;   // slot can be rewritten
+  RwtItems[ std::get<0>(ItemVcblr[ i ]) ]++;
+  }
+ else {
+  if( BPar7 ) {
+   v_c05f[ std::get<0>(ItemVcblr[ i ]) ]->delete_linearization( std::get<1>(ItemVcblr[ i ]) );
+   std::get<2>(ItemVcblr[ i ]) = 0;   // item cancelled and slot can be rewritten
+   RwtItems[ std::get<0>(ItemVcblr[ i ]) ]++;
+   }
+  else {
+   std::get<2>(ItemVcblr[ i ]) = 1;   // item cancelled but slot cannot be rewritten
+   NotRwtItems[ std::get<0>(ItemVcblr[ i ]) ]++;
+   }
+  }
+
+ NrItems[ std::get<0>(ItemVcblr[ i ]) ]--;
 
  // compacting FreList[] if it's too big- - - - - - - - - - - - - - - - - - -
  // remove from FreList[] every name >= Master->MaxName(); note that every
@@ -2505,9 +2542,9 @@ void BundleSolver::Delete( cIndex i )
  cIndex MxNm = Master->MaxName();
  if( FreList.size() > MxNm ) {
   FreList = priority_queue<Index>();
-  for( Index i = 0 ; i < MxNm ; i++ )
-   if( OOBase[ i ] == Inf<SIndex>() )
-    FreList.push( i );
+  for( Index j = 0 ; j < MxNm ; j++ )
+   if( OOBase[ j ] == Inf<SIndex>() )
+    FreList.push( j );
   }
 
  assert( Master->MaxName() >= FreList.size() );
@@ -2619,13 +2656,13 @@ void BundleSolver::FModChg( VarValue f_shift , Index wFi )
 
 void BundleSolver::SetItemName( Index wFi , Index wh ) {
 
- if( DeletedItems[ wFi] ) {
+ if( RwtItems[ wFi] ) {
   Index i = 0;
   if( std::get<0>(ItemVcblr[wh]) != wFi
-	 || std::get<2>(ItemVcblr[wh]) == false )
+	 || std::get<2>(ItemVcblr[wh]) != 0 )
    for( ; i < TotalBpar2 ; i++  ) {
     if( std::get<0>(ItemVcblr[ i ]) == wFi
-	   && std::get<2>(ItemVcblr[ i ]) == true ) {
+	   && std::get<2>(ItemVcblr[ i ]) == 0 ) {
 
 	 std::get<1>(ItemVcblr[wh]) = std::get<1>(ItemVcblr[i]);
 	 std::get<0>(ItemVcblr[i]) = InINF; // substitute item i
@@ -2635,15 +2672,15 @@ void BundleSolver::SetItemName( Index wFi , Index wh ) {
    }
 
   assert( i != TotalBpar2 );
-  DeletedItems[ wFi ]--;  // number of deleted items is decreased
+  RwtItems[ wFi ]--;  // number of deleted items is decreased
   }                       // because i is replaced by wh
  else {
   assert( NrItems[ wFi ] < BPar2 );
   std::get<0>(ItemVcblr[wh]) = wFi; // set component name
-  std::get<1>(ItemVcblr[wh]) = NrItems[ wFi ];
+  std::get<1>(ItemVcblr[wh]) = NrItems[ wFi ] + NotRwtItems[ wFi ];
   }
 
- std::get<2>(ItemVcblr[wh]) = false;
+ std::get<2>(ItemVcblr[wh]) = 2;
  NrItems[ wFi ]++; // update the number of item of wFi
 
  } // end ( BundleSolver::SetItemName )  - - - - - - - - - - - - - - - - - - -
@@ -2766,13 +2803,13 @@ void BundleSolver::process_outstanding_Modification( void )
    // as of now the finite shifts are ignored by MPSolver
 
    for( Index i = 0 ; i < TotalBpar2 ; i++ )
-    if( ( std::get<0>(ItemVcblr[ i ]) == wFi ) && ( std::get<2>(ItemVcblr[ i ]) == false ) )
+    if( ( std::get<0>(ItemVcblr[ i ]) == wFi ) && ( std::get<2>(ItemVcblr[ i ]) == 2 ) )
 	 if( std::isnan( v_c05f[wFi]->get_linearization_constant( std::get<1>(ItemVcblr[ i ]) ) ) )
-	  Delete( i );
+	  Delete( i , true );
 
    std::vector< VarValue > Alfa1( Master->MaxName( wFi + 1 ) );
    for( Index i = 0 ; i < TotalBpar2 ; i++ )
-	if( ( std::get<0>(ItemVcblr[ i ]) == wFi ) && ( std::get<2>(ItemVcblr[ i ]) == false ) ) {
+	if( ( std::get<0>(ItemVcblr[ i ]) == wFi ) && ( std::get<2>(ItemVcblr[ i ]) == 2 ) ) {
       Alfa1[ i ] = v_c05f[wFi]->get_linearization_constant( std::get<1>(ItemVcblr[ i ]) );
       std::vector< VarValue > G1( NumVar ); // it must be referred to \Lambda
       v_c05f[ wFi ]->get_linearization_coefficients( G1.data() ,
