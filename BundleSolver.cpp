@@ -1677,7 +1677,7 @@ bool BundleSolver::FiAndGi( Index wFi )
  if( IsEasy.size() && IsEasy[ wFi ] )
   return( false );
 
- LwFiK =  UpRifFi[ wFi ] + vStar[ wFi ];
+ LwFiK = UpRifFi[ wFi ] + vStar[ wFi ];
 
  if( UpFiLmb[ wFi ] < Inf<VarValue>() )
   if( UpTrgt < Inf<VarValue>() && UpFiLmb1[ NrFi ] < Inf<VarValue>() )
@@ -2598,6 +2598,9 @@ bool BundleSolver::IsOptimal( double eps ) const
  if( eps <= 0 )
   eps = RelAcc;
 
+ if( vStar[ NrFi ] >= Inf< VarValue >() )  // there are no subgradients
+  return( false );
+
  c_VarValue err = max_error( eps );
  if( err >= Inf< VarValue >() )
   return( false );
@@ -2644,11 +2647,25 @@ void BundleSolver::FModChg( VarValue f_shift , Index wFi )
   }
 
  // function changed by shift():  just update everything
- UpFiLmb[ wFi ] += f_shift;
- LwFiLmb[ wFi ] += f_shift;
- UpFiLmb[ NrFi ] += f_shift;
- LwFiLmb[ NrFi ] += f_shift;
- UpFiBest += f_shift;
+
+ if( UpFiLmb[ wFi ] < Inf<VarValue>() )
+  UpFiLmb[ wFi ] += f_shift;
+
+ if( UpFiLmb[ NrFi ] < Inf<VarValue>() )
+  UpFiLmb[ NrFi ] += f_shift;
+
+ if( UpFiBest < Inf<VarValue>() )
+  UpFiBest += f_shift;
+
+
+ if( LwFiLmb[ wFi ] > -Inf<VarValue>() )
+  LwFiLmb[ wFi ] += f_shift;
+
+ if( LwFiLmb[ NrFi ] > -Inf<VarValue>() )
+  LwFiLmb[ NrFi ] += f_shift;
+
+ UpRifFi[ wFi ] += f_shift;
+ UpRifFi[ NrFi ] += f_shift;
 
  } // end ( BundleSolver::FModChg )  - - - - - - - - - - - - - - - - - - - - -
 
@@ -2802,15 +2819,23 @@ void BundleSolver::process_outstanding_Modification( void )
    // a finite f_shift should be treated in a different way but
    // as of now the finite shifts are ignored by MPSolver
 
-   for( Index i = 0 ; i < TotalBpar2 ; i++ )
-    if( ( std::get<0>(ItemVcblr[ i ]) == wFi ) && ( std::get<2>(ItemVcblr[ i ]) == 2 ) )
-	 if( std::isnan( v_c05f[wFi]->get_linearization_constant( std::get<1>(ItemVcblr[ i ]) ) ) )
+   VarValue* Alfat = new VarValue[ Master->MaxName( wFi + 1 ) ];
+   VarValue* Alfat_1 = Alfat;
+   VarValue AlfaVal;
+
+   for( Index i = 0 ; i < Master->MaxName( wFi + 1 ); i++ )
+    if( ( std::get<0>(ItemVcblr[ i ]) == wFi ) && ( std::get<2>(ItemVcblr[ i ]) == 2 ) ) {
+     AlfaVal = v_c05f[wFi]->get_linearization_constant( std::get<1>(ItemVcblr[ i ]) );
+     if( std::isnan( AlfaVal ) )
 	  Delete( i , true );
+	 else
+	  *(Alfat++) = AlfaVal;
+     }
 
    std::vector< VarValue > Alfa1( Master->MaxName( wFi + 1 ) );
-   for( Index i = 0 ; i < TotalBpar2 ; i++ )
+   for( Index i = 0 ; i < Master->MaxName( wFi + 1 ) ; i++ )
 	if( ( std::get<0>(ItemVcblr[ i ]) == wFi ) && ( std::get<2>(ItemVcblr[ i ]) == 2 ) ) {
-      Alfa1[ i ] = v_c05f[wFi]->get_linearization_constant( std::get<1>(ItemVcblr[ i ]) );
+      Alfa1[ i ] = *(Alfat_1++);
       std::vector< VarValue > G1( NumVar ); // it must be referred to \Lambda
       v_c05f[ wFi ]->get_linearization_coefficients( G1.data() ,
 		 					Range( 0 , NumVar ) , std::get<1>(ItemVcblr[ i ]) );
@@ -2820,6 +2845,8 @@ void BundleSolver::process_outstanding_Modification( void )
       }
 
    Master->ChgAlfa( Alfa1.data() , wFi + 1 );
+
+   delete[] Alfat;
    }
 
   if( DoReturn )
