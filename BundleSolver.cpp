@@ -2819,34 +2819,27 @@ void BundleSolver::process_outstanding_Modification( void )
    // a finite f_shift should be treated in a different way but
    // as of now the finite shifts are ignored by MPSolver
 
-   VarValue* Alfat = new VarValue[ Master->MaxName( wFi + 1 ) ];
-   VarValue* Alfat_1 = Alfat;
-   VarValue AlfaVal;
+   std::vector< VarValue > G1( NumVar );
+   std::vector< VarValue > Alfa1( Master->MaxName( wFi + 1 ) );
 
-   for( Index i = 0 ; i < Master->MaxName( wFi + 1 ); i++ )
-    if( ( std::get<0>(ItemVcblr[ i ]) == wFi ) && ( std::get<2>(ItemVcblr[ i ]) == 2 ) ) {
-     AlfaVal = v_c05f[wFi]->get_linearization_constant( std::get<1>(ItemVcblr[ i ]) );
-     if( std::isnan( AlfaVal ) )
-	  Delete( i , true );
-	 else
-	  *(Alfat++) = AlfaVal;
+   for( Index i = 0 ; i < Master->MaxName( wFi + 1 ) ; ++i )
+    if( ( std::get<0>( ItemVcblr[ i ] ) == wFi ) &&
+	( std::get<2>( ItemVcblr[ i ] ) == 2 ) ) {
+     auto AlfaVali = v_c05f[ wFi ]->get_linearization_constant(
+					     std::get<1>( ItemVcblr[ i ] ) );
+     if( std::isnan( AlfaVali ) )  // linearization no longer valid
+      Delete( i , true );          // delete it
+     else {                        // linearization still there
+      // compute the linearization error in Lambda
+      v_c05f[ wFi ]->get_linearization_coefficients( G1.data() ,
+		       Range( 0 , NumVar ) , std::get<1>( ItemVcblr[ i ] ) );
+      Alfa1[ i ] = UpRifFi[ wFi ] - AlfaVali -
+                   std::inner_product( Lambda.begin() , Lambda.end() ,
+				       G1.data() , VarValue( 0 ) );
+      }
      }
 
-   std::vector< VarValue > Alfa1( Master->MaxName( wFi + 1 ) );
-   for( Index i = 0 ; i < Master->MaxName( wFi + 1 ) ; i++ )
-	if( ( std::get<0>(ItemVcblr[ i ]) == wFi ) && ( std::get<2>(ItemVcblr[ i ]) == 2 ) ) {
-      Alfa1[ i ] = *(Alfat_1++);
-      std::vector< VarValue > G1( NumVar ); // it must be referred to \Lambda
-      v_c05f[ wFi ]->get_linearization_coefficients( G1.data() ,
-		 					Range( 0 , NumVar ) , std::get<1>(ItemVcblr[ i ]) );
-      Alfa1[ i ] = UpRifFi[ wFi ] - Alfa1[ i ]
-          	      - std::inner_product( Lambda.begin() , Lambda.end() ,
-					    G1.data() , VarValue( 0 ) );
-      }
-
    Master->ChgAlfa( Alfa1.data() , wFi + 1 );
-
-   delete[] Alfat;
    }
 
   if( DoReturn )
