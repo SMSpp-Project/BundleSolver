@@ -219,6 +219,8 @@ static const unsigned char NoStPt = 32;  // don't get an initial point
 static cIndex InINF = SMSpp_di_unipi_it::Inf<Index>();
 
 /*--------------------------------------------------------------------------*/
+/*----------------------- METHODS OF BundleSolver --------------------------*/
+/*--------------------------------------------------------------------------*/
 
 int BundleSolver::compute( bool changedvars )
 {
@@ -587,9 +589,11 @@ int BundleSolver::compute( bool changedvars )
 // main cycle ends here- - - - - - - - - - - - - - - - - - - - - - - - - - -
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-return( Result );
+ //!! PrintBundle();
 
-}  // end( BundleSolver::compute() ) - - - - - - - - - - - - - - - - - - - - -
+ return( Result );
+
+ }  // end( BundleSolver::compute() ) - - - - - - - - - - - - - - - - - - - -
 
 /*--------------------------------------------------------------------------*/
 /*-------------------------- OTHER INITIALIZATIONS -------------------------*/
@@ -2657,7 +2661,6 @@ void BundleSolver::FModChg( VarValue f_shift , Index wFi )
  if( UpFiBest < Inf<VarValue>() )
   UpFiBest += f_shift;
 
-
  if( LwFiLmb[ wFi ] > -Inf<VarValue>() )
   LwFiLmb[ wFi ] += f_shift;
 
@@ -2840,6 +2843,8 @@ void BundleSolver::process_outstanding_Modification( void )
      }
 
    Master->ChgAlfa( Alfa1.data() , wFi + 1 );
+
+   //!! PrintBundle();
    }
 
   if( DoReturn )
@@ -2886,6 +2891,45 @@ void BundleSolver::process_outstanding_Modification( void )
   }  // end( while( there are Modification ) )
  }  // end( BundleSolver::process_outstanding_Modification ) - - - - - - - - -
 
+/*--------------------------------------------------------------------------*/
+
+#ifndef NDEBUG
+
+void BundleSolver::PrintBundle( void )
+{
+ if( ! f_log )
+  return;
+
+ auto Alfa = Master->ReadLinErr();
+ std::vector< VarValue > G( NumVar );
+
+ *f_log << std::endl;
+ for( Index i = 0 ; i < Master->MaxName() ; ++i ) {
+  *f_log << i << "\t";
+  if( ! std::get<2>( ItemVcblr[ i ] ) ) {
+   *f_log << "[empty]" << std::endl;
+   continue;
+   }
+
+  auto wFi = std::get<0>( ItemVcblr[ i ] );
+  auto j = std::get<1>( ItemVcblr[ i ] );
+  *f_log << wFi << "\t" << j << "\t[ ";
+
+  v_c05f[ wFi ]->get_linearization_coefficients( G.data() ,
+						 Range( 0 , NumVar ) , j );
+  for( Index h = 0 ; h < NumVar - 1 ; ++h )
+   *f_log << G[ h ] << ", ";
+   
+  *f_log << G.back() << " ]\t"
+	 << v_c05f[ wFi ]->get_linearization_constant( j )
+	 << "\t" << Alfa[ i ] << std::endl;
+  }
+ }
+   
+#endif
+
+/*--------------------------------------------------------------------------*/
+/*--------------- METHODS OF BundleSolver::FakeFiOracle --------------------*/
 /*--------------------------------------------------------------------------*/
 
 BundleSolver::FakeFiOracle::FakeFiOracle( BundleSolver *solver ) : FiOracle()
@@ -3170,12 +3214,11 @@ Index BundleSolver::FakeFiOracle::GetGi( SgRow SubG , cIndex_Set &SGBse ,
  if( Name == bslv->TotalBpar2 ) // get the zero-component subgradient
   bslv->f_lf->get_linearization_coefficients( SubG , range );
  else
-  bslv->v_c05f[ get<0>(bslv->ItemVcblr[ Name ]) ]->
-    get_linearization_coefficients( SubG , range , get<1>(bslv->ItemVcblr[ Name ]) );
-
+  bslv->v_c05f[ get<0>( bslv->ItemVcblr[ Name ] ) ]->
+   get_linearization_coefficients( SubG , range ,
+				   get<1>( bslv->ItemVcblr[ Name ] ) );
  SGBse = nullptr;
  return( stp - strt );
-
  }
 
 /*--------------------------------------------------------------------------*/
