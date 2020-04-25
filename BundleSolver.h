@@ -59,9 +59,9 @@
  * In that case, the LagBFunction is never evaluated, which means that there
  * is no need for a Solver to be attached to the inner Block.
  *
- * \version 0.12
+ * \version 0.13
  *
- * \date 13 - 04 - 2020
+ * \date 25 - 04 - 2020
  *
  * \author Antonio Frangioni \n
  *         Operations Research Group \n
@@ -1202,16 +1202,35 @@ public:
 
  int CNSCntr;          ///< counter of consecutive NS
 
- int TotalBpar2;       ///< the sum of the BPar2 except those of the easy componåents
+ vector< Index > vBPar2; ///< dimension of the global pools
+              ///< vBPar2[NrFi] is the dimension of the bundle
  std::priority_queue<Index> FreList;  ///< list of free positions
  std::vector< Index > NrItems;  ///< Number of items for component
- std::vector< Index > RwtItems; ///< Number of rewritable items
- std::vector< Index > NotRwtItems; ///< Number of rewritable items
 
- std::vector< std::tuple< Index , Index , Index > > ItemVcblr;
-                     ///< vocabulary of items: the first
-                     ///< element is the component name
-                     ///< the second one is the name in the pool
+ /**< we distinguish three different type of *free* slots of the
+      global pool:
+   	- the free one (a), never assigned, roughly speaking it
+      is one of the last free positions;
+    - used slot (b), its linearization has been removed
+      or could be removed; that slot is in the set "DFItems"
+    - almost busy slot (c), its linearization could be removed
+      but *only if* the slots (a) and (b) are not available;
+      it belongs to the set "NFItems" */
+
+ std::vector< Index > DFItems; ///< Free items
+ std::vector< Index > NFItems; ///< Not necessarily free items
+
+ /**< vocabulary of items: first field is the component name,
+  second field is the name in the pool; for item *i* if
+  ItemVcblr[i].second is INF the item i is never assigned; if
+  ItemVcblr[i].second >= BPar2[ i ] then the slot
+  ItemVcblr[i].second - BPar2[ i ] of the global pool of
+  the component ItemVcblr[i].first is of the type b);
+  if ItemVcblr[i].second < 0 then the slot
+  ItemVcblr[i].second + BPar2[ i ] of the global pool of
+  the component ItemVcblr[i].first is of the type c) */
+
+ std::vector< std::pair< Index , SIndex > > ItemVcblr;
 
  Vec_SIndex OOBase;   /**< Out-Of-Base counters:
 		       * = Inf<SIndex>() means no item is there
