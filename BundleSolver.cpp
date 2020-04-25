@@ -2745,7 +2745,7 @@ void BundleSolver::SetItemName( Index wFi , Index wh ) {
     assert( i != vBPar2[NrFi] );
     }
    ItemVcblr[wh].second = ItemVcblr[wh].second + vBPar2[wFi];
-   DFItems[ wFi ]--;
+   NFItems[ wFi ]--;
    }
 
  NrItems[ wFi ]++; // update the number of item of wFi
