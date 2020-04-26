@@ -1878,9 +1878,9 @@ bool BundleSolver::FiAndGi( Index wFi )
 
    cHpNum OrigA1k = (Master->ReadLinErr())[ cp ];
 
-   assert( ! (ItemVcblr[cp].first != InINF &&
+   assert( ItemVcblr[cp].first != InINF &&
            ItemVcblr[cp].second < vBPar2[ItemVcblr[cp].first] &&
-  		   ItemVcblr[cp].second >= 0 ) );
+  		   ItemVcblr[cp].second >= 0 );
 
    if( OrigA1k > Alfa1k ) {   // the copy has smaller Alfa than the original
     BLOG( 2 , " with smaller Alfa" );
@@ -1947,7 +1947,7 @@ bool BundleSolver::FiAndGi( Index wFi )
    Ftchd++;              // one more item
 
    SetItemName( wFi , wh );
-   v_c05f[ wFi ]->store_linearization( std::get<1>(ItemVcblr[wh]) );
+   v_c05f[ wFi ]->store_linearization( ItemVcblr[wh].second );
 
    if( UpFiLmb1[ wFi ] < Inf<double>() ) {  // it is a subgradient
     if( ( whisG1[ wFi ] == InINF ) || ( Alfa1k < Alfa1[ wFi ] ) ||
@@ -2337,7 +2337,7 @@ void BundleSolver::AggregateZ( cHpRow Mlt , cIndex_Set MBse , Index MBDm ,
   }
 
  SetItemName( wFi , whr );
- v_c05f[ wFi ]->store_combination_of_linearizations( coefficients , std::get<1>(ItemVcblr[whr]) );
+ v_c05f[ wFi ]->store_combination_of_linearizations( coefficients , ItemVcblr[whr].second );
 
  // ask the MPSolver the memory for keeping Z[ wFi ]- - - - - - - - - - - - -
  // note: Mlt and MBse could very well be "temporary" memory belonging to the
@@ -2537,11 +2537,11 @@ void BundleSolver::Delete( cIndex i , bool ModDelete )
   }
  else {
   if( BPar7 ) {
-   ItemVcblr[ i ].first += vBPar2[ wFi ];
+   ItemVcblr[ i ].second += vBPar2[ wFi ];
    DFItems[ wFi ]++;
    }
   else {
-   ItemVcblr[ i ].first -= vBPar2[ wFi ];
+   ItemVcblr[ i ].second -= vBPar2[ wFi ];
    NFItems[ wFi ]++;
    }
   }
@@ -2875,15 +2875,15 @@ void BundleSolver::process_outstanding_Modification( void )
    for( Index i = 0 ; i < Master->MaxName( wFi + 1 ) ; ++i )
     if( ( ItemVcblr[ i ].first == wFi ) &&
 	    ( ItemVcblr[ i ].second < vBPar2[wFi] ) &&
-		( ItemVcblr[ i ].second > 0 )  ) {
+		( ItemVcblr[ i ].second >= 0 )  ) {
      auto AlfaVali = v_c05f[ wFi ]->get_linearization_constant(
-					     std::get<1>( ItemVcblr[ i ] ) );
+    		       ItemVcblr[ i ].second );
      if( std::isnan( AlfaVali ) )  // linearization no longer valid
       Delete( i , true );          // delete it
      else {                        // linearization still there
       // compute the linearization error in Lambda
       v_c05f[ wFi ]->get_linearization_coefficients( G1.data() ,
-		       Range( 0 , NumVar ) , std::get<1>( ItemVcblr[ i ] ) );
+		       Range( 0 , NumVar ) , ItemVcblr[ i ].second );
       Alfa1[ i ] = UpRifFi[ wFi ] - AlfaVali -
                    std::inner_product( Lambda.begin() , Lambda.end() ,
 				       G1.data() , VarValue( 0 ) );
@@ -3277,8 +3277,8 @@ HpNum BundleSolver::FakeFiOracle::GetVal( cIndex Name )
  if( Name == bslv->vBPar2[ bslv->NrFi ] ) // get the zero-component subgradient
   return( bslv->f_lf->get_linearization_constant( ) );
  else
-  return( bslv->v_c05f[ get<0>(bslv->ItemVcblr[ Name ]) ]->
-		 get_linearization_constant( get<1>(bslv->ItemVcblr[ Name ]) ) );
+  return( bslv->v_c05f[ bslv->ItemVcblr[ Name ].first ]->
+		 get_linearization_constant( bslv->ItemVcblr[ Name ].second ) );
  }
 
 /*--------------------------------------------------------------------------*/
