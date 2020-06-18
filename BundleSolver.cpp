@@ -1947,7 +1947,9 @@ bool BundleSolver::FiAndGi( Index wFi )
    Ftchd++;              // one more item
 
    SetItemName( wFi , wh );
+   inhibit_Modification( true );
    v_c05f[ wFi ]->store_linearization( ItemVcblr[wh].second );
+   inhibit_Modification( false );
 
    if( UpFiLmb1[ wFi ] < Inf<double>() ) {  // it is a subgradient
     if( ( whisG1[ wFi ] == InINF ) || ( Alfa1k < Alfa1[ wFi ] ) ||
@@ -2337,7 +2339,9 @@ void BundleSolver::AggregateZ( cHpRow Mlt , cIndex_Set MBse , Index MBDm ,
   }
 
  SetItemName( wFi , whr );
+ inhibit_Modification( true );
  v_c05f[ wFi ]->store_combination_of_linearizations( coefficients , ItemVcblr[whr].second );
+ inhibit_Modification( false );
 
  // ask the MPSolver the memory for keeping Z[ wFi ]- - - - - - - - - - - - -
  // note: Mlt and MBse could very well be "temporary" memory belonging to the
@@ -2777,8 +2781,13 @@ void BundleSolver::process_outstanding_Modification( void )
        method. */
 
   bool AlphaChgd = false;
+  bool LinChgd = false;
   bool DoReturn = false;
   Index wFi;
+
+  Index strt = Inf<Index>();
+  Index stp = -Inf<Index>();
+  Subset LinNms;
 
   // GroupModification- - - - - - - - - - - - - - - - - - - - - - - - - - - -
   {
@@ -2796,20 +2805,35 @@ void BundleSolver::process_outstanding_Modification( void )
    const auto tmod = std::dynamic_pointer_cast<C05FunctionModRngd>( mod );
    if( tmod ) {
     wFi = get_index_of_component(tmod->function());
+    const Subset &LinNmsRngd = tmod->which();
     FModChg( tmod->shift() , wFi );
     switch( tmod->type() ) {
      case( C05FunctionMod::NothingChanged ):   // both \alpha and g are OK
       break;                                   // nothing to do
      case( C05FunctionMod::AllLinearizationChanged ):
-      Master->ChgSubG( tmod->range().first , tmod->range().second , wFi+1 );
+      strt = tmod->range().first;
+      stp = tmod->range().second;
+      if( LinNmsRngd.empty() )
+       LinNms.clear();
+      else
+       std::set_union( LinNms.begin() , LinNms.end() ,
+      LinNmsRngd.begin() , LinNmsRngd.end() , LinNms.begin() );
+      LinChgd = true;
       AlphaChgd = true;
       break;
      case( C05FunctionMod::AlphaChanged ):
       AlphaChgd = true;
       break;
      case( C05FunctionMod::AllEntriesChanged ):
-      Master->ChgSubG( tmod->range().first , tmod->range().second , wFi+1 );
-      break;
+      strt = tmod->range().first;
+      stp = tmod->range().second;
+      if( LinNmsRngd.empty() )
+       LinNms.clear();
+      else
+       std::set_union( LinNms.begin() , LinNms.end() ,
+		    	  LinNmsRngd.begin() , LinNmsRngd.end() , LinNms.begin() );
+       LinChgd = true;
+       break;
      } // switch( tmod->f_type )
     DoReturn = true;
     }  // end  if( tmod )
@@ -2821,20 +2845,33 @@ void BundleSolver::process_outstanding_Modification( void )
    if( tmod ) {
     wFi = get_index_of_component(tmod->function());
     FModChg( tmod->shift() , wFi );
+    const Subset &LinNmsSbst = tmod->which();
     switch( tmod->type() ) {
      case( C05FunctionMod::NothingChanged ):   // both \alpha and g are OK
       break;                                   // nothing to do
      case( C05FunctionMod::AllLinearizationChanged ):
-      Master->ChgSubG( v_c05f[wFi]->is_active(tmod->vars()[0]) ,
-            v_c05f[wFi]->is_active(tmod->vars()[tmod->vars().size()-1]) , wFi+1 );
-      AlphaChgd = true;
+      strt = min( strt , v_c05f[wFi]->is_active(tmod->vars()[0]) );
+      stp = max( stp , v_c05f[wFi]->is_active(tmod->vars()[tmod->vars().size()-1]) );
+      if( LinNmsSbst.empty() )
+	   LinNms.clear();
+      else
+       std::set_union( LinNms.begin() , LinNms.end() ,
+			    LinNmsSbst.begin() , LinNmsSbst.end() , LinNms.begin() );
+     LinChgd = true;
+     AlphaChgd = true;
       break;
      case( C05FunctionMod::AlphaChanged ):
       AlphaChgd = true;
       break;
      case( C05FunctionMod::AllEntriesChanged ):
-      Master->ChgSubG( v_c05f[wFi]->is_active(tmod->vars()[0]) ,
-            v_c05f[wFi]->is_active(tmod->vars()[tmod->vars().size()-1]) , wFi+1 );
+      strt = min( strt , v_c05f[wFi]->is_active(tmod->vars()[0]) );
+      stp = max( stp , v_c05f[wFi]->is_active(tmod->vars()[tmod->vars().size()-1]) );
+      if( LinNmsSbst.empty() )
+       LinNms.clear();
+      else
+       std::set_union( LinNms.begin() , LinNms.end() ,
+			    LinNmsSbst.begin() , LinNmsSbst.end() , LinNms.begin() );
+      LinChgd = true;
       break;
      } // switch( tmod->f_type )
     DoReturn = true;
@@ -2847,23 +2884,60 @@ void BundleSolver::process_outstanding_Modification( void )
    if( tmod ) {
     wFi = get_index_of_component( tmod->function() );
     FModChg( tmod->shift() , wFi );
+    const Subset &LinNmsMod = tmod->which();
     switch( tmod->type() ) {
      case( C05FunctionMod::NothingChanged ):   // both \alpha and g are OK
       break;                                   // nothing to do
      case( C05FunctionMod::AllLinearizationChanged ):  // everything changed
-      Master->ChgSubG( 0 , NumVar , wFi + 1 );
+	  strt = min( strt , Index(0) );
+      stp = max( stp , NumVar );
+      if( LinNmsMod.empty() )
+       LinNms.clear();
+      else
+       std::set_union( LinNms.begin() , LinNms.end()  ,
+				  LinNmsMod.begin() , LinNmsMod.end(), std::back_inserter(LinNms) );
+      LinChgd = true;
 	  AlphaChgd = true;
 	  break;
      case( C05FunctionMod::AlphaChanged ):
 	  AlphaChgd = true;
       break;
      case( C05FunctionMod::AllEntriesChanged ):
-      Master->ChgSubG( 0 , NumVar , wFi + 1 ); // only g changed
+	  strt = min( strt , Index(0) );
+      stp = max( stp , NumVar );
+      if( LinNmsMod.empty() )
+       LinNms.clear();
+      else
+       std::set_union( LinNms.begin() , LinNms.end() ,
+			  LinNmsMod.begin() , LinNmsMod.end() , LinNms.begin() );
+      LinChgd = true;
       break;
      } // switch( tmod->f_type )
     DoReturn = true;
     }  // end  if( tmod )
    } // end C05FunctionMod  - - - - - - - - - - - - - - - - - - - - - - - - -
+
+  // some/all linearizations changed  - - - - - - - - - - - - - - - - - - - -
+  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+  if( LinChgd ) {
+
+   if( LinNms.empty() || LinNms.size() == NrItems[ wFi ] )
+    Master->ChgSubG( strt , stp , wFi + 1 );
+   else {
+    Master->ChgSubG( strt , stp , wFi + 1 );
+    /* for( auto &LinearName : LinNms ) {
+     double *G1 = Master->GetItem( wFi + 1 );
+     v_c05f[ wFi ]->get_linearization_coefficients( G1 ,
+    		 make_pair( strt , stp ) , LinearName );
+     Master->SetItemBse( nullptr , NumVar );
+     Master->SetItem( LinearName );
+     } */
+    }
+   }
+
+  // some/all alpha changed   - - - - - - - - - - - - - - - - - - - - - - - -
+  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
   if( AlphaChgd ) {
    // a finite f_shift should be treated in a different way but
