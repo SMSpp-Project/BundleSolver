@@ -2380,10 +2380,11 @@ void BundleSolver::AggregateZ( cHpRow Mlt , cIndex_Set MBse , Index MBDm ,
 
 HpNum BundleSolver::Heuristic1( void )
 {
- if( Alfa1[0] < Eps<double>() )
+ if( Alfa1[ NrFi ] < Eps<double>() )
   return( DeltaFi > Eps<double>() ? tMaior : tMinor );
  else
-  return( t * ( ( DeltaFi + Alfa1[NrFi] ) / ( 2 * Alfa1[NrFi] ) ) );
+  return( t * ( ( DeltaFi + Alfa1[ NrFi ] ) / ( 2 * Alfa1[ NrFi ] ) ) );
+
  } // end( BundleSolver::Heuristic1() ) - -  - - - - - - - - - - - - - - - - -
 
 /*--------------------------------------------------------------------------*/
@@ -2394,6 +2395,7 @@ HpNum BundleSolver::Heuristic2( void )
   return( tMaior );
  else
   return( t * abs( vStar[ NrFi ] / ( 2 * ( vStar[ NrFi ] + DeltaFi ) ) ) );
+
  } // end( BundleSolver::Heuristic2() ) - -  - - - - - - - - - - - - - - - - -
 
 /*--------------------------------------------------------------------------*/
