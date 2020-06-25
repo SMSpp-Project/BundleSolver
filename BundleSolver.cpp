@@ -238,8 +238,12 @@ int BundleSolver::compute( bool changedvars )
 
  // first, process any outstanding Modification - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // v_mod is atomically copied in a temporary data structure to be processed,
+ // but while the latter happens new Modification may come in; hence,
+ // process_outstanding_Modification() may be called more than once
 
- process_outstanding_Modification();
+ while( ! v_mod.empty() )
+  process_outstanding_Modification();
 
  // initializations - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -620,85 +624,111 @@ void BundleSolver::set_Block( Block * block )
     optimization. The block can have box constraints at the most.
     It is expected the block to have in the first case a FRealObjective
     whose the function is a C05Function one and having no children, while in
-    the second case a FRealObjective one whose the function is a LinearFunction
-    and having as many sub-blocks as the number of components. In the latter case,
-    each sub-block must not contain any Variable or Constraint.
-    Variable may have a lower and upper bound. If the lower bound  has a finite
-    value, it must be 0. */
+    the second case a FRealObjective one whose the function is a
+    LinearFunction and having as many sub-blocks as the number of components.
+    In the latter case, each sub-block must not contain any Variable or
+    Constraint.cVariable may have a lower and upper bound. If the lower
+    bound  has a finite value, it must be 0. */
 
  if( f_Block->get_nested_Blocks().empty() ) {
-
-  // the objective function of the block must be a C05Function  - - - - - - - -
-  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  // the objective function of the block must be a C05Function  - - - - - - -
+  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
   auto obj = dynamic_cast< FRealObjective * >( f_Block->get_objective() );
-  if( obj == nullptr )
+  if( ! obj )
    throw( std::logic_error( "objective is not a FRealObjective" ) );
 
   auto c05f = dynamic_cast< C05Function * >( (obj)->get_function() );
-  if( c05f == nullptr )
+  if( ! c05f )
    throw( std::logic_error( "the objective is not a C05Function" ) );
 
   v_c05f.push_back( c05f );
   f_lf = nullptr;
-
   }
  else {
-
-  // the objective function of each block must be a LinearFunction - - - - - -
+  // the objective function of the block must be a LinearFunction- - - - - - -
   // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-  if( f_Block->get_objective() )
+  if( ! f_Block->get_objective() )  // there is no Objective
    f_lf =  nullptr;
   else {
    auto obj = dynamic_cast< FRealObjective * >( f_Block->get_objective() );
-   if( obj == nullptr )
+   if( ! obj )
     throw( std::logic_error( "the objective is not a real function" ) );
 
-   f_lf = dynamic_cast<LinearFunction *>( (obj)->get_function() );
-   if( f_lf == nullptr )
-    throw( std::logic_error( "the objective is not a LinearFunction" ) );
-   }
+   if( ! obj->get_function() ) // the FRealObjective has no Function
+    f_lf = nullptr;
+   else {
+    f_lf = dynamic_cast<LinearFunction *>( obj->get_function() );
+    if( ! f_lf )
+     throw( std::logic_error( "the objective is not a LinearFunction" ) );
 
+    if( ! f_lf->get_num_active_var() )  // the LinarFunction has no Variable
+     f_lf = nullptr;
+    }
+   }
 
   auto sb = f_Block->get_nested_Blocks();
   v_c05f.resize( sb.size() );
 
-  for( Index i = 0 ; i < sb.size() ; ++i ) { // for each sub-block
+  for( Index i = 0 ; i < sb.size() ; ++i ) {  // for each sub-block
 
    // the objective function of each sub-block must be a C05Function - - - - -
    //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
    auto obj = dynamic_cast< FRealObjective * >( sb[ i ]->get_objective() );
-   if( obj == nullptr )
+   if( ! obj )
     throw( std::logic_error( "the objective is not a real function" ) );
 
    auto c05f = dynamic_cast<C05Function *>( (obj)->get_function() );
-   if( c05f == nullptr )
-	throw( std::logic_error( "the objective is not a C05Function" ) );
+   if( ! c05f )
+    throw( std::logic_error( "the objective is not a C05Function" ) );
    v_c05f[ i ] = c05f;
 
-   // nephew are not allowed - - - - - - - - - - - - - - - - - - - - - - - - -
+   // nephews are not allowed- - - - - - - - - - - - - - - - - - - - - - - - -
    //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
    if( sb[ i ]->get_nested_Blocks().size() )
-	throw( std::logic_error( "nephew are not allowed" ) );
+    throw( std::logic_error( "nephew are not allowed" ) );
 
-   // Variable of Sub-Block are not expected, neither the Constraint - - - - -
+   // Variable of sub-Block are not expected, neither are Constraint - - - - -
    //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
    if( sb[ i ]->get_static_variables().size() )
-	throw( std::logic_error( "static Variable are not allowed" ) );
+    throw( std::logic_error( "static Variable are not allowed" ) );
 
    if( sb[ i ]->get_dynamic_variables().size() )
-	throw( std::logic_error( "dynamic Variable are not allowed" ) );
+    throw( std::logic_error( "dynamic Variable are not allowed" ) );
 
    if( sb[ i ]->get_static_constraints().size() )
-	throw( std::logic_error( "static Constraint are not allowed" ) );
+    throw( std::logic_error( "static Constraint are not allowed" ) );
 
    if( sb[ i ]->get_dynamic_constraints().size() )
-	throw( std::logic_error( "dynamic Constraint are not allowed" ) );
+    throw( std::logic_error( "dynamic Constraint are not allowed" ) );
+   }
 
+  // the set of "active" Variable in all Function must be the same - - - - - -
+  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+  if( f_lf ) {
+   if( f_lf->get_num_active_var() != v_c05f[ 0 ]->get_num_active_var() )
+    throw( std::logic_error( "the list of active Variable do not match" ) );
+
+   auto vi = v_c05f[ 0 ]->begin();
+   for( auto v : *f_lf )
+    if( v != *(vi++) ) 
+     throw( std::logic_error( "the list of active Variable do not match" ) );
+   }
+
+  for( Index i = 1 ; i < sb.size() ; ++i ) {
+   if( v_c05f[ i - 1 ]->get_num_active_var() !=
+       v_c05f[ i ]->get_num_active_var() )
+    throw( std::logic_error( "the list of active Variable do not match" ) );
+
+   auto vi = v_c05f[ i ]->begin();
+   for( auto v : *v_c05f[ i - 1 ] )
+    if( v != *(vi++) ) 
+     throw( std::logic_error( "the list of active Variable do not match" ) );
    }
   } // end decomposed case - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -741,10 +771,10 @@ void BundleSolver::set_Block( Block * block )
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
  if( f_Block->get_static_constraints().size() )
-	throw( std::logic_error( "static Constraint are not allowed" ) );
+  throw( std::logic_error( "static Constraint are not allowed" ) );
 
  if( f_Block->get_dynamic_constraints().size() )
-	throw( std::logic_error( "dynamic Constraint are not allowed" ) );
+  throw( std::logic_error( "dynamic Constraint are not allowed" ) );
 
  // read information about the function  - - - - - - - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -779,8 +809,6 @@ void BundleSolver::set_Block( Block * block )
   if( ! NrEasy )
    IsEasy.clear();
   }
- else
-  MILP_s[ 0 ] = nullptr;
 
  // set the global pool size to all non-easy functions - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -835,6 +863,7 @@ void BundleSolver::set_Block( Block * block )
  ItemVcblr.resize( vBPar2[ NrFi ] );
  for( Index i = 0 ; i < vBPar2[ NrFi ] ; i++ )
   ItemVcblr[ i ] = make_pair( InINF , Inf<SIndex>() );
+
  NrItems.resize( NrFi , 0 );
  DFItems.resize( NrFi , 0 );
  NFItems.resize( NrFi , 0 );
@@ -844,16 +873,17 @@ void BundleSolver::set_Block( Block * block )
                         // in the bunlde
 
  FiStatus.resize( NrFi , kUnEval );
- LowerBound = -Inf<double>(); // lower bounds
+ LowerBound = -Inf<double>();     // globaò lower bounds
  TrueLB = false;
 
- UpFiBest = Inf<VarValue>();     // best, ...
- UpRifFi.resize( NrFi + 1 , 0 ); // and reference Fi() values
- UpFiLmb1.resize( NrFi + 1 );    // upper and lower function value
- LwFiLmb1.resize( NrFi + 1 );    // ... at the tentative point
+ UpFiBest = Inf<VarValue>();      // best, ...
+ UpRifFi.resize( NrFi + 1 , 0 );  // and reference Fi() values
+ UpFiLmb1.resize( NrFi + 1 );     // upper and lower function value
+ LwFiLmb1.resize( NrFi + 1 );     // ... at the tentative point
 
- UpFiLmb.resize( NrFi + 1 , Inf<VarValue>() );  // upper and lower function value
- LwFiLmb.resize( NrFi + 1 , -Inf<VarValue>() ); // ... at the current point
+ UpFiLmb.resize( NrFi + 1 , Inf<VarValue>() );   // upper 
+ LwFiLmb.resize( NrFi + 1 , -Inf<VarValue>() );  // ... and lower Fi-value
+                                                 // ... at the current point
 
  whisG1.resize( NrFi , InINF );  // no representative yet
 
@@ -937,8 +967,8 @@ void BundleSolver::set_Block( Block * block )
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::set_par( const idx_type par , const int value ) {
-
+void BundleSolver::set_par( const idx_type par , const int value )
+{
  switch( par ) {
   case( intMaxIter ):
    if( value < 0 )
@@ -2760,27 +2790,511 @@ void BundleSolver::SetItemName( Index wFi , Index wh ) {
 
 /*--------------------------------------------------------------------------*/
 
+bool BundleSolver::is_special_GroupMod( GroupModification & gmod )
+{
+ // recognise "special" GroupModification for changing the set of "active"
+ // Variable of all the Objective at the same time
+
+ Index nsm = gmod.v_sub_Modifications.size();
+ if( nsm != NrFi + ( f_lf ? 1 : 0 ) )
+  return( false );
+
+ auto sm0 = gmod.v_sub_Modifications[ 0 ]
+ for( Index i = 1 ; i < nsm ; ++i )
+  if( typeid( sm0 ) != typeid( tmod.v_sub_Modifications[ i ] ) )
+   return( false );
+
+ // check C05FunctionModVarsAddd
+ {
+  const auto mod0 = std::dynamic_pointer_cast<C05FunctionModVarsAddd>( sm0 );
+  if( mod0 ) {
+   for( Index i = 1 ; i < nsm ; ++i ) {
+    auto modi = std::static_pointer_cast<C05FunctionModVarsAddd>(
+					    tmod.v_sub_Modifications[ i ] );
+    if( ( mod0->first() != modi->first() ) ||
+	( mod0->vars() != modi->vars() ) )
+     throw( std::logic_error( "different Variable change in two components" ) );
+    }
+
+   return( true );
+   }
+  }
+
+ // check C05FunctionModVarsRngd
+ {
+  const auto mod0 = std::dynamic_pointer_cast<C05FunctionModVarsRngd>( sm0 );
+  if( mod0 ) {
+   for( Index i = 1 ; i < nsm ; ++i ) {
+    auto modi = std::static_pointer_cast<C05FunctionModVarsRngd>(
+					    tmod.v_sub_Modifications[ i ] );
+    if( mod0->range() != modi->range() )
+     throw( std::logic_error( "different Variable change in two components" ) );
+    }
+
+   return( true );
+   }
+  }
+
+ // check C05FunctionModVarsSbst
+ {
+  const auto mod0 = std::dynamic_pointer_cast<C05FunctionModVarsSbst>( sm0 );
+  if( mod0 ) {
+   for( Index i = 1 ; i < nsm ; ++i ) {
+    auto modi = std::static_pointer_cast<C05FunctionModVarsSbst>(
+					    tmod.v_sub_Modifications[ i ] );
+    if( mod0->subset() != modi->subset() )
+     throw( std::logic_error( "different Variable change in two components" ) );
+    }
+
+   return( true );
+   }
+  }
+
+ return( false );
+
+ }  // end( BundleSolver::is_special_GroupMod )- - - - - - - - - - - - - - - -
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::flatten_Modification_list( Lst_sp_Mod & vmt , sp_Mod mod )
+{
+ const auto tmod = std::dynamic_pointer_cast<GroupModification>( mod );
+ if( tmod && ( ! is_special_GroupMod( *tmod ) ) )
+  for( auto submod : tmod->v_sub_Modifications )
+   flatten_Modification_list( vmt , submod );
+ else
+  vmt.push_back( mod );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::compute_inverse_dictionary(
+                                   std::vector< std::vector< Index > > & id )
+{
+ if( ! id.empty() )  // inverse dictionary computed already
+  return;            // nothing to do
+
+ // the inverse dictionary is a std::vector with one entry per component; the
+ // entry has size NrItems[ h ], and NrItems[ h ][ i ] is the position in the
+ // bundle of the i-th item in the h-th global pool, or Inf< Index > if the
+ // i-th item in the global pool is not in the bundle
+
+ // allocate memory
+ id.resize( NrFi );
+ for( Index h = 0 ; h < NrFi : ++h )
+  id[ h ].resize( NrItems[ h ] , Inf< Index >() );
+
+ // now construct the inverse vocabulary
+ for( Index i = 0 ; i < Master->MaxName() ; ++i )
+  if( ( ItemVcblr[ i ].second >= 0 ) &&
+      ( ItemVcblr[ i ].second < vBPar2[ ItemVcblr[ i ].first ] ) )
+   id[ ItemVcblr[ i ].first ][ ItemVcblr[ i ].second ] = i;
+
+ }  // end( BundleSolver::compute_inverse_dictionary ) - - - - - - - - - - - -
+
+/*--------------------------------------------------------------------------*/
+
 void BundleSolver::process_outstanding_Modification( void )
 {
- // no-frills loop: do them in order, with no attempt at optimizing
- while( ! v_mod.empty() ) {
-  auto mod = v_mod.front();  // pick (a reference to) the first Modification
+ // multiple-loop version, where several passes are done in order to gather
+ // which kind of Modification have occurred and avoid doing costly work
+ // more than once
+ //
+ // All loops use a Lambda to define a "guts" of the method that can be
+ // called recursively. Note the trick of defining the std::function object
+ // and "passing" it to the lambda, which allows recursive calls. Note the
+ // need to explicitly capture "this" to use fields/methods of the class.
 
-  /* Use a Lambda to define a "guts" of the method that can be called
-     recursively. Note the trick of defining the std::function object and
-     "passing" it to the lambda, which allows recursive calls. Note the need
-     to explicitly capture "this" to use fields/methods of the class. */
+ // 0-th loop: "atomically flatten" v_mod into a temporary list to better
+ // handle it, then clear it
 
-  // auto MCFB = static_cast< MCFBlock * >( f_Block );
+ Lst_sp_Mod v_mod_tmp;
 
-  std::function< void( sp_Mod )> guts_of_poM;
-  guts_of_poM = [ this , & guts_of_poM ]( sp_Mod mod ) {
+ while( f_mod_lock.test_and_set( std::memory_order_acquire ) )
+  ;  // try to acquire lock, spin on failure
+
+ for( auto mod : v_mod )
+  flatten_Modification_list( v_mod_tmp , mod );
+
+ v_mod.clear();
+
+ f_mod_lock.clear( std::memory_order_release );  // release lock
+
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // the 1st loop is made in reverse, from the latest Modification to the
+ // earlies, and does the following:
+ // - check if some global pool has been entirely reset
+ // - reset the upper/lower bounds that need to
+ // - if a Modifiction changing linearizations happens before a reset of the
+ //   global pool (meaning it is found afterwards in the reverse order) it
+ //   is deleted since it is useless (after having checked if it also impacts
+ //   the upper/lower bounds)
+ // - if there is more than one component, check that no "naked"
+ //   *FunctionModVars* is there
+ // - check that no ConstraintMod or VariableMod are there, since they are
+ //   not handled (yet)
+ // -
+
+ std::vector<bool> reset( NrFi , false );
+
+ for( auto rimod = v_mod_tmp.rbegin() ; rimod != v_mod_tmp.rend() ; ) {
+  bool to_delete = false;
+  auto mod = *rimod;
 
   // process Modification - - - - - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-  /* This requires to patiently sift through the possible Modification types
-       to find what this Modification exactly is, and call the appropriate
-       method. */
+  // patiently sift through the possible Modification types to find what mod
+  // exactly is and react accordingly
+
+  // C05FunctionModRngd - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  {
+   const auto tmod = std::dynamic_pointer_cast<C05FunctionModRngd>( mod );
+   if( tmod ) {
+    auto wFi = get_index_of_component( tmod->function() );
+
+    FModChg( tmod->shift() , wFi );  // reset upper/lower values as needed
+
+    if( tmod->type() == C05FunctionMod::NothingChanged )
+     return;   // both \alpha and g are unchanged, nothing else to do
+
+    // how many *stuff* changed
+    Index NChgd = tmod->which().empty() ? NrItems[ wFi ]
+                                        : tmod->which().size();
+    switch( tmod->type() ) {
+     case( C05FunctionMod::AllLinearizationChanged ):
+      if( tmod->which().empty() ) {
+       NLinChgd += NrItems[ wFi ];
+       NAlphaChgd += NrItems[ wFi ];
+       }
+      const Subset &LinNmsRngd = ;
+      strt = tmod->range().first;
+      stp = tmod->range().second;
+      if( LinNmsRngd.empty() )
+       LinNms.clear();
+      else
+       std::set_union( LinNms.begin() , LinNms.end() ,
+      LinNmsRngd.begin() , LinNmsRngd.end() , LinNms.begin() );
+      LinChgd = true;
+      AlphaChgd = true;
+      break;
+     case( C05FunctionMod::AlphaChanged ):
+      AlphaChgd = true;
+      break;
+     case( C05FunctionMod::AllEntriesChanged ):
+      strt = tmod->range().first;
+      stp = tmod->range().second;
+      if( LinNmsRngd.empty() )
+       LinNms.clear();
+      else
+       std::set_union( LinNms.begin() , LinNms.end() ,
+		    	  LinNmsRngd.begin() , LinNmsRngd.end() , LinNms.begin() );
+       LinChgd = true;
+       break;
+     } // switch( tmod->f_type )
+    DoReturn = true;
+    }  // end  if( tmod )
+   } // end C05FunctionModRngd  - - - - - - - - - - - - - - - - - - - - - - -
+
+  // C05FunctionModSbst - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  {
+   const auto tmod = std::dynamic_pointer_cast<C05FunctionModSbst>( mod );
+   if( tmod ) {
+    wFi = get_index_of_component(tmod->function());
+    FModChg( tmod->shift() , wFi );
+    const Subset &LinNmsSbst = tmod->which();
+    switch( tmod->type() ) {
+     case( C05FunctionMod::NothingChanged ):   // both \alpha and g are OK
+      break;                                   // nothing to do
+     case( C05FunctionMod::AllLinearizationChanged ):
+      strt = min( strt , v_c05f[wFi]->is_active(tmod->vars()[0]) );
+      stp = max( stp , v_c05f[wFi]->is_active(tmod->vars()[tmod->vars().size()-1]) );
+      if( LinNmsSbst.empty() )
+	   LinNms.clear();
+      else
+       std::set_union( LinNms.begin() , LinNms.end() ,
+			    LinNmsSbst.begin() , LinNmsSbst.end() , LinNms.begin() );
+     LinChgd = true;
+     AlphaChgd = true;
+      break;
+     case( C05FunctionMod::AlphaChanged ):
+      AlphaChgd = true;
+      break;
+     case( C05FunctionMod::AllEntriesChanged ):
+      strt = min( strt , v_c05f[wFi]->is_active(tmod->vars()[0]) );
+      stp = max( stp , v_c05f[wFi]->is_active(tmod->vars()[tmod->vars().size()-1]) );
+      if( LinNmsSbst.empty() )
+       LinNms.clear();
+      else
+       std::set_union( LinNms.begin() , LinNms.end() ,
+			    LinNmsSbst.begin() , LinNmsSbst.end() , LinNms.begin() );
+      LinChgd = true;
+      break;
+     } // switch( tmod->f_type )
+    DoReturn = true;
+    }  // end  if( tmod )
+   } // end C05FunctionModSbst  - - - - - - - - - - - - - - - - - - - - - - -
+
+  // C05FunctionMod - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  {
+   const auto tmod = std::dynamic_pointer_cast<C05FunctionMod>( mod );
+   if( tmod ) {
+    wFi = get_index_of_component( tmod->function() );
+    FModChg( tmod->shift() , wFi );
+    const Subset &LinNmsMod = tmod->which();
+    switch( tmod->type() ) {
+     case( C05FunctionMod::NothingChanged ):   // both \alpha and g are OK
+      break;                                   // nothing to do
+     case( C05FunctionMod::AllLinearizationChanged ):  // everything changed
+	  strt = min( strt , Index(0) );
+      stp = max( stp , NumVar );
+      if( LinNmsMod.empty() )
+       LinNms.clear();
+      else
+       std::set_union( LinNms.begin() , LinNms.end()  ,
+				  LinNmsMod.begin() , LinNmsMod.end(), std::back_inserter(LinNms) );
+      LinChgd = true;
+	  AlphaChgd = true;
+	  break;
+     case( C05FunctionMod::AlphaChanged ):
+	  AlphaChgd = true;
+      break;
+     case( C05FunctionMod::AllEntriesChanged ):
+	  strt = min( strt , Index(0) );
+      stp = max( stp , NumVar );
+      if( LinNmsMod.empty() )
+       LinNms.clear();
+      else
+       std::set_union( LinNms.begin() , LinNms.end() ,
+			  LinNmsMod.begin() , LinNmsMod.end() , LinNms.begin() );
+      LinChgd = true;
+      break;
+     } // switch( tmod->f_type )
+    DoReturn = true;
+    }  // end  if( tmod )
+   } // end C05FunctionMod  - - - - - - - - - - - - - - - - - - - - - - - - -
+
+  // some/all linearizations changed  - - - - - - - - - - - - - - - - - - - -
+  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+  if( LinChgd ) {
+
+   if( LinNms.empty() || LinNms.size() == NrItems[ wFi ] )
+    Master->ChgSubG( strt , stp , wFi + 1 );
+   else {
+    Master->ChgSubG( strt , stp , wFi + 1 );
+    /* for( auto &LinearName : LinNms ) {
+     double *G1 = Master->GetItem( wFi + 1 );
+     v_c05f[ wFi ]->get_linearization_coefficients( G1 ,
+    		 make_pair( strt , stp ) , LinearName );
+     Master->SetItemBse( nullptr , NumVar );
+     Master->SetItem( LinearName );
+     } */
+    }
+   }
+
+  // some/all alpha changed   - - - - - - - - - - - - - - - - - - - - - - - -
+  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+  if( AlphaChgd ) {
+   // a finite f_shift should be treated in a different way but
+   // as of now the finite shifts are ignored by MPSolver
+
+   std::vector< VarValue > G1( NumVar );
+   std::vector< VarValue > Alfa1( Master->MaxName( wFi + 1 ) );
+
+   for( Index i = 0 ; i < Master->MaxName( wFi + 1 ) ; ++i )
+    if( ( ItemVcblr[ i ].first == wFi ) &&
+	    ( ItemVcblr[ i ].second < vBPar2[wFi] ) &&
+		( ItemVcblr[ i ].second >= 0 )  ) {
+     auto AlfaVali = v_c05f[ wFi ]->get_linearization_constant(
+    		       ItemVcblr[ i ].second );
+     if( std::isnan( AlfaVali ) )  // linearization no longer valid
+      Delete( i , true );          // delete it
+     else {                        // linearization still there
+      // compute the linearization error in Lambda
+      v_c05f[ wFi ]->get_linearization_coefficients( G1.data() ,
+		       Range( 0 , NumVar ) , ItemVcblr[ i ].second );
+      Alfa1[ i ] = UpRifFi[ wFi ] - AlfaVali -
+                   std::inner_product( Lambda.begin() , Lambda.end() ,
+				       G1.data() , VarValue( 0 ) );
+      }
+     }
+
+   Master->ChgAlfa( Alfa1.data() , wFi + 1 );
+
+   //!! PrintBundle();
+   }
+
+  if( DoReturn )
+   return;
+
+  // C05FunctionModLin  - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  {
+   const auto tmod = std::dynamic_pointer_cast<C05FunctionModLin>( mod );
+   if( tmod ) {
+    wFi = get_index_of_component(tmod->function());
+    if( wFi == InINF ) { // 0th component
+      double * G1 = Master->GetItem( 0 );
+      f_lf->get_linearization_coefficients( G1 );
+      for( Index i = 0 ; i < tmod->vars().size() ; ++i )
+       G1[ f_lf->is_active(tmod->vars()[i]) ] +=
+        tmod->delta()[ i ];
+      const Index* SGBse = nullptr;
+      Master->SetItemBse( SGBse , NumVar );
+      Master->SetItem( InINF );
+      } // end if( f_lf )
+     else
+      for( Index i = 0 ; i < Master->MaxName(wFi+1) ; i++ )
+       if( Master->WComponent( i ) == wFi+1 ) {
+        std::vector<double> G1(NumVar);
+        Range range = make_pair( 0, NumVar );
+        v_c05f[ wFi ]->get_linearization_coefficients( G1.data() , range , i );
+        for( Index i = 0 ; i < tmod->vars().size() ; ++i )
+          G1[ v_c05f[ wFi ]->is_active(tmod->vars()[i]) ] +=
+           tmod->delta()[ i ];
+        throw( std::logic_error( "expected to be completed" ) );
+        }
+     } // end  if( tmod )
+    } // end C05FunctionModLin   - - - - - - - - - - - - - - - - - - - - - - -
+
+  if( to_delete )
+   rimod = decltype( rimod )( v_mod_tmp.erase( std::next( rimod ).base() ) );
+  else
+   ++rimod;
+
+  }  // end( 1st loop, in reverse )
+
+ //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // if any global pool has been reset (or, even better, *all* of them have
+ // reset) then delete (the corresponding items in the corresponding) bundle
+
+ std::vector< std::vector< Index > > inv_dict;
+ 
+ if( reset.find( reset.begin() , reset.end() , false ) == reset.end() ) {
+  // all components have been reset
+
+
+  }
+ else
+  if( reset.find( reset.begin() , reset.end() , true ) != reset.end() ) {
+   // at least a component has been reset: need to construct the inverse
+   // dictionary < component , global pool position > --> bundle position
+   // (in linear rime) to do removals efficiently
+
+   compute_inverse_dictionary( inv_dict );
+
+
+   
+   }
+
+ // After this point, all the Modification adding, deleting or modifying
+ // linearizations are significant. They either pertain to components that
+ // have never been reset, or are the remaining ones after the (last) one
+ // resetting the component
+
+ 
+ //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // 2nd loop: handle exclusively Variable addition and removal
+ // In forward order: all removals of existing Variable are immediately
+ // performed, diminishing NumVar. Additions of Variable are "cached", and
+ // only performed once (if ever) after the end of the cycle. Removals of
+ // Variable that have not been added yet just decreases the number of new
+ // Variable to be added at the end. All corresponding Modification are
+ // removed from the list
+
+ Index to_add = 0;
+
+ for( auto imod = v_mod_tmp.begin() ; imod != v_mod_tmp.end() ; ) {
+  bool to_delete = false;
+  auto mod = *rmod;
+
+
+  
+  if( to_delete )
+   imod =  v_mod_tmp.erase( imod );
+  else
+   ++imod;
+
+  }  // end( 2nd loop, forward )
+
+
+ //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // 3rd loop: prepare for addition/removal/changes of individual linearization
+ // for each component, compute the three sets:
+ // - linearizations that need be removed
+ // - linearizations that need be added
+ // - linearizations that need be changed
+ // Note that:
+ // - if a linearization that is added/changed is later removed, it is no
+ //   longer added/changed
+ // - if a linearization that is removed/changed is later added it is no
+ //   longer removed/changed (adding over an existing linearization changes
+ //   it anyway, no reason to remove it)
+
+
+
+
+ // Removing linearizations is just that. Adding linearizations is only
+ // performed on the Variable that have "survived" the previous loop, i.e.,
+ // without considering those Variable that still need to be added. In fact,
+ // the corresponding entries of *all* linearization will anyway have to be
+ // retrieved and 
+
+
+ for( auto imod = v_mod_tmp.begin() ; imod != v_mod_tmp.end() ; ) {
+  bool to_delete = false;
+  auto mod = *rmod;
+
+
+  
+  if( to_delete )
+   imod =  v_mod_tmp.erase( imod );
+  else
+   ++imod;
+
+  }  // end( 3rd loop, forward )
+
+
+
+ //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // 3rd loop: handle addition/removal/changes of individual linearization
+ // Removing linearizations is just that. Adding linearizations is only
+ // performed on the Variable that have "survived" the previous loop, i.e.,
+ // without considering those Variable that still need to be added. In fact,
+ // the corresponding entries of *all* linearization will anyway have to be
+ // retrieved and 
+
+
+ for( auto imod = v_mod_tmp.begin() ; imod != v_mod_tmp.end() ; ) {
+  bool to_delete = false;
+  auto mod = *rmod;
+
+
+  
+  if( to_delete )
+   imod =  v_mod_tmp.erase( imod );
+  else
+   ++imod;
+
+  }  // end( 3rd loop, forward )
+
+ //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // last thing: if there are Variable to add, do it now in one blow
+ //
+
+ if( to_add ) {
+  }
+
+
+ //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ 
+ while( ! v_mod.empty() ) {
+  auto mod = v_mod.front();  // pick (a reference to) the first Modification
+
+  // process Modification - - - - - - - - - - - - - - - - - - - - - - - - - -
+  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  // patiently sift through the possible Modification types to find what mod
+  // exactly is and react accordingly
 
   bool AlphaChgd = false;
   bool LinChgd = false;
@@ -3003,16 +3517,11 @@ void BundleSolver::process_outstanding_Modification( void )
      } // end  if( tmod )
     } // end C05FunctionModLin   - - - - - - - - - - - - - - - - - - - - - - -
 
-   };  // end( guts_of_poM ) - - - - - - - - - - - - - - - - - - - - - - - - -
-       //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
-  // finally, call the "guts of" - - - - - - - - - - - - - - - - - - - - - - -
-
-  guts_of_poM( mod );  // now the actual call
-
   v_mod.pop_front();   // now the Modification is processed: remove it
 
   }  // end( while( there are Modification ) )
+
+
  }  // end( BundleSolver::process_outstanding_Modification ) - - - - - - - - -
 
 /*--------------------------------------------------------------------------*/
@@ -3026,7 +3535,7 @@ void BundleSolver::PrintBundle( void )
 
  auto Alfa = Master->ReadLinErr();
  std::vector< VarValue > G( NumVar );
-
+ // 
  *f_log << std::endl;
  for( Index i = 0 ; i < Master->MaxName() ; ++i ) {
   *f_log << i << "\t";

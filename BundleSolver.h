@@ -59,9 +59,39 @@
  * In that case, the LagBFunction is never evaluated, which means that there
  * is no need for a Solver to be attached to the inner Block.
  *
- * \version 0.13
+ * If the Block has multiple Objective (that is, it has sub-Block whose
+ * Objective FRealObjective containing a C05Function), a very strong
+ * assumption is required on them:
  *
- * \date 25 - 04 - 2020
+ *     ALL THE Function IN THE Objective HAVE EXACTLY THE SAME SET OF
+ *     "ACTIVE" Variable, ORDERED IN THE SAME WAY, AT ALL TIMES; THIS MEANS
+ *     THAT IF THE SET OF "ACTIVE" Variable IS MODIFIED FOR ONE OF THE
+ *     Function, IT MUST BE MODIFIED FOR ALL OF THEM AT THE SAME TIME
+ *
+ * The only exception is that
+ *
+ *     THE Objective OF THE Block CAN BE EMPTY, I.E., EITHER THERE IS NO
+ *     Objective, OR THE FRealObjective HAS NO Function, OR THE
+ *     LinearFunction IN THE FRealObjective HAS EXACTLY ZERO "ACTIVE"
+ *     Variable; IN THE LATTER CASE, THE SET OF "ACTIVE" Variable IN THE
+ *     LinearFunction MUST NEVER CHANGE
+ *
+ * To ensure that the rule about the list of "ACTIVE" Variable in the
+ * (multiple) Objective is respected, an analogous very strong assumption is
+ * made on the Modification that change that:
+ *
+ *     ALL THE Modification THAT CHANGE THE "ACTIVE" Variable MUST BE
+ *     BUNCHED TOGETHER IN A SINGLE GroupModification. THIS MUST CONTAIN
+ *     EXACTLY AS MANY Modification AS THERE ARE sub-Block (AND, THEREFORE,
+ *     DIFFERENT OBJECTIVE), PLUS ONE IF THE (LinearFunction IN THE)
+ *     Objective OF THE Block IS NOT EMPTY. ALL Modification MUST BE OF
+ *     THE VERY SAME TYPE, I.E., EITHER ALL C05FunctionModVarsAddd, OR ALL
+ *     C05FunctionModVarsRngd, OR ALL C05FunctionModVarsSbst, AND THEY MUST
+ *     CHANGE THE "ACTIVE" Variable IN PRECISELY THE SAME WAY.
+ *
+ * \version 0.20
+ *
+ * \date 26 - 06 - 2020
  *
  * \author Antonio Frangioni \n
  *         Operations Research Group \n
@@ -72,7 +102,7 @@
  *         Dipartimento di Matematica ed Informatica \n
  *         Universita' di Cagliari \n
  *
- * Copyright &copy 2019 by Antonio Frangioni, Enrico Gorgone
+ * Copyright &copy by Antonio Frangioni, Enrico Gorgone
  */
 /*--------------------------------------------------------------------------*/
 /*----------------------------- DEFINITIONS --------------------------------*/
@@ -177,7 +207,43 @@ namespace SMSpp_di_unipi_it
  * \endlink
  *
  * In that case, the LagBFunction is never evaluated, which means that there
- * is no need for a Solver to be attached to the inner Block. */
+ * is no need for a Solver to be attached to the inner Block.
+ * If the Block has multiple Objective (that is, it has sub-Block whose
+ * Objective FRealObjective containing a C05Function), a very strong
+ * assumption is required on them:
+ *
+ *     ALL THE Function IN THE Objective HAVE EXACTLY THE SAME SET OF
+ *     "ACTIVE" Variable, ORDERED IN THE SAME WAY, AT ALL TIMES; THIS MEANS
+ *     THAT IF THE SET OF "ACTIVE" Variable IS MODIFIED FOR ONE OF THE
+ *     Function, IT MUST BE MODIFIED FOR ALL OF THEM AT THE SAME TIME
+ *
+ * The only exception is that
+ *
+ *     THE Objective OF THE Block CAN BE EMPTY, I.E., EITHER THERE IS NO
+ *     Objective, OR THE FRealObjective HAS NO Function, OR THE
+ *     LinearFunction IN THE FRealObjective HAS EXACTLY ZERO "ACTIVE"
+ *     Variable; IN THE LATTER CASE, THE SET OF "ACTIVE" Variable IN THE
+ *     LinearFunction MUST NEVER CHANGE
+ *
+ * To ensure that the rule about the list of "ACTIVE" Variable in the
+ * (multiple) Objective is respected, an analogous very strong assumption is
+ * made on the Modification that change that:
+ *
+ *     IF THE Block HAS MORE THAN ONE C05Function, THAT IS, IT HAS A
+ *     NON-EMPTY SET OF sub-Block AND THE (LinearFunction IN THE)
+ *     Objective OF THE Block IS NOT EMPTY, THEN THE FunctionModVar THAT
+ *     CHANGE THE "ACTIVE" Variable MUST BE BUNCHED TOGETHER IN A SINGLE
+ *     GroupModification. THIS MUST CONTAIN EXACTLY AS MANY Modification AS
+ *     THERE ARE C05Function, I.E., THE NUMBER OF sub-Block PLUS ONE IF 
+ *     THE (LinearFunction IN THE) Objective OF THE Block IS NOT EMPTY. ALL
+ *     Modification MUST BE OF THE VERY SAME TYPE, I.E., EITHER ALL
+ *     C05FunctionModVarsAddd, OR ALL C05FunctionModVarsRngd, OR ALL
+ *     C05FunctionModVarsSbst, AND THEY MUST CHANGE THE "ACTIVE" Variable IN
+ *     PRECISELY THE SAME WAY.
+ *
+ * Failure to comply with the above rules will result in an exception being
+ * thrown, either at set_Block() time (if the rules are violated from the
+ * start), or when the offending Modification is processed. */
 
 class BundleSolver : public CDASolver {
 
@@ -1657,7 +1723,27 @@ class FakeFiOracle : public FiOracle
 
 /*--------------------------------------------------------------------------*/
 
+ bool is_special_GroupMod( GroupModification & gmod );
+
+ void flatten_Modification_list( Lst_sp_Mod & vmt , sp_Mod mod )
+ {
+  const auto tmod = std::dynamic_pointer_cast<GroupModification>( mod );
+  if( tmod && ( ! is_special_GroupMod( *tmod ) ) )
+   for( auto submod : tmod->v_sub_Modifications )
+    flatten_Modification_list( vmt , submod );
+  else
+   vmt.push_back( mod );
+  }
+
+/*--------------------------------------------------------------------------*/
+
+ void compute_inverse_dictionary( std::vector< std::vector< Index > > & id );
+
+/*--------------------------------------------------------------------------*/
+
  void process_outstanding_Modification( void );
+
+/*--------------------------------------------------------------------------*/
 
  void FModChg( VarValue f_shift , Index wFi );
 
