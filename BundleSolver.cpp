@@ -63,7 +63,7 @@ using namespace SMSpp_di_unipi_it;
 /*-------------------------------- FUNCTIONS -------------------------------*/
 /*--------------------------------------------------------------------------*/
 
-void Compact( BundleSolver::Vec_VarValue & g , BundleSolver::Subset & B )
+void Compact( BundleSolver::Vec_VarValue & g , BundleSolver::c_Subset & B )
 {
  // takes a "dense" n-vector g and "compacts" it deleting the elements whose
  // indices are in B; all elements of B must be in the range 0 .. n, B must
@@ -742,8 +742,8 @@ void BundleSolver::set_Block( Block * block )
     throw( std::logic_error( "the list of active Variable do not match" ) );
 
    auto vi = v_c05f[ 0 ]->begin();
-   for( auto v : *f_lf )
-    if( v != *(vi++) ) 
+   for( auto & v : *f_lf )
+    if( & v != & (*(vi++)) ) 
      throw( std::logic_error( "the list of active Variable do not match" ) );
    }
 
@@ -753,8 +753,8 @@ void BundleSolver::set_Block( Block * block )
     throw( std::logic_error( "the list of active Variable do not match" ) );
 
    auto vi = v_c05f[ i ]->begin();
-   for( auto v : *v_c05f[ i - 1 ] )
-    if( v != *(vi++) ) 
+   for( auto & v : *v_c05f[ i - 1 ] )
+    if( & v != & (*(vi++)) ) 
      throw( std::logic_error( "the list of active Variable do not match" ) );
    }
   } // end decomposed case - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -895,7 +895,7 @@ void BundleSolver::set_Block( Block * block )
  DFItems.resize( NrFi , 0 );
  NFItems.resize( NrFi , 0 );
 
- FreList = priority_queue<Index>();     // list of free bundle slots
+ FreList = {};          // list of free bundle slots
  whisZ.resize( NrFi );  // for each component, the name of its "Z" if it is
                         // in the bunlde
 
@@ -2462,7 +2462,7 @@ void BundleSolver::RemoveItems( void )
  if( Master )
   Master->RmvItems();  // remove all items from the MPSolver (if any)
 
- FreList = priority_queue<Index>();
+ FreList = {};
 
  ItemVcblr.resize( vBPar2[ NrFi ] );
   for( Index i = 0 ; i < vBPar2[ NrFi ] ; i++ )
@@ -2489,7 +2489,7 @@ void BundleSolver::guts_of_destructor( void )
  FiStatus.clear();
 
  whisZ.clear();
- FreList = priority_queue<Index>();
+ FreList = {};
  OOBase.clear();
  NrItems.clear();
  DFItems.clear();
@@ -2619,7 +2619,7 @@ void BundleSolver::Delete( cIndex i , bool ModDelete )
 
  cIndex MxNm = Master->MaxName();
  if( FreList.size() > MxNm ) {
-  FreList = priority_queue<Index>();
+  FreList = {};
   for( Index j = 0 ; j < MxNm ; j++ )
    if( OOBase[ j ] == Inf<SIndex>() )
     FreList.push( j );
@@ -2824,22 +2824,24 @@ bool BundleSolver::is_special_GroupMod( GroupModification & gmod )
  // contain FunctionModVars* not necessarily C05FunctionModVars* because
  // the Modification may not be strongly quasi-additive
 
- Index nsm = gmod.v_sub_Modifications.size();
- if( nsm != NrFi + ( f_lf ? 1 : 0 ) )
+ if( gmod.v_sub_Modifications.size() != NrFi + ( f_lf ? 1 : 0 ) )
   return( false );
 
- auto sm0 = gmod.v_sub_Modifications[ 0 ]
- for( Index i = 1 ; i < nsm ; ++i )
-  if( typeid( sm0 ) != typeid( tmod.v_sub_Modifications[ i ] ) )
+ auto smi = gmod.v_sub_Modifications.begin();
+ auto sm0 = *(smi++);
+ for( ; smi !=  gmod.v_sub_Modifications.end() ; ++smi )
+  if( typeid( sm0 ) != typeid( *smi ) )
    return( false );
+
+ smi = gmod.v_sub_Modifications.begin();
+ ++smi;
 
  // check FunctionModVarsAddd
  {
   const auto mod0 = std::dynamic_pointer_cast<FunctionModVarsAddd>( sm0 );
   if( mod0 ) {
-   for( Index i = 1 ; i < nsm ; ++i ) {
-    auto modi = std::static_pointer_cast<FunctionModVarsAddd>(
-					    tmod.v_sub_Modifications[ i ] );
+   for( ; smi != gmod.v_sub_Modifications.end() ; ++smi ) {
+    auto modi = std::static_pointer_cast<FunctionModVarsAddd>( *smi );
     if( ( mod0->first() != modi->first() ) ||
 	( mod0->vars() != modi->vars() ) )
      throw( std::logic_error( "different Variable change in components" ) );
@@ -2853,9 +2855,8 @@ bool BundleSolver::is_special_GroupMod( GroupModification & gmod )
  {
   const auto mod0 = std::dynamic_pointer_cast<FunctionModVarsRngd>( sm0 );
   if( mod0 ) {
-   for( Index i = 1 ; i < nsm ; ++i ) {
-    auto modi = std::static_pointer_cast<FunctionModVarsRngd>(
-					    tmod.v_sub_Modifications[ i ] );
+   for( ; smi != gmod.v_sub_Modifications.end() ; ++smi ) {
+    auto modi = std::static_pointer_cast<FunctionModVarsRngd>( *smi );
     if( mod0->range() != modi->range() )
      throw( std::logic_error( "different Variable change in components" ) );
     }
@@ -2868,9 +2869,8 @@ bool BundleSolver::is_special_GroupMod( GroupModification & gmod )
  {
   const auto mod0 = std::dynamic_pointer_cast<FunctionModVarsSbst>( sm0 );
   if( mod0 ) {
-   for( Index i = 1 ; i < nsm ; ++i ) {
-    auto modi = std::static_pointer_cast<FunctionModVarsSbst>(
-					    tmod.v_sub_Modifications[ i ] );
+   for( ; smi != gmod.v_sub_Modifications.end() ; ++smi ) {
+    auto modi = std::static_pointer_cast<FunctionModVarsSbst>( *smi );
     if( mod0->subset() != modi->subset() )
      throw( std::logic_error( "different Variable change in components" ) );
     }
@@ -2909,7 +2909,7 @@ void BundleSolver::compute_inverse_dictionary( Dctnry & id )
 
  // allocate memory
  id.resize( NrFi );
- for( Index h = 0 ; h < NrFi : ++h )
+ for( Index h = 0 ; h < NrFi ; ++h )
   id[ h ].resize( NrItems[ h ] , Inf< Index >() );
 
  // now construct the inverse vocabulary
@@ -2976,16 +2976,20 @@ void BundleSolver::process_outstanding_Modification( void )
 
  std::vector<bool> reset( NrFi , false );
 
+ bool to_delete;  // should have been defined inside, but there is not
+                  // visible by the lambda
+
  for( auto rimod = v_mod_tmp.rbegin() ; rimod != v_mod_tmp.rend() ;
       // note the iterator_expression of the for() obtained by defining
       // a lambda and then immediately applying it to rimod
       [ & to_delete , & v_mod_tmp ]( decltype( rimod ) & ri ) {
        if( to_delete )
-	ri = decltype( ri )( v_mod_tmp.erase( std::next( ri ).base() ) );
+	ri = std::reverse_iterator( v_mod_tmp.erase( std::next( ri ).base()
+						     ) );
        else
 	++ri;
        }( rimod ) ) {
-  bool to_delete = false;
+  to_delete = false;
   auto mod = *rimod;
 
   // patiently sift through the possible Modification types to find what mod
@@ -3227,19 +3231,19 @@ void BundleSolver::process_outstanding_Modification( void )
 
  Dctnry inv_dict;
  
- if( reset.find( reset.begin() , reset.end() , false ) == reset.end() ) {
+ if( std::find( reset.begin() , reset.end() , false ) == reset.end() ) {
   // all components have been reset
 
   NrItems.assign( NrFi , 0 );
   OOBase.assign( vBPar2[ NrFi ] , Inf<SIndex>() );
   ItemVcblr.assign( vBPar2[ NrFi ] , make_pair( InINF , Inf<SIndex>() ) );
   whisG1.assign( NrFi , InINF );
-  FreList.clear();
+  FreList = {};
 
   Master->RmvItems();
   }
  else
-  if( reset.find( reset.begin() , reset.end() , true ) != reset.end() ) {
+  if( std::find( reset.begin() , reset.end() , true ) != reset.end() ) {
    // at least a component has been reset: need to construct the inverse
    // dictionary < component , global pool position > --> bundle position
    // (in linear time) to do removals efficiently
@@ -3296,11 +3300,12 @@ void BundleSolver::process_outstanding_Modification( void )
       // a lambda and then immediately applying it to rimod
       [ & to_delete , & v_mod_tmp ]( decltype( rimod ) & ri ) {
        if( to_delete )
-	ri = decltype( ri )( v_mod_tmp.erase( std::next( ri ).base() ) );
+	ri = std::reverse_iterator( v_mod_tmp.erase( std::next( ri ).base()
+						     ) );
        else
 	++ri;
        }( rimod ) ) {
-  bool to_delete = false;
+  to_delete = false;
   auto mod = *rimod;
 
   // patiently sift through the possible Modification types to find what mod
@@ -3360,7 +3365,7 @@ void BundleSolver::process_outstanding_Modification( void )
      }
 
     // in all other cases we only react to which().empty() 
-    if( ttmod->type() == C05FunctionMod::AllLinearizationChanged ) {
+    if( tmod->type() == C05FunctionMod::AllLinearizationChanged ) {
      AlphaC[ wFi ] = true;
      if( tmod->which().empty() ) {
       reset[ wFi ] = true;
@@ -3468,7 +3473,7 @@ void BundleSolver::process_outstanding_Modification( void )
        else
 	++it;
        }( imod ) ) {
-  bool to_delete = false;
+  to_delete = false;
   auto mod = *imod;
 
   // patiently sift through the possible Modification types to find what mod
@@ -3490,7 +3495,7 @@ void BundleSolver::process_outstanding_Modification( void )
   if( tmod ) {
    auto wFi = get_index_of_component( tmod->function() );
 
-   switch( ttmod->type() ) {
+   switch( tmod->type() ) {
     case( C05FunctionMod::AllLinearizationChanged ):
     case( C05FunctionMod::AllEntriesChanged ):
      // if tmod->which().empty(), this must actually be either a
@@ -3509,7 +3514,7 @@ void BundleSolver::process_outstanding_Modification( void )
        Chgd[ wFi ] = tmod->which();
       else {
        Subset tmp( std::min( Chgd[ wFi ].size() + tmod->which().size() ,
-			     vBPar2[ wFi ] ) );
+			     Subset::size_type( vBPar2[ wFi ] ) ) );
        std::set_union( Chgd[ wFi ].begin() , Chgd[ wFi ].end() ,
 		       tmod->which().begin() , tmod->which().end() ,
 		       tmp.begin() );
@@ -3537,7 +3542,7 @@ void BundleSolver::process_outstanding_Modification( void )
        Chgd[ wFi ] = std::move( tmp );
       else {
        Subset tmp2( std::min( Chgd[ wFi ].size() + tmp.size() ,
-			      vBPar2[ wFi ] ) );
+			      Subset::size_type( vBPar2[ wFi ] ) ) );
        std::set_union( Chgd[ wFi ].begin() , Chgd[ wFi ].end() ,
 		       tmp.begin() , tmp.end() , tmp2.begin() );
        Chgd[ wFi ] = std::move( tmp2 );
@@ -3550,7 +3555,7 @@ void BundleSolver::process_outstanding_Modification( void )
       Addd[ wFi ] = tmod->which();
      else {
       Subset tmp( std::min( Addd[ wFi ].size() + tmod->which().size() ,
-			    vBPar2[ wFi ] ) );
+			    Subset::size_type( vBPar2[ wFi ] ) ) );
       std::set_union( Addd[ wFi ].begin() , Addd[ wFi ].end() ,
 		      tmod->which().begin() , tmod->which().end() ,
 		      tmp.begin() );
@@ -3579,7 +3584,7 @@ void BundleSolver::process_outstanding_Modification( void )
       Rmvd[ wFi ] = tmod->which();
      else {
       Subset tmp( std::min( Rmvd[ wFi ].size() + tmod->which().size() ,
-			    vBPar2[ wFi ] ) );
+			    Subset::size_type( vBPar2[ wFi ] ) ) );
       std::set_union( Rmvd[ wFi ].begin() , Rmvd[ wFi ].end() ,
 		      tmod->which().begin() , tmod->which().end() ,
 		      tmp.begin() );
@@ -3608,7 +3613,7 @@ void BundleSolver::process_outstanding_Modification( void )
  // now act on the just gathered information, i.e., delete all linearization
  // that need to, if any
 
- if( Rmvd.find_if( Rmvd.begin() , Rmvd.end() ,
+ if( std::find_if( Rmvd.begin() , Rmvd.end() ,
 		   []( Subset & Rk ) { return( ! Rk.empty() ); }
 		   ) != Rmvd.end() ) {
   // at least a component has had lnearizations removed: need to construct
@@ -3643,7 +3648,7 @@ void BundleSolver::process_outstanding_Modification( void )
        else
 	++it;
        }( imod ) ) {
-  bool to_delete = false;
+  to_delete = false;
   auto mod = *imod;
 
   // patiently sift through the possible Modification types to find what mod
@@ -3656,15 +3661,15 @@ void BundleSolver::process_outstanding_Modification( void )
   
   {
    // a "naked" FunctionModVars
-   const auto tmod = std::dynamic_pointer_cast<FunctionModVars>( mod );
+   auto tmod = std::dynamic_pointer_cast<FunctionModVars>( mod );
    if( ! tmod ) {
     // if it is not a "naked" FunctionModVars, it can still be a group of
     // identical *FunctionModVars* "dressed" into a GroupModification
     const auto gmod = std::dynamic_pointer_cast<GroupModification>( mod );
     if( gmod )  // if so, pick the first one and act on it
      tmod = std::static_pointer_cast<FunctionModVars>(
-				        tmod->v_sub_Modifications.front() );
-     }
+				        gmod->v_sub_Modifications.front() );
+    }
 
    if( tmod ) {
     // if we have a *FunctionModVars*, we have to distinguish its exact type
@@ -3685,7 +3690,7 @@ void BundleSolver::process_outstanding_Modification( void )
 	       );
        }
       
-      to_add += vars.size();
+      to_add += ttmod->vars().size();
       continue;
       }
      }
@@ -3714,8 +3719,7 @@ void BundleSolver::process_outstanding_Modification( void )
        // if deleting the last range of Variable nothing has to be done,
        // but deleting Variable "in the middle" rather requires moving
        // down the remaining range of values in Lambda
-       std::copy( Lambda.begin() + rng.second ,
-		  Lambda.begin() + Lambda.end() ,
+       std::copy( Lambda.begin() + rng.second , Lambda.end() ,
 		  Lambda.begin() + rng.first );
        }
       Subset tdlt( rng.second - rng.first );
@@ -3739,37 +3743,37 @@ void BundleSolver::process_outstanding_Modification( void )
        // all the Variable are deleted already
        if( ttmod->subset().size() > to_add )
 	throw( std::logic_error( "removing non-existing Variable" ) );
-       to_add -= ttmod->subset();  // "virtually" remove them
-       continue;                   // nothing else to do
+       to_add -= ttmod->subset().size();  // "virtually" remove them
+       continue;                          // nothing else to do
        }
 
-      Subset & sbst;
       Subset tsbst;
+      c_Subset * sbst = & tsbst;
       if( ttmod->subset().back() < NumVar )  // no Variable deleted already
-       sbst = & ttmod->subset();             // delete them all
+       sbst = & ttmod->subset();               // delete them all
       else {                                 // construct the subset to delete
        auto sbstit = ttmod->subset().end();
-       while( *(--it) >= NumVar );
-       tsbst = Subset( ttmod->subset().begin() , ++it );
-       auto nr = ttmod->subset().size() - tsbst-size();
+       while( *(--sbstit) >= NumVar );
+       tsbst = Subset( ttmod->subset().begin() , ++sbstit );
+       auto nr = ttmod->subset().size() - tsbst.size();
        if( nr > to_add )
 	throw( std::logic_error( "removing non-existing Variable" ) );
        to_add -= nr;               // "virtually" remove them
        }
 
-      Compact( Lambda , sbst );  // adjust Lambda
-      NumVar -= sbst.size();
+      Compact( Lambda , *sbst );  // adjust Lambda
+      NumVar -= sbst->size();
       Lambda.resize( NumVar );
       Lambda1.resize( NumVar );
       if( MaxSol > 1 )
        LmbdBst.resize( NumVar );
-      Master->RmvVars( sbst.data() , sbst.size() );  // remove from MP
+      Master->RmvVars( sbst->data() , sbst->size() );  // remove from MP
       continue;
       }
      }
 
     // if control reaches here, this is an unknown *FunctionModVars* (??)
-    throw( std:.logic_error( "unknown FunctionModVars" ) );
+    throw( std::logic_error( "unknown FunctionModVars" ) );
 
     }  // end( if( tmod ) )
    }  // end FunctionModVars
@@ -3784,7 +3788,7 @@ void BundleSolver::process_outstanding_Modification( void )
  // no component in need of a reset, all done
   
  if( v_mod_tmp.empty() && ( ! to_add ) &&
-     ( reset.find( reset.begin() , reset.end() , true ) == reset.end() ) )
+     ( std::find( reset.begin() , reset.end() , true ) == reset.end() ) )
   return;
 
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -3810,7 +3814,7 @@ void BundleSolver::process_outstanding_Modification( void )
 
   Range range( NumVar , 0 );    // an empty range
   c_Subset * subset = nullptr;  // an empty subset
-  c_Vec_p_Var & vars;           // the affected Variable
+  c_Vec_p_Var * vars;           // the affected Variable
 
   // patiently sift through the possible Modification types to find what mod
   // exactly is and react accordingly
@@ -3822,7 +3826,7 @@ void BundleSolver::process_outstanding_Modification( void )
     if( ! tmod->which().empty() )
      throw( std::logic_error( "unexpected nonempty C05FunctionModRngd" ) );
 
-    vars = tmod->vars();
+    vars = & tmod->vars();
     range = tmod->range();
     }
    }
@@ -3834,7 +3838,7 @@ void BundleSolver::process_outstanding_Modification( void )
     if( ! tmod->which().empty() )
      throw( std::logic_error( "unexpected nonempty C05FunctionModSbst" ) );
 
-    vars = tmod->vars();
+    vars = & tmod->vars();
     subset = & tmod->subset();
     }
    }
@@ -3844,7 +3848,7 @@ void BundleSolver::process_outstanding_Modification( void )
    // linearizations must be changed (by adding something)
    const auto tmod = std::dynamic_pointer_cast<C05FunctionModLinRngd>( mod );
    if( tmod ) {
-    vars = tmod->vars();
+    vars = & tmod->vars();
     range = tmod->range();
     }
    }
@@ -3854,7 +3858,7 @@ void BundleSolver::process_outstanding_Modification( void )
    // linearizations must be changed (by adding something)
    const auto tmod = std::dynamic_pointer_cast<C05FunctionModLinSbst>( mod );
    if( tmod ) {
-    vars = tmod->vars();
+    vars = & tmod->vars();
     subset = & tmod->subset();
     }
    }
@@ -3865,9 +3869,9 @@ void BundleSolver::process_outstanding_Modification( void )
 
   if( ! rmvd_vars ) {
    // Variable have never been removed, hence the names can be used directly
-   if( subset ) ) {  // turn the subset into a range
+   if( subset ) {  // turn the subset into a range
     range.first = subset->front();
-    range.second = subset()->back() + 1;
+    range.second = subset->back() + 1;
     }
    }
   else {
@@ -3875,24 +3879,24 @@ void BundleSolver::process_outstanding_Modification( void )
    // this is done by directly checking vars() against the "active"
    // Variable of v_c05f[ 0 ], which is fairly taken as a representative
    // since all the C05Function have the same "active" Variable
-   if( ! add_vars ) {
+   if( ! addd_vars ) {
     // ... but never added: names can have only decreased, but even more
     // importantly must have remained ordered, i.e., the first "active"
     // Variable in vars() is the first variable of the range, the last
     // "active" Variable vars() is the last variable of the range
     // note that we do not use subset and range here, as the range is
     // reconstructed from scratch using vars
-    auto lit = vars.begin();
-    for( ; lit != vars.end() ; ++lit ) {
+    auto lit = vars->begin();
+    for( ; lit != vars->end() ; ++lit ) {
      range.first = v_c05f[ 0 ]->is_active( *lit );
      if( range.first < v_c05f[ 0 ]->get_num_active_var() )
       break;
      }
-    if( lit == vars.end() )  // no Variable in vars is still "active"
-     continue;               // nothing else to do
+    if( lit == vars->end() )  // no Variable in vars is still "active"
+     continue;                // nothing else to do
     // since we know that here are some "active" Variable in vars(), this
     // second loop will necessarily end
-     for( auto rit = vars.rbegin() ; ; ++rit ) {
+     for( auto rit = vars->rbegin() ; ; ++rit ) {
       range.second = v_c05f[ 0 ]->is_active( *lit );
       if( range.second < v_c05f[ 0 ]->get_num_active_var() )
        break;
@@ -3904,19 +3908,19 @@ void BundleSolver::process_outstanding_Modification( void )
     // names can have changed in an almost arbitrary way, except that if
     // a name has increased then the Variable has been deleted and re-added
     // and therefore need not be included
-    Subset newnames( vars.size() );
-    auto lit = vars.begin();
+    Subset newnames( vars->size() );
+    auto lit = vars->begin();
     auto nni = newnames.begin();
     if( subset ) {
      auto sit = subset->begin();
-     for( ; lit != vars.end() ; ++lit , ++sit ) {
+     for( ; lit != vars->end() ; ++lit , ++sit ) {
       auto i = v_c05f[ 0 ]->is_active( *lit );
       if( ( i <= *sit ) && ( i < v_c05f[ 0 ]->get_num_active_var() ) )
        *(nni++) = i;
       }
      }
     else {
-     for( ; lit != vars.end() ; ++lit , ++range.first ) {
+     for( ; lit != vars->end() ; ++lit , ++range.first ) {
       auto i = v_c05f[ 0 ]->is_active( *lit );
       if( ( i <= range.first ) && ( i < v_c05f[ 0 ]->get_num_active_var() ) )
        *(nni++) = i;
@@ -3944,7 +3948,7 @@ void BundleSolver::process_outstanding_Modification( void )
  // NumVar and therefore the work done in later stages. hence, this is done
  // here only if no additions are done
 
- bool toadd = Addd.find_if( Addd.begin() , Addd.end() ,
+ bool toadd = std::find_if( Addd.begin() , Addd.end() ,
 			    []( Subset & Ak ) { return( ! Ak.empty() ); }
 			    ) != Addd.end();
  if( to_add && ( ! toadd ) ) {
@@ -3964,7 +3968,7 @@ void BundleSolver::process_outstanding_Modification( void )
  // to a range/subset of the entries
 
  if( toadd ||
-     ( Chgd.find_if( Chgd.begin() , Chgd.end() ,
+     ( std::find_if( Chgd.begin() , Chgd.end() ,
 		     []( Subset & Ck ) { return( ! Ck.empty() ); }
 		     ) != Chgd.end() ) ) {
   // at least a component has had lnearizations added or changed: need to
@@ -3989,22 +3993,21 @@ void BundleSolver::process_outstanding_Modification( void )
      Subset tmp( Addd[ k ].size() + Chgd[ k ].size() );
      std::set_union( Addd[ k ].begin() , Addd[ k ].end() ,
 		     Chgd[ k ].begin() , Chgd[ k ].end() , tmp.begin() );
-     Addd[ wFi ] = std::move( tmp );
+     Addd[ k ] = std::move( tmp );
      }
 
    for( auto i : Addd[ k ] ) {
     double *G1 = Master->GetItem( k + 1 );
     v_c05f[ k ]->get_linearization_coefficients( G1 ,
 						 make_pair( 0 , NumVar ) , i );
-    auto Ai = v_c05f[ wFi ]->get_linearization_constant( i );
+    auto Ai = v_c05f[ k ]->get_linearization_constant( i );
     Master->SetItemBse( nullptr , NumVar );
     double ScPri;
-    if( v_c05f[ wFi ]->is_linearization_vertical( i ) )
+    if( v_c05f[ k ]->is_linearization_vertical( i ) )
      Master->CheckCnst( Ai , ScPri , Lambda.data() );
     else {
      Ai = UpRifFi[ k ] - Ai -
-          std::inner_product( Lambda.begin() , Lambda.end() ,
-			      G1.data() , VarValue( 0 ) );
+          std::inner_product( Lambda.begin() , Lambda.end() , G1 , 0 );
      Master->CheckSubG( 0 , 0 , Ai , ScPri );
      }
     Master->SetItem( inv_dict[ k ][ i ] );
@@ -4015,7 +4018,7 @@ void BundleSolver::process_outstanding_Modification( void )
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // if some component need be reset
 
- if( reset.find( reset.begin() , reset.end() , true ) != reset.end() )
+ if( std::find( reset.begin() , reset.end() , true ) != reset.end() )
   for( Index k = 0 ; k < NrFi ; ++k )
    if( reset[ k ] )
     Master->ChgSubG( 0 , NumVar , k + 1 );
@@ -4023,7 +4026,7 @@ void BundleSolver::process_outstanding_Modification( void )
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // if there are Alphas to change, do it now in one blow
 
- if( AlphaC.find( AlphaC.begin() , AlphaC.end() , true ) != AlphaC.end() ) {
+ if( std::find( AlphaC.begin() , AlphaC.end() , true ) != AlphaC.end() ) {
   std::vector< VarValue > Gi( NumVar );
 
   for( Index k = 0 ; k < NrFi ; ++k )
@@ -4040,12 +4043,12 @@ void BundleSolver::process_outstanding_Modification( void )
        throw( std::logic_error( "inconsistent ItemVcblr" ) );
 
       // compute the linearization error in Lambda
-      v_c05f[ k ]->get_linearization_coefficients( G1.data() ,
+      v_c05f[ k ]->get_linearization_coefficients( Gi.data() ,
 						   Range( 0 , NumVar ) ,
 						   ItemVcblr[ i ].second );
-      Alfa[ i ] = UpRifFi[ wFi ] - Ai -
+      Alfa[ i ] = UpRifFi[ k ] - Ai -
                   std::inner_product( Lambda.begin() , Lambda.end() ,
-				      Gi.data() , VarValue( 0 ) );
+				      Gi.data() , 0 );
       }
 
     Master->ChgAlfa( Alfa.data() , k + 1 );

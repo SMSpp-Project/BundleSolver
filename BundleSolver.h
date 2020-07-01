@@ -1737,15 +1737,7 @@ class FakeFiOracle : public FiOracle
 
  bool is_special_GroupMod( GroupModification & gmod );
 
- void flatten_Modification_list( Lst_sp_Mod & vmt , sp_Mod mod )
- {
-  const auto tmod = std::dynamic_pointer_cast<GroupModification>( mod );
-  if( tmod && ( ! is_special_GroupMod( *tmod ) ) )
-   for( auto submod : tmod->v_sub_Modifications )
-    flatten_Modification_list( vmt , submod );
-  else
-   vmt.push_back( mod );
-  }
+ void flatten_Modification_list( Lst_sp_Mod & vmt , sp_Mod mod );
 
 /*--------------------------------------------------------------------------*/
 
