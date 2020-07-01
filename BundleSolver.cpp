@@ -60,6 +60,33 @@
 using namespace SMSpp_di_unipi_it;
 
 /*--------------------------------------------------------------------------*/
+/*-------------------------------- FUNCTIONS -------------------------------*/
+/*--------------------------------------------------------------------------*/
+
+void Compact( BundleSolver::Vec_VarValue & g , BundleSolver::Subset & B )
+{
+ // takes a "dense" n-vector g and "compacts" it deleting the elements whose
+ // indices are in B; all elements of B must be in the range 0 .. n, B must
+ // be ordered in increasing sense
+ // the remaining entries in g are shifted left of the minimum possible
+ // amount in order to fill the holes left by the deleted ones
+ // g is *not* resized in here
+
+ auto Bit = B.begin();
+ auto i = *(Bit++);
+ auto git = g.begin() + (i++);
+
+ for( ; Bit != B.end() ; ++i ) {
+  auto h = *(Bit++);
+  while( i < h )
+   *(git++) = g[ i++ ];
+  }
+
+ std::copy( g.begin() + i , g.end() , git );
+
+ }  // end( Compact )
+
+/*--------------------------------------------------------------------------*/
 /*----------------------------- STATIC MEMBERS -----------------------------*/
 /*--------------------------------------------------------------------------*/
 
@@ -2793,7 +2820,9 @@ void BundleSolver::SetItemName( Index wFi , Index wh ) {
 bool BundleSolver::is_special_GroupMod( GroupModification & gmod )
 {
  // recognise "special" GroupModification for changing the set of "active"
- // Variable of all the Objective at the same time
+ // Variable of all the Objective at the same time; note that these
+ // contain FunctionModVars* not necessarily C05FunctionModVars* because
+ // the Modification may not be strongly quasi-additive
 
  Index nsm = gmod.v_sub_Modifications.size();
  if( nsm != NrFi + ( f_lf ? 1 : 0 ) )
@@ -2804,46 +2833,46 @@ bool BundleSolver::is_special_GroupMod( GroupModification & gmod )
   if( typeid( sm0 ) != typeid( tmod.v_sub_Modifications[ i ] ) )
    return( false );
 
- // check C05FunctionModVarsAddd
+ // check FunctionModVarsAddd
  {
-  const auto mod0 = std::dynamic_pointer_cast<C05FunctionModVarsAddd>( sm0 );
+  const auto mod0 = std::dynamic_pointer_cast<FunctionModVarsAddd>( sm0 );
   if( mod0 ) {
    for( Index i = 1 ; i < nsm ; ++i ) {
-    auto modi = std::static_pointer_cast<C05FunctionModVarsAddd>(
+    auto modi = std::static_pointer_cast<FunctionModVarsAddd>(
 					    tmod.v_sub_Modifications[ i ] );
     if( ( mod0->first() != modi->first() ) ||
 	( mod0->vars() != modi->vars() ) )
-     throw( std::logic_error( "different Variable change in two components" ) );
+     throw( std::logic_error( "different Variable change in components" ) );
     }
 
    return( true );
    }
   }
 
- // check C05FunctionModVarsRngd
+ // check FunctionModVarsRngd
  {
-  const auto mod0 = std::dynamic_pointer_cast<C05FunctionModVarsRngd>( sm0 );
+  const auto mod0 = std::dynamic_pointer_cast<FunctionModVarsRngd>( sm0 );
   if( mod0 ) {
    for( Index i = 1 ; i < nsm ; ++i ) {
-    auto modi = std::static_pointer_cast<C05FunctionModVarsRngd>(
+    auto modi = std::static_pointer_cast<FunctionModVarsRngd>(
 					    tmod.v_sub_Modifications[ i ] );
     if( mod0->range() != modi->range() )
-     throw( std::logic_error( "different Variable change in two components" ) );
+     throw( std::logic_error( "different Variable change in components" ) );
     }
 
    return( true );
    }
   }
 
- // check C05FunctionModVarsSbst
+ // check FunctionModVarsSbst
  {
-  const auto mod0 = std::dynamic_pointer_cast<C05FunctionModVarsSbst>( sm0 );
+  const auto mod0 = std::dynamic_pointer_cast<FunctionModVarsSbst>( sm0 );
   if( mod0 ) {
    for( Index i = 1 ; i < nsm ; ++i ) {
-    auto modi = std::static_pointer_cast<C05FunctionModVarsSbst>(
+    auto modi = std::static_pointer_cast<FunctionModVarsSbst>(
 					    tmod.v_sub_Modifications[ i ] );
     if( mod0->subset() != modi->subset() )
-     throw( std::logic_error( "different Variable change in two components" ) );
+     throw( std::logic_error( "different Variable change in components" ) );
     }
 
    return( true );
@@ -2868,8 +2897,7 @@ void BundleSolver::flatten_Modification_list( Lst_sp_Mod & vmt , sp_Mod mod )
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::compute_inverse_dictionary(
-                                   std::vector< std::vector< Index > > & id )
+void BundleSolver::compute_inverse_dictionary( Dctnry & id )
 {
  if( ! id.empty() )  // inverse dictionary computed already
   return;            // nothing to do
@@ -2905,6 +2933,7 @@ void BundleSolver::process_outstanding_Modification( void )
  // and "passing" it to the lambda, which allows recursive calls. Note the
  // need to explicitly capture "this" to use fields/methods of the class.
 
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // 0-th loop: "atomically flatten" v_mod into a temporary list to better
  // handle it, then clear it
 
@@ -2923,9 +2952,14 @@ void BundleSolver::process_outstanding_Modification( void )
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // the 1st loop is made in reverse, from the latest Modification to the
  // earlies, and does the following:
- // - check if some global pool has been entirely reset
- // - reset the upper/lower bounds that need to
- // - if a Modifiction changing linearizations happens before a reset of the
+ // - reset/change the upper/lower bounds that need to (check all shift() of
+ //   all *FunctionMod*
+ // - check if some global pool has been "hard" reset, i.e., all the
+ //   linearization in there have been deleted; this is brought about by
+ //   a C05FunctionMod with type() == GlobalPoolRemoved and which().empty()
+ //   or by any FunctionMod that does *not* imply strong quasi-additivity
+ //   (i.e., that it is not a *C05*FunctionMod*)
+ // - if a *FunctionMod* changing linearizations happens before a reset of the
  //   global pool (meaning it is found afterwards in the reverse order) it
  //   is deleted since it is useless (after having checked if it also impacts
  //   the upper/lower bounds)
@@ -2933,294 +2967,472 @@ void BundleSolver::process_outstanding_Modification( void )
  //   *FunctionModVars* is there
  // - check that no ConstraintMod or VariableMod are there, since they are
  //   not handled (yet)
- // -
+ //
+ // TODO: during the 1st loop we could compute the set of components that have
+ //       been modified anyhow and use this information to avoid constructing
+ //       the numerous data structures like reset[] that are indexed over NrFi.
+ //       this might be important if, say, NrFi is 10000 but only a smattering
+ //       of the components (say, one) change
 
  std::vector<bool> reset( NrFi , false );
 
- for( auto rimod = v_mod_tmp.rbegin() ; rimod != v_mod_tmp.rend() ; ) {
+ for( auto rimod = v_mod_tmp.rbegin() ; rimod != v_mod_tmp.rend() ;
+      // note the iterator_expression of the for() obtained by defining
+      // a lambda and then immediately applying it to rimod
+      [ & to_delete , & v_mod_tmp ]( decltype( rimod ) & ri ) {
+       if( to_delete )
+	ri = decltype( ri )( v_mod_tmp.erase( std::next( ri ).base() ) );
+       else
+	++ri;
+       }( rimod ) ) {
   bool to_delete = false;
   auto mod = *rimod;
 
-  // process Modification - - - - - - - - - - - - - - - - - - - - - - - - - -
-  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
   // patiently sift through the possible Modification types to find what mod
   // exactly is and react accordingly
 
-  // C05FunctionModRngd - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  // first check if it is any kinf of FunctionMod, since this gives immediate
+  // access to the component, and any FunctionMod pertaining to an already
+  // reset component can be almost immediately deleted
   {
-   const auto tmod = std::dynamic_pointer_cast<C05FunctionModRngd>( mod );
+   const auto tmod = std::dynamic_pointer_cast<FunctionMod>( mod );
    if( tmod ) {
     auto wFi = get_index_of_component( tmod->function() );
 
-    FModChg( tmod->shift() , wFi );  // reset upper/lower values as needed
+    // adjust or reset upper/lower values as needed
+    // note that the list is scanned in reverse, hence these changes are
+    // applied in reverse order. however, if the upper/lower values are
+    // reset at any point in the list they stay reset forever. indeed,
+    // even if a function has a finite shift after a reset, this says
+    // nothing because there are no known values to shift. if, rather, the
+    // values are only shifted by finite amounts, the total shift is the
+    // sum of the shift, and the order of additions do not change the result
+    if( wFi < NrFi )
+     FModChg( tmod->shift() , wFi );
+    else
+     // this is a FunctionMod coming from the linear 0-th component,
+     // it surely does not reset any component
+     continue;
 
-    if( tmod->type() == C05FunctionMod::NothingChanged )
-     return;   // both \alpha and g are unchanged, nothing else to do
+    if( reset[ wFi ] ) {
+     // any kind of FunctionMod after (before) one that completely reset the
+     // component is useless, delete it and move forward (backward)
+     to_delete = true;
+     continue;
+     }
 
-    // how many *stuff* changed
-    Index NChgd = tmod->which().empty() ? NrItems[ wFi ]
-                                        : tmod->which().size();
-    switch( tmod->type() ) {
-     case( C05FunctionMod::AllLinearizationChanged ):
-      if( tmod->which().empty() ) {
-       NLinChgd += NrItems[ wFi ];
-       NAlphaChgd += NrItems[ wFi ];
-       }
-      const Subset &LinNmsRngd = ;
-      strt = tmod->range().first;
-      stp = tmod->range().second;
-      if( LinNmsRngd.empty() )
-       LinNms.clear();
-      else
-       std::set_union( LinNms.begin() , LinNms.end() ,
-      LinNmsRngd.begin() , LinNmsRngd.end() , LinNms.begin() );
-      LinChgd = true;
-      AlphaChgd = true;
-      break;
-     case( C05FunctionMod::AlphaChanged ):
-      AlphaChgd = true;
-      break;
-     case( C05FunctionMod::AllEntriesChanged ):
-      strt = tmod->range().first;
-      stp = tmod->range().second;
-      if( LinNmsRngd.empty() )
-       LinNms.clear();
-      else
-       std::set_union( LinNms.begin() , LinNms.end() ,
-		    	  LinNmsRngd.begin() , LinNmsRngd.end() , LinNms.begin() );
-       LinChgd = true;
-       break;
-     } // switch( tmod->f_type )
-    DoReturn = true;
-    }  // end  if( tmod )
-   } // end C05FunctionModRngd  - - - - - - - - - - - - - - - - - - - - - - -
+    // if the component is not reset (yet), one must look in details what
+    // exact type the *FunctionMod* is and react accordingly
 
-  // C05FunctionModSbst - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    {
+     // a C05FunctionModRngd only changes existing linearizations, and
+     // therefore is never a "hard" reset; the only easy case is
+     // NothingChanged, which by definition does nothing save for the
+     // shift(), that has been dealt with already
+     const auto ttmod = std::dynamic_pointer_cast<C05FunctionModRngd>( tmod );
+     if( ttmod ) {
+      switch( ttmod->type() ) {
+       case( C05FunctionMod::NothingChanged ):
+	to_delete = true;
+       case( C05FunctionMod::AllLinearizationChanged ):
+       case( C05FunctionMod::AllEntriesChanged ):
+        continue;
+       default:
+	throw( std::invalid_argument( "wrong type in C05FunctionModRngd" ) );
+       }  // end( switch( ttmod->f_type ) )
+      }  // end( if( ttmod ) )
+     }  // end C05FunctionModRngd
+
+    {
+     // a C05FunctionModSbst only changes existing linearizations, and
+     // therefore is never a "hard" reset; the only easy case is
+     // NothingChanged, which by definition does nothing save for the
+     // shift(), that has been dealt with already
+     const auto ttmod = std::dynamic_pointer_cast<C05FunctionModSbst>( tmod );
+     if( ttmod ) {
+      switch( ttmod->type() ) {
+       case( C05FunctionMod::NothingChanged ):
+	to_delete = true;
+       case( C05FunctionMod::AllLinearizationChanged ):
+       case( C05FunctionMod::AllEntriesChanged ):
+        continue;
+       default:
+	throw( std::invalid_argument( "wrong type in C05FunctionModSbst" ) );
+       }  // end( switch( ttmod->f_type ) )
+      }  // end( if( ttmod ) )
+     }  // end C05FunctionModSbst
+
+    {
+     // a C05FunctionMod of type GlobalPoolRemoved with which.empty() resets
+     // all the component. NothingChanged by definition does nothing (save
+     // for the shift(), that has been dealt with already). all other cases
+     // will have to be dealt with later
+     const auto ttmod = std::dynamic_pointer_cast<C05FunctionMod>( tmod );
+     if( ttmod ) {
+      switch( ttmod->type() ) {
+       case( C05FunctionMod::GlobalPoolRemoved ):
+	if( ttmod->which().empty() )
+	 reset[ wFi ] = true;
+       case( C05FunctionMod::NothingChanged ):
+	to_delete = true;
+       case( C05FunctionMod::AllLinearizationChanged ):
+       case( C05FunctionMod::AllEntriesChanged ):
+       case( C05FunctionMod::AlphaChanged ):
+       case( C05FunctionMod::GlobalPoolAdded ):
+	continue;
+       default:
+	throw( std::invalid_argument( "wrong type in C05FunctionMod" ) );
+       }  // end( switch( ttmod->f_type ) )
+      }  // end( if( ttmod ) )
+     }  // end C05FunctionMod
+
+    {
+     // a C05FunctionModLin* only changes existing linearizations, and
+     // therefore is never a "hard" reset
+     const auto ttmod = std::dynamic_pointer_cast<C05FunctionModLinRngd>(
+								       tmod );
+     if( ttmod )
+      continue;
+     }
+
+    // if control reaches this point, mod is (indistinguishable from) a base
+    // FunctionMod, and in particular it is not a C05FunctionMod*. hence the
+    // change in the Function is not quasi-additive, and therefore a fortiori
+    // not strongly quasi-additive. as a result, this is a "hard" reset
+
+    reset[ wFi ] = true;
+    to_delete = true;
+
+    }  // end( if( tmod ) )
+   }  // end FunctionMod
+
   {
-   const auto tmod = std::dynamic_pointer_cast<C05FunctionModSbst>( mod );
-   if( tmod ) {
-    wFi = get_index_of_component(tmod->function());
-    FModChg( tmod->shift() , wFi );
-    const Subset &LinNmsSbst = tmod->which();
-    switch( tmod->type() ) {
-     case( C05FunctionMod::NothingChanged ):   // both \alpha and g are OK
-      break;                                   // nothing to do
-     case( C05FunctionMod::AllLinearizationChanged ):
-      strt = min( strt , v_c05f[wFi]->is_active(tmod->vars()[0]) );
-      stp = max( stp , v_c05f[wFi]->is_active(tmod->vars()[tmod->vars().size()-1]) );
-      if( LinNmsSbst.empty() )
-	   LinNms.clear();
-      else
-       std::set_union( LinNms.begin() , LinNms.end() ,
-			    LinNmsSbst.begin() , LinNmsSbst.end() , LinNms.begin() );
-     LinChgd = true;
-     AlphaChgd = true;
-      break;
-     case( C05FunctionMod::AlphaChanged ):
-      AlphaChgd = true;
-      break;
-     case( C05FunctionMod::AllEntriesChanged ):
-      strt = min( strt , v_c05f[wFi]->is_active(tmod->vars()[0]) );
-      stp = max( stp , v_c05f[wFi]->is_active(tmod->vars()[tmod->vars().size()-1]) );
-      if( LinNmsSbst.empty() )
-       LinNms.clear();
-      else
-       std::set_union( LinNms.begin() , LinNms.end() ,
-			    LinNmsSbst.begin() , LinNmsSbst.end() , LinNms.begin() );
-      LinChgd = true;
-      break;
-     } // switch( tmod->f_type )
-    DoReturn = true;
-    }  // end  if( tmod )
-   } // end C05FunctionModSbst  - - - - - - - - - - - - - - - - - - - - - - -
+   // a "naked" FunctionModVars is only allowed if there is only one
+   // component (comprised the linear one). if it is allowed, it is
+   // of no consequence here, except for the possible effect on the
+   // function values, if it is a C05FunctionModVars*, meaning that it
+   // represents a strongly quasi-additive variable change. if not, the
+   // variable change also implies a reset
+   // in no case, however, the Modification is removed from the list
 
-  // C05FunctionMod - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+   const auto tmod = std::dynamic_pointer_cast<FunctionModVars>( mod );
+   if( tmod ) {
+    if( ( NrFi > 1 ) || f_lf )
+     throw( std::invalid_argument( "naked FunctionModVars not allowed" ) );
+
+    auto wFi = get_index_of_component( tmod->function() );
+
+    FModChg( tmod->shift() , wFi );  // change/reset upper/lower values
+
+    {
+     const auto ttmod = std::dynamic_pointer_cast<C05FunctionModVarsAddd>(
+								       tmod );
+     if( ttmod )
+      continue;
+     }
+
+    {
+     const auto ttmod = std::dynamic_pointer_cast<C05FunctionModVarsRngd>(
+								       tmod );
+     if( ttmod )
+      continue;
+     }
+
+    {
+     const auto ttmod = std::dynamic_pointer_cast<C05FunctionModVarsSbst>(
+								       tmod );
+     if( ttmod )
+      continue;
+     }
+
+    // if control reaches here, this is a FunctionModVars* that is not a
+    // C05FunctionModVars*, i.e., a non strongly quasi-additive variable
+    // change, which implies a "hard" reset for the component
+    reset[ wFi ] = true;
+    continue;
+
+    }  // end( if( tmod ) )
+   }  // end FunctionModVars
+
   {
-   const auto tmod = std::dynamic_pointer_cast<C05FunctionMod>( mod );
+   // a GroupModification here can only be a bunch of identical
+   // *FunctionModVar*: pick the first one and act on it
+   const auto tmod = std::dynamic_pointer_cast<GroupModification>( mod );
    if( tmod ) {
-    wFi = get_index_of_component( tmod->function() );
-    FModChg( tmod->shift() , wFi );
-    const Subset &LinNmsMod = tmod->which();
-    switch( tmod->type() ) {
-     case( C05FunctionMod::NothingChanged ):   // both \alpha and g are OK
-      break;                                   // nothing to do
-     case( C05FunctionMod::AllLinearizationChanged ):  // everything changed
-	  strt = min( strt , Index(0) );
-      stp = max( stp , NumVar );
-      if( LinNmsMod.empty() )
-       LinNms.clear();
-      else
-       std::set_union( LinNms.begin() , LinNms.end()  ,
-				  LinNmsMod.begin() , LinNmsMod.end(), std::back_inserter(LinNms) );
-      LinChgd = true;
-	  AlphaChgd = true;
-	  break;
-     case( C05FunctionMod::AlphaChanged ):
-	  AlphaChgd = true;
-      break;
-     case( C05FunctionMod::AllEntriesChanged ):
-	  strt = min( strt , Index(0) );
-      stp = max( stp , NumVar );
-      if( LinNmsMod.empty() )
-       LinNms.clear();
-      else
-       std::set_union( LinNms.begin() , LinNms.end() ,
-			  LinNmsMod.begin() , LinNmsMod.end() , LinNms.begin() );
-      LinChgd = true;
-      break;
-     } // switch( tmod->f_type )
-    DoReturn = true;
-    }  // end  if( tmod )
-   } // end C05FunctionMod  - - - - - - - - - - - - - - - - - - - - - - - - -
+    auto fmod = tmod->v_sub_Modifications.front();
 
-  // some/all linearizations changed  - - - - - - - - - - - - - - - - - - - -
-  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    {
+     const auto ttmod = std::dynamic_pointer_cast<C05FunctionModVarsAddd>(
+								       fmod );
+     if( ttmod )
+      continue;
+     }
 
-  if( LinChgd ) {
+    {
+     const auto ttmod = std::dynamic_pointer_cast<C05FunctionModVarsRngd>(
+								       fmod );
+     if( ttmod )
+      continue;
+     }
 
-   if( LinNms.empty() || LinNms.size() == NrItems[ wFi ] )
-    Master->ChgSubG( strt , stp , wFi + 1 );
-   else {
-    Master->ChgSubG( strt , stp , wFi + 1 );
-    /* for( auto &LinearName : LinNms ) {
-     double *G1 = Master->GetItem( wFi + 1 );
-     v_c05f[ wFi ]->get_linearization_coefficients( G1 ,
-    		 make_pair( strt , stp ) , LinearName );
-     Master->SetItemBse( nullptr , NumVar );
-     Master->SetItem( LinearName );
-     } */
+    {
+     const auto ttmod = std::dynamic_pointer_cast<C05FunctionModVarsSbst>(
+								       fmod );
+     if( ttmod )
+      continue;
+     }
+
+    // if control reaches here, this is a FunctionModVars* that is not a
+    // C05FunctionModVars*, i.e., a non strongly quasi-additive variable
+    // change, which implies a "hard" reset for *all* components
+    reset.assign( NrFi , true );
+    continue;
     }
    }
 
-  // some/all alpha changed   - - - - - - - - - - - - - - - - - - - - - - - -
-  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
-  if( AlphaChgd ) {
-   // a finite f_shift should be treated in a different way but
-   // as of now the finite shifts are ignored by MPSolver
-
-   std::vector< VarValue > G1( NumVar );
-   std::vector< VarValue > Alfa1( Master->MaxName( wFi + 1 ) );
-
-   for( Index i = 0 ; i < Master->MaxName( wFi + 1 ) ; ++i )
-    if( ( ItemVcblr[ i ].first == wFi ) &&
-	    ( ItemVcblr[ i ].second < vBPar2[wFi] ) &&
-		( ItemVcblr[ i ].second >= 0 )  ) {
-     auto AlfaVali = v_c05f[ wFi ]->get_linearization_constant(
-    		       ItemVcblr[ i ].second );
-     if( std::isnan( AlfaVali ) )  // linearization no longer valid
-      Delete( i , true );          // delete it
-     else {                        // linearization still there
-      // compute the linearization error in Lambda
-      v_c05f[ wFi ]->get_linearization_coefficients( G1.data() ,
-		       Range( 0 , NumVar ) , ItemVcblr[ i ].second );
-      Alfa1[ i ] = UpRifFi[ wFi ] - AlfaVali -
-                   std::inner_product( Lambda.begin() , Lambda.end() ,
-				       G1.data() , VarValue( 0 ) );
-      }
-     }
-
-   Master->ChgAlfa( Alfa1.data() , wFi + 1 );
-
-   //!! PrintBundle();
+  {
+   const auto tmod = std::dynamic_pointer_cast<ConstraintMod>( mod );
+   if( tmod )
+    throw( std::invalid_argument( "ConstraintMod not handled (yet)" ) );
    }
 
-  if( DoReturn )
-   return;
-
-  // C05FunctionModLin  - - - - - - - - - - - - - - - - - - - - - - - - - - -
   {
-   const auto tmod = std::dynamic_pointer_cast<C05FunctionModLin>( mod );
-   if( tmod ) {
-    wFi = get_index_of_component(tmod->function());
-    if( wFi == InINF ) { // 0th component
-      double * G1 = Master->GetItem( 0 );
-      f_lf->get_linearization_coefficients( G1 );
-      for( Index i = 0 ; i < tmod->vars().size() ; ++i )
-       G1[ f_lf->is_active(tmod->vars()[i]) ] +=
-        tmod->delta()[ i ];
-      const Index* SGBse = nullptr;
-      Master->SetItemBse( SGBse , NumVar );
-      Master->SetItem( InINF );
-      } // end if( f_lf )
-     else
-      for( Index i = 0 ; i < Master->MaxName(wFi+1) ; i++ )
-       if( Master->WComponent( i ) == wFi+1 ) {
-        std::vector<double> G1(NumVar);
-        Range range = make_pair( 0, NumVar );
-        v_c05f[ wFi ]->get_linearization_coefficients( G1.data() , range , i );
-        for( Index i = 0 ; i < tmod->vars().size() ; ++i )
-          G1[ v_c05f[ wFi ]->is_active(tmod->vars()[i]) ] +=
-           tmod->delta()[ i ];
-        throw( std::logic_error( "expected to be completed" ) );
-        }
-     } // end  if( tmod )
-    } // end C05FunctionModLin   - - - - - - - - - - - - - - - - - - - - - - -
+   const auto tmod = std::dynamic_pointer_cast<VariableMod>( mod );
+   if( tmod )
+    throw( std::invalid_argument( "VariableMod not handled (yet)" ) );
+   }
 
-  if( to_delete )
-   rimod = decltype( rimod )( v_mod_tmp.erase( std::next( rimod ).base() ) );
-  else
-   ++rimod;
+  {
+   const auto tmod = std::dynamic_pointer_cast<BlockMod>( mod );
+   if( tmod )
+    throw( std::invalid_argument( "BlockMod not handled (yet)" ) );
+   }
+
+  {
+   const auto tmod = std::dynamic_pointer_cast<BlockModAD>( mod );
+   if( tmod )
+    throw( std::invalid_argument( "BlockModAD not handled (yet)" ) );
+   }
+
+  // if control reaches here, the Modification is "unknown", probably a
+  // "physical" Modification that BundleSolver does not care about
+
+  to_delete = true;
 
   }  // end( 1st loop, in reverse )
 
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // if any global pool has been reset (or, even better, *all* of them have
- // reset) then delete (the corresponding items in the corresponding) bundle
+ // reset) then delete all items in the (<corresponding) bundle
 
- std::vector< std::vector< Index > > inv_dict;
+ Dctnry inv_dict;
  
  if( reset.find( reset.begin() , reset.end() , false ) == reset.end() ) {
   // all components have been reset
 
+  NrItems.assign( NrFi , 0 );
+  OOBase.assign( vBPar2[ NrFi ] , Inf<SIndex>() );
+  ItemVcblr.assign( vBPar2[ NrFi ] , make_pair( InINF , Inf<SIndex>() ) );
+  whisG1.assign( NrFi , InINF );
+  FreList.clear();
 
+  Master->RmvItems();
   }
  else
   if( reset.find( reset.begin() , reset.end() , true ) != reset.end() ) {
    // at least a component has been reset: need to construct the inverse
    // dictionary < component , global pool position > --> bundle position
-   // (in linear rime) to do removals efficiently
+   // (in linear time) to do removals efficiently
 
    compute_inverse_dictionary( inv_dict );
 
-
-   
+   for( Index k = 0 ; k < NrFi ; ++k )
+    if( reset[ k ] )
+     for( auto i : inv_dict[ k ] )
+      Delete( i , true );
    }
 
  // After this point, all the Modification adding, deleting or modifying
- // linearizations are significant. They either pertain to components that
+ // linearizations are significant: they either pertain to components that
  // have never been reset, or are the remaining ones after the (last) one
  // resetting the component
 
- 
+ if( v_mod_tmp.empty() )  // no more Modification to process
+  return;                 // all done
+
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
- // 2nd loop: handle exclusively Variable addition and removal
- // In forward order: all removals of existing Variable are immediately
- // performed, diminishing NumVar. Additions of Variable are "cached", and
- // only performed once (if ever) after the end of the cycle. Removals of
- // Variable that have not been added yet just decreases the number of new
- // Variable to be added at the end. All corresponding Modification are
- // removed from the list
+ // 2nd loop, again in reverse: check for "soft" reset of components, i.e.,
+ // when all existing linearization changes. any Modification that changes
+ // the linearizations happening before a "soft" reset of the global pool
+ // (meaning it is found afterwards in the reverse order) is deleted since it
+ // is useless. Actually, for this to be true we need to keep track already if
+ // all the constants change (so that we can handle AllLinearizationChanged)
+ //
+ // note that Modification changing the linearizations happening *after* a
+ // "soft" reset of the global pool (meaning it is found *before* in the
+ // reverse order is also useless, since a reset forces the re-reading of all
+ // linearizations, which by definition happens at their current (final) state.
+ // yet, this is not done immediately
+ //
+ // note that we make no serious attempt at keeping track of the combined
+ // effect of all changes, in order to detect if a large set of small
+ // changes actually imples a reset. this is complicated for "horizontal"
+ // changes (for all linearizations, a range/subset of entries) because the
+ // names of the changed Variable may not be current (additions/deletions may
+ // happen in the meantime), and keeping track is too burdensome. similarly
+ // for "vertical" changes (a set of specific linearizations). some steps
+ // in this direction will be done in later stages
+ //
+ // another note is that BundleSolver (due to limitations in the interface of
+ // MPSolver) has an all-or-nothing approach to changing the constants. thus,
+ // AlphaC[ wFi ] is set to true whenever a change in any constant happens,
+ // even if it is on a subset of the linearizations
 
- Index to_add = 0;
+ reset.assign( NrFi , false );  // reset reset (couldn't resist)
+ std::vector<bool> AlphaC( NrFi , false );
 
- for( auto imod = v_mod_tmp.begin() ; imod != v_mod_tmp.end() ; ) {
+ for( auto rimod = v_mod_tmp.rbegin() ; rimod != v_mod_tmp.rend() ;
+      // note the iterator_expression of the for() obtained by defining
+      // a lambda and then immediately applying it to rimod
+      [ & to_delete , & v_mod_tmp ]( decltype( rimod ) & ri ) {
+       if( to_delete )
+	ri = decltype( ri )( v_mod_tmp.erase( std::next( ri ).base() ) );
+       else
+	++ri;
+       }( rimod ) ) {
   bool to_delete = false;
-  auto mod = *rmod;
+  auto mod = *rimod;
 
+  // patiently sift through the possible Modification types to find what mod
+  // exactly is and react accordingly
 
-  
-  if( to_delete )
-   imod =  v_mod_tmp.erase( imod );
-  else
-   ++imod;
+  {
+   // a C05FunctionModRngd only changes a range of the linearizations,
+   // and therefore is not considered a "soft" reset even if which().empty()
+   // in fact the range could be so large as to be (almost) all the
+   // variables, which would count as a reset, but so far we don't attempt
+   // at detecting this. the only easy case would be NothingChanged, but
+   // any such C05FunctionModRngd has been deleted already. however, if the
+   // component is "soft" reset already, it can be deleted
 
-  }  // end( 2nd loop, forward )
+   const auto tmod = std::dynamic_pointer_cast<C05FunctionModRngd>( mod );
+   if( tmod ) {
+    auto wFi = get_index_of_component( tmod->function() );
+    if( reset[ wFi ] )
+     to_delete = true;
+    continue;
+    }  // end( if( ttmod ) )
+   }  // end C05FunctionModRngd
 
+  {
+   // a C05FunctionModSbst only changes a subet of the linearizations,
+   // and therefore is not considered a "soft" reset even if which().empty()
+   // in fact the subet could be so large as to be (almost) all the
+   // variables, which would count as a reset, but so far we don't attempt
+   // at detecting this. the only easy case would be NothingChanged, but
+   // any such C05FunctionModSbst has been deleted already. however, if the
+   // component is "soft" reset already, it can be deleted
+
+   const auto tmod = std::dynamic_pointer_cast<C05FunctionModSbst>( mod );
+   if( tmod ) {
+    auto wFi = get_index_of_component( tmod->function() );
+    if( reset[ wFi ] )
+     to_delete = true;
+    continue;
+    }  // end( if( ttmod ) )
+   }  // end C05FunctionModSbst
+
+  {
+   // a C05FunctionMod of type AllLinearizationChanged or AllEntriesChanged
+   // with which.empty() "soft" resets all the component, and in the former
+   // case also Alpha; AlphaChanged only changes the constants (obviously)
+
+   const auto tmod = std::dynamic_pointer_cast<C05FunctionMod>( mod );
+   if( tmod ) {
+    auto wFi = get_index_of_component( tmod->function() );
+
+    // AlphaChanged is considered by default applied to all the
+    // linearizations, irrespectively of which()
+    if( tmod->type() == C05FunctionMod::AlphaChanged ) {
+     AlphaC[ wFi ] = true;
+     to_delete = true;
+     continue;
+     }
+
+    // in all other cases we only react to which().empty() 
+    if( ttmod->type() == C05FunctionMod::AllLinearizationChanged ) {
+     AlphaC[ wFi ] = true;
+     if( tmod->which().empty() ) {
+      reset[ wFi ] = true;
+      to_delete = true;
+      }
+     continue;
+     }
+
+    if( tmod->type() == C05FunctionMod::AllEntriesChanged )
+     if( tmod->which().empty() ) {
+      reset[ wFi ] = true;
+      to_delete = true;
+      }
+
+    continue;
+    }  // end( if( tmod ) )
+   }  // end C05FunctionMod
+
+  {
+   // a C05FunctionModLinRngd implies that a specific range in all the
+   // linearizations must be changed by adding; this is never considered a
+   // "soft" reset even if in fact the range could be so large as to be
+   // (almost) all the variables, which would count as a reset, but so far
+   // we don't attempt at detecting this. however, if the component is "soft"
+   // reset already, it can be deleted
+   const auto tmod = std::dynamic_pointer_cast<C05FunctionModLinRngd>( mod );
+   if( tmod ) {
+    auto wFi = get_index_of_component( tmod->function() );
+    if( reset[ wFi ] )
+     to_delete = true;
+    continue;
+    }  // end( if( ttmod ) )
+   }  // end C05FunctionModLinRngd
+
+  {
+   // a C05FunctionModLinSbst implies that a specific subset in all the
+   // linearizations must be changed by adding; this is never considered a
+   // "soft" reset even if in fact the subset could be so large as to be
+   // (almost) all the variables, which would count as a reset, but so far
+   // we don't attempt at detecting this. however, if the component is "soft"
+   // reset already, it can be deleted
+   const auto tmod = std::dynamic_pointer_cast<C05FunctionModLinSbst>( mod );
+   if( tmod ) {
+    auto wFi = get_index_of_component( tmod->function() );
+    if( reset[ wFi ] )
+     to_delete = true;
+    continue;
+    }  // end( if( ttmod ) )
+   }  // end C05FunctionModLinSbst
+
+  {
+   // a C05FunctionModLin implies that *all* the linearizations must be
+   // changed by adding them \delta; this may in principle be handled in
+   // a specialised way by BundleSolver, but is currently not, and
+   // therefore it is a "full" reset
+   const auto tmod = std::dynamic_pointer_cast<C05FunctionModLin>( mod );
+   if( tmod ) {
+    auto wFi = get_index_of_component( tmod->function() );
+    reset[ wFi ] = true;
+    to_delete = true;
+    }  // end( if( ttmod ) )
+   }  // end C05FunctionModLin
+  }  // end( 2nd loop, again in reverse )
+
+ // note that even if there were no more Modification to process we could not
+ // stop because this means that reset[ wFi ] == true for some wFi. in fact
+ // v_mod_tmp as not empty(), and elements can be remove from it only if
+ // some component is "soft" reset. 
 
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
- // 3rd loop: prepare for addition/removal/changes of individual linearization
- // for each component, compute the three sets:
+ // 3rd loop, forward: prepare for addition/removal/changes of individual
+ // linearization for each component by computing the three sets
  // - linearizations that need be removed
  // - linearizations that need be added
  // - linearizations that need be changed
@@ -3230,297 +3442,630 @@ void BundleSolver::process_outstanding_Modification( void )
  // - if a linearization that is removed/changed is later added it is no
  //   longer removed/changed (adding over an existing linearization changes
  //   it anyway, no reason to remove it)
+ // - changes to a reset component can be ignored
+ // - due to limitations in the MPSolver interface, "horizontal" changes (of
+ //   a given range/subset of entries) to a subset of linearizations are
+ //   not supported. these must be either mapped in "horizontal" changes to
+ //   *all* linearizations (of a given component), or to "vertical" changes
+ //   of all components to a subset of linearization. somewhat arbitrarily,
+ //   the second option is chosen here. as a consequence, C05FunctionModRngd
+ //   and C05FunctionModSbst are considered C05FunctionMod. note that
+ //   C05FunctionMod* with which().empty() still remain untreated, as well
+ //   as C05FunctionModLinRngd and C05FunctionModLinSbst (that by definition
+ //   always concern all the linearizations), while C05FunctionModLin have
+ //   been dealt with already
 
+ Dctnry Addd( NrFi );
+ Dctnry Rmvd( NrFi );
+ Dctnry Chgd( NrFi );
 
-
-
- // Removing linearizations is just that. Adding linearizations is only
- // performed on the Variable that have "survived" the previous loop, i.e.,
- // without considering those Variable that still need to be added. In fact,
- // the corresponding entries of *all* linearization will anyway have to be
- // retrieved and 
-
-
- for( auto imod = v_mod_tmp.begin() ; imod != v_mod_tmp.end() ; ) {
+ for( auto imod = v_mod_tmp.begin() ; imod != v_mod_tmp.end() ;
+      // note the iterator_expression of the for() obtained by defining
+      // a lambda and then immediately applying it to imod
+      [ & to_delete , & v_mod_tmp ]( decltype( imod ) & it ) {
+       if( to_delete )
+	it =  v_mod_tmp.erase( it );
+       else
+	++it;
+       }( imod ) ) {
   bool to_delete = false;
-  auto mod = *rmod;
+  auto mod = *imod;
 
+  // patiently sift through the possible Modification types to find what mod
+  // exactly is and react accordingly
+  //
+  // actually, only C05FunctionMod need be treated here. we do not need to
+  // distinguish between the base and the derived classes because we take
+  // the change of a range/subset of the entries for a change of the whole
+  // linearization. however, we do in fact distinguish them because we
+  // ignore the Modification if ttmod->which().empty() and type() ==
+  // AllEntriesChanged or == AllLinearizationChanged. any such C05FunctionMod
+  // has been deleted (at worst) in the 2nd loop, and therefore here it must
+  // be a C05FunctionModRngd or C05FunctionModSbst
+  //
+  // also, note that NothingChanged and AlphaChanged cannot happen, since
+  // again these cases have been dealt with already
 
-  
-  if( to_delete )
-   imod =  v_mod_tmp.erase( imod );
-  else
-   ++imod;
+  const auto tmod = std::dynamic_pointer_cast<C05FunctionMod>( mod );
+  if( tmod ) {
+   auto wFi = get_index_of_component( tmod->function() );
 
+   switch( ttmod->type() ) {
+    case( C05FunctionMod::AllLinearizationChanged ):
+    case( C05FunctionMod::AllEntriesChanged ):
+     // if tmod->which().empty(), this must actually be either a
+     // C05FunctionModRngd or a C05FunctionModSbst: save it, for it
+     // will be dealt with in the next loop
+     if( tmod->which().empty() )
+      continue;
+     to_delete = true;   // otherwise, delete it
+     if( reset[ wFi ] )  // changes in reset components
+      continue;          // are ignored
+     // add to Chgd[ wFi ] the names in tmod->which(), save those that are
+     // in either Addd[ wFi ] or Rmvd[ wFi ]
+     if( Addd[ wFi ].empty() && Rmvd[ wFi ].empty() ) {
+      // no items are added/removed, all changed are changed
+      if( Chgd[ wFi ].empty() )
+       Chgd[ wFi ] = tmod->which();
+      else {
+       Subset tmp( std::min( Chgd[ wFi ].size() + tmod->which().size() ,
+			     vBPar2[ wFi ] ) );
+       std::set_union( Chgd[ wFi ].begin() , Chgd[ wFi ].end() ,
+		       tmod->which().begin() , tmod->which().end() ,
+		       tmp.begin() );
+       Chgd[ wFi ] = std::move( tmp );
+       }
+      }
+     else {
+      // only those items that are not added and/or removed need be changed
+      Subset tmp( tmod->which() );
+      if( ! Addd[ wFi ].empty() ) {
+       Subset tmp2( tmp.size() );
+       std::set_difference( tmp.begin() , tmp.end() ,
+			    Addd[ wFi ].begin() , Addd[ wFi ].end() ,
+			    tmp2.begin() );
+       tmp = std::move( tmp2 );
+       }
+      if( ( ! Rmvd[ wFi ].empty() ) && ( ! tmp.empty() ) ) {
+       Subset tmp2( tmp.size() );
+       std::set_difference( tmp.begin() , tmp.end() ,
+			    Rmvd[ wFi ].begin() , Rmvd[ wFi ].end() ,
+			    tmp2.begin() );
+       tmp = std::move( tmp2 );
+       }
+      if( Chgd[ wFi ].empty() )
+       Chgd[ wFi ] = std::move( tmp );
+      else {
+       Subset tmp2( std::min( Chgd[ wFi ].size() + tmp.size() ,
+			      vBPar2[ wFi ] ) );
+       std::set_union( Chgd[ wFi ].begin() , Chgd[ wFi ].end() ,
+		       tmp.begin() , tmp.end() , tmp2.begin() );
+       Chgd[ wFi ] = std::move( tmp2 );
+       }
+      }
+    case( C05FunctionMod::GlobalPoolAdded ):
+     // add to Addd[ wFi ] the names in tmod->which(), and remove them
+     // from Rmvd[ wFi ], and Chgd[ wFi ] if the component is not reset
+     if( Addd[ wFi ].empty() )
+      Addd[ wFi ] = tmod->which();
+     else {
+      Subset tmp( std::min( Addd[ wFi ].size() + tmod->which().size() ,
+			    vBPar2[ wFi ] ) );
+      std::set_union( Addd[ wFi ].begin() , Addd[ wFi ].end() ,
+		      tmod->which().begin() , tmod->which().end() ,
+		      tmp.begin() );
+      Addd[ wFi ] = std::move( tmp );
+      }
+     if( ! Rmvd[ wFi ].empty() ) {
+      Subset tmp( Rmvd[ wFi ].size() );
+      std::set_difference( Rmvd[ wFi ].begin() , Rmvd[ wFi ].end() ,
+			   tmod->which().begin() , tmod->which().end() ,
+			   tmp.begin() );
+      Rmvd[ wFi ] = tmp;
+      }
+     if( ( ! reset[ wFi ] ) && ( ! Chgd[ wFi ].empty() ) ) {
+      Subset tmp( Chgd[ wFi ].size() );
+      std::set_difference( Chgd[ wFi ].begin() , Chgd[ wFi ].end() ,
+			   tmod->which().begin() , tmod->which().end() ,
+			   tmp.begin() );
+      Chgd[ wFi ] = std::move( tmp );
+      }
+     to_delete = true;
+     continue;
+    case( C05FunctionMod::GlobalPoolRemoved ):
+     // add to Rmvd[ wFi ] the names in tmod->which(), and remove them
+     // from Addd[ wFi ], and Chgd[ wFi ] if the component is not reset
+     if( Rmvd[ wFi ].empty() )
+      Rmvd[ wFi ] = tmod->which();
+     else {
+      Subset tmp( std::min( Rmvd[ wFi ].size() + tmod->which().size() ,
+			    vBPar2[ wFi ] ) );
+      std::set_union( Rmvd[ wFi ].begin() , Rmvd[ wFi ].end() ,
+		      tmod->which().begin() , tmod->which().end() ,
+		      tmp.begin() );
+      Rmvd[ wFi ] = std::move( tmp );
+      }
+     if( ! Addd[ wFi ].empty() ) {
+      Subset tmp( Addd[ wFi ].size() );
+      std::set_difference( Addd[ wFi ].begin() , Addd[ wFi ].end() ,
+			   tmod->which().begin() , tmod->which().end() ,
+			   tmp.begin() );
+      Addd[ wFi ] = std::move( tmp );
+      }
+     if( ( ! reset[ wFi ] ) && ( ! Chgd[ wFi ].empty() ) ) {
+      Subset tmp( Chgd[ wFi ].size() );
+      std::set_difference( Chgd[ wFi ].begin() , Chgd[ wFi ].end() ,
+			   tmod->which().begin() , tmod->which().end() ,
+			   tmp.begin() );
+      Chgd[ wFi ] = std::move( tmp );
+      }
+     to_delete = true;
+    }  // end( switch( tmod->type() ) )
+   }  // end( if( ttmod ) )
   }  // end( 3rd loop, forward )
 
-
-
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
- // 3rd loop: handle addition/removal/changes of individual linearization
- // Removing linearizations is just that. Adding linearizations is only
- // performed on the Variable that have "survived" the previous loop, i.e.,
- // without considering those Variable that still need to be added. In fact,
- // the corresponding entries of *all* linearization will anyway have to be
- // retrieved and 
+ // now act on the just gathered information, i.e., delete all linearization
+ // that need to, if any
 
+ if( Rmvd.find_if( Rmvd.begin() , Rmvd.end() ,
+		   []( Subset & Rk ) { return( ! Rk.empty() ); }
+		   ) != Rmvd.end() ) {
+  // at least a component has had lnearizations removed: need to construct
+  // the inverse dictionary < component , global pool position > --> bundle
+  // position (if not constructed already) to do removals efficiently
 
- for( auto imod = v_mod_tmp.begin() ; imod != v_mod_tmp.end() ; ) {
-  bool to_delete = false;
-  auto mod = *rmod;
+  compute_inverse_dictionary( inv_dict );
 
-
-  
-  if( to_delete )
-   imod =  v_mod_tmp.erase( imod );
-  else
-   ++imod;
-
-  }  // end( 3rd loop, forward )
-
- //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
- // last thing: if there are Variable to add, do it now in one blow
- //
-
- if( to_add ) {
+  for( Index k = 0 ; k < NrFi ; ++k )
+   for( auto i : Rmvd[ k ] )
+    Delete( inv_dict[ k ][ i ] , true );
   }
 
-
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
- 
- while( ! v_mod.empty() ) {
-  auto mod = v_mod.front();  // pick (a reference to) the first Modification
+ // 4th loop: handle exclusively Variable addition and removal, in forward
+ // order. all removals of existing Variable are immediately performed,
+ // diminishing NumVar. additions of Variable are "cached", and only performed
+ // once (if ever) after the end of the cycle. removals of Variable that have
+ // not been added yet just decreases the number of new Variable to be added
+ // at the end. all corresponding Modification are removed from the list
 
-  // process Modification - - - - - - - - - - - - - - - - - - - - - - - - - -
-  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ Index to_add = 0;
+ bool addd_vars = false;  // if any Variable has ever been added
+ bool rmvd_vars = false;  // if any Variable has ever been removed
+
+ for( auto imod = v_mod_tmp.begin() ; imod != v_mod_tmp.end() ;
+      // note the iterator_expression of the for() obtained by defining
+      // a lambda and then immediately applying it to imod
+      [ & to_delete , & v_mod_tmp ]( decltype( imod ) & it ) {
+       if( to_delete )
+	it =  v_mod_tmp.erase( it );
+       else
+	++it;
+       }( imod ) ) {
+  bool to_delete = false;
+  auto mod = *imod;
+
   // patiently sift through the possible Modification types to find what mod
   // exactly is and react accordingly
 
-  bool AlphaChgd = false;
-  bool LinChgd = false;
-  bool DoReturn = false;
-  Index wFi;
-
-  Index strt = Inf<Index>();
-  Index stp = -Inf<Index>();
-  Subset LinNms;
-
-  // GroupModification- - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  // not that we do not distinguish C05FunctionModVars* from "plain"
+  // FunctionModVars*, since the only difference is whether or not the
+  // operation is strongly quasi-additive, i.e., it implies or not a "hard"
+  // reset, but this has already been acted upon
+  
   {
-   const auto tmod = std::dynamic_pointer_cast<GroupModification>( mod );
+   // a "naked" FunctionModVars
+   const auto tmod = std::dynamic_pointer_cast<FunctionModVars>( mod );
+   if( ! tmod ) {
+    // if it is not a "naked" FunctionModVars, it can still be a group of
+    // identical *FunctionModVars* "dressed" into a GroupModification
+    const auto gmod = std::dynamic_pointer_cast<GroupModification>( mod );
+    if( gmod )  // if so, pick the first one and act on it
+     tmod = std::static_pointer_cast<FunctionModVars>(
+				        tmod->v_sub_Modifications.front() );
+     }
+
    if( tmod ) {
-    for( const auto & submod : tmod->v_sub_Modifications )
-     guts_of_poM( submod );
+    // if we have a *FunctionModVars*, we have to distinguish its exact type
+    // and add/delete Variable accordingly; in all cases, however, the
+    // Modification is processed and can be deleted
+    to_delete = true;
 
-    return;
-    }
-   } // end GroupModification - - - - - - - - - - - - - - - - - - - - - - - -
-
-  // C05FunctionModRngd - - - - - - - - - - - - - - - - - - - - - - - - - - -
-  {
-   const auto tmod = std::dynamic_pointer_cast<C05FunctionModRngd>( mod );
-   if( tmod ) {
-    wFi = get_index_of_component(tmod->function());
-    const Subset &LinNmsRngd = tmod->which();
-    FModChg( tmod->shift() , wFi );
-    switch( tmod->type() ) {
-     case( C05FunctionMod::NothingChanged ):   // both \alpha and g are OK
-      break;                                   // nothing to do
-     case( C05FunctionMod::AllLinearizationChanged ):
-      strt = tmod->range().first;
-      stp = tmod->range().second;
-      if( LinNmsRngd.empty() )
-       LinNms.clear();
-      else
-       std::set_union( LinNms.begin() , LinNms.end() ,
-      LinNmsRngd.begin() , LinNmsRngd.end() , LinNms.begin() );
-      LinChgd = true;
-      AlphaChgd = true;
-      break;
-     case( C05FunctionMod::AlphaChanged ):
-      AlphaChgd = true;
-      break;
-     case( C05FunctionMod::AllEntriesChanged ):
-      strt = tmod->range().first;
-      stp = tmod->range().second;
-      if( LinNmsRngd.empty() )
-       LinNms.clear();
-      else
-       std::set_union( LinNms.begin() , LinNms.end() ,
-		    	  LinNmsRngd.begin() , LinNmsRngd.end() , LinNms.begin() );
-       LinChgd = true;
-       break;
-     } // switch( tmod->f_type )
-    DoReturn = true;
-    }  // end  if( tmod )
-   } // end C05FunctionModRngd  - - - - - - - - - - - - - - - - - - - - - - -
-
-  // C05FunctionModSbst - - - - - - - - - - - - - - - - - - - - - - - - - - -
-  {
-   const auto tmod = std::dynamic_pointer_cast<C05FunctionModSbst>( mod );
-   if( tmod ) {
-    wFi = get_index_of_component(tmod->function());
-    FModChg( tmod->shift() , wFi );
-    const Subset &LinNmsSbst = tmod->which();
-    switch( tmod->type() ) {
-     case( C05FunctionMod::NothingChanged ):   // both \alpha and g are OK
-      break;                                   // nothing to do
-     case( C05FunctionMod::AllLinearizationChanged ):
-      strt = min( strt , v_c05f[wFi]->is_active(tmod->vars()[0]) );
-      stp = max( stp , v_c05f[wFi]->is_active(tmod->vars()[tmod->vars().size()-1]) );
-      if( LinNmsSbst.empty() )
-	   LinNms.clear();
-      else
-       std::set_union( LinNms.begin() , LinNms.end() ,
-			    LinNmsSbst.begin() , LinNmsSbst.end() , LinNms.begin() );
-     LinChgd = true;
-     AlphaChgd = true;
-      break;
-     case( C05FunctionMod::AlphaChanged ):
-      AlphaChgd = true;
-      break;
-     case( C05FunctionMod::AllEntriesChanged ):
-      strt = min( strt , v_c05f[wFi]->is_active(tmod->vars()[0]) );
-      stp = max( stp , v_c05f[wFi]->is_active(tmod->vars()[tmod->vars().size()-1]) );
-      if( LinNmsSbst.empty() )
-       LinNms.clear();
-      else
-       std::set_union( LinNms.begin() , LinNms.end() ,
-			    LinNmsSbst.begin() , LinNmsSbst.end() , LinNms.begin() );
-      LinChgd = true;
-      break;
-     } // switch( tmod->f_type )
-    DoReturn = true;
-    }  // end  if( tmod )
-   } // end C05FunctionModSbst  - - - - - - - - - - - - - - - - - - - - - - -
-
-  // C05FunctionMod - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-  {
-   const auto tmod = std::dynamic_pointer_cast<C05FunctionMod>( mod );
-   if( tmod ) {
-    wFi = get_index_of_component( tmod->function() );
-    FModChg( tmod->shift() , wFi );
-    const Subset &LinNmsMod = tmod->which();
-    switch( tmod->type() ) {
-     case( C05FunctionMod::NothingChanged ):   // both \alpha and g are OK
-      break;                                   // nothing to do
-     case( C05FunctionMod::AllLinearizationChanged ):  // everything changed
-	  strt = min( strt , Index(0) );
-      stp = max( stp , NumVar );
-      if( LinNmsMod.empty() )
-       LinNms.clear();
-      else
-       std::set_union( LinNms.begin() , LinNms.end()  ,
-				  LinNmsMod.begin() , LinNmsMod.end(), std::back_inserter(LinNms) );
-      LinChgd = true;
-	  AlphaChgd = true;
-	  break;
-     case( C05FunctionMod::AlphaChanged ):
-	  AlphaChgd = true;
-      break;
-     case( C05FunctionMod::AllEntriesChanged ):
-	  strt = min( strt , Index(0) );
-      stp = max( stp , NumVar );
-      if( LinNmsMod.empty() )
-       LinNms.clear();
-      else
-       std::set_union( LinNms.begin() , LinNms.end() ,
-			  LinNmsMod.begin() , LinNmsMod.end() , LinNms.begin() );
-      LinChgd = true;
-      break;
-     } // switch( tmod->f_type )
-    DoReturn = true;
-    }  // end  if( tmod )
-   } // end C05FunctionMod  - - - - - - - - - - - - - - - - - - - - - - - - -
-
-  // some/all linearizations changed  - - - - - - - - - - - - - - - - - - - -
-  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
-  if( LinChgd ) {
-
-   if( LinNms.empty() || LinNms.size() == NrItems[ wFi ] )
-    Master->ChgSubG( strt , stp , wFi + 1 );
-   else {
-    Master->ChgSubG( strt , stp , wFi + 1 );
-    /* for( auto &LinearName : LinNms ) {
-     double *G1 = Master->GetItem( wFi + 1 );
-     v_c05f[ wFi ]->get_linearization_coefficients( G1 ,
-    		 make_pair( strt , stp ) , LinearName );
-     Master->SetItemBse( nullptr , NumVar );
-     Master->SetItem( LinearName );
-     } */
-    }
-   }
-
-  // some/all alpha changed   - - - - - - - - - - - - - - - - - - - - - - - -
-  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
-  if( AlphaChgd ) {
-   // a finite f_shift should be treated in a different way but
-   // as of now the finite shifts are ignored by MPSolver
-
-   std::vector< VarValue > G1( NumVar );
-   std::vector< VarValue > Alfa1( Master->MaxName( wFi + 1 ) );
-
-   for( Index i = 0 ; i < Master->MaxName( wFi + 1 ) ; ++i )
-    if( ( ItemVcblr[ i ].first == wFi ) &&
-	    ( ItemVcblr[ i ].second < vBPar2[wFi] ) &&
-		( ItemVcblr[ i ].second >= 0 )  ) {
-     auto AlfaVali = v_c05f[ wFi ]->get_linearization_constant(
-    		       ItemVcblr[ i ].second );
-     if( std::isnan( AlfaVali ) )  // linearization no longer valid
-      Delete( i , true );          // delete it
-     else {                        // linearization still there
-      // compute the linearization error in Lambda
-      v_c05f[ wFi ]->get_linearization_coefficients( G1.data() ,
-		       Range( 0 , NumVar ) , ItemVcblr[ i ].second );
-      Alfa1[ i ] = UpRifFi[ wFi ] - AlfaVali -
-                   std::inner_product( Lambda.begin() , Lambda.end() ,
-				       G1.data() , VarValue( 0 ) );
+    {
+     const auto ttmod = std::dynamic_pointer_cast<FunctionModVarsAddd>(
+								       tmod );
+     if( ttmod ) {
+      addd_vars = true;
+      if( ! to_add ) {
+       // the first time, check that the Modification data agrees with what
+       // we expect
+       if( ttmod->first() != NumVar )
+	throw( std::logic_error( "wrong Variable names in FunctionModVars" )
+	       );
+       }
+      
+      to_add += vars.size();
+      continue;
       }
      }
 
-   Master->ChgAlfa( Alfa1.data() , wFi + 1 );
+    {
+     const auto ttmod = std::dynamic_pointer_cast<FunctionModVarsRngd>(
+								       tmod );
+     if( ttmod ) {
+      rmvd_vars = true;
+      Range rng = ttmod->range();
+      if( rng.first >= NumVar ) {  // all the Variable are deleted already
+       auto nr = rng.second - rng.first;
+       if( nr > to_add )
+	throw( std::logic_error( "removing non-existing Variable" ) );
+       to_add -= nr;               // "virtually" remove them
+       continue;                   // nothing else to do
+       }
+      if( rng.second >= NumVar ) {  // some of the Variable are deleted already
+       auto nr = rng.second - NumVar;
+       if( nr > to_add )
+	throw( std::logic_error( "removing non-existing Variable" ) );
+       to_add -= nr;               // "virtually" remove them
+       rng.second = NumVar;
+       }
+      if( rng.second < NumVar ) {
+       // if deleting the last range of Variable nothing has to be done,
+       // but deleting Variable "in the middle" rather requires moving
+       // down the remaining range of values in Lambda
+       std::copy( Lambda.begin() + rng.second ,
+		  Lambda.begin() + Lambda.end() ,
+		  Lambda.begin() + rng.first );
+       }
+      Subset tdlt( rng.second - rng.first );
+      NumVar -= tdlt.size();
+      Lambda.resize( NumVar );  // adjust Lambda
+      Lambda1.resize( NumVar );
+      if( MaxSol > 1 )
+       LmbdBst.resize( NumVar );
+      std::iota( tdlt.begin() , tdlt.end() , rng.first );
+      Master->RmvVars( tdlt.data() , tdlt.size() );  // remove from MP
+      continue;
+      }
+     }
 
-   //!! PrintBundle();
+    {
+     const auto ttmod = std::dynamic_pointer_cast<FunctionModVarsSbst>(
+								       tmod );
+     if( ttmod ) {
+      rmvd_vars = true;
+      if( ttmod->subset().front() >= NumVar ) {
+       // all the Variable are deleted already
+       if( ttmod->subset().size() > to_add )
+	throw( std::logic_error( "removing non-existing Variable" ) );
+       to_add -= ttmod->subset();  // "virtually" remove them
+       continue;                   // nothing else to do
+       }
+
+      Subset & sbst;
+      Subset tsbst;
+      if( ttmod->subset().back() < NumVar )  // no Variable deleted already
+       sbst = & ttmod->subset();             // delete them all
+      else {                                 // construct the subset to delete
+       auto sbstit = ttmod->subset().end();
+       while( *(--it) >= NumVar );
+       tsbst = Subset( ttmod->subset().begin() , ++it );
+       auto nr = ttmod->subset().size() - tsbst-size();
+       if( nr > to_add )
+	throw( std::logic_error( "removing non-existing Variable" ) );
+       to_add -= nr;               // "virtually" remove them
+       }
+
+      Compact( Lambda , sbst );  // adjust Lambda
+      NumVar -= sbst.size();
+      Lambda.resize( NumVar );
+      Lambda1.resize( NumVar );
+      if( MaxSol > 1 )
+       LmbdBst.resize( NumVar );
+      Master->RmvVars( sbst.data() , sbst.size() );  // remove from MP
+      continue;
+      }
+     }
+
+    // if control reaches here, this is an unknown *FunctionModVars* (??)
+    throw( std:.logic_error( "unknown FunctionModVars" ) );
+
+    }  // end( if( tmod ) )
+   }  // end FunctionModVars
+  }  // end( 4th loop, forward )
+
+ // at this point, the set of Variable in the BundleSolver/Master Problem
+ // coincides with the set of Variable in the C05Function(s), save for the
+ // Variable to be added: in other words, the positions from 0 no NumVar - 1
+ // in the linearizations corresponds to what BundleSolver expects
+
+ // if there are no more Modification to process, no Variable to add, and
+ // no component in need of a reset, all done
+  
+ if( v_mod_tmp.empty() && ( ! to_add ) &&
+     ( reset.find( reset.begin() , reset.end() , true ) == reset.end() ) )
+  return;
+
+ //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // 5th loop: handle "horizontal" changes, i.e., changes of a given range
+ // (subset) of entries in all the linearizations, i.e., C05FunctionMod* and
+ // C05FunctionModLin* with which().empty(). note that due to limitations
+ // of the MPSolver interface, subsets are anyway translated to a range,
+ // thereby possibly requiring also entries that have not changed. if
+ // Variable have been removed the original indices in the Modification need
+ // be translated, and in fact if Variable in the range have been removed
+ // the range can be shrank, up to disappearing altogether. the mapping is
+ // more difficult if Variable have also been added. however we can exploit
+ // the property that if a Variable ever has a name that is larger than its
+ // index in the Modification, this can only mean that the Variable has been
+ // removed and then re-added after that the Modification has been issued.
+ // these Variable can therefore be ignored, since (unless they have been
+ // re-removed) they will be added in the end
+ //
+ // this is the final loop, so the list must be empty at the end
+
+ for( ; ! v_mod.empty() ; v_mod.pop_front() ) {
+  auto mod = v_mod.front();  // pick (a reference to) the first Modification
+
+  Range range( NumVar , 0 );    // an empty range
+  c_Subset * subset = nullptr;  // an empty subset
+  c_Vec_p_Var & vars;           // the affected Variable
+
+  // patiently sift through the possible Modification types to find what mod
+  // exactly is and react accordingly
+
+  {
+   // a C05FunctionModRngd, that at this point can only have which().empty()
+   const auto tmod = std::dynamic_pointer_cast<C05FunctionModRngd>( mod );
+   if( tmod ) {
+    if( ! tmod->which().empty() )
+     throw( std::logic_error( "unexpected nonempty C05FunctionModRngd" ) );
+
+    vars = tmod->vars();
+    range = tmod->range();
+    }
    }
 
-  if( DoReturn )
-   return;
-
-  // C05FunctionModLin  - - - - - - - - - - - - - - - - - - - - - - - - - - -
   {
-   const auto tmod = std::dynamic_pointer_cast<C05FunctionModLin>( mod );
+   // a C05FunctionModSbst, that at this point can only have which().empty()
+   const auto tmod = std::dynamic_pointer_cast<C05FunctionModSbst>( mod );
    if( tmod ) {
-    wFi = get_index_of_component(tmod->function());
-    if( wFi == InINF ) { // 0th component
-      double * G1 = Master->GetItem( 0 );
-      f_lf->get_linearization_coefficients( G1 );
-      for( Index i = 0 ; i < tmod->vars().size() ; ++i )
-       G1[ f_lf->is_active(tmod->vars()[i]) ] +=
-        tmod->delta()[ i ];
-      const Index* SGBse = nullptr;
-      Master->SetItemBse( SGBse , NumVar );
-      Master->SetItem( InINF );
-      } // end if( f_lf )
-     else
-      for( Index i = 0 ; i < Master->MaxName(wFi+1) ; i++ )
-       if( Master->WComponent( i ) == wFi+1 ) {
-        std::vector<double> G1(NumVar);
-        Range range = make_pair( 0, NumVar );
-        v_c05f[ wFi ]->get_linearization_coefficients( G1.data() , range , i );
-        for( Index i = 0 ; i < tmod->vars().size() ; ++i )
-          G1[ v_c05f[ wFi ]->is_active(tmod->vars()[i]) ] +=
-           tmod->delta()[ i ];
-        throw( std::logic_error( "expected to be completed" ) );
-        }
-     } // end  if( tmod )
-    } // end C05FunctionModLin   - - - - - - - - - - - - - - - - - - - - - - -
+    if( ! tmod->which().empty() )
+     throw( std::logic_error( "unexpected nonempty C05FunctionModSbst" ) );
 
-  v_mod.pop_front();   // now the Modification is processed: remove it
+    vars = tmod->vars();
+    subset = & tmod->subset();
+    }
+   }
 
-  }  // end( while( there are Modification ) )
+  {
+   // a C05FunctionModLinRngd implies that a specific range in all the
+   // linearizations must be changed (by adding something)
+   const auto tmod = std::dynamic_pointer_cast<C05FunctionModLinRngd>( mod );
+   if( tmod ) {
+    vars = tmod->vars();
+    range = tmod->range();
+    }
+   }
 
+  {
+   // a C05FunctionModLinSbst implies that a specific subset in all the
+   // linearizations must be changed (by adding something)
+   const auto tmod = std::dynamic_pointer_cast<C05FunctionModLinSbst>( mod );
+   if( tmod ) {
+    vars = tmod->vars();
+    subset = & tmod->subset();
+    }
+   }
+
+  if( ( range.first >= range.second ) && ( ! subset ) )
+   // it is neither of the above: this should not happen
+   throw( std::logic_error( "unexpected Modification slipped in" ) );
+
+  if( ! rmvd_vars ) {
+   // Variable have never been removed, hence the names can be used directly
+   if( subset ) ) {  // turn the subset into a range
+    range.first = subset->front();
+    range.second = subset()->back() + 1;
+    }
+   }
+  else {
+   // Variable have been removed, and hence names need be actualised
+   // this is done by directly checking vars() against the "active"
+   // Variable of v_c05f[ 0 ], which is fairly taken as a representative
+   // since all the C05Function have the same "active" Variable
+   if( ! add_vars ) {
+    // ... but never added: names can have only decreased, but even more
+    // importantly must have remained ordered, i.e., the first "active"
+    // Variable in vars() is the first variable of the range, the last
+    // "active" Variable vars() is the last variable of the range
+    // note that we do not use subset and range here, as the range is
+    // reconstructed from scratch using vars
+    auto lit = vars.begin();
+    for( ; lit != vars.end() ; ++lit ) {
+     range.first = v_c05f[ 0 ]->is_active( *lit );
+     if( range.first < v_c05f[ 0 ]->get_num_active_var() )
+      break;
+     }
+    if( lit == vars.end() )  // no Variable in vars is still "active"
+     continue;               // nothing else to do
+    // since we know that here are some "active" Variable in vars(), this
+    // second loop will necessarily end
+     for( auto rit = vars.rbegin() ; ; ++rit ) {
+      range.second = v_c05f[ 0 ]->is_active( *lit );
+      if( range.second < v_c05f[ 0 ]->get_num_active_var() )
+       break;
+      }
+     ++range.second;  // the range is [ first , second )
+     }
+   else {
+    // the complicated case: Variable have both been removed and added
+    // names can have changed in an almost arbitrary way, except that if
+    // a name has increased then the Variable has been deleted and re-added
+    // and therefore need not be included
+    Subset newnames( vars.size() );
+    auto lit = vars.begin();
+    auto nni = newnames.begin();
+    if( subset ) {
+     auto sit = subset->begin();
+     for( ; lit != vars.end() ; ++lit , ++sit ) {
+      auto i = v_c05f[ 0 ]->is_active( *lit );
+      if( ( i <= *sit ) && ( i < v_c05f[ 0 ]->get_num_active_var() ) )
+       *(nni++) = i;
+      }
+     }
+    else {
+     for( ; lit != vars.end() ; ++lit , ++range.first ) {
+      auto i = v_c05f[ 0 ]->is_active( *lit );
+      if( ( i <= range.first ) && ( i < v_c05f[ 0 ]->get_num_active_var() ) )
+       *(nni++) = i;
+      }
+     }
+    if( nni == newnames.begin() )  // no Variable in vars is still "active"
+     continue;                     // nothing else to do
+    newnames.resize( std::distance( newnames.begin() , nni ) );
+    range.first = newnames.front();
+    range.second = newnames.back();
+    ++range.second;  // the range is [ first , second )
+    }
+   }
+
+  // now actually do it
+  Master->ChgSubG( range.first , range.second , NrFi + 1 );
+
+  }  // end( 5th loop, forward )
+
+ //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // if there are Variable to add, do it now in one blow
+ // there is a trade-off here: doing this now causes Master->AddVars() to
+ // (indirectly) call get_linearization_coefficients() on a smaller set of
+ // linearizations, if additions are done, but on the other hand increases
+ // NumVar and therefore the work done in later stages. hence, this is done
+ // here only if no additions are done
+
+ bool toadd = Addd.find_if( Addd.begin() , Addd.end() ,
+			    []( Subset & Ak ) { return( ! Ak.empty() ); }
+			    ) != Addd.end();
+ if( to_add && ( ! toadd ) ) {
+  NumVar += to_add;
+  Lambda.resize( NumVar , 0 );
+  Lambda1.resize( NumVar , 0 );
+  if( MaxSol > 1 )
+   LmbdBst.resize( NumVar , 0 );
+  Master->AddVars( to_add );
+  to_add = 0;  // done already
+  }
+
+ //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // if there are linearization to add/change, do it now in one blow
+ // note that due to limitations in the MPSolver interface, changing a
+ // linearization is identical to adding one, even if the change was limited
+ // to a range/subset of the entries
+
+ if( toadd ||
+     ( Chgd.find_if( Chgd.begin() , Chgd.end() ,
+		     []( Subset & Ck ) { return( ! Ck.empty() ); }
+		     ) != Chgd.end() ) ) {
+  // at least a component has had lnearizations added or changed: need to
+  // construct the inverse dictionary < component , global pool position >
+  // --> bundle position (if not constructed already) to do additions/changes
+  // efficiently
+
+  compute_inverse_dictionary( inv_dict );
+
+  for( Index k = 0 ; k < NrFi ; ++k ) {
+   if( Chgd[ k ].size() >= NrItems[ k ] )  // all items change
+    AlphaC[ k ] = reset[ k ] = false;      // this component is served
+
+   // compute the union between Addd[ k ] and Chgd[ k ] into Addd[ k ]
+   if( Addd[ k ].empty() )
+    if( Chgd[ k ].empty() )
+     continue;
+    else
+     Addd[ k ] = std::move( Chgd[ k ] );
+   else
+    if( ! Chgd[ k ].empty() ) {
+     Subset tmp( Addd[ k ].size() + Chgd[ k ].size() );
+     std::set_union( Addd[ k ].begin() , Addd[ k ].end() ,
+		     Chgd[ k ].begin() , Chgd[ k ].end() , tmp.begin() );
+     Addd[ wFi ] = std::move( tmp );
+     }
+
+   for( auto i : Addd[ k ] ) {
+    double *G1 = Master->GetItem( k + 1 );
+    v_c05f[ k ]->get_linearization_coefficients( G1 ,
+						 make_pair( 0 , NumVar ) , i );
+    auto Ai = v_c05f[ wFi ]->get_linearization_constant( i );
+    Master->SetItemBse( nullptr , NumVar );
+    double ScPri;
+    if( v_c05f[ wFi ]->is_linearization_vertical( i ) )
+     Master->CheckCnst( Ai , ScPri , Lambda.data() );
+    else {
+     Ai = UpRifFi[ k ] - Ai -
+          std::inner_product( Lambda.begin() , Lambda.end() ,
+			      G1.data() , VarValue( 0 ) );
+     Master->CheckSubG( 0 , 0 , Ai , ScPri );
+     }
+    Master->SetItem( inv_dict[ k ][ i ] );
+    }
+   }
+  }  // end( if( additions or changes ) )
+
+ //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // if some component need be reset
+
+ if( reset.find( reset.begin() , reset.end() , true ) != reset.end() )
+  for( Index k = 0 ; k < NrFi ; ++k )
+   if( reset[ k ] )
+    Master->ChgSubG( 0 , NumVar , k + 1 );
+
+ //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // if there are Alphas to change, do it now in one blow
+
+ if( AlphaC.find( AlphaC.begin() , AlphaC.end() , true ) != AlphaC.end() ) {
+  std::vector< VarValue > Gi( NumVar );
+
+  for( Index k = 0 ; k < NrFi ; ++k )
+   if( AlphaC[ k ] ) {
+    std::vector< VarValue > Alfa( Master->MaxName( k + 1 ) );
+
+    for( Index i = 0 ; i < Master->MaxName( k + 1 ) ; ++i )
+     if( ( ItemVcblr[ i ].first == k ) &&
+	 ( ItemVcblr[ i ].second < vBPar2[ k ] ) &&
+	 ( ItemVcblr[ i ].second >= 0 )  ) {
+      auto Ai = v_c05f[ k ]->get_linearization_constant(
+						     ItemVcblr[ i ].second );
+      if( std::isnan( Ai ) )  // linearization no longer valid
+       throw( std::logic_error( "inconsistent ItemVcblr" ) );
+
+      // compute the linearization error in Lambda
+      v_c05f[ k ]->get_linearization_coefficients( G1.data() ,
+						   Range( 0 , NumVar ) ,
+						   ItemVcblr[ i ].second );
+      Alfa[ i ] = UpRifFi[ wFi ] - Ai -
+                  std::inner_product( Lambda.begin() , Lambda.end() ,
+				      Gi.data() , VarValue( 0 ) );
+      }
+
+    Master->ChgAlfa( Alfa.data() , k + 1 );
+    }
+  }
+
+ //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // if there are (still) Variable to add, do it now in one blow
+
+ if( to_add ) {
+  NumVar += to_add;
+  Lambda.resize( NumVar , 0 );
+  Lambda1.resize( NumVar , 0 );
+  if( MaxSol > 1 )
+   LmbdBst.resize( NumVar , 0 );
+  Master->AddVars( to_add );
+  }
+
+ //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // and this, finally, is all!!
 
  }  // end( BundleSolver::process_outstanding_Modification ) - - - - - - - - -
 
