@@ -3128,8 +3128,11 @@ void BundleSolver::process_outstanding_Modification( void )
      if( ttmod ) {
       switch( ttmod->type() ) {
        case( C05FunctionMod::GlobalPoolRemoved ):
-	if( ttmod->which().empty() )
+	if( ttmod->which().empty() ) {
 	 reset[ wFi ] = true;
+	 to_delete = true;
+	 }
+	continue;
        case( C05FunctionMod::NothingChanged ):
 	to_delete = true;
        case( C05FunctionMod::AllLinearizationChanged ):
