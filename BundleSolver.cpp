@@ -87,6 +87,59 @@ void Compact( BundleSolver::Vec_VarValue & g , BundleSolver::c_Subset & B )
  }  // end( Compact )
 
 /*--------------------------------------------------------------------------*/
+
+void set_difference_in_place( BundleSolver::Subset & S1 ,
+			      BundleSolver::c_Subset & S2 )
+{
+ // removes from S1 all elements in S2, resizing it accordingly
+ // both S1 and S2 are assumed to be ordered and with unique elements
+
+ auto S1rit = S1.begin();
+ auto S2rit = S2.begin();
+
+ // first phase: find the first element present in both S1 and S2
+
+ for( ; ; ) {
+  while( ( S1rit != S1.end() ) && ( *S1rit < *S2rit ) )
+   ++S1rit;
+  if( S1rit == S1.end() )
+   break;
+  while( ( S2rit != S2.end() ) && ( *S1rit > *S2rit ) )
+   ++S2rit;
+  if( S2rit == S2.end() )
+   break;
+  if( *S1rit == *S2rit )
+   break;
+  }
+
+ if( S1rit == S1.end() )  // if there are none
+  return;                 // all done
+
+ // now S1rit points to the first element in S1 == than the first in S2
+ // elements in S1 after the common one(s) will have to be moved
+ auto S1wit = S1rit++;  // skip the first equal element
+ S2rit++;
+
+ for( ; ( S1rit != S1.end() ) && ( S2rit != S2.end() ) ; ) {
+  while( ( S1rit != S1.end() ) && ( *S1rit < *S2rit ) )
+   *(S1wit++) = *(S1rit++);
+  if( S1rit == S1.end() )
+   break;
+  while( ( S2rit != S2.end() ) && ( *S1rit > *S2rit ) )
+   ++S2rit;
+  if( S2rit == S2.end() )
+   break;
+  if( *S1rit == *S2rit ) { ++S1rit; ++S2rit; }
+  }
+
+ while( S1rit != S1.end() )  // copy the part remaining after the end of S2
+  *(S1wit++) = *(S1rit++);
+ 
+ S1.resize( std::distance( S1.begin() , S1wit ) );
+ 
+ }  // end( Compact )
+
+/*--------------------------------------------------------------------------*/
 /*----------------------------- STATIC MEMBERS -----------------------------*/
 /*--------------------------------------------------------------------------*/
 
@@ -3524,20 +3577,10 @@ void BundleSolver::process_outstanding_Modification( void )
      else {
       // only those items that are not added and/or removed need be changed
       Subset tmp( tmod->which() );
-      if( ! Addd[ wFi ].empty() ) {
-       Subset tmp2( tmp.size() );
-       std::set_difference( tmp.begin() , tmp.end() ,
-			    Addd[ wFi ].begin() , Addd[ wFi ].end() ,
-			    tmp2.begin() );
-       tmp = std::move( tmp2 );
-       }
-      if( ( ! Rmvd[ wFi ].empty() ) && ( ! tmp.empty() ) ) {
-       Subset tmp2( tmp.size() );
-       std::set_difference( tmp.begin() , tmp.end() ,
-			    Rmvd[ wFi ].begin() , Rmvd[ wFi ].end() ,
-			    tmp2.begin() );
-       tmp = std::move( tmp2 );
-       }
+      if( ! Addd[ wFi ].empty() )
+       set_difference_in_place( tmp , Addd[ wFi ] );
+      if( ( ! Rmvd[ wFi ].empty() ) && ( ! tmp.empty() ) )
+       set_difference_in_place( tmp , Rmvd[ wFi ] );
       if( Chgd[ wFi ].empty() )
        Chgd[ wFi ] = std::move( tmp );
       else {
@@ -3561,20 +3604,10 @@ void BundleSolver::process_outstanding_Modification( void )
 		      tmp.begin() );
       Addd[ wFi ] = std::move( tmp );
       }
-     if( ! Rmvd[ wFi ].empty() ) {
-      Subset tmp( Rmvd[ wFi ].size() );
-      std::set_difference( Rmvd[ wFi ].begin() , Rmvd[ wFi ].end() ,
-			   tmod->which().begin() , tmod->which().end() ,
-			   tmp.begin() );
-      Rmvd[ wFi ] = tmp;
-      }
-     if( ( ! reset[ wFi ] ) && ( ! Chgd[ wFi ].empty() ) ) {
-      Subset tmp( Chgd[ wFi ].size() );
-      std::set_difference( Chgd[ wFi ].begin() , Chgd[ wFi ].end() ,
-			   tmod->which().begin() , tmod->which().end() ,
-			   tmp.begin() );
-      Chgd[ wFi ] = std::move( tmp );
-      }
+     if( ! Rmvd[ wFi ].empty() )
+      set_difference_in_place( Rmvd[ wFi ] , tmod->which() );
+     if( ( ! reset[ wFi ] ) && ( ! Chgd[ wFi ].empty() ) )
+      set_difference_in_place( Chgd[ wFi ] , tmod->which() );
      to_delete = true;
      continue;
     case( C05FunctionMod::GlobalPoolRemoved ):
@@ -3590,20 +3623,10 @@ void BundleSolver::process_outstanding_Modification( void )
 		      tmp.begin() );
       Rmvd[ wFi ] = std::move( tmp );
       }
-     if( ! Addd[ wFi ].empty() ) {
-      Subset tmp( Addd[ wFi ].size() );
-      std::set_difference( Addd[ wFi ].begin() , Addd[ wFi ].end() ,
-			   tmod->which().begin() , tmod->which().end() ,
-			   tmp.begin() );
-      Addd[ wFi ] = std::move( tmp );
-      }
-     if( ( ! reset[ wFi ] ) && ( ! Chgd[ wFi ].empty() ) ) {
-      Subset tmp( Chgd[ wFi ].size() );
-      std::set_difference( Chgd[ wFi ].begin() , Chgd[ wFi ].end() ,
-			   tmod->which().begin() , tmod->which().end() ,
-			   tmp.begin() );
-      Chgd[ wFi ] = std::move( tmp );
-      }
+     if( ! Addd[ wFi ].empty() )
+      set_difference_in_place( Addd[ wFi ] , tmod->which() );
+     if( ( ! reset[ wFi ] ) && ( ! Chgd[ wFi ].empty() ) )
+      set_difference_in_place( Chgd[ wFi ] , tmod->which() );
      to_delete = true;
     }  // end( switch( tmod->type() ) )
    }  // end( if( ttmod ) )
