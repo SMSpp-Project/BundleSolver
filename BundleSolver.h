@@ -89,9 +89,9 @@
  *     C05FunctionModVarsRngd, OR ALL C05FunctionModVarsSbst, AND THEY MUST
  *     CHANGE THE "ACTIVE" Variable IN PRECISELY THE SAME WAY.
  *
- * \version 0.20
+ * \version 0.30
  *
- * \date 26 - 06 - 2020
+ * \date 07 - 07 - 2020
  *
  * \author Antonio Frangioni \n
  *         Operations Research Group \n
@@ -310,7 +310,7 @@ public:
 
  intBPar6 ,  ///< control how the min/max number of new linearizations changes
 
- intBPar7 ,  ///< it decides if delete a linearization
+ intBPar7 ,  ///< how well-behaved BundleSolver is w.r.t. other Solver
 
  intMnSSC ,  ///< minimum number of consecutive Serious Steps
 
@@ -431,11 +431,11 @@ public:
   reduction = dflt_int_par[ intOSImp2 - intLastParCDAS ];
   threads = dflt_int_par[ intOSImp3 - intLastParCDAS ];
 
-  MaxTime = dflt_dbl_par[ dblMaxTime - dblLastParCDAS ];
-  RelAcc = dflt_dbl_par[ dblRelAcc - dblLastParCDAS ];
-  AbsAcc = dflt_dbl_par[ dblAbsAcc - dblLastParCDAS ];
-  RAccSol = dflt_dbl_par[ dblRAccSol - dblLastParCDAS ];
-  AAccSol = dflt_dbl_par[ dblAAccSol - dblLastParCDAS ];
+  MaxTime = CDASolver::get_dflt_dbl_par( dblMaxTime );
+  RelAcc = CDASolver::get_dflt_dbl_par( dblRelAcc );
+  AbsAcc = CDASolver::get_dflt_dbl_par( dblAbsAcc );
+  RAccSol = CDASolver::get_dflt_dbl_par( dblRAccSol );
+  AAccSol = CDASolver::get_dflt_dbl_par(dblAAccSol );
   tStar = dflt_dbl_par[ dbltStar - dblLastParCDAS ];
   RelMPAcc = dflt_dbl_par[ dblRelMPAcc - dblLastParCDAS ];
   RMPAccSol = dflt_dbl_par[ dblRMPAccSol - dblLastParCDAS ];
@@ -546,9 +546,82 @@ public:
   *    4: aBP3 is set to
   *       ( BPar5 > 0 ? BPar4 : BPar3 ) + BPar5 / log10( EpsU / RAccSol )
   *
-  * - intBPar7[ 1 ]: true if BundleSolver has to delete the linearization
-                      of the C05Function, false otherwise
+  * - intBPar7 [2]: This parameter, coded bit-wise, controls if BundleSolver
+  *                 "tries to play nice" with any other Solver that may
+  *   concurrently be using the same C05Function. The point is that each of
+  *   these Solver is producing new linearizations, and possibly storing
+  *   them in, or removing them from, the "finite resource" of the global
+  *   pool(s) of the C05Function(s). Hence, what the BundleSolver does to the
+  *   global pool may have an impact on the other Solver, if any. This
+  *   parameter controls whether BundleSolver tries as hard as possible to
+  *   avoid impacting the other Solver operations, or if it rather assumes to
+  *   be "the only one" working with the C05Function, and therefore "treats
+  *   the global pool as its exclusive property". To do so, BundleSolver
+  *   handles the slot of the global pool in different ways according to the
+  *   value in the first two bits of intBPar7 ( intBPar7 & 3 ):
   *
+  *   = 0 means that BundleSolver will never override any position in the
+  *     global pool unless it strictly needs to. This means that even if a
+  *     linearization is removed from the bundle (the master problem), it is
+  *     kept in the global pool of the corresponding component until the
+  *     latter is completely full. Only then linearizations are removed,
+  *     when necessary to make space for newly generated ones. Note that
+  *     BundleSolver always "proceeds from left to right", i.e., selects the
+  *     linearization in the global pool with smallest "name". This creates
+  *     a sort of FIFO order whereby the oldest linearizations are removed
+  *     first, which makes general sense.
+  *
+  *   = 1 means that BundleSolver will not immediately delete from the global
+  *     pool a linearization that it removes from the bundle (the master
+  *     problem). While the lineariztion is kept there, BundleSolver
+  *     considers it "free", and can immediately after re-use that position
+  *     to store a newly computed linearization. Again, the order is that if
+  *     smaller names first, so if a linearization with "large name" is
+  *     removed from the global pool it may take some time before it is
+  *     actually overwritten by BundleSolver, thereby leaving it available
+  *     to other Solver.
+  *
+  *   = 2 means that BundleSolver will immediately delete from the global
+  *     pool any linearization that it removes from the bundle (the master
+  *     problem). This makes sense if BundleSolver is the only Solver
+  *     producing and consuming linearizations in these C05Function(s),
+  *     since it allwas them to immediately delete all the memory (which may
+  *     be significant) associated with that linearization in the global pool.
+  *     However, if a linearization is found to be a "better copy" of a known
+  *     one (the new linearization has the same linear part but a larger
+  *     constant, and therefore provides a tighter constraint on the epigraph
+  *     of the convex function, so that no Solver should complain if the
+  *     weaker constraint is removed provided that the better one is added),
+  *     still the old linearization is kept in the global pool (but not in the
+  *     bundle) unless it is structly necessary to do so.
+  *
+  *   = 3 means that BundleSolver will immediately delete from the global
+  *     pool any linearization that it removes from the bundle (the master
+  *     problem); furthermore, if it finds a "better copy" of an existing
+  *     linearization the new one immediately replaces the old one, in the
+  *     global pool as well as in the bundle.
+  *
+  *   The bit 2 ( intBPar7 & 4 ) rather decides how BundleSolver reacts to
+  *   Modification telling that some other Solver have generated a new
+  *   linearization. If the bit is 0, then BundleSolver plainly ignores it,
+  *   which is likely the best strategy if producing linearizations is
+  *   "cheap". However, BundleSolver does record that a linearization is
+  *   there: if ( intBPar7 & 3 ) == 0, it will avoid to touch it unless
+  *   strictly necessary. If the bit is 1 instead, then BundleSolver will
+  *   right away add the linearization to its bundle (the master problem),
+  *   which is likely the best strategy if producing linearizations is
+  *   "costly" and therefore it makes sense to profit from the effort that
+  *   the C05Function(s) have done on behalf of the other Solver(s).
+  *
+  *   The bit 3 ( intBPar7 & 8 ) has a similar role for the initialization
+  *   phase: if it is == 1, then BundleSolver will also scan the global pool
+  *   of each component when it is attached to the Block, and immediately
+  *   add to the bundle every linearization it finds there.
+  *
+  *   Of course, setting these bits to 1 has no impact if no other Solver is
+  *   attached to the same Block, which is why the default value is 0 (to
+  *   pair with the default value of 3 for the first two bits, indicating
+  *   exclusive ownership).
   *
   * - intMnSSC [0]: minimum number of consecutive SS with the same t that
   *                 have to be performed before t is allowed to grow
@@ -852,11 +925,11 @@ public:
 
 /*--------------------------------------------------------------------------*/
 
- virtual bool has_var_solution( void ) override { return( true ); }
+ bool has_var_solution( void ) override { return( true ); }
 
  /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- virtual bool has_dual_solution( void ) override { return( true ); }
+ bool has_dual_solution( void ) override { return( true ); }
 
 /*--------------------------------------------------------------------------*/
 /*
@@ -867,22 +940,26 @@ public:
 /*--------------------------------------------------------------------------*/
  /// write the "current" solution
 
- virtual void get_var_solution( Configuration *solc = nullptr ) override
+ void get_var_solution( Configuration *solc = nullptr ) override
  {
-  // TODO: do it!!
-  if( ( MaxSol > 1 ) && ( UpFiBest < UpRifFi[ NrFi ] ) )
-   throw( std::logic_error( "writing LmbdBst non implemented yet" ) );
-  else
-   throw( std::logic_error( "writing Lambda non implemented yet" ) );
+  if( ( MaxSol > 1 ) && ( UpFiBest < UpRifFi[ NrFi ] ) ) {
+   for( Index i = 0 ; i < NumVar ; i++ )
+    LamVcblr[ i ]->set_value( LmbdBst[ i ] );
+   }
+  else {
+   for( Index i = 0 ; i < NumVar ; i++ )
+    LamVcblr[ i ]->set_value( Lambda[ i ] );
+   }
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// write the "current" dual solution
- virtual void get_dual_solution( Configuration *solc = nullptr ) override;
+
+ void get_dual_solution( Configuration *solc = nullptr ) override;
 
 /*--------------------------------------------------------------------------*/
 
- virtual bool new_var_solution( void ) override
+ bool new_var_solution( void ) override
  {
   if( ( MaxSol > 1 ) && ( UpFiBest < UpRifFi[ NrFi ] ) ) {
    // dirty trick: pretend that LmbdBst is not better than Lambda by
@@ -898,42 +975,26 @@ public:
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- virtual bool new_dual_solution( void )  override
- {
-  return( false );
-  }
+ bool new_dual_solution( void )  override { return( false ); }
 
 /*--------------------------------------------------------------------------*/
 /*
- virtual void set_unbounded_threshold( const VarValue thr ) override { }
+  void set_unbounded_threshold( const VarValue thr ) override { }
+
+  bool has_var_direction( void ) override { return( true ); }
+
+  bool has_dual_direction( void ) override { return( true ); }
+
+  void get_var_direction( Configuration *dirc = nullptr ) override {}
+
+  void get_dual_direction( Configuration *dirc = nullptr ) override {}
+
+  virtual bool new_var_direction( void ) override { return( false ); }
+  
+  virtual bool new_dual_direction( void ) override{ return( false ); }
 */
 
-/*--------------------------------------------------------------------------*/
-
- virtual bool has_var_direction( void ) override { return( true ); }
-
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
-
- virtual bool has_dual_direction( void ) override { return( true ); }
-
-/*--------------------------------------------------------------------------*/
- /// write the current direction
- virtual void get_var_direction( Configuration *dirc = nullptr ) override
- {
-  }
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
- /// write the current dual direction
- virtual void get_dual_direction( Configuration *dirc = nullptr ) override
- {
-  }
-
-/*--------------------------------------------------------------------------*/
-/*
- virtual bool new_var_direction( void ) override { return( false ); }
-
- virtual bool new_dual_direction( void ) override{ return( false ); }
-*/
 /*@} -----------------------------------------------------------------------*/
 /*-------------- METHODS FOR READING THE DATA OF THE Solver ----------------*/
 /*--------------------------------------------------------------------------*/
@@ -947,36 +1008,21 @@ public:
 /*--------------------------------------------------------------------------*/
 /** @name Handling the parameters of the BundleSolver
  *
- * Each BundleSolver< MCFC > may have its own extra int / double parameters. If
- * this is the case, it will have to specialize the following methods to
- * handle them. The general definition just handles the case of the
- *
- * intLastParCDAS ==> kReopt             whether or not to reoptimize
- *
- * extra (int) parameter and otherwise issues the method of the base
- * CDASolver class, which is OK for each MCFC that does *not* have any extra
- * parameter of the corresponding type (apart from that). The get_*_par()
- * methods exploit the same two const static arrays Solver_2_MCFClass_int and
- * Solver_2_MCFClass_dbl as the set_*_par(), with a negative entry meaning
- * "there is no such parameter in BundleSolver".
  *  @{ */
 
- virtual idx_type get_num_int_par( void ) const override
- {
+ idx_type get_num_int_par( void ) const override {
   return( idx_type( intLastBndSlvPar ) );
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- virtual idx_type get_num_dbl_par( void ) const override
- {
+ idx_type get_num_dbl_par( void ) const override {
   return( idx_type( dblLastBndSlvPar ) );
   }
 
 /*--------------------------------------------------------------------------*/
  
- int get_dflt_int_par( const idx_type par ) const override
- {
+ int get_dflt_int_par( const idx_type par ) const override {
   if( ( par >= intLastParCDAS ) && ( par < intLastBndSlvPar ) )
    return( dflt_int_par[ par - intLastParCDAS ] );
   else
@@ -985,8 +1031,7 @@ public:
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  
- double get_dflt_dbl_par( const idx_type par ) const override
- {
+ double get_dflt_dbl_par( const idx_type par ) const override {
   if( ( par >= dblLastParCDAS ) && ( par < dblLastBndSlvPar ) )
    return( dflt_dbl_par[ par - dblLastParCDAS ] );
   else
@@ -1003,8 +1048,7 @@ public:
 
 /*--------------------------------------------------------------------------*/
 
- idx_type int_par_str2idx( const std::string & name ) const override
- {
+ idx_type int_par_str2idx( const std::string & name ) const override {
   const auto it = int_pars_map.find( name );
   if( it != int_pars_map.end() )
    return( it->second );
@@ -1014,8 +1058,7 @@ public:
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- idx_type dbl_par_str2idx( const std::string & name ) const override
- {
+ idx_type dbl_par_str2idx( const std::string & name ) const override {
   const auto it = dbl_pars_map.find( name );
   if( it != dbl_pars_map.end() )
    return( it->second );
@@ -1025,8 +1068,7 @@ public:
 
 /*--------------------------------------------------------------------------*/
 
- const std::string & int_par_idx2str( const idx_type idx ) const override
- {
+ const std::string & int_par_idx2str( const idx_type idx ) const override {
   if( ( idx >= intLastParCDAS ) && ( idx < intLastBndSlvPar ) )
    return( int_pars_str[ idx - intBPar1 ] );
   else
@@ -1035,8 +1077,7 @@ public:
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- const std::string & dbl_par_idx2str( const idx_type idx ) const override
- {
+ const std::string & dbl_par_idx2str( const idx_type idx ) const override {
   if( ( idx >= dblLastParCDAS ) && ( idx < dblLastBndSlvPar ) )
    return( dbl_pars_str[ idx - dblLastParCDAS ] );
   else
@@ -1126,8 +1167,7 @@ public:
 
 /*--------------------------------------------------------------------------*/
 
- VarValue eps_fi( VarValue fi , VarValue releps ) const
- {
+ VarValue eps_fi( VarValue fi , VarValue releps ) const {
   if( fi < 0 ) fi = - fi;
   if( fi < 1 ) fi = 1;
   return( releps * fi );
@@ -1135,15 +1175,13 @@ public:
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- VarValue max_error( VarValue fi , VarValue releps ) const
- {
+ VarValue max_error( VarValue fi , VarValue releps ) const {
   return( std::min( eps_fi( fi , releps ) , AbsAcc ) );
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- VarValue max_error( VarValue releps ) const
- {
+ VarValue max_error( VarValue releps ) const {
   c_VarValue FiL = UpFiLmb[ NrFi ];
   if( ( FiL >= Inf< VarValue >() ) || ( FiL <= - Inf< VarValue >() ) )
    return( Inf< VarValue >() );
@@ -1183,8 +1221,7 @@ public:
  int BPar4;         ///< min number of items fetched from Fi() at each call
  double BPar5;      ///< control how the actual BPar3 changes over time
  int BPar6;         ///< control how the actual BPar3 changes over time
- int BPar7;        ///< true if BundleSolver has to delete the linearization
-                    ///< of the C05Function, false otherwise
+ int BPar7;         ///< if BundleSolver "plays nice" with other Solver
 
  double mxIncr;     ///< max increase t parameter
  double mnIncr;     ///< min increase t parameter
@@ -1242,14 +1279,12 @@ public:
  bool tHasChgd;       ///< true if t has changed since the last MP
 
  Subset whisZ;     /**< the position in the bundle where the "aggregate
-		       * subgradient" Z[ k ] of "component" k is kept in
-		       * whisZ[ k ]; Inf<Index>() means it is not in the
-		       * bundle */
+		    * subgradient" Z[ k ] of "component" k is kept in
+		    * whisZ[ k ]; Inf<Index>() == it is not in the bundle */
  Subset whisG1;    ///< "representative subgradient" for each component
  Vec_VarValue ScPr1;  ///< ScalarProduct( dir , G[ WhIsG1[ k ] ] )
  Vec_VarValue Alfa1;  /**< linearization error of G[ WhIsG1[ k ] ] w.r.t. the
 		       * current point Lambda. */
- Vec_VarValue DeltaAlfa;  ///< correction of Fi-values due to inexactness
 
  VarValue LowerBound;  ///< Lower Bound over (the various components of) Fi
 
@@ -1268,45 +1303,72 @@ public:
 
  int CNSCntr;          ///< counter of consecutive NS
 
- vector< Index > vBPar2; ///< dimension of the global pools
-              ///< vBPar2[NrFi] is the dimension of the bundle
- std::priority_queue<Index> FreList;  ///< list of free positions
- std::vector< Index > NrItems;  ///< Number of items for component
+ Subset vBPar2;  ///< dimension of the global pools of each component
 
- /**< we distinguish three different type of *free* slots of the
-      global pool:
-   	- the free one (a), never assigned, roughly speaking it
-      is one of the last free positions;
-    - used slot (b), its linearization has been removed
-      or could be removed; that slot is in the set "DFItems"
-    - almost busy slot (c), its linearization could be removed
-      but *only if* the slots (a) and (b) are not available;
-      it belongs to the set "NFItems" */
+ std::priority_queue< Index > FreList;
+ ///< list of free positions in the bundle
 
- std::vector< Index > DFItems; ///< Free items
- std::vector< Index > NFItems; ///< Not necessarily free items
+ /** NrItems[ k ] contains the number of items in the bundle (master problem)
+  * for component k. If ( BPar7 & 3 ) < 3, this number may be strictly less
+  * than the number of linearizations in the global pool of component k,
+  * since removals from the bundle do not imply removals from the global pool
+  */
 
- /**< vocabulary of items: first field is the component name,
-  second field is the name in the pool; for item *i* if
-  ItemVcblr[i].second is INF the item i is never assigned; if
-  ItemVcblr[i].second >= BPar2[ i ] then the slot
-  ItemVcblr[i].second - BPar2[ i ] of the global pool of
-  the component ItemVcblr[i].first is of the type b);
-  if ItemVcblr[i].second < 0 then the slot
-  ItemVcblr[i].second + BPar2[ i ] of the global pool of
-  the component ItemVcblr[i].first is of the type c) */
+ Subset NrItems;  ///< number of items in the bundle for each component
 
- std::vector< std::pair< Index , SIndex > > ItemVcblr;
+ /** FrFItem[ k ] contains the index of the first position in the global
+  * pool of component k where BundleSolver can put a new linearization when
+  * the corresponding item is added to the bundle (master problem). Note
+  * that whether a position is suitable to this depends on BPar2: if
+  * ( BPar7 & 3 == 0 ), then the position must be completely empty
+  * (InvItemVcblr[ k ][ i ] == INF), while if ( BPar7 & 3 != 0 ) then
+  * another linearization can be in that position already provided that
+  * there is no corresponding item in the bundle
+  * (v_BPar2[ k ] <= InvItemVcblr[ k ][ i ] < INF). */
 
- Vec_SIndex OOBase;   /**< Out-Of-Base counters:
-		       * = Inf<SIndex>() means no item is there
-		       * = k > 0 means out of base since k iterations
-		       * = 0 means in the current base but potentially
-		       *   removable
-		       * = a *finite* negative value - k means not
-		       *    removable for the next k iterations: note that
-		       *  some items in base may be such
-		       * = - Inf<SIndex>() means unremovable */
+ Subset FrFItem;  ///< the first free item in each global pool
+
+ /** MaxItem[ k ] contains 1 + the maximum index of a position in the
+  * global pool of component k where a linearization is stored; if
+  * MaxItem[ k ] == 0, then the global pool is empty. Note that this
+  * ignores the fact that a position in the global pool corresponds or
+  * not to an item in the bundle: all linearizations count. As a
+  * consequence it must always be MaxItem[ k ] >= FrFItem[ k ]. */
+
+ Subset MaxItem;  ///< the first unused item in each global pool
+
+ /** Vocabulary of items: ItemVcblr[ i ].first is the component name
+  * and ItemVcblr[ i ].second field is the name in the global pool of
+  * that component for item in position i of the bundle (master problem).
+  * ItemVcblr[ i ].second == INF means that position i in the bundle is
+  * not used. */
+
+ std::vector< std::pair< Index , Index > > ItemVcblr;
+
+ /** Inverse vocabulary of items. InvItemVcblr[ k ] is a Subset of size
+  * vBPar2[ k ] and describes the global pool of component k. With
+  * p = InvItemVcblr[ k ][ i ], if p < vBPar2[ NrFi ], then the linearization
+  * with name i in the global pool of h is in the bundle at position p.
+  * If p == INF, then there is no linearization with name i in the global
+  * pool of k. If vBPar2[ NrFi ] <= p < INF, then there is a inearization with
+  * name i in the global pool of h, but it is not in the bundle.
+  *
+  * NOTE: THE GLOBAL POOL OF SOME C05Function CAN BE LARGER THAN vBPar2[ k ],
+  * BUT ALL ELEMENTS WITH NAME LARGER THAN vBPar2[ k ] ARE NEVER USED OR
+  * CHANGED BY BundleSolver. */
+
+ std::vector< Subset > InvItemVcblr;
+
+  /** Out-Of-Base counters: if OOBase[ i ]
+   * = Inf<SIndex>() then there is no item in position i of the bundle
+   * = k > 0 means that the item in position i is out of base since k
+   *   iterations
+   * = 0 means in the current base but potentially removable
+   * = a *finite* negative value - k means not removable for the next k
+   *   iterations: note that some items in base may be such
+   * = - Inf<SIndex>() means unremovable */
+
+ Vec_SIndex OOBase;
 
  bool TrueLB;         /**< true if LowerBound is a "true" lower bound rather
 		       * than a "conditional" one */
@@ -1357,7 +1419,7 @@ public:
  Vec_VarValue LwFiLmb;    ///< lower function value vector at Lambda
 
  Index MaxNrEvls;
- std::vector<Index> CurrNrEvls;
+ Subset CurrNrEvls;
 
  double DeltaStar;
  double NrmD;
@@ -1430,19 +1492,19 @@ class FakeFiOracle : public FiOracle
 /** @name Other initializations
     @{ */
 
-   virtual void SetNDOSolver( NDOSolver *NwSlvr = 0 ) override;
+   void SetNDOSolver( NDOSolver *NwSlvr = 0 ) override;
 
 /*--------------------------------------------------------------------------*/
 
-   virtual void SetFiLog( ostream *outs = 0 , const char lvl = 0 ) override;
+   void SetFiLog( ostream *outs = 0 , const char lvl = 0 ) override;
 
 /*--------------------------------------------------------------------------*/
 
-   virtual void SetFiTime( const bool TimeIt = true ) override;
+   void SetFiTime( const bool TimeIt = true ) override;
 
 /*--------------------------------------------------------------------------*/
 
-   virtual void SetMaxName( cIndex MxNme = 0 ) override;
+   void SetMaxName( cIndex MxNme = 0 ) override;
 
 /*@} -----------------------------------------------------------------------*/
 /*-------------- METHODS FOR READING THE DATA OF THE PROBLEM ---------------*/
@@ -1455,75 +1517,75 @@ class FakeFiOracle : public FiOracle
  *  implementation of GetMaxNumVar(). The maximum number of variables is
  *  equal to the current number of variable*/
 
-  virtual Index GetNumVar( void ) const override;
+   Index GetNumVar( void ) const override;
 
 /*--------------------------------------------------------------------------*/
 
-  virtual Index GetNrFi( void ) const override;
+   Index GetNrFi( void ) const override;
 
 /*--------------------------------------------------------------------------*/
 
-  virtual Index GetMaxName( void ) const override;
+   Index GetMaxName( void ) const override;
 
 /*--------------------------------------------------------------------------*/
 
-  virtual HpNum GetMinusInfinity( void ) override;
+   HpNum GetMinusInfinity( void ) override;
 
 /*--------------------------------------------------------------------------*/
 
-  virtual Index GetMaxNZ( cIndex wFi = Inf<Index>() ) const override;
+   Index GetMaxNZ( cIndex wFi = Inf<Index>() ) const override;
 
 /*--------------------------------------------------------------------------*/
 
-  virtual Index GetMaxCNZ( cIndex wFi = Inf<Index>() ) const override;
+   Index GetMaxCNZ( cIndex wFi = Inf<Index>() ) const override;
 
 /*--------------------------------------------------------------------------*/
 
-  virtual bool GetUC( cIndex i ) override;
+   bool GetUC( cIndex i ) override;
 
 /*--------------------------------------------------------------------------*/
 
-  virtual LMNum GetUB( cIndex i ) override;
+   LMNum GetUB( cIndex i ) override;
 
 /*--------------------------------------------------------------------------*/
 
-  virtual LMNum GetBndEps( void ) override;
+   LMNum GetBndEps( void ) override;
 
 /*--------------------------------------------------------------------------*/
 
-  virtual HpNum GetGlobalLipschitz( cIndex wFi = Inf<Index>() ) override;
+   HpNum GetGlobalLipschitz( cIndex wFi = Inf<Index>() ) override;
 
 /*--------------------------------------------------------------------------*/
 
-  virtual Index GetBNC( cIndex wFi ) override;
+   Index GetBNC( cIndex wFi ) override;
 
 /*--------------------------------------------------------------------------*/
 
-  virtual Index GetBNR( cIndex wFi ) override;
+   Index GetBNR( cIndex wFi ) override;
 
 /*--------------------------------------------------------------------------*/
 
-  virtual Index GetBNZ( cIndex wFi ) override;
+   Index GetBNZ( cIndex wFi ) override;
 
 /*--------------------------------------------------------------------------*/
 
-  virtual void GetBDesc( cIndex wFi , int *Bbeg , int *Bind , double *Bval ,
- 			  double *lhs , double *rhs , double *cst ,
- 			  double *lbd , double *ubd ) override;
+   void GetBDesc( cIndex wFi , int *Bbeg , int *Bind , double *Bval ,
+		  double *lhs , double *rhs , double *cst ,
+		  double *lbd , double *ubd ) override;
 
 /*--------------------------------------------------------------------------*/
 
-  virtual Index GetANZ( cIndex wFi , cIndex strt = 0 ,
-  			 Index stp = Inf<Index>() ) override;
+   Index GetANZ( cIndex wFi , cIndex strt = 0 , Index stp = Inf<Index>() )
+    override;
 
 /*--------------------------------------------------------------------------*/
 
-  virtual void GetADesc( cIndex wFi , int *Abeg , int *Aind , double *Aval ,
- 			  cIndex strt = 0 , Index stp = Inf<Index>() ) override;
+   void GetADesc( cIndex wFi , int *Abeg , int *Aind , double *Aval ,
+		  cIndex strt = 0 , Index stp = Inf<Index>() ) override;
 
 /*--------------------------------------------------------------------------*/
 
-  virtual NDOSolver *GetNDOSolver( void ) override;
+   NDOSolver *GetNDOSolver( void ) override;
 
 /*@} -----------------------------------------------------------------------*/
 /*---------------------- METHODS FOR SETTING LAMBDA ------------------------*/
@@ -1531,15 +1593,15 @@ class FakeFiOracle : public FiOracle
 /** @name Setting Lambda
    @{ */
 
-  virtual void SetLambda( cLMRow Lmbd = 0 ) override;
+   void SetLambda( cLMRow Lmbd = 0 ) override;
 
 /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  */
 
-  virtual void SetLamBase( cIndex_Set LmbdB = 0 , cIndex LmbdBD = 0 ) override;
+   void SetLamBase( cIndex_Set LmbdB = 0 , cIndex LmbdBD = 0 ) override;
 
 /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  */
 
-  virtual bool SetPrecision( HpNum Eps ) override;
+   bool SetPrecision( HpNum Eps ) override;
 
 /*@} -----------------------------------------------------------------------*/
 /*------------------------ METHODS FOR COMPUTING Fi() ----------------------*/
@@ -1547,28 +1609,27 @@ class FakeFiOracle : public FiOracle
 /** @name Computing Fi()
    @{ */
 
-   virtual HpNum Fi( cIndex wFi = Inf<Index>() ) override;
+   HpNum Fi( cIndex wFi = Inf<Index>() ) override;
 
 /*@} -----------------------------------------------------------------------*/
 /*------------- METHODS FOR READING SUBGRADIENTS / CONSTRAINTS -------------*/
 /*--------------------------------------------------------------------------*/
 
-
-   virtual bool NewGi( cIndex wFi = Inf<Index>() ) override;
-
-/*--------------------------------------------------------------------------*/
-
-   virtual Index GetGi( SgRow SubG , cIndex_Set &SGBse ,
-			cIndex Name = Inf<Index>() ,
-			cIndex strt = 0 , Index stp = Inf<Index>() ) override;
+   bool NewGi( cIndex wFi = Inf<Index>() ) override;
 
 /*--------------------------------------------------------------------------*/
 
-   virtual HpNum GetVal( cIndex Name = Inf<Index>() ) override;
+   Index GetGi( SgRow SubG , cIndex_Set &SGBse ,
+		cIndex Name = Inf<Index>() ,
+		cIndex strt = 0 , Index stp = Inf<Index>() ) override;
 
 /*--------------------------------------------------------------------------*/
 
-   virtual void SetGiName( cIndex Name ) override;
+   HpNum GetVal( cIndex Name = Inf<Index>() ) override;
+
+/*--------------------------------------------------------------------------*/
+
+   void SetGiName( cIndex Name ) override;
 
 /*@} -----------------------------------------------------------------------*/
 /*-------------------- METHODS FOR READING OTHER RESULTS -------------------*/
@@ -1576,12 +1637,11 @@ class FakeFiOracle : public FiOracle
 /** @name Reading other results
    @{ */
 
-
-   virtual HpNum GetLowerBound( cIndex wFi = Inf<Index>() ) override;
+   HpNum GetLowerBound( cIndex wFi = Inf<Index>() ) override;
 
 /*--------------------------------------------------------------------------*/
 
-   virtual FiStatus GetFiStatus( Index wFi = Inf<Index>() ) override;
+   FiStatus GetFiStatus( Index wFi = Inf<Index>() ) override;
 
 /*@} -----------------------------------------------------------------------*/
 /*------------- METHODS FOR ADDING / REMOVING / CHANGING DATA --------------*/
@@ -1589,12 +1649,12 @@ class FakeFiOracle : public FiOracle
 /** @name Adding / removing / changing data
    @{ */
 
-   virtual void Deleted( cIndex i = Inf<Index>() ) override;
+   void Deleted( cIndex i = Inf<Index>() ) override;
 
 /*--------------------------------------------------------------------------*/
 
-   virtual void Aggregate( cHpRow Mlt , cIndex_Set NmSt , cIndex Dm ,
-			   cIndex NwNm ) override;
+   void Aggregate( cHpRow Mlt , cIndex_Set NmSt , cIndex Dm , cIndex NwNm )
+    override;
 
 /*@} -----------------------------------------------------------------------*/
 /*------------------------------ DESTRUCTOR --------------------------------*/
@@ -1634,8 +1694,6 @@ class FakeFiOracle : public FiOracle
 /*--------------------------- PRIVATE TYPES --------------------------------*/
 /*--------------------------------------------------------------------------*/
 
- using Dctnry = std::vector< std::vector< Index > >;
-
 /*--------------------------------------------------------------------------*/
 /*-------------------------- PRIVATE METHODS -------------------------------*/
 /*--------------------------------------------------------------------------*/
@@ -1650,7 +1708,7 @@ class FakeFiOracle : public FiOracle
 
 /*--------------------------------------------------------------------------*/
 
- Index FindAPlace( cIndex wFi );
+ Index FindAPlace( Index wFi );
 
 /*--------------------------------------------------------------------------*/
 
@@ -1731,17 +1789,23 @@ class FakeFiOracle : public FiOracle
 
 /*--------------------------------------------------------------------------*/
 
- void SetItemName( Index wFi , Index wh );
+ void remove_from_global_pool( Index k , Index i , bool hard );
+
+ Index find_place_in_global_pool( Index k );
+
+ void add_to_global_pool( Index k , Index i , Index wh );
+
+ void add_to_global_pool( Index k , Index i );
+
+ void add_to_bundle( Index k , Index i );
+
+ void reset_bundle( void );
 
 /*--------------------------------------------------------------------------*/
 
  bool is_special_GroupMod( GroupModification & gmod );
 
  void flatten_Modification_list( Lst_sp_Mod & vmt , sp_Mod mod );
-
-/*--------------------------------------------------------------------------*/
-
- void compute_inverse_dictionary( Dctnry & id );
 
 /*--------------------------------------------------------------------------*/
 
@@ -1755,8 +1819,10 @@ class FakeFiOracle : public FiOracle
 
 #ifndef NDEBUG
 
- void PrintBundle( void );
+ void CheckBundle( void );
  
+ void PrintBundle( void );
+
 #endif
 
 /*--------------------------------------------------------------------------*/

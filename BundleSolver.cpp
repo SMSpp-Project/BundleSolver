@@ -136,7 +136,7 @@ void set_difference_in_place( BundleSolver::Subset & S1 ,
   *(S1wit++) = *(S1rit++);
  
  S1.resize( std::distance( S1.begin() , S1wit ) );
- 
+
  }  // end( Compact )
 
 /*--------------------------------------------------------------------------*/
@@ -240,7 +240,7 @@ const std::vector< int > BundleSolver::dflt_int_par = {
   1 ,  // intBPar3
   1 ,  // intBPar4
   0 ,  // intBPar6
-  1 ,  // intBPar7
+  3 ,  // intBPar7
   0 ,  // intMnSSC
   3 ,  // intMnNSC
  12 ,  // inttSPar1
@@ -310,11 +310,8 @@ int BundleSolver::compute( bool changedvars )
  // basic sanity checks - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- if( ! Master )
-  throw( std::logic_error( "Master is not set yet" ) );
-
- if( v_c05f.empty() )
-  throw( std::logic_error( "C05Function is not set yet" ) );
+ if( ! f_Block )
+  return( kBlockLocked );
 
  // first, process any outstanding Modification - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -322,8 +319,16 @@ int BundleSolver::compute( bool changedvars )
  // but while the latter happens new Modification may come in; hence,
  // process_outstanding_Modification() may be called more than once
 
- while( ! v_mod.empty() )
+ while( ! v_mod.empty() ) {
+  bool owned = f_Block->is_owned_by( f_id );       // check if already locked
+  if( ( ! owned ) && ( ! f_Block->read_lock() ) )  // if not try to read_lock
+   return( kBlockLocked );                         // return error on failure
+
   process_outstanding_Modification();
+
+  if( ! owned )             // if the Block was actually read_locked
+   f_Block->read_unlock();  // read_unlock it
+  }
 
  // initializations - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -372,7 +377,8 @@ int BundleSolver::compute( bool changedvars )
   //
   // however, avoid doing any of this if Fi( Lambda ) is defined, because if
   // not then negative linearization errors are "normal" (the reference value
-  // is "random" and there is no reason to believe it's >= than the true value)
+  // is "random" and there is no reason to believe it's >= than the true
+  // value)
 
   if( ( UpFiLmb[ NrFi ] < Inf<double>() ) &&
       ( Sigma < - max_error( UpRifFi[ NrFi ] , RelAcc ) ) &&
@@ -669,9 +675,9 @@ int BundleSolver::compute( bool changedvars )
 
   } while( ParIter < MaxIter );
 
-// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-// main cycle ends here- - - - - - - - - - - - - - - - - - - - - - - - - - -
-// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // main cycle ends here- - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
  //!! PrintBundle();
 
@@ -748,7 +754,6 @@ void BundleSolver::set_Block( Block * block )
     }
    }
 
-  auto sb = f_Block->get_nested_Blocks();
   v_c05f.resize( sb.size() );
 
   for( Index i = 0 ; i < sb.size() ; ++i ) {  // for each sub-block
@@ -790,23 +795,28 @@ void BundleSolver::set_Block( Block * block )
   // the set of "active" Variable in all Function must be the same - - - - - -
   // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
+  NumVar = v_c05f[ 0 ]->get_num_active_var();
+  LamVcblr.resize( NumVar );
+  auto vi = v_c05f[ 0 ]->begin();
+  for( Index i = 0 ; i < NumVar ; )
+   LamVcblr[ i++ ] = & (*(vi++));
+
   if( f_lf ) {
-   if( f_lf->get_num_active_var() != v_c05f[ 0 ]->get_num_active_var() )
+   if( f_lf->get_num_active_var() != NumVar )
     throw( std::logic_error( "the list of active Variable do not match" ) );
 
-   auto vi = v_c05f[ 0 ]->begin();
+   auto vi = LamVcblr.begin();
    for( auto & v : *f_lf )
     if( & v != & (*(vi++)) ) 
      throw( std::logic_error( "the list of active Variable do not match" ) );
    }
 
   for( Index i = 1 ; i < sb.size() ; ++i ) {
-   if( v_c05f[ i - 1 ]->get_num_active_var() !=
-       v_c05f[ i ]->get_num_active_var() )
+   if( v_c05f[ i ]->get_num_active_var() != NumVar )
     throw( std::logic_error( "the list of active Variable do not match" ) );
 
-   auto vi = v_c05f[ i ]->begin();
-   for( auto & v : *v_c05f[ i - 1 ] )
+   auto vi = LamVcblr.begin();
+   for( auto & v : *v_c05f[ i ] )
     if( & v != & (*(vi++)) ) 
      throw( std::logic_error( "the list of active Variable do not match" ) );
    }
@@ -815,31 +825,43 @@ void BundleSolver::set_Block( Block * block )
  // if some Variable are present, they are of the ColVariable type - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- NumVar = 0;  // count the number of Variable
+ Index NumBVar = 0;  // count the number of Variable in the Block
  auto v_s_Variable = f_Block->get_static_variables();
  for( auto & el : v_s_Variable ) {
-  if( un_any_thing_0( ColVariable , el , ++NumVar ) )
+  if( un_any_thing_0( ColVariable , el , ++NumBVar ) )
    continue;
-  if( un_any_thing_1( ColVariable , el , NumVar += var.size() ) )
+  if( un_any_thing_1( ColVariable , el , NumBVar += var.size() ) )
    continue;
-  if( un_any_thing_K( ColVariable , el , NumVar += var.num_elements() ) )
+  if( un_any_thing_K( ColVariable , el , NumBVar += var.num_elements() ) )
    continue;
   throw( std::logic_error( "some static Variable is not a ColVariable" ) );
   }
 
- // construct the vocabulary for Variable and sort it  - - - - - - - - - - - -
+ if( NumBVar < NumVar )
+  throw( std::logic_error( "too few ColVariable in the Block" ) );
+
+ // check that the Variable in the Block agree with that in the C05Function- -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- LamVcblr.resize( NumVar );
- Index count = 0;
- for( auto & el : v_s_Variable )
-  un_any_static( el , [ & ]( ColVariable & static_var ) {
-                       LamVcblr[ count++ ] = & static_var;
-                       } ,
-		  un_any_type<ColVariable>() );
+ std::vector<ColVariable *> LamBVcblr( NumBVar );
 
- assert( count == NumVar );
- std::sort( LamVcblr.begin() , LamVcblr.end() );
+ Index cnt = 0;
+ for( auto & el : v_s_Variable )
+  un_any_static( el , [ & ]( ColVariable & sv ) { LamBVcblr[ cnt++ ] = & svr;
+                  } , un_any_type<ColVariable>() );
+
+ std::sort( LamBVcblr.begin() , LamBVcblr.end() );
+
+ std::vector<ColVariable *> LamVcblrO( LamVcblr );
+ std::sort( LamVcblrO.begin() , LamVcblrO.end() );
+
+ if( ! std::includes( LamBVcblr.begin() , LamBVcblr.end() ,
+		      LamVcblrO.begin() , LamVcblrO.end() ) )
+ throw( std::logic_error(
+		   "some ColVariable in C05Function are not in the Block" ) );
+
+ LamVcblrO.clear();
+ LamBVcblr.clear();
 
  // no dynaimic variables are allowed  - - - - - - - - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -859,71 +881,56 @@ void BundleSolver::set_Block( Block * block )
  // read information about the function  - - - - - - - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
+ NrEasy = 0;
  NrFi = v_c05f.size();
 
- MILP_s.resize( NrFi , nullptr );
- vStar.resize( NrFi + 1 , 0 );
-
- NrEasy = 0;
  if( NrFi > 1 ) {
-  auto sb = f_Block->get_nested_Blocks();
-  std::vector<Index> BNC( NrFi );
-
   IsEasy.resize( NrFi , false );
+  MILP_s.resize( NrFi , nullptr );
   for( Index k = 0 ; k < NrFi ; ++k ) {
-   // ?? quando i solver distruggere dopo SetDim o
-   // con il distruttore della classe??
-
-   auto LagB = dynamic_cast<LagBFunction *>( v_c05f[ k ] );
-   if( LagB  ) {
+   auto LagB = dynamic_cast< LagBFunction * >( v_c05f[ k ] );
+   if( LagB && LagB->get_inner_block()->get_numcols() ) {
     MILP_s[ k ] = new MILPSolver();
     MILP_s[ k ]->set_Block( LagB->get_inner_block() );
-    BNC[ k ] = MILP_s[ k ]->get_numcols();
-    if( BNC[ k ] ) {
-     IsEasy[ k ] = true;
-     NrEasy++;
-     }
+    IsEasy[ k ] = true;
+    NrEasy++;
     }
    }
 
-  if( ! NrEasy )
+  if( ! NrEasy ) {
    IsEasy.clear();
+   MILP_s.clear();
+   }
   }
 
  // set the global pool size to all non-easy functions - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // with BPar2 == 0, BundleSolver just takes whatever size of the global pool
+ // it finds already in the C05Function. with BPar2 > 0, BundleSolver ensures
+ // that the size of the global pool is *at least* BPar2 by increasing it if
+ // it is below. this means that:
+ // - BundleSolver never *decreases* the size of the global pool
+ // - BundleSolver only uses the first BPar2 linearizations in each global
+ //   pool; if there are more, the other ones are ignored
 
  vBPar2.resize( NrFi + 1, 0 );
- if( NrEasy )
-  for( Index i = 0 ; i < NrFi ; ++i ) {
-   if( IsEasy[ i ] )
-    continue;
-   auto gps = v_c05f[ i ]->get_int_par( C05Function::intGPMaxSz );
-   if( BPar2 == 0 ) {
-    vBPar2[ NrFi ] += gps;
-    vBPar2[ i ] = gps;
-    }
-   else {
-    if( gps < BPar2 )
-     v_c05f[ i ]->set_par( C05Function::intGPMaxSz , BPar2 );
-    vBPar2[ NrFi ] += gps;
-    vBPar2[ i ] = BPar2;
-    }
+ for( Index k = 0 ; k < NrFi ; ++k ) {
+  if( NrEasy && IsEasy[ k ] )
+   continue;
+  auto gps = v_c05f[ k ]->get_int_par( C05Function::intGPMaxSz );
+  if( BPar2 == 0 ) {  // use the current global pool size
+   if( gps < 2 )
+    throw( std::logic_error( "BPar2 == 0 but too small global pool" ) );
+   vBPar2[ NrFi ] += gps;
+   vBPar2[ k ] = gps;
    }
- else
-  for( Index i = 0 ; i < NrFi ; ++i ) {
-   auto gps = v_c05f[ i ]->get_int_par( C05Function::intGPMaxSz );
-   if( BPar2 == 0 ) {
-    vBPar2[ NrFi ] += gps;
-    vBPar2[ i ] = gps;
-    }
-   else {
-    if( gps < BPar2 )
-     v_c05f[ i ]->set_par( C05Function::intGPMaxSz , BPar2 );
-    vBPar2[ NrFi ] += BPar2;
-    vBPar2[ i ] = BPar2;
-    }
+  else {              // force the global pool size to be *at least* BPar2
+   if( gps < BPar2 )
+    v_c05f[ k ]->set_par( C05Function::intGPMaxSz , BPar2 );
+   vBPar2[ NrFi ] += BPar2;
+   vBPar2[ k ] = BPar2;
    }
+  }
 
  // allocate memory- - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -940,102 +947,123 @@ void BundleSolver::set_Block( Block * block )
  OOBase.resize( vBPar2[ NrFi ] , Inf<SIndex>() );
  // counter for eliminating outdated items: Inf<SIndex>() means empty
 
- ItemVcblr.resize( vBPar2[ NrFi ] );
- for( Index i = 0 ; i < vBPar2[ NrFi ] ; i++ )
-  ItemVcblr[ i ] = make_pair( InINF , Inf<SIndex>() );
+ ItemVcblr.resize( vBPar2[ NrFi ] , make_pair( InINF , InINF ) );
+
+ InvItemVcblr.resize( NrFi );
+ for( Index k = 0 ; k < NrFi ; ++k )
+  InvItemVcblr[ k ].resize( vBPar2[ k ] , InINF );
 
  NrItems.resize( NrFi , 0 );
- DFItems.resize( NrFi , 0 );
- NFItems.resize( NrFi , 0 );
+ FFrItem.resize( NrFi , 0 );
+ MaxItem.resize( NrFi , 0 );
 
- FreList = {};          // list of free bundle slots
- whisZ.resize( NrFi );  // for each component, the name of its "Z" if it is
-                        // in the bunlde
+ FreList = {};
+ whisZ.resize( NrFi , InINF );
 
  FiStatus.resize( NrFi , kUnEval );
- LowerBound = -Inf<double>();     // globaò lower bounds
+ LowerBound = -Inf<double>();     // global lower bounds
  TrueLB = false;
 
  UpFiBest = Inf<VarValue>();      // best, ...
  UpRifFi.resize( NrFi + 1 , 0 );  // and reference Fi() values
  UpFiLmb1.resize( NrFi + 1 );     // upper and lower function value
  LwFiLmb1.resize( NrFi + 1 );     // ... at the tentative point
-
- UpFiLmb.resize( NrFi + 1 , Inf<VarValue>() );   // upper 
+ UpFiLmb.resize( NrFi + 1 ,  Inf<VarValue>() );  // upper 
  LwFiLmb.resize( NrFi + 1 , -Inf<VarValue>() );  // ... and lower Fi-value
                                                  // ... at the current point
-
+ vStar.resize( NrFi + 1 , 0 );
  whisG1.resize( NrFi , InINF );  // no representative yet
 
  ScPr1.resize( NrFi + 1 , 0 );
  Alfa1.resize( NrFi + 1 , 0 );
- DeltaAlfa.resize( NrFi );
 
  Result = kError;
  SSDone = false;
 
- // warning: the following things can only be done *after* that
- // Oracle->SetMaxName() has been invoked, because they use methods of the
- // oracle which depends on knowledge of the MaxName to work properly
- // read b0- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
- // here one could initialize b0, if that was found to be of any use
- // b0 = Oracle->GetVal( BPar2 );
-
- // initialize the MP Solver, if any - - - - - - - - - - - - - - - - - - - -
+ // initialize the MP Solver - - - - - - - - - - - - - - - - - - - - - - - - -
  // - - - -  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- if( Master )        // a MP solver is set ??? dove metterlo ???
+ if( Master )        // a MPSolver is set already
   Master->SetDim();  // clear all its internal state
+ else {              // a MPSolver is not set yet, create it now
+  #if( ! USE_MPTESTER )
+   if( MPName & 1 ) {  // the MPSolver is a OSIMPSolver
+  #endif
+    OSIMPSolver * osi_mps = new OSIMPSolver();
+    Master = osi_mps;
 
- #if( ! USE_MPTESTER )
-  if( MPName & 1 ) {  // the MPSolver is a OSIMPSolver
- #endif
-   OSIMPSolver * osi_mps = new OSIMPSolver();
-   Master = osi_mps;
+    if( MPName & 2 ) {
+     OsiCpxSolverInterface *osicpx = new OsiCpxSolverInterface();
+     CPXENVptr env = osicpx->getEnvironmentPtr ();
+     CPXsetintparam( env , CPX_PARAM_THREADS , threads );
+     // 12.8
+     // CPXsetlogfile( env , NULL );
+     // 12.9
+     // CPXsetlogfilename( env, "/dev/null" , "w" ) ;
 
-   if( MPName & 2 ) {
-    OsiCpxSolverInterface *osicpx = new OsiCpxSolverInterface();
-    CPXENVptr env = osicpx->getEnvironmentPtr ();
-    CPXsetintparam( env , CPX_PARAM_THREADS , threads );
-    // 12.8
-    // CPXsetlogfile( env , NULL );
-    // 12.9
-    // CPXsetlogfilename( env, "/dev/null" , "w" ) ;
-
-    CPXsetintparam( env , CPXPARAM_ScreenOutput , CPX_OFF );
-    CPXsetintparam( env , CPXPARAM_Barrier_Display , 0 );
-    CPXsetintparam( env , CPXPARAM_Simplex_Display , 0 );
-    CPXsetintparam( env , CPXPARAM_Sifting_Display , 0 );
-    CPXsetintparam( env , CPXPARAM_Network_Display , 0 );
-    CPXsetintparam( env , CPXPARAM_ParamDisplay  , CPX_OFF );
+     CPXsetintparam( env , CPXPARAM_ScreenOutput , CPX_OFF );
+     CPXsetintparam( env , CPXPARAM_Barrier_Display , 0 );
+     CPXsetintparam( env , CPXPARAM_Simplex_Display , 0 );
+     CPXsetintparam( env , CPXPARAM_Sifting_Display , 0 );
+     CPXsetintparam( env , CPXPARAM_Network_Display , 0 );
+     CPXsetintparam( env , CPXPARAM_ParamDisplay  , CPX_OFF );
  
-    osi_mps->SetOsi( osicpx );
-    }
-   else
-    osi_mps->SetOsi( new OsiClpSolverInterface() );
+     osi_mps->SetOsi( osicpx );
+     }
+    else
+     osi_mps->SetOsi( new OsiClpSolverInterface() );
 
-   osi_mps->SetStabType( MPName & 4 ? OSIMPSolver::quadratic :
+    osi_mps->SetStabType( MPName & 4 ? OSIMPSolver::quadratic :
 			              OSIMPSolver::boxstep );
 
-   osi_mps->SetAlgo( OSIMPSolver::OsiAlg( algo ) ,
-		     OSIMPSolver::OsiRed( reduction ) );
- #if( ! USE_MPTESTER )
-   }
-  else {  // the MPSolver is a QPPenaltyMP
- #endif
-   QPPenaltyMP *qp = new QPPenaltyMP();
-   qp->SetPricing( CtOff );
-   qp->SetMaxVarAdd( MxAdd );
-   qp->SetMaxVarRmv( MxRmv );
- #if( USE_MPTESTER )
-   Master = new MPTester( Master , qp );
- #else
-   Master = qp;
-   }
- #endif
+    osi_mps->SetAlgo( OSIMPSolver::OsiAlg( algo ) ,
+		      OSIMPSolver::OsiRed( reduction ) );
+   #if( ! USE_MPTESTER )
+    }
+   else {  // the MPSolver is a QPPenaltyMP
+  #endif
+    QPPenaltyMP *qp = new QPPenaltyMP();
+    qp->SetPricing( CtOff );
+    qp->SetMaxVarAdd( MxAdd );
+    qp->SetMaxVarRmv( MxRmv );
+    #if( USE_MPTESTER )
+     Master = new MPTester( Master , qp );
+    #else
+     Master = qp;
+    }
+    #endif
+  }
 
  InitMP();
+
+ // deal with existing linearizations- - - - - - - - - - - - - - - - - - - - -
+ // - - - -  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // if BPar7 & 8, read from all the C05Function and immediately add to the
+ // master problem each and every linearization found in their global pools
+ //
+ // otherwise read from all the C05Function and mark into InvItemVcblr each
+ // and every linearization found in their global pools
+ //
+ // note that if ( BPar7 & 3 ) >= 2, BundleSolver will happily delete from
+ // the global pool any linearization it deletes from the bundle; yet we
+ // do not immediately delete existing linearizations from the global pools
+ // here. these will likely be overwritten during the optimization, and if
+ // memory is a problem they can be cleaned up by the user before set_Block()
+ // is called. besides, in many scenarios there will be no linearizations
+ // anyway
+
+ if( BPar7 & 8 ) {
+  for( Index k = 0 ; k < NrFi ; ++k )
+   for( Index i = 0 ; i < vBPar2[ k ] ; ++i )
+    if( v_c05f[ k ]->is_linearization_there( i ) )
+     add_to_bundle( k , i );    
+  }
+ else {
+  for( Index k = 0 ; k < NrFi ; ++k )
+   for( Index i = 0 ; i < vBPar2[ k ] ; ++i )
+    if( v_c05f[ k ]->is_linearization_there( i ) )
+     add_to_global_pool( k , i );    
+  }
 
  // reset algorithm  - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // - - - -  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1071,6 +1099,10 @@ void BundleSolver::set_par( const idx_type par , const int value )
   case( intBPar2 ):
    if( value < 2 )
     throw( std::invalid_argument( "BPar2 must be >= 2" ) );
+   if( BPar2 == value )
+    break;
+   if( f_Block )
+    throw( std::invalid_argument( "changing BPar2 not supported yet" ) );
    BPar2 = value;
    break;
   case( intBPar3 ):
@@ -1132,7 +1164,7 @@ void BundleSolver::set_par( const idx_type par , const int value )
   default:
    CDASolver::set_par( par , value );
   }
- } // end (BundleSolver::set_par( ) )  - - - - - - - - - - - - - - - - - - - -
+ }  // end( BundleSolver::set_par( ) )- - - - - - - - - - - - - - - - - - - -
 
 /*--------------------------------------------------------------------------*/
 
@@ -1243,7 +1275,6 @@ void BundleSolver::set_par( const idx_type par , const double value )
   default:
    CDASolver::set_par( par , value );
   }
-
  } // end (BundleSolver::set_par( ) )  - - - - - - - - - - - - - - - - - - - -
 
 /*--------------------------------------------------------------------------*/
@@ -1260,13 +1291,15 @@ void BundleSolver::set_log( std::ostream * log_stream )
 /*---------------------- METHODS FOR READING RESULTS -----------------------*/
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::get_dual_solution( Configuration *solc ) {
+void BundleSolver::get_dual_solution( Configuration *solc )
+{
  for( Index i = 0 ; i < zA.size() ; ++i ) {
-  if( zA[i].second.empty() )
+  if( zA[ i ].second.empty() )
    throw( std::invalid_argument( "the combination is not present" ) );
-  v_c05f[ i ]->set_important_linearization( std::move(zA[i].second) , zA[i].first );
+  v_c05f[ i ]->set_important_linearization( std::move( zA[ i ].second ) ,
+					    zA[ i ].first );
   }
- } // end ( BundleSolver::get_dual_solution() )  - - - - - - - - - - - - - - -
+ }  // end( BundleSolver::get_dual_solution() )  - - - - - - - - - - - - - - -
 
 /*--------------------------------------------------------------------------*/
 
@@ -1339,10 +1372,9 @@ int BundleSolver::get_int_par( const idx_type par ) const
   default:
    return( CDASolver::get_dflt_int_par( par ) );
   }
+ }  // end( BundleSolver::get_int_par ) - - - - - - - - - - - - - - - - - - -
 
- } // end( BundleSolver::get_int_par )  - - - - - - - - - - - - - - - - - - -
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+/*--------------------------------------------------------------------------*/
 
 double BundleSolver::get_dbl_par( const idx_type par ) const
 {
@@ -1413,8 +1445,7 @@ double BundleSolver::get_dbl_par( const idx_type par ) const
   default:
    return( CDASolver::get_dflt_dbl_par( par ) );
   }
-
- } // end( BundleSolver::get_dbl_par ) - - - - - - - - - - - - - - - - - - - -
+ }  // end( BundleSolver::get_dbl_par ) - - - - - - - - - - - - - - - - - - -
 
 /*--------------------------------------------------------------------------*/
 /*----------------------- OTHER PROTECTED METHODS --------------------------*/
@@ -1481,11 +1512,14 @@ void BundleSolver::FormD( void )
   }
 
  /* set termination criterion - - - - - - - - - - - - - - - - - - - - - - - -
+  * leftover code for a previous version of MPSolver having a MPSolver::kZero
+  * parameter, now removed; to be deleted
 
  if( UpFiLmb[ NrFi ] < Inf<double>() )
   Master->SetPar( MPSolver::kZero ,
 		  max_error() / std::max( tStar / t , HpNum( 1 ) ) );
- */
+  */
+
  for(;;)  // error-handling loop - - - - - - - - - - - - - - - - - - - - - -
  {        // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -1570,24 +1604,26 @@ void BundleSolver::FormD( void )
   }  // end ( error-handling loop )- - - - - - - - - - - - - - - - - - - - -
   // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- Sigma = Master->ReadSigma();                  // read Sigma*
- vStar[ NrFi ] = Master->ReadFiBLambda();      // read v*
+ Sigma = Master->ReadSigma();              // read Sigma*
+ vStar[ NrFi ] = Master->ReadFiBLambda();  // read v*
 
- if( IsEasy.size() ) {                         // there are easy components
-  for( Index k = 0 ; k < NrFi ; k++ )          // read the *exact* Fi-value
-   if( IsEasy[ k ] )                           // for all them
-    UpFiLmb1[ k ] = Master->ReadFiBLambda( k + 1 );
-   else
-    vStar[ k ] = Master->ReadFiBLambda( k + 1 );
+ if( IsEasy.empty() )                      // there are no easy components
+  for( Index k = 0 ; k < NrFi ; ++k )
+   vStar[ k ] = Master->ReadFiBLambda( k + 1 );  // read model value
+ else {                                    // there are easy components
+  for( Index k = 0 ; k < NrFi ; ++k )
+   if( IsEasy[ k ] )                                 // for easy components
+    UpFiLmb1[ k ] = Master->ReadFiBLambda( k + 1 );  // read *exact* Fi-value
+   else                                              // for hard components
+    vStar[ k ] = Master->ReadFiBLambda( k + 1 );     // read model value
 
+  // add the contribution of easy components to the total function value
   if( UpFiLmb[ NrFi ] < Inf<double>() )
    for( Index k = 0 ; k < NrFi ; k++ )
     if( IsEasy[ k ] )
      vStar[ NrFi ] += UpRifFi[ k ];
   }
- else
-  for( Index k = 0 ; k < NrFi ; k++ )
-   vStar[ k ] = Master->ReadFiBLambda( k + 1 );
+
 
  if( tStar > 0 )
   DSTS = Master->ReadDStart( tStar );                  // D_{t*,\beta,x}
@@ -1618,7 +1654,7 @@ void BundleSolver::FormD( void )
  cLMRow tdir = Master->Readd( true );
 
  NrmD = 0;                                    // d-norm
- for( Index i = 0 ; i < NumVar ; i++ )
+ for( Index i = 0 ; i < NumVar ; ++i )
   NrmD += tdir[ i ] * tdir[ i ];
  NrmD = sqrt(  NrmD );
 
@@ -1634,11 +1670,12 @@ void BundleSolver::UpdtCntrs( void )
  // optimal base have OOBase[] == 0; note that the converse is not true, as
  // items in the optimal base may have OOBase[] < 0 instead
 
- for( SIndex* tOO = OOBase.data() + Master->MaxName() ; tOO-- > OOBase.data() ; )
-  if( ( *tOO < Inf<SIndex>() ) && ( *tOO > -Inf<SIndex>() ) ) {
-   (*tOO)++;
-   if( ! *tOO )
-    (*tOO)++;
+ for( auto OOit = OOBase.begin() ;
+      OOit != OOBase.begin() + Master->MaxName() ; ++OOit )
+  if( ( *OOit < Inf<SIndex>() ) && ( *OOit > -Inf<SIndex>() ) ) {
+   (*OOit)++;
+   if( ! *OOit )
+    (*OOit)++;
    }
 
  // set to 0 the OOBase[] counter for items in base (if not < 0)- - - - - - -
@@ -1667,7 +1704,7 @@ void BundleSolver::UpdtCntrs( void )
   }
  else
   for( Index i = 0 ; i < MBDim ; i++ , Mlt++ )
-   if( *Mlt >= Eps<double>() ) { // ?? come mai non da' errore ??
+   if( *Mlt >= Eps<double>() ) {
     if( ( *Mlt >= 1 - RAccSol ) && Master->IsSubG( i ) ) {
      // will never happen twice for the same wFi
      whisZ[ Master->WComponent( i ) - 1 ] = i;
@@ -1678,7 +1715,7 @@ void BundleSolver::UpdtCntrs( void )
       OOBase[ i ] = 0;
     }
 
- }  // end( UpdtCntrs )  - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ }  // end( UpdtCntrs ) - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 /*--------------------------------------------------------------------------*/
 
@@ -1696,31 +1733,32 @@ void BundleSolver::FormLambda1( HpNum Tau )
 
   if( Master->NumNNVars() )             // there are NN vars and UB vars
    if( Master->NumNNVars() == NumVar )  // actually, all variables are NN
-    for( Index h = 0 ; h < NumVar ; h++ ) {
-     if( tL1[ h ] < 0 )
-      tL1[ h ] = 0;
+    for( Index i = 0 ; i < NumVar ; ++i ) {
+     if( tL1[ i ] < 0 )
+      tL1[ i ] = 0;
 
-     const double UBh = LamVcblr[h]->get_ub();
-     if( tL1[ h ] > UBh )
-      tL1[ h ] = UBh;
+     const double UBh = LamVcblr[ i ]->get_ub();
+     if( tL1[ i ] > UBh )
+      tL1[ i ] = UBh;
      }
    else                                 // not all variables are NN
-    for( Index h = 0 ; h < NumVar ; h++ ) {
-     if( Master->IsNN( h ) && ( tL1[ h ] < 0 ) )
-      tL1[ h ] = 0;
+    for( Index i = 0 ; i < NumVar ; ++i ) {
+     if( Master->IsNN( i ) && ( tL1[ i ] < 0 ) )
+      tL1[ i ] = 0;
 
-     const double UBh = LamVcblr[h]->get_ub();
-     if( tL1[ h ] > UBh )
-      tL1[ h ] = UBh;
+     const double UBh = LamVcblr[ i ]->get_ub();
+     if( tL1[ i ] > UBh )
+      tL1[ i ] = UBh;
      }
   else  // there are only UB vars
-   for( Index h = 0 ; h < NumVar ; h++ ) {
-    const double UBh = LamVcblr[h]->get_ub();
-    if( tL1[ h ] > UBh )
-     tL1[ h ] = UBh;
+   for( Index i = 0 ; i < NumVar ; ++i ) {
+    const double UBh = LamVcblr[ i ]->get_ub();
+    if( tL1[ i ] > UBh )
+     tL1[ i ] = UBh;
     }
 
   Lambda1 = tL1;
+
   }  // end( if( the bounds have to be enforced ) )
 
  // Lambda has changed, pass the new one to the oracle - - - - - - - - - - - -
@@ -1735,7 +1773,7 @@ void BundleSolver::FormLambda1( HpNum Tau )
  // compute the upper and lower model at the tentative point   - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- if( f_lf ) { // add the linear part to the "full function"
+ if( f_lf ) {  // add the linear part to the "full function"
   f_lf->compute( true );
   UpFiLmb1[ NrFi ] = f_lf->get_upper_estimate();
   LwFiLmb1[ NrFi ] = f_lf->get_lower_estimate();
@@ -1743,8 +1781,8 @@ void BundleSolver::FormLambda1( HpNum Tau )
  else
   UpFiLmb1[ NrFi ] = LwFiLmb1[ NrFi ] = 0;
 
- for( Index k = 0 ; k < NrFi ; k++ ) {
-  if( IsEasy.size() && IsEasy[ k ] )  // if k is an easy component
+ for( Index k = 0 ; k < NrFi ; ++k ) {
+  if( ( ! IsEasy.empty() ) && IsEasy[ k ] )  // if k is an easy component
    UpFiLmb1[ k ] =  LwFiLmb1[ k ] = Master->ReadFiBLambda( k );
   else {
    // initialize upper and lower bound for each component  - - - - - - - - - -
@@ -1761,8 +1799,7 @@ void BundleSolver::FormLambda1( HpNum Tau )
     LwFiLmb1[ k ] = -Inf<VarValue>();
    }
 
-  // sum over the components, the zero-component is already there
- //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  // sum over the components, the 0th-component is already there - - - - - - -
 
   if( UpFiLmb1[ NrFi ] < Inf<VarValue>() ) {
    if( UpFiLmb1[ k ] < Inf<VarValue>() )
@@ -1795,7 +1832,7 @@ void BundleSolver::FormLambda1( HpNum Tau )
  else
   LwTrgt = -Inf<VarValue>();
 
- }  // end( BundleSolver::FormLambda1 )  - - - - - - - - - - - - - - - - - - -
+ }  // end( BundleSolver::FormLambda1 ) - - - - - - - - - - - - - - - - - - -
 
 /*--------------------------------------------------------------------------*/
 
@@ -1803,7 +1840,7 @@ bool BundleSolver::FiAndGi( Index wFi )
 {
  double UpCutOff, LwCutOff, LwFiK, EpsCurr;
 
- if( IsEasy.size() && IsEasy[ wFi ] )
+ if( ( ! IsEasy.empty() ) && IsEasy[ wFi ] )
   return( false );
 
  LwFiK = UpRifFi[ wFi ] + vStar[ wFi ];
@@ -1941,8 +1978,9 @@ bool BundleSolver::FiAndGi( Index wFi )
 
   // check if aggregation has to be performed - - - - - - - - - - - - - - - -
   // doing this now could occasionally result in useless aggregations, but it
-  // avoids complications in the interface of MPSolver (inserting some
-  // Z[ wFi ] while inserting the new item)
+  // is necessary due to limitations in the MPSolver interface (there can be
+  // only one "un-named item being inserted", so inserting Z[ wFi ] while
+  // inserting the new item is complicated
 
   Index wh = BStrategy( wFi );
 
@@ -1952,128 +1990,162 @@ bool BundleSolver::FiAndGi( Index wFi )
 
   // fetch the item from the Oracle - - - - - - - - - - - - - - - - - - - - -
 
-  cIndex_Set SGBse = nullptr;
   fwFi->get_linearization_coefficients( G1 );
-  auto eps = fwFi->get_linearization_constant();
+  HpNum Alfa1k = fwFi->get_linearization_constant();
+  HpNum eps;
 
   GiEvaltns++;
 
   // pass the base to the MP Solver - - - - - - - - - - - - - - - - - - - - -
 
+  cIndex_Set SGBse = nullptr;
   Master->SetItemBse( SGBse , NumVar );
 
-  // calculate ScPr1k and Alfa1k- - - - - - - - - - - - - - - - - - - - - - -
+  // compute ScPr1k and Alfa1k- - - - - - - - - - - - - - - - - - - - - - - -
 
   Index cp;
   HpNum ScPr1k;
 
-  // update alpha value at Lambda1 point- - - - - - - - - - - - - - - - - - -
-
-  eps = UpFiLmb1[ wFi ] - eps -
-   std::inner_product( Lambda1.begin() , Lambda1.end() , G1 , double( 0 ) );
-
-  HpNum Alfa1k = eps;
-
-  if( ! diagonal )                 // it is a constraint
-   cp = Master->CheckCnst( Alfa1k , ScPr1k , Lambda.data() );
-  else                             // it is a subgradient
-   cp = Master->CheckSubG( UpFiLmb1[ wFi ] - UpRifFi[ wFi ] ,
-			   t , Alfa1k , ScPr1k );
-
-  if( cp < InINF ) {  // the item is a copy- - - - - - - - - - - - - -
-   BLOG( 2 , std::endl << "            New " );
-   BLOG2( 2 , diagonal , "subgradient" );
-   BLOG2( 2 , ! diagonal , "constraint" );
-   BLOG( 2 , " for Fi[ " << wFi << " ] is a copy of " << cp );
-
-   cHpNum OrigA1k = (Master->ReadLinErr())[ cp ];
-
-   assert( ItemVcblr[cp].first != InINF &&
-           ItemVcblr[cp].second < vBPar2[ItemVcblr[cp].first] &&
-  		   ItemVcblr[cp].second >= 0 );
-
-   if( OrigA1k > Alfa1k ) {   // the copy has smaller Alfa than the original
-    BLOG( 2 , " with smaller Alfa" );
-    Master->SubstItem( wh = cp );  // substitute it
-    if( BPar7 ) {
-     ItemVcblr[ cp ].second += vBPar2[ wFi ]; // the linearization ItemVcblr[ cp ].second
-     DFItems[ wFi ]++;                        // is free in the global pool
-     }
-    else {
-     ItemVcblr[ cp ].second -= vBPar2[ wFi ]; // the linearization ItemVcblr[ cp ].second
-     NFItems[ wFi ]++;  // could be assigned if there is no more free items
-     }
-    NrItems[ wFi ]--;
-    }
-   else {
-	wh = InINF;    // otherwise, nothing new has happened
-	Ftchd++;       // anyhow, this counts as a new item
-    }
+  if( diagonal ) {  // it is a subgradient
+   // update alpha value at Lambda1 point
+   Alfa1k = UpFiLmb1[ wFi ] - Alfa1k -
+    std::inner_product( Lambda1.begin() , Lambda1.end() , G1 , double( 0 ) );
+   eps = Alfa1k;  // this is how much G1 is an eps-subgradent in Lambda1
+   // CheckSubG changes Alfa1k so that G1 is an Alfa1k-subgradent in Lambda
+   cp = Master->CheckSubG( UpFiLmb1[ wFi ] - UpRifFi[ wFi ] , t ,
+			   Alfa1k , ScPr1k );
    }
-  else {               // insert the item, if there is space - - - - - - - - -
-   if( wh < InINF ) {  // someone has been selected in BStrategy()
-    Master->RmvItem( wh ); // remove it from the MP
-    if( BPar7 ) {
-     ItemVcblr[ wh ].second += vBPar2[ wFi ]; // the linearization ItemVcblr[ cp ].second
-     DFItems[ wFi ]++;                        // is free in the global pool
-     }
-    else {
-     ItemVcblr[ wh ].second -= vBPar2[ wFi ]; // the linearization ItemVcblr[ cp ].second
-     NFItems[ wFi ]++;  // could be assigned if there is no more free items
-     }
-    NrItems[ wFi ]--;
+  else              // it is a constraint
+   cp = Master->CheckCnst( Alfa1k , ScPr1k , Lambda.data() );
+
+  Index gpp = Inf<Index>();  // position in the global pool where to put it
+
+  if( f_log && ( LogVerb > 2 ) ) {
+   *f_log << std::endl << "            New ";
+   if( diagonal ) {
+    if( eps >= std::max( std::abs( UpRifFi[ wFi ] ) , 1 ) * EpsLin / 10 )
+     *f_log << "eps-subgradient with eps = " << eps;
+    else
+     *f_log << "subgradient";
+    *f_log << " for Fi[ " << wFi << " ] ~ Alfa1 = " << Alfa1k
+	   << " ~ gd = " << - ScPr1k;
     }
    else
-    wh = FindAPlace( wFi );    // find a spot in the bundle
+    *f_log << "constraint " << wh << " ~ rhs = " << Alfa1k;
+   }
+
+  if( cp < InINF ) {  // the item is a copy - - - - - - - - - - - - - - - - -
+   BLOG( 2 , " is copy of " << cp << " (" << ItemVcblr[ cp ].second << ")" );
+
+   auto OldA1k = (Master->ReadLinErr())[ cp ];
+
+   assert( ( ItemVcblr[ cp ].first == wFi ) &&
+           ( ItemVcblr[ cp ].second < vBPar2[ wFi ] ) &&
+	   ( InvItemVcblr[ wFi ][ ItemVcblr[ cp ].second ] == cp ) );
+
+   if( OldA1k >= Alfa1k + std::max( std::abs( Alfa1k ) , 1 ) * EpsLin / 10 ) {
+    // if the copy has a *substantially* smaller Alfa than the original,
+    // replace the original with the copy; in principle relative differences
+    // smaller than EpsLin could be ignored, but we use EpsLin / 10 for safety
+
+    BLOG( 2 , " with smaller Alfa" );
+
+    gpp = ItemVcblr[ cp ].second;
+    if( ( BPar7 & 3 ) < 3 ) {
+     // BundleSolver does not immediately replace the copy unless necessary,
+     // but clearly if one linearization in the global pool has to be
+     // sacrificed, it'll be the copy
+     auto ngpp = find_place_in_global_pool( wFi );
+     if( ngpp < Inf<Index>() ) {       // a free place has been found
+      gpp = ngpp;                      // store the copy there
+      BLOG( 2 , " (" << gpp << ")" );  // print the chosen place
+      }
+     }
+
+    // if the new copy has not been added as a separate entity, it replaces
+    // the old copy, and therefore ItemVcblr, InvItemVcblr, ... would not
+    // need be updated; however this is too complicated to handle and we
+    // will do it anyway
+
+    Master->SubstItem( wh = cp );  // substitute it in the master problem
+    // note that the number of items of component wFi in the master problem
+    // is unchanged
+    }
+   else {          // the item is a copy, but not better than the original
+    wh = InINF;    // nothing new has happened
+    Ftchd++;       // anyhow, this counts as a new item
+    }
+
+   BLOG( 2 , std::endl );
+   }
+  else {           // the item is not a copy- - - - - - - - - - - - - - - - -
+   // insert the item, if there is space
+
+   if( wh == InINF )  // the position has not been selected in BStrategy()
+    wh = FindAPlace( wFi );  // find a free spot in the bundle
 
    if( wh == InINF ) {  // no space found ...
-    if( ! Ftchd ) {            // ... and this was the first item
+    if( ! Ftchd ) {     // ... and this was the first item
      BLOG( 0 , std::endl << " ERROR: No space in the bundle" << std::endl );
-     Result = kError;          // signal an error
-                               // ensure that the outer Fi-cycle ends
+     Result = kError;   // signal an error to end the outer Fi-cycle
      }
     else
      BLOG( 1 , std::endl << " WARNING: No space in the bundle" << std::endl );
-
-     break;                     // the cycle ends
+    break;              // the cycle ends
     }
 
-   Master->SetItem( wh );      // insert the item in the MP Solver
-   OOBase[ wh ] = -1;          // ensure it won't be touched again this round
+   if( ItemVcblr[ wh ].second < vBPar2[ wFi ] )
+    // the place is occupied already: this happens if the bundle was full
+    // (and, possibly aggregation has been performed for safety)
+    Master->RmvItem( wh );  // the old item has to be removed first
+   else                     // the place is unoccupied
+    ++NrItems[ wFi ];       // one more item in the bundle (otherwise the
+                            // number remains the same as one is replaced)
 
-   if( f_log && ( LogVerb > 2 ) ) {
-    *f_log << std::endl << "            New ";
-    if( ! diagonal )
-     *f_log << "constraint " << wh << " ~ rhs = " << Alfa1k;
-    else
-     *f_log << "eps-subgradient " << wh << " for Fi[ " << wFi << " ] ~ eps = "
-	    << eps << " ~ Alfa1 = " << Alfa1k << " ~ gd = " << - ScPr1k;
+   Master->SetItem( wh );   // insert the new item in the MP Solver
+
+   // now find a position in the glonal pool of component wFi where to store
+   // the new linearization
+   gpp = find_place_in_global_pool( wFi );
+
+   if( gpp == Inf<Index>() ) {  // there is none
+    // this means that not only the global pool is full, but also the bundle
+    // also full: one can therefore put it in the very place of the item it
+    // replaces, which must be an item of the same component because
+    // BStrategy() ensures this
+    assert( ItemVcblr[ wh ].first == wFi );    
+    gpp = ItemVcblr[ wh ].second;
+    assert( gpp < vBPar2[ NrFi ] );  
     }
+
+   BLOG( 2 , " stored in " << wh << " (" << gpp << ")" << std::endl  );
    }
 
   // if something was inserted, bookkeeping is needed - - - - - - - - - - - -
 
   if( wh < InINF ) {
-   Ftchd++;              // one more item
+   Ftchd++;  // one more item fetched
 
-   SetItemName( wFi , wh );
    inhibit_Modification( true );
-   v_c05f[ wFi ]->store_linearization( ItemVcblr[wh].second );
+   v_c05f[ wFi ]->store_linearization( gpp );
    inhibit_Modification( false );
 
-   if( UpFiLmb1[ wFi ] < Inf<double>() ) {  // it is a subgradient
+   add_to_global_pool( wFi , gpp , wh );
+
+   if( diagonal ) {     // it is a subgradient
+    OOBase[ wh ] = -1;  // ensure it won't be touched again this round
+
     if( ( whisG1[ wFi ] == InINF ) || ( Alfa1k < Alfa1[ wFi ] ) ||
        ( ( Alfa1k == Alfa1[ wFi ] ) && ( ScPr1k > ScPr1[ wFi ] ) ) ) {
-     whisG1[ wFi ] = wh;       // wh is the new representative of wFi
+     whisG1[ wFi ] = wh;  // wh is the new representative of wFi
      Alfa1[ wFi ] = Alfa1k;
      ScPr1[ wFi ] = ScPr1k;
      }
     }
-   else
+   else                 // it is a constraint
+    // mark it as permanently fixed: this may be a bad choice in practice,
+    // although it is required by the theory (we'll see ...)
     OOBase[ wh ] = - Inf<SIndex>();
-   /* if the item is a constraint, mark it as permanently fixed: this may be
-      a bad choice in practice, although it is required by the theory
-      (we'll see ...) */
    }
   }  // end( items-collecting loop )- - - - - - - - - - - - - - - - - - - - -
 
@@ -2088,15 +2160,16 @@ bool BundleSolver::FiAndGi( Index wFi )
 
 void BundleSolver::GotoLambda1( void )
 {
- std::vector<VarValue>  DeltaFi( NumVar );
- std::transform( UpFiLmb1.begin(), UpFiLmb1.end(), UpRifFi.begin(),
-		 DeltaFi.begin(), std::minus<double>() );
+ std::vector<VarValue> DeltaFi( NumVar );  // DeltaFi = UpFiLmb1 - UpRifFi
+ std::transform( UpFiLmb1.begin() , UpFiLmb1.end() , UpRifFi.begin() ,
+		 DeltaFi.begin() , std::minus<double>() );
 
  // do the move - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // Lambda = Lambda1
 
- Lambda.swap(Lambda1);
- UpFiLmb.swap(UpFiLmb1);
- LwFiLmb.swap(LwFiLmb1);
+ Lambda.swap( Lambda1 );
+ UpFiLmb.swap( UpFiLmb1 );
+ LwFiLmb.swap( LwFiLmb1 );
  UpRifFi = UpFiLmb;
 
  // change the current point in the MP Solver - - - - - - - - - - - - - - - -
@@ -2113,11 +2186,26 @@ void BundleSolver::GotoLambda1( void )
 
 void BundleSolver::SimpleBStrat( void )
 {
- for( SIndex* tOO = OOBase.data() + Master->MaxName() ; tOO-- > OOBase.data() ; )
-  if( ( *tOO < Inf<SIndex>() ) && ( *tOO > SIndex( BPar1 ) ) ) {
-   const Index h = tOO - OOBase.data();
-   Delete( h );
-   }
+ if( ( BPar7 & 3 ) == 3 ) {  // "eager" deletion
+  std::vector<Subset> tbdltd( NrFi );
+  for( Index i = 0 ; i < Master->MaxName() ; ++i )
+   if( ( OOBase[ i ] < Inf<SIndex>() ) &&
+       ( OOBase[ i ] > SIndex( BPar1 ) ) ) {
+    tbdltd[ ItemVcblr[ i ].first ].push_back( ItemVcblr[ i ].second );
+    Delete( i );
+    }
+
+  inhibit_Modification( true );
+  for( Index k = 0 ; k < NrFi , ++k )
+   if( ! tbdltd[ k ].empty )
+    v_c05f[ k ]->delete_linearizations( std::move( tbdltd[ k ] ) , false );
+  inhibit_Modification( false );
+  }
+ else                        // "lazy" deletion
+  for( Index h = i ; i < Master->MaxName() ; ++i )
+   if( ( OOBase[ i ] < Inf<SIndex>() ) && ( OOBase[ i ] > SIndex( BPar1 ) ) )
+    Delete( i );
+
  }  // end( BundleSolver::SimpleBStrat ) - - - - - - - - - - - - - - - - - - -
 
 /*--------------------------------------------------------------------------*/
@@ -2260,198 +2348,204 @@ Index BundleSolver::BStrategy( Index wFi )
  // this method implements the B-strategies of the code, i.e., which "old"
  // items are discarded if the bundle is full and a new item belonging to
  // component wFi has to be inserted
- // note: this is called *before* that we know if the place will actually be
- // required, so it may return InINF and nothing bad may happen
+ //
+ // this is called *before* that we know if the place will actually be
+ // required, so it has a "loose attitude"; in particular, it will return
+ // InINF under two opposite set of conditions:
+ //
+ // - there is plenty of space left in the bundle, so that no B-strategy (no
+ //   removal or aggregation) is required;
+ //
+ // - there is no way in which space can be found, i.e., the bundle (for this
+ //   component) is full, and removal/aggregation are not successful (a very
+ //   strange occurrence due to an extremely small bundle or it being chock
+ //   full of constraints)
+ //
+ // Picking a specific spot in the free space is the task of FindAPlace(),
+ // which however is not called right away because the place may end up not
+ // being needed. If BStrategy() returne InINF because there is plenty of
+ // space then FindAPlace() will suceed, if BStrategy() returne InINF because
+ // there is no way space can be found then FindAPlace() will fail and it
+ // will be clear that disaster looms
+ //
+ // important note: if the returned wFi is not InINF, *and* it is the name
+ // of an item still in the bundle, then:
+ //
+ // - the item belongs to the component wFi, so as to keep the number of
+ //   items of that component constant
+ //
+ // - the item is *not* deleted, since it is not 100% sure this will need
+ //   to be done, so deletion will be responsibility of the caller
 
- // in particular, it returns InINF is there is plenty of space left
- // in the bundle so that no B-strategy (no removal or aggregation) is
- // required; picking a specific spot in the free space is the task of
- // FindAPlace(), which however is not called right away because the place
- // may end up not being needed
+ // there are "free" items in the global pool: there is "plenty of space"
+ if( FrFItem[ wFi ] < vBPar2[ wFi ] )
+  return( InINF );
+
+ // there is not plenty of space, take 1- - - - - - - - - - - - - - - - - - -
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // there are no "free" items in the gloal pool, but there are items in the
+ // global pool that are not in the bundle; these will go first
 
  if( NrItems[ wFi ] < vBPar2[ wFi ] )
   return( InINF );
 
- // there is not plenty of space- - - - - - - - - - - - - - - - - - - - - - -
+ // there is not plenty of space, take 2- - - - - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
- // find the removable item with largest OOBase[]; among these with the
- // largest OOBase[], select that with largest Alfa[]
- // note: the Z[ wFi ] in the bundle (if any) are not removable and
+ // the bundle for component wFi is full, which implies that the global pool
+ // is also full: among the items in the bundle for component wFi, find the
+ // removable one with largest OOBase[], snd among these with the largest
+ // OOBase[] select that with largest Alfa[]
+ // note: the Z[ wFi ] in the bundle (if any) is not removable and
  //       therefore cannot be selected, which in particular happens if
  //       wFi has only *one* subgradient in base
 
- Index wh = 0;
+ Index wh;
+ SIndex OOwh = - Inf<SIndex>();
+ HpNum Awh = -Inf<HpNum>();
  cHpRow tA = Master->ReadLinErr();
- for( Index i = 0 ; ++i < vBPar2[ NrFi ] ; )
-  if( ( OOBase[ i ] > OOBase[ wh ] ) ||
-      ( ( OOBase[ i ] == OOBase[ wh ] ) && ( tA[ i ] > tA[ wh ] ) ) )
+ for( auto i : InvItemVcblr[ wFi ] ) {
+  assert( i < vBPar2[ NrFi ] );
+  if( ( OOBase[ i ] > OOwh ) ||
+      ( ( OOBase[ i ] == OOwh ) && ( tA[ i ] > Awh ) ) ) {
    wh = i;
+   OOwh = OOBase[ i ];
+   Awh = tA[ i ];
+   }
+  }
 
  if( OOBase[ wh ] < 0 )    // all items are non-removable: nothing else to
-  return( InINF );  // do (except maybe complaining very loudly)
+  return( InINF );         // do (except maybe complaining very loudly)
  else
   if( OOBase[ wh ] > 0 )   // a place is found
    return( wh );           // there are no problems, all done
 
  // wh is a basic item- - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
- // this means that *all* items of *all* components are either in base or not
+ // this means that *all* items of component wFi are either in base or not
  // removable, for otherwise we would have selected an item with OOBase > 0;
  // we cannot discard anything before having performed aggregation, but in
- // order to do so we also need to free some space for the Z[]
+ // order to do so we also need to free some space for the Z[ wFi ]
+
+ Index MBDm;
+ cIndex_Set MBse;
+ cHpRow Mlt = Master->ReadMult( MBse , MBDm , wFi , false );
+ // note that since *all* items of this component are either in base or
+ // not removable we can scan MBse[] for the items to be removed, possibly
+ // ignoring items with Mlt[] == 0 -- but in fact not doing it because there
+ // is not any
+
+ if( whisZ[ wFi ] == InINF ) {
+  // Z[ wFi ] is not already in: aggregation has to be performed, so select
+  // the item to take Z[ wFi ] as the "most proising one" already in wh
+
+  AggregateZ( Mlt , MBse , MBDm , wFi , wh );  // put it in wh
+
+  // and now ensure that Mlt and MBse are reliable again; this is
+  // needed because AggregateZ() calls methods of the MPSolver which
+  // may therefore "invalidate" temporary vectors like Mlt and MBse
+  // in fact, a particularly nasty MPSolver may take the stance that
+  //  Mlt and MBse cannot ever been reliable since the problem has
+  // changed, but our two ones are not that eager
+ 
+  Mlt = Master->ReadMult( MBse , MBDm , wFi , false );
+  }
+
+ // at this point, Z[ wFi ] is in the bundle: select the exiting item as the
+ // one with the smallest Mult[] among these belonging to wFi
+ //
+ // if aggregation need not be performed, since it had been done already
+ // (Z[ wFi ] is in the bundle), the wh selected in the previous cycle is
+ // not used, but the selection based on a smaller Mult[] should be better
 
  wh = InINF;
- for( Index wFi2 = wFi ; ; ) {
-  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-  // this is done component-wise, round-robin starting from wFi in order to
-  // try to keep the balance between the space allocated to each component
-  if( IsEasy.size() && IsEasy[ wFi2 ] ) {  // ... but skipping easy components
-    wFi2 = ( wFi2 == NrFi ? 1 : wFi2 + 1 );
-    if( wFi2 == wFi )
-     break;
-    else
-     continue;
+ // this may fail, so one could fear of having just done aggregation to no
+ // avoil; yet I don't think this can happen, as the only case would be that
+ // of having only one removable subgradient in the wFi base (that is taken
+ // by Z[ wFi ]), but the only reasonable case in which this can happen is
+ // that there is only one subgradient at all, in which case it is Z[ wFi ]
+ // and no aggregation is  done (in other words, you do aggregation only if
+ // you have at least two subgradients in base, and there is no reason one of
+ // them should be non removable)
+
+ HpNum tMin = Inf<HpNum>();
+ if( MBse ) {
+  for( Index h ; ( h = *(MBse++) ) < InINF ; ++Mlt )
+   if( ( *Mlt < tMin ) && ( OOBase[ h ] >= 0 ) ) {
+    wh = h;
+    tMin = *Mlt;
     }
-
-  Index MBDm;
-  cIndex_Set MBse;
-  cHpRow Mlt = Master->ReadMult( MBse , MBDm , wFi2 , false );
-  // note that since *all* items of *all* components are either in base or
-  // not removable we can scan MBse[] for the items to be removed, possibly
-  // ignoring items with Mlt[] == 0 -- but in fact not doing it because there
-  // is not any
-
-  if( whisZ[ wFi2 ] == InINF ) {
-   // Z[ wFi2 ] is not already in: in principle aggregation might have to
-   // be performed, so select the item to take Z[ wFi2 ] as the one with
-   // smallest Mlt
-
-   cHpRow tM = Mlt;
-   Index whZ = InINF;
-   HpNum tMin = Inf<double>();
-   if( MBse ) {
-    cIndex_Set tB = MBse;
-    for( Index h ; ( h = *(tB++) ) < InINF ; tM++ )
-     if( ( *tM < tMin ) && ( OOBase[ h ] >= 0 ) ) {
-      whZ = h;
-      tMin = *tM;
-      }
-    }
-   else
-    for( Index h = 0 ; h < MBDm ; h++ , tM++ )
-     if( ( *tM < tMin ) && ( OOBase[ h ] >= 0 ) ) {
-      whZ = h;
-      tMin = *tM;
-      }
-
-   if( whZ < InINF ) {  // if there is space for Z[ wFi2 ]
-    AggregateZ( Mlt , MBse , MBDm , wFi2 , whZ );  // put it in whZ
-    Mlt = Master->ReadMult( MBse , MBDm , wFi2 , false );
-    // and now ensure that Mlt and MBse are reliable again; this is
-    // needed because AggregateZ() calls methods of the MPSolver which
-    // may therefore "invalidate" temporary vectors like Mlt and MBse
-    }
-   else {
-    // there is *no* removable item of this component: this in some sense is
-    // no problem, because in this case aggregation is not needed, but on the
-    // other hand it means that there is no way this component will provide
-    // any place, so have to move to the next
-    wFi2 = ( wFi2 == NrFi ? 1 : wFi2 + 1 );
-    if( wFi2 == wFi )
-     break;
-    else
-     continue;
-    }
-   }  // end if( Z[ wFi2 ] is not already in )
-
-  // at this point, Z[ wFi2 ] is in the bundle: try to select the exiting
-  // item as the one with the smallest Mult[] among these belonging to wFi2
-  // this may fail, prompting to move to the next component, so one could
-  // fear of having just done aggregation to no avoil; yet I don't think
-  // this can happen, as the only case would be that of having only one
-  // removable subgradient in the wFi2 base (that is taken by whZ), but the
-  // only reasonable case in which this can happen is that there is only one
-  // subgradient at all, in which case it is Z[ wFi2 ] and no aggregation is
-  // done (in other words, you do aggregation only if you have at least two
-  // subgradients in base, and there is no reason one of them should be non
-  // removable)
-  HpNum tMin = Inf<double>();
-  if( MBse ) {
-   for( Index h ; ( h = *(MBse++) ) < InINF ; Mlt++ )
-    if( ( *Mlt < tMin ) && ( OOBase[ h ] >= 0 ) ) {
-     wh = h;
-     tMin = *Mlt;
-     }
    }
-  else
-   for( Index h = 0 ; h < MBDm ; h++ , Mlt++ )
-    if( ( *Mlt < tMin ) && ( OOBase[ h ] >= 0 ) ) {
-     wh = h;
-     tMin = *Mlt;
-     }
-
-  if( wh < InINF )  // a place has been found
-   break;                  // all done
-  else {                   // all the items of wFi2 are not removable
-   wFi2 = ( wFi2 == NrFi ? 1 : wFi2 + 1 );  // try the next component
-   if( wFi2 == wFi )                        // if any has remained
-    break;                                  // otherwise give up
-   }
-  }  // end for( wFi2 ) - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ else
+  for( Index h = 0 ; h < MBDm ; h++ , ++Mlt )
+   if( ( *Mlt < tMin ) && ( OOBase[ h ] >= 0 ) ) {
+    wh = h;
+    tMin = *Mlt;
+    }
 
  return( wh );
- }  // end( BundleSolver::BStrategy )  - - - - - - - - - - - - - - - - - - - -
+
+ }  // end( BundleSolver::BStrategy ) - - - - - - - - - - - - - - - - - - - -
 
 /*--------------------------------------------------------------------------*/
 
-Index BundleSolver::FindAPlace( cIndex wFi )
+Index BundleSolver::FindAPlace( Index wFi )
 {
  // this method is used to return the index of an available position in the
  // bundle where to store a new item belonging to "component" wFi; if there
  // are no possible positions left, then InINF is returned
+ //
+ // note that positions in the bundle are not "reserved to components", so
+ // the task of FindAPlace() is easy. it is the business of other parts of
+ // the code to ensure that a component does not use more than its fair
+ // share of positions in the bundle
 
  Index wh = InINF;
 
- if( FreList.size() ) {              // there are deleted items
-  wh = FreList.top();   // pick one
+ if( FreList.size() ) {     // there are deleted items
+  wh = FreList.top();       // pick the first one (smaller name)
   FreList.pop();
-
-  // throw( std::logic_error( "Fre List" ) );
-
   }
- else                                       // there are no deleted items ...
-  if( Master->MaxName() < Index( vBPar2[ NrFi ] ) )
-                                            // ... but there is still space
-   wh = Master->MaxName();                  // next name
-
- assert( Master->MaxName() >= FreList.size() );
+ else                       // there are no deleted items ...
+  if( Master->MaxName() < vBPar2[ NrFi ] )
+                            // ... but there is still space
+   wh = Master->MaxName();  // next name
 
  return( wh );
 
- }  // end( BundleSolver::FindAPlace ) - - - - - - - - - - - - - - - - - - - -
+ }  // end( BundleSolver::FindAPlace )- - - - - - - - - - - - - - - - - - - -
 
 /*--------------------------------------------------------------------------*/
 
 void BundleSolver::AggregateZ( cHpRow Mlt , cIndex_Set MBse , Index MBDm ,
-			  	cIndex wFi , cIndex whr )
+			       cIndex wFi , cIndex whr )
 {
  // note: this is *never* called in the "easy" case where aggregation is not
  // needed because there is only one subgradient in base (for the component
  // wFi) and therefore, its Mlt[] is == 1, since in this case whisZ[] has
  // been properly set in UpdtCntrs()
+ //
+ // note that AggregateZ() is only called when the bundle (for component wFi)
+ // is "very full", and therefore also the global pool (for component wFi) is
+ // such. hence, whr is an item already in the bundle, and therefore in the
+ // global pool. the natural choice is to put the new aggregate linearization
+ // in the same position in the global pool where whr was, i.e.,
+ // ItemVcblr[ whr ].second. hence, ItemVcblr, InvItemVcblr and so on need
+ // not be changed because whr is completely substituted by Z
+ 
+ // tell the C05Function what is going to happen- - - - - - - - - - - - - - -
 
- // tell the C05Function what is going to happen  - - - - - - - - - - - - - - -
-
- LinearCombination coefficients( MBDm );
- for( Index i = 0 ; i < MBDm ; i++ ) {
-  coefficients[i].first =  MBse[ i ];
-  coefficients[i].second =  Mlt[ i ];
+ LinearCombination coeff( MBDm );
+ for( Index i = 0 ; i < MBDm ; ++i ) {
+  coeff[ i ].first = ItemVcblr[ MBse[ i ] ].second;
+  coeff[ i ].second = Mlt[ i ];
   }
 
- SetItemName( wFi , whr );
  inhibit_Modification( true );
- v_c05f[ wFi ]->store_combination_of_linearizations( coefficients , ItemVcblr[whr].second );
+ v_c05f[ wFi ]->store_combination_of_linearizations( coeff ,
+						   ItemVcblr[ whr ].second );
  inhibit_Modification( false );
+
+ Master->RmvItem( whr );  // remove the old item in position whr
 
  // ask the MPSolver the memory for keeping Z[ wFi ]- - - - - - - - - - - - -
  // note: Mlt and MBse could very well be "temporary" memory belonging to the
@@ -2474,8 +2568,6 @@ void BundleSolver::AggregateZ( cHpRow Mlt , cIndex_Set MBse , Index MBDm ,
  HpNum Ai = Master->ReadSigma( wFi );          // its alfa is Sigma[ wFi ]
 
  Master->CheckSubG( 0 , 0 , Ai , ScPri );      // DFi == Tau == 0
-
- Master->RmvItem( whr );  // remove the old item in position whr
 
  Master->SetItem( whr );  // set Z[ wFi ] in position whr
 
@@ -2531,30 +2623,52 @@ void BundleSolver::RemoveItems( void )
 
 void BundleSolver::guts_of_destructor( void )
 {
- LmbdBst.clear(); // does it make sense??
- Lambda1.clear();
- Lambda.clear();
+ if( Master ) {
+  Master->SetDim();
+  delete( Master );
+  }
 
  Alfa1.clear();
  ScPr1.clear();
  whisG1.clear();
+ vStar.clear();
 
+ LwFiLmb.clear();
+ UpFiLmb.clear();
+ LwFiLmb1.clear();
+ UpFiLmb1.clear();
+ UpRifFi.clear();
+ 
  FiStatus.clear();
 
  whisZ.clear();
  FreList = {};
- OOBase.clear();
- NrItems.clear();
- DFItems.clear();
- NFItems.clear();
 
+ MaxItem.clear();
+ FFrItem.clear();
+ NrItems.clear();
+
+ InvItemVcblr.clear();
  ItemVcblr.clear();
+
+ OOBase.clear();
+
+ LmbdBst.clear();
+ Lambda1.clear();
+ Lambda.clear();
+
+ v_BPar2.clear();
+
+ for( auto milpp : MILP_s )
+  delete( milpp );
+ MILP_s.clear();
+ IsEasy.clear();
+
  LamVcblr.clear();
 
- if( !IsEasy.empty() )
-  IsEasy.clear();
+ v_c05f.clear();
 
- }  // end( BundleSolver::MemDealloc( ) )  - - - - - - - - - - - - - - - - - -
+ }  // end( BundleSolver:guts_of_destructor )  - - - - - - - - - - - - - - - -
 
 /*--------------------------------------------------------------------------*/
 
@@ -2621,65 +2735,64 @@ void BundleSolver::ReSetAlg( unsigned char RstLvl )
 
 void BundleSolver::Delete( cIndex i , bool ModDelete )
 {
+ // deletes from the bundle the item in position i
+ //
+ // ModDelete == true means that this is called in response of a Modification
+ // where the linearization has been removed from the global pool
+ //
+ // whatever BPar7 says, no linearization is physically deleted here inside,
+ // this has to be done by the caller (if needed)
+
  cIndex wFi = ItemVcblr[ i ].first;
 
- if( Master ) {
-  // check if this item was the "representative" for its component- - - - - -
+ // check if this item was the "representative" for its component - - - - - -
 
-  if( Master->IsSubG( i ) )  // it is a subgradient
-   if( whisG1[ wFi ] == i )  // it is the representative of wFi
-    whisG1[ wFi ] = InINF;   // a new representative is needed
+ if( Master->IsSubG( i ) )  // it is a subgradient
+  if( whisG1[ wFi ] == i )  // it is the representative of wFi
+   whisG1[ wFi ] = InINF;   // a new representative is needed
 
-  // delete the item with name `i' from the MP- - - - - - - - - - - - - - - -
+ // delete the item from the MP - - - - - - - - - - - - - - - - - - - - - - -
 
-  Master->RmvItem( i );
-  }
+ Master->RmvItem( i );
 
  BLOG( 2 , std::endl << "Item " << i << " removed" );
 
  // bookkeeping of internal data structures - - - - - - - - - - - - - - - - -
-
- FreList.push( i );
- OOBase[ i ] = Inf<SIndex>();
-
- // because of the deletion, if the item is the last one
- // in the pool the updating of max item must be performed
- // in any case update the max item of the pool
-
-
- if( ModDelete ) {
-  ItemVcblr[ i ].second += vBPar2[ wFi ];   // slot can be rewritten
-  DFItems[ wFi ]++;
-  }
- else {
-  if( BPar7 ) {
-   ItemVcblr[ i ].second += vBPar2[ wFi ];
-   DFItems[ wFi ]++;
-   }
-  else {
-   ItemVcblr[ i ].second -= vBPar2[ wFi ];
-   NFItems[ wFi ]++;
-   }
-  }
-
- NrItems[ wFi ]--;
-
- // compacting FreList[] if it's too big- - - - - - - - - - - - - - - - - - -
- // remove from FreList[] every name >= Master->MaxName(); note that every
- // ordered set *is* a Heap. apart from efficiency reasons, this is
- // needed because Master->MaxName() - FreDim is the only way in which the
- // Bundle can compute the number of "live" items
+ // note that any item whose name is >= Master->MaxName() is surely not in
+ // the bundle (master problem), and therefore it need not be in FreList
 
  cIndex MxNm = Master->MaxName();
+ if( i < MxNm )
+  FreList.push( i );
+
+ OOBase[ i ] = Inf<SIndex>();
+ --NrItems[ wFi ];
+
+ // remove from the global pool: the removal is "hard" if either BPar7 says
+ // so, or the linearization had been deleted anyway
+
+ remove_from_global_pool( k , ItemVcblr[ wh ].second ,
+			  ( ( BPar7 & 3 ) == 3 ) || ModDelete );
+ ItemVcblr[ wh ].second = Inf<Index>();
+
+ // check if compacting FreList is appropriate- - - - - - - - - - - - - - - -
+ // the issue with having indices of "free" position in the bundle stored in
+ // a priority_queue is the following: if the bundle gets "full", but then is
+ // "emptied", FreList may end up containing "many" elements, and in
+ // particular elements that are >= Master->MaxName(), which therefore are
+ // useless since they are obviously not in the bundle. the check above tries
+ // to avoid that, but it may clearly fail (say, if small items are deleted
+ // before large ones). checking if there are items with name >=
+ // Master->MaxName() in FreList and deleting them is not cheap. the only
+ // easy-to-check case is the one where FreList.size() > Master->MaxName():
+ // if this happens, FreList is cleared and re-initialized
+
  if( FreList.size() > MxNm ) {
   FreList = {};
-  for( Index j = 0 ; j < MxNm ; j++ )
-   if( OOBase[ j ] == Inf<SIndex>() )
-    FreList.push( j );
+  for( Index i = 0 ; i < MxNm ; ++i )
+   if( ItemVcblr[ i ].second == Inf<Index>() )
+    FreList.push( i );
   }
-
- assert( Master->MaxName() >= FreList.size() );
-
  }  // end( BundleSolver::Delete() ) - - - - - - - - - - - - - - - - - - - - -
 
 /*--------------------------------------------------------------------------*/
@@ -2696,12 +2809,12 @@ void BundleSolver::UpdtaBP3( void )
            Index( BPar5 / std::log10( EpsU / RelAcc ) );
    break;
   case( 3 ):
-   if( UpFiLmb[NrFi] > -Inf<double>() )
+   if( UpFiLmb[ NrFi ] > -Inf<double>() )
     aBP3 = ( BPar5 > 0 ? BPar4 : BPar3 ) +
            Index( BPar5 / std::sqrt( EpsU / RelAcc ) );
    break;
   case( 2 ):
-   if( UpFiLmb[NrFi] > -Inf<double>() )
+   if( UpFiLmb[ NrFi ] > -Inf<double>() )
     aBP3 = ( BPar5 > 0 ? BPar4 : BPar3 ) +
            Index( BPar5 * ( RelAcc / EpsU ) );
    break;
@@ -2749,6 +2862,7 @@ bool BundleSolver::IsOptimal( double eps ) const
 bool BundleSolver::CheckAlfa( const bool All )
 {
  return( Sigma >= - t * m3 * Master->ReadDStart( t ) );
+
  }  // end( CheckAlfa )  - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 /*--------------------------------------------------------------------------*/
@@ -2801,72 +2915,167 @@ void BundleSolver::FModChg( VarValue f_shift , Index wFi )
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::SetItemName( Index wFi , Index wh ) {
+void BundleSolver::remove_from_global_pool( Index k , Index i , bool hard )
+{
+ // update InvItemVcblr and all the associated fields to the fact that the
+ // linearization currently in position i of the global pool of component k
+ // is removed; actually, there may as well not be any linearization in
+ // position i already
+ //
+ // the removal is "hard" (meaning the linearization is actually deleted) if
+ // hard == true, and "soft" (the linearization is kept in the global pool
+ // but deleted from the bundle) otherwise
+ //
+ // the actual removal from the global pool is not handled here
 
- // we distinguish three different type of *free* slots of the
- // global pool:
- //	- the free one (a), never assigned, roughly speaking it
- //   is one of the last free positions;
- // - used slot (b), its linearization has been removed
- //   or could be removed; that slot is in the set "DFItems"
- // - almost busy slot (c), its linearization could be removed
- //   but *only if* the slots (a) and (b) are not available;
- //   it belongs to the set "NFItems"
+ InvItemVcblr[ k ][ i ] = hard ? Inf<Index>() : vBPar2[ NrFi ];
+ while( MaxItem[ k ] &&
+	( InvItemVcblr[ k ][ MaxItem[ k ] - 1 ] == Inf<Index>() ) )
+  --MaxItem[ k ];
+ while( FrFItem[ k ] &&
+	( InvItemVcblr[ k ][ FrFItem[ k ] - 1 ] >=
+	  ( BPar7 & 3 ) ? vBPar2[ NrFi ] : Inf<Index>() ) )
+  --FrFItem[ k ];
 
- // two cases can occur:
- // 1. BPar7 == 1, the search is in order performed among the
- //  slots of type b) and the ones of type a)
- // 2. BPar7 == 0, the search is in sequel performed among the
- //  slots of type b), the slots of type a) and finally
- //  the ones of type c)
+ }  // end( remove_from_global_pool )
 
- // the item wh cannot be currently used
- assert( ! (ItemVcblr[wh].first != InINF &&
-         ItemVcblr[wh].second < vBPar2[ItemVcblr[wh].first] &&
-		 ItemVcblr[wh].second >= 0 ) );
+/*--------------------------------------------------------------------------*/
 
- if( DFItems[ wFi] ) {
-  if( !( ItemVcblr[wh].first == wFi
-	  && ItemVcblr[wh].second >= vBPar2[wFi]) ) {
-   Index i = 0;
-   for( ; i < vBPar2[ NrFi ] ; i++  )
-    if( ItemVcblr[i].first == wFi
-		&& ItemVcblr[i].second >= vBPar2[wFi] ) {
-     swap( ItemVcblr[wh] , ItemVcblr[i] );
+Index BundleSolver::find_place_in_global_pool( Index k )
+{
+ // returns a suitable position in the global pool of component k, or InINF
+ // if there is no free space
 
-     break;
-	 }
-   assert( i != vBPar2[NrFi] );
-   }
-  ItemVcblr[wh].second = ItemVcblr[wh].second - vBPar2[wFi];
-  DFItems[ wFi ]--;
-  }
- else
-  if( NrItems[ wFi ] + NFItems[ wFi] < vBPar2[wFi] ) {
-   ItemVcblr[wh].first = wFi; // set component name
-   ItemVcblr[wh].second = NrItems[ wFi ] + NFItems[ wFi];
-   }
-  else {
-   // if BPar7 == 1 --> (NFItems==0)
-   assert( NFItems[ wFi] != 0 );
-   if( !( ItemVcblr[wh].first == wFi
-	  && ItemVcblr[wh].second < 0 ) ) {
-    Index i = 0;
-    for( ; i < vBPar2[ NrFi ] ; i++  )
-	 if( ItemVcblr[i].first == wFi
-			&& ItemVcblr[i].second < 0 ) {
-	  swap( ItemVcblr[wh] , ItemVcblr[i] );
-      break;
-      }
-    assert( i != vBPar2[NrFi] );
+ if( FrFItem[ k ] < vBPar2[ k ] )  // there are free positions
+  return( FrFItem[ k ] );          // return the first of them
+
+ // if there are no free positions but there are less items in the bundle
+ // (for component k) than the size of the global pool, there must be a
+ // some linearization in the global pool that is not in the bundle: find
+ // and return the first one (smallest position)
+ Index gpp = Inf<Index>();
+ if( NrItems[ k ] < vBPar2[ k ] )
+  for( Index i = 0 ; i < MaxItem[ k ] ; ++i )
+   if( InvItemVcblr[ k ][ i ] >= vBPar2[ NrFi ] ) {
+    gpp = i;
+    break;
     }
-   ItemVcblr[wh].second = ItemVcblr[wh].second + vBPar2[wFi];
-   NFItems[ wFi ]--;
-   }
 
- NrItems[ wFi ]++; // update the number of item of wFi
+ return( gpp );
 
- } // end ( BundleSolver::SetItemName )  - - - - - - - - - - - - - - - - - - -
+ }  // end( find_place_in_global_pool )
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::add_to_global_pool( Index k , Index i , Index wh )
+{
+ // update ItemVcblr, InvItemVcblr and all the associated fields the to fact
+ // that the linearization in position i in the global global_pool of
+ // component k will be kept in the bundle at position wh
+ //
+ // the actual addition to the global pool is not handled here
+
+ ItemVcblr[ wh ].first = k;
+ ItemVcblr[ wh ].second = i;
+
+ InvItemVcblr[ k ][ i ] = wh;
+ while( ( MaxItem[ k ] < vBPar2[ k ] ) &&
+	( InvItemVcblr[ k ][ MaxItem[ k ] ] < Inf<Index>() ) )
+  ++MaxItem[ k ];
+ while( ( FrFItem[ k ] < MaxItem[ k ] ) &&
+	( InvItemVcblr[ k ][ FrFItem[ k ] ] <
+	  ( BPar7 & 3 ) ? vBPar2[ NrFi ] : Inf<Index>() ) )
+  ++FrFItem[ k ];
+
+ }  // end( BundleSolver::add_to_global_pool( k , i , wh ) )
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::add_to_global_pool( Index k , Index i )
+{
+ // update InvItemVcblr and all the associated fields the to fact that there
+ // is a linerization in position i in the global global_pool of component k,
+ // although there is no corresponding item in the bundle
+
+ InvItemVcblr[ k ][ i ] = vBPar2[ NrFi ];
+ while( ( MaxItem[ k ] < vBPar2[ k ] ) &&
+	( InvItemVcblr[ k ][ MaxItem[ k ] ] < Inf<Index>() ) )
+  ++MaxItem[ k ];
+ if( ! ( BPar7 & 3 ) )  // if items not in the bundle are not "free"
+  return;               // nothing else to do
+ while( ( FrFItem[ k ] < MaxItem[ k ] ) &&
+	( InvItemVcblr[ k ][ FrFItem[ k ] ] < Inf<Index>() ) )
+  ++FrFItem[ k ];
+
+ }  // end( BundleSolver::add_to_global_pool( k , i ) )
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::add_to_bundle( Index k , Index i )
+{
+ // add to the bundle (master problem) the item corresponding to the
+ // linearization to be found at position i in the global pool of
+ // component k; this assumes that the linearization is already there in the
+ // global pool. if InvItemVcblr[ k ][ i ] < vBPar2[ NrFi ], i.e., the item
+ // is already in the bundle, then it is simply replaced, otherwise it is
+ // added
+
+ // ask the MPSolver for the space to write the item to
+ double *G1 = Master->GetItem( k + 1 );
+
+ // recover the linearization from the C05Function
+ v_c05f[ k ]->get_linearization_coefficients( G1 , Range( 0 , NumVar ) , i );
+
+ // recover the constant and "translate" it w.r.t. Lambda
+ auto Ai = v_c05f[ k ]->get_linearization_constant( i );
+ Master->SetItemBse( nullptr , NumVar );
+ double ScPri;
+ if( v_c05f[ k ]->is_linearization_vertical( i ) )
+  Master->CheckCnst( Ai , ScPri , Lambda.data() );
+ else {
+  Ai = UpRifFi[ k ] - Ai -
+       std::inner_product( Lambda.begin() , Lambda.end() , G1 , 0 );
+  Master->CheckSubG( 0 , 0 , Ai , ScPri );
+  }
+
+ auto wh = InvItemVcblr[ k ][ i ];
+ if( wh >= vBPar2[ NrFi ] ) {  // the item is not there already
+  wh = FindAPlace( wFi );      // find a "free" spot in the bundle
+  if( wh == InINF )            // one must be there
+   throw( std::logic_error( "no space found in the bundle" ) );
+
+  ++NrItems[ k ];              // keep count
+  add_to_global_pool( k , i , wh );  // update dictionaries
+  }
+
+ Master->SetItem( wh );  // add the item to the master problem
+
+ }  // end( BundleSolver::add_to_bundle )
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::reset_bundle( void )
+{
+ // completely resets the bundle, because a (bunch of) Modification(s) saying
+ // so has(ve) been received. this only affects the BundleSolver data
+ // structures, not the MPSolver or the C05Function(s)
+
+ OOBase.assign( vBPar2[ NrFi ] , Inf<SIndex>() );
+
+ ItemVcblr.assign( vBPar2[ NrFi ] , make_pair( InINF , InINF ) );
+
+ for( Index k = 0 ; k < NrFi ; ++k )
+  InvItemVcblr[ k ].assign( vBPar2[ k ] , InINF );
+
+ NrItems.assign( NrFi , 0 );
+ FFrItem.assign( NrFi , 0 );
+ MaxItem.assign( NrFi , 0 );
+
+ FreList = {};
+ whisZ.assign( NrFi , InINF );
+
+ whisG1.assign( NrFi , InINF );
+ }
 
 /*--------------------------------------------------------------------------*/
 
@@ -2947,31 +3156,6 @@ void BundleSolver::flatten_Modification_list( Lst_sp_Mod & vmt , sp_Mod mod )
  else
   vmt.push_back( mod );
  }
-
-/*--------------------------------------------------------------------------*/
-
-void BundleSolver::compute_inverse_dictionary( Dctnry & id )
-{
- if( ! id.empty() )  // inverse dictionary computed already
-  return;            // nothing to do
-
- // the inverse dictionary is a std::vector with one entry per component; the
- // entry has size NrItems[ h ], and NrItems[ h ][ i ] is the position in the
- // bundle of the i-th item in the h-th global pool, or Inf< Index > if the
- // i-th item in the global pool is not in the bundle
-
- // allocate memory
- id.resize( NrFi );
- for( Index h = 0 ; h < NrFi ; ++h )
-  id[ h ].resize( NrItems[ h ] , Inf< Index >() );
-
- // now construct the inverse vocabulary
- for( Index i = 0 ; i < Master->MaxName() ; ++i )
-  if( ( ItemVcblr[ i ].second >= 0 ) &&
-      ( ItemVcblr[ i ].second < vBPar2[ ItemVcblr[ i ].first ] ) )
-   id[ ItemVcblr[ i ].first ][ ItemVcblr[ i ].second ] = i;
-
- }  // end( BundleSolver::compute_inverse_dictionary ) - - - - - - - - - - - -
 
 /*--------------------------------------------------------------------------*/
 
@@ -3185,22 +3369,22 @@ void BundleSolver::process_outstanding_Modification( void )
     FModChg( tmod->shift() , wFi );  // change/reset upper/lower values
 
     {
-     const auto ttmod = std::dynamic_pointer_cast<C05FunctionModVarsAddd>(
-								       tmod );
+     const auto ttmod =
+                    std::dynamic_pointer_cast<C05FunctionModVarsAddd>( tmod );
      if( ttmod )
       continue;
      }
 
     {
-     const auto ttmod = std::dynamic_pointer_cast<C05FunctionModVarsRngd>(
-								       tmod );
+     const auto ttmod =
+                    std::dynamic_pointer_cast<C05FunctionModVarsRngd>( tmod );
      if( ttmod )
       continue;
      }
 
     {
-     const auto ttmod = std::dynamic_pointer_cast<C05FunctionModVarsSbst>(
-								       tmod );
+     const auto ttmod =
+                    std::dynamic_pointer_cast<C05FunctionModVarsSbst>( tmod );
      if( ttmod )
       continue;
      }
@@ -3222,22 +3406,22 @@ void BundleSolver::process_outstanding_Modification( void )
     auto fmod = tmod->v_sub_Modifications.front();
 
     {
-     const auto ttmod = std::dynamic_pointer_cast<C05FunctionModVarsAddd>(
-								       fmod );
+     const auto ttmod =
+                    std::dynamic_pointer_cast<C05FunctionModVarsAddd>( fmod );
      if( ttmod )
       continue;
      }
 
     {
-     const auto ttmod = std::dynamic_pointer_cast<C05FunctionModVarsRngd>(
-								       fmod );
+     const auto ttmod =
+                    std::dynamic_pointer_cast<C05FunctionModVarsRngd>( fmod );
      if( ttmod )
       continue;
      }
 
     {
-     const auto ttmod = std::dynamic_pointer_cast<C05FunctionModVarsSbst>(
-								       fmod );
+     const auto ttmod =
+                    std::dynamic_pointer_cast<C05FunctionModVarsSbst>( fmod );
      if( ttmod )
       continue;
      }
@@ -3290,26 +3474,19 @@ void BundleSolver::process_outstanding_Modification( void )
  if( std::find( reset.begin() , reset.end() , false ) == reset.end() ) {
   // all components have been reset
 
-  NrItems.assign( NrFi , 0 );
-  OOBase.assign( vBPar2[ NrFi ] , Inf<SIndex>() );
-  ItemVcblr.assign( vBPar2[ NrFi ] , make_pair( InINF , Inf<SIndex>() ) );
-  whisG1.assign( NrFi , InINF );
-  FreList = {};
-
+  reset_bundle();
   Master->RmvItems();
   }
  else
   if( std::find( reset.begin() , reset.end() , true ) != reset.end() ) {
-   // at least a component has been reset: need to construct the inverse
-   // dictionary < component , global pool position > --> bundle position
-   // (in linear time) to do removals efficiently
-
-   compute_inverse_dictionary( inv_dict );
+   // at least a component has been reset
 
    for( Index k = 0 ; k < NrFi ; ++k )
-    if( reset[ k ] )
-     for( auto i : inv_dict[ k ] )
-      Delete( i , true );
+    if( reset[ k ] ) {
+     for( Index i = 0 : i < MaxItem[ k ] ; ++i )
+      if( InvItemVcblr[ k ][ i ] < vBPar2[ NrFi ] )
+       Delete( InvItemVcblr[ k ][ i ] , true );
+     }
    }
 
  // After this point, all the Modification adding, deleting or modifying
@@ -3642,15 +3819,18 @@ void BundleSolver::process_outstanding_Modification( void )
  if( std::find_if( Rmvd.begin() , Rmvd.end() ,
 		   []( Subset & Rk ) { return( ! Rk.empty() ); }
 		   ) != Rmvd.end() ) {
-  // at least a component has had lnearizations removed: need to construct
-  // the inverse dictionary < component , global pool position > --> bundle
-  // position (if not constructed already) to do removals efficiently
-
-  compute_inverse_dictionary( inv_dict );
+  // at least a component has had lnearizations removed, but note that not
+  // all lnearizations need be in the bundle; if they are not they are
+  // just removed from the global pool (if they are there)
 
   for( Index k = 0 ; k < NrFi ; ++k )
-   for( auto i : Rmvd[ k ] )
-    Delete( inv_dict[ k ][ i ] , true );
+   for( auto i : Rmvd[ k ] ) {
+    auto h = InvItemVcblr[ k ][ i ];
+    if( h < vBPar2[ NrFi ] )
+     Delete( h , true );
+    else
+     remove_from_global_pool( k , i , true );
+    }
   }
 
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -3704,8 +3884,8 @@ void BundleSolver::process_outstanding_Modification( void )
     to_delete = true;
 
     {
-     const auto ttmod = std::dynamic_pointer_cast<FunctionModVarsAddd>(
-								       tmod );
+     const auto ttmod =
+                      std::dynamic_pointer_cast<FunctionModVarsAddd>( tmod );
      if( ttmod ) {
       addd_vars = true;
       if( ! to_add ) {
@@ -3722,8 +3902,8 @@ void BundleSolver::process_outstanding_Modification( void )
      }
 
     {
-     const auto ttmod = std::dynamic_pointer_cast<FunctionModVarsRngd>(
-								       tmod );
+     const auto ttmod =
+                      std::dynamic_pointer_cast<FunctionModVarsRngd>( tmod );
      if( ttmod ) {
       rmvd_vars = true;
       Range rng = ttmod->range();
@@ -3734,7 +3914,7 @@ void BundleSolver::process_outstanding_Modification( void )
        to_add -= nr;               // "virtually" remove them
        continue;                   // nothing else to do
        }
-      if( rng.second >= NumVar ) {  // some of the Variable are deleted already
+      if( rng.second >= NumVar ) {  // some of the Variable deleted already
        auto nr = rng.second - NumVar;
        if( nr > to_add )
 	throw( std::logic_error( "removing non-existing Variable" ) );
@@ -3761,8 +3941,8 @@ void BundleSolver::process_outstanding_Modification( void )
      }
 
     {
-     const auto ttmod = std::dynamic_pointer_cast<FunctionModVarsSbst>(
-								       tmod );
+     const auto ttmod =
+                      std::dynamic_pointer_cast<FunctionModVarsSbst>( tmod );
      if( ttmod ) {
       rmvd_vars = true;
       if( ttmod->subset().front() >= NumVar ) {
@@ -3989,55 +4169,94 @@ void BundleSolver::process_outstanding_Modification( void )
 
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // if there are linearization to add/change, do it now in one blow
+ //
  // note that due to limitations in the MPSolver interface, changing a
  // linearization is identical to adding one, even if the change was limited
  // to a range/subset of the entries
+ //
+ // yet, handling of additions and changes differs depending on BPar7.
+ // in particular, if ( BPar7 & 4 ), then additions to the global pool
+ // imply additions to the bundle, otherwise just marking that the
+ // linearization exists
+ //
+ // note that if ( BPar7 & 3 ) >= 2, BundleSolver will happily delete from
+ // the global pool any linearization it deletes from the bundle; if also
+ // ! ( BPar7 & 4 ), one could therefore think it appropriate to delete
+ // from the global pool any linearization that is added. however, we do not
+ // do that, just refraining to add them to the bundle. these will likely be
+ // overwritten during the optimization, and if memory is a problem then the
+ // global pools should just be sized accordingly
 
  if( toadd ||
      ( std::find_if( Chgd.begin() , Chgd.end() ,
 		     []( Subset & Ck ) { return( ! Ck.empty() ); }
 		     ) != Chgd.end() ) ) {
-  // at least a component has had lnearizations added or changed: need to
-  // construct the inverse dictionary < component , global pool position >
-  // --> bundle position (if not constructed already) to do additions/changes
-  // efficiently
-
-  compute_inverse_dictionary( inv_dict );
+  // at least a component has had lnearizations added or changed
 
   for( Index k = 0 ; k < NrFi ; ++k ) {
+   if( Addd[ k ].empty() && Chgd[ k ].empty() )  // nothing to see here
+    continue;                                    // move off
+
    if( Chgd[ k ].size() >= NrItems[ k ] )  // all items change
     AlphaC[ k ] = reset[ k ] = false;      // this component is served
 
+   // first, cleanup Chgd[ k ] from linearizations not in the bundle
+   if( ! Chgd[ k ].empty() ) {
+    Subset tmp;
+    for( auto i : Chgd[ k ] )
+     if( InvItemVcblr[ k ][ i ] >= vBPar2[ NrFi ] )
+      tmp.push_back( i );
+
+    if( ! tmp.empty() ) {
+     if( tmp.size() >= Chgd[ k ].size() ) {
+      Chgd[ k ].clear();
+      if( Addd[ k ].empty() )  // nothing more to see here
+       continue;               // move off
+      }
+     else
+      set_difference_in_place( Chgd[ k ] , tmp );     
+     }
+    }
+
+   // now, if ! ( BPar7 & 4 ), also cleanup Addd[ k ] from linearizations
+   // not in the bundle, but in doing so mark them into InvItemVcblr
+   // note that for linearizations in the bundle, being in Addd[ k ] is the
+   // same as being in Chgd[ k ]: the linearization has changed, and the
+   // master problem must be changed to reflect this
+   if( ( ! ( BPar7 & 4 ) ) && ( ! Addd[ k ].empty() ) ) {
+    Subset tmp;
+    for( auto i : Addd[ k ] )
+     if( InvItemVcblr[ k ][ i ] >= vBPar2[ NrFi ] ) {
+      InvItemVcblr[ k ][ i ] = vBPar2[ NrFi ];
+      tmp.push_back( i );
+      }
+
+    if( ! tmp.empty() ) {
+     if( tmp.size() >= Addd[ k ].size() ) {
+      Addd[ k ].clear();
+      if( Chgd[ k ].empty() )  // nothing more to see here
+       continue;               // move off
+      }
+     else
+      set_difference_in_place( Addd[ k ] , tmp );     
+     }
+    }
+
    // compute the union between Addd[ k ] and Chgd[ k ] into Addd[ k ]
    if( Addd[ k ].empty() )
-    if( Chgd[ k ].empty() )
-     continue;
-    else
-     Addd[ k ] = std::move( Chgd[ k ] );
+    Addd[ k ] = std::move( Chgd[ k ] );
    else
     if( ! Chgd[ k ].empty() ) {
      Subset tmp( Addd[ k ].size() + Chgd[ k ].size() );
-     std::set_union( Addd[ k ].begin() , Addd[ k ].end() ,
-		     Chgd[ k ].begin() , Chgd[ k ].end() , tmp.begin() );
+     auto it = std::set_union( Addd[ k ].begin() , Addd[ k ].end() ,
+			       Chgd[ k ].begin() , Chgd[ k ].end() ,
+			       tmp.begin() );
+     tmp.resize( it - tmp.begin() );
      Addd[ k ] = std::move( tmp );
      }
 
-   for( auto i : Addd[ k ] ) {
-    double *G1 = Master->GetItem( k + 1 );
-    v_c05f[ k ]->get_linearization_coefficients( G1 ,
-						 make_pair( 0 , NumVar ) , i );
-    auto Ai = v_c05f[ k ]->get_linearization_constant( i );
-    Master->SetItemBse( nullptr , NumVar );
-    double ScPri;
-    if( v_c05f[ k ]->is_linearization_vertical( i ) )
-     Master->CheckCnst( Ai , ScPri , Lambda.data() );
-    else {
-     Ai = UpRifFi[ k ] - Ai -
-          std::inner_product( Lambda.begin() , Lambda.end() , G1 , 0 );
-     Master->CheckSubG( 0 , 0 , Ai , ScPri );
-     }
-    Master->SetItem( inv_dict[ k ][ i ] );
-    }
+   for( auto i : Addd[ k ] )
+    add_to_bundle( k , i );
    }
   }  // end( if( additions or changes ) )
 
@@ -4096,11 +4315,94 @@ void BundleSolver::process_outstanding_Modification( void )
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // and this, finally, is all!!
 
+ #ifndef NDEBUG
+  #if 1
+   // check that ItemVcblr agrees with the global pools 
+   CheckBundle();
+  #endif
+ #endif
+ 
  }  // end( BundleSolver::process_outstanding_Modification ) - - - - - - - - -
 
 /*--------------------------------------------------------------------------*/
 
 #ifndef NDEBUG
+
+void BundleSolver::CheckBundle( void )
+{
+ // check vBPar2
+ for( Index k = 0 ; k < NrFi ; ++k )
+  if( v_c05f[ k ]->get_int_par( C05Function::intGPMaxSz ) != vBPar2[ k ] )
+   std::cerr << "size of global pool " << k << " does not match" << std::endl;
+
+ // check ItemVcblr against InvItemVcblr and Master
+ Subset tmp( NrFi , 0 );
+ for( Index i = 0 ; i < Master->MaxName() ; ++i )
+  if( ItemVcblr[ i ].second < vBPar2[ ItemVcblr[ i ].first ] ) {
+   ++tmp[ ItemVcblr[ i ].first ];
+   if( Master->WComponent( i ) != ItemVcblr[ i ].first + 1 ) {
+    std::cerr << "position " << i << " in the bundle should be of component "
+	      << ItemVcblr[ i ].first << " but Master says ";
+    if( Master->WComponent( i ) == Inf<Index>() )
+     std::cerr << "empty" << std::endl;
+    else
+     std::cerr << Master->WComponent( i ) - 1 << std::endl;
+    }
+
+   if( InvItemVcblr[ ItemVcblr[ i ].first ][ ItemVcblr[ i ].second ] != i )
+    std::cerr << "position " << i << " in the bundle shoud be linearization "
+	      << ItemVcblr[ i ].second << " of component "
+	      << ItemVcblr[ i ].first << " but InvItemVcblr disagrees"
+	      << std::endl;
+   }
+  else
+   if( Master->WComponent( i ) < Inf<Index>() )
+    std::cerr << "position " << i
+	      << " in the bundle should be empty but Master says "
+	      << Master->WComponent( i ) << std::endl;
+
+ // check NrItems
+ for( Index k = 0 ; k < NrFi ; ++k )
+  if( tmp[ k ] != NrItems[ k ] )
+   std::cerr << "counted " << tmp[ k ]
+	     << " items in the bundle for component " << k
+	     << " but NrItems says " << NrItems[ k ] << std::endl;
+							
+ // check InvItemVcblr against ItemVcblr and C05Function
+ for( Index k = 0 ; k < NrFi ; ++k )
+  for( Index i = 0 ; i < vBPar2[ k ] ; ++i ) {
+   if( ( InvItemVcblr[ k ][ i ] < Inf<Index>() ) &&
+       ( ! v_c05f[ k ]->is_linearization_there( i ) ) )
+    std::cerr << "linearization " << i << " in pool " << k
+	      << " does not exist" << std::endl;
+
+   if( ( InvItemVcblr[ k ][ i ] == Inf<Index>() ) &&
+       v_c05f[ k ]->is_linearization_there( i ) )
+    std::cerr << "linearization " << i << " in pool " << k
+	      << " unaccounted for" << std::endl;
+
+   if( ( InvItemVcblr[ k ][ i ] < vBPar2[ NrFI ] ) &&
+       ( ( ItemVcblr[ InvItemVcblr[ k ][ i ] ].first != k ) ||
+	 ( ItemVcblr[ InvItemVcblr[ k ][ i ] ].second != i ) ) )
+    std::cerr << "linearization " << i << " in pool " << k
+	      << " should be in bundle in position "
+	      << InvItemVcblr[ k ][ i ] << " but ItemVcblr disagrees"
+	      << std::endl;
+
+   if( ( InvItemVcblr[ k ][ i ] < Inf<Index>() ) &&
+       ( i >= MaxItem[ k ] ) )
+    std::cerr << "free item in position " << i << " of pool " << k
+	      << " but MaxItem says " << MaxItem[ k ] << std::endl;
+     
+   if( ( InvItemVcblr[ k ][ i ] <
+	 ( BPar7 & 3 ) ? vBPar2[ NrFi ] : Inf<Index>() ) &&
+       ( i < ( FrFItem[ k ] ? FrFItem[ k ] - 1 : Inf<Index>() ) ) )
+    std::cerr << "free item in position " << i << " of pool " << k
+	      << " but FrFItem says " << FrFItem[ k ] << std::endl;
+   }
+ }
+ 
+/*--------------------------------------------------------------------------*/
 
 void BundleSolver::PrintBundle( void )
 {
