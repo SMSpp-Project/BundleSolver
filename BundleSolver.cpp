@@ -44,6 +44,8 @@
 
 #define BLOG2( l , c , x ) if( f_log && ( LogVerb > l ) && c ) *f_log << x
 
+/*--------------------------------------------------------------------------*/
+
 #define USE_MPTESTER 0
 
 // if USE_MPTESTER is nonzero, the MPSolver is a MPTester whose master is
@@ -51,6 +53,18 @@
 
 #if USE_MPTESTER
  #include "MPTester.h"
+#endif
+
+/*--------------------------------------------------------------------------*/
+
+#ifndef NDEBUG
+ #define CHECK_DS 1
+ /* Perform long and costly checks on the data structures representing the
+  * bundle and the global pools, checking them against the MPSolver and the
+  * C05Function(s). */
+#else
+ #define CHECK_DS 0
+ // never change this
 #endif
 
 /*--------------------------------------------------------------------------*/
@@ -1163,7 +1177,7 @@ void BundleSolver::set_par( const idx_type par , const int value )
   default:
    CDASolver::set_par( par , value );
   }
- }  // end( BundleSolver::set_par( ) )- - - - - - - - - - - - - - - - - - - -
+ }  // end( BundleSolver::set_par( int ) )- - - - - - - - - - - - - - - - - -
 
 /*--------------------------------------------------------------------------*/
 
@@ -1274,7 +1288,7 @@ void BundleSolver::set_par( const idx_type par , const double value )
   default:
    CDASolver::set_par( par , value );
   }
- } // end (BundleSolver::set_par( ) )  - - - - - - - - - - - - - - - - - - - -
+ }  // end( BundleSolver::set_par( double ) ) - - - - - - - - - - - - - - - -
 
 /*--------------------------------------------------------------------------*/
 /*--------------------------------- METHODS --------------------------------*/
@@ -2146,6 +2160,11 @@ bool BundleSolver::FiAndGi( Index wFi )
     // although it is required by the theory (we'll see ...)
     OOBase[ wh ] = - Inf<SIndex>();
    }
+
+  #if CHECK_DS
+   CheckBundle();
+  #endif
+
   }  // end( items-collecting loop )- - - - - - - - - - - - - - - - - - - - -
 
  // update lower and upper estimates  - - - - - - - - - - - - - - - - - - - -
@@ -2205,7 +2224,11 @@ void BundleSolver::SimpleBStrat( void )
    if( ( OOBase[ i ] < Inf<SIndex>() ) && ( OOBase[ i ] > SIndex( BPar1 ) ) )
     Delete( i );
 
- }  // end( BundleSolver::SimpleBStrat ) - - - - - - - - - - - - - - - - - - -
+ #if CHECK_DS
+  CheckBundle();
+ #endif
+
+ }  // end( BundleSolver::SimpleBStrat )- - - - - - - - - - - - - - - - - - -
 
 /*--------------------------------------------------------------------------*/
 
@@ -4263,11 +4286,9 @@ void BundleSolver::process_outstanding_Modification( void )
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // and this, finally, is all!!
 
- #ifndef NDEBUG
-  #if 1
-   // check that ItemVcblr agrees with the global pools 
-   CheckBundle();
-  #endif
+ #if CHECK_DS
+  // safe possibly some checks
+  CheckBundle();
  #endif
  
  }  // end( BundleSolver::process_outstanding_Modification ) - - - - - - - - -
