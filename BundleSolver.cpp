@@ -252,7 +252,10 @@ const std::vector< int > BundleSolver::dflt_int_par = {
   4 ,  // intOSImp1
   0 ,  // intOSImp2
   1 ,  // intOSImp3
-  62  // intRstAlg
+  2    // intRstAlg, default value:
+       // RstAlg = 0  -  reset algorithmic parameters
+       // RstCrr = 1  -  don't reset current point to all-0
+       // NoStPt = 0  -  do get an initial point
  };
 
 // define and initialize here the default double parameters
@@ -289,12 +292,9 @@ static cIndex kHLTTS =  8;            // "hard" long-term t-strategy
 static cIndex kBLTTS = 12;            // "balancing" long-term t-strategy
 static cIndex kEGTTS = 16;            // "endgame" long-term t-strategy
 
-static const unsigned char RstAlg =  1;  // don't reset algorithmic parameters
-static const unsigned char RstCrr =  2;  // don't reset current point
-static const unsigned char RstSbg =  4;  // don't reset subgradients
-static const unsigned char RstCnt =  8;  // don't reset constraints
-static const unsigned char RstFiV = 16;  // don't reset FiVals
-static const unsigned char NoStPt = 32;  // don't get an initial point
+static const unsigned char RstAlg = 1;  // don't reset algorithmic parameters
+static const unsigned char RstCrr = 2;  // don't reset current point to all-0
+static const unsigned char NoStPt = 4;  // don't get an initial point
 
 static cIndex InINF = SMSpp_di_unipi_it::Inf<Index>();
 
@@ -1068,7 +1068,6 @@ void BundleSolver::set_Block( Block * block )
  // reset algorithm  - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // - - - -  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- // default value  RstCrr | RstSbg | RstCnt | RstFiV | NoStPt = 62
  ReSetAlg( RstAlgPrm );  // Fi( Lambda ) is reset inside
 
  }  // end( BundleSolver::set_Block )  - - - - - - - - - - - - - - - - - - - -
@@ -2602,25 +2601,6 @@ HpNum BundleSolver::Heuristic2( void )
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::RemoveItems( void )
-{
- if( Master )
-  Master->RmvItems();  // remove all items from the MPSolver (if any)
-
- FreList = {};
-
- ItemVcblr.resize( vBPar2[ NrFi ] );
-  for( Index i = 0 ; i < vBPar2[ NrFi ] ; i++ )
-   ItemVcblr[ i ] = make_pair( InINF , Inf<SIndex>() );
-
- NrItems.resize( NrFi , 0 );
- DFItems.resize( NrFi , 0 );
- NFItems.resize( NrFi , 0 );
-
- }  // end( BundleSolver::RemoveItems )  - - - - - - - - - - - - - - - - - - -
-
-/*--------------------------------------------------------------------------*/
-
 void BundleSolver::guts_of_destructor( void )
 {
  if( Master ) {
@@ -2668,7 +2648,7 @@ void BundleSolver::guts_of_destructor( void )
 
  v_c05f.clear();
 
- }  // end( BundleSolver:guts_of_destructor )  - - - - - - - - - - - - - - - -
+ }  // end( BundleSolver:guts_of_destructor ) - - - - - - - - - - - - - - - -
 
 /*--------------------------------------------------------------------------*/
 
@@ -2690,44 +2670,12 @@ void BundleSolver::ReSetAlg( unsigned char RstLvl )
    aBP3 = BPar3;
   }
 
- //!! check if MPSolver != NULL !!
+ f( ! ( RstLvl & RstCrr ) )    // reset the current point to all-0- - - - - -
+  Lambda.assign( NumVar , 0 );
 
- // if( ! ( RstLvl & RstCrr ) )  // reset the current point to all-0- - - - - - -
- // SetLambda();
-
- if( ! ( RstLvl & ( RstSbg | RstCnt ) ) )  // reset everything- - - - - - - -
-  RemoveItems();
- else
-  if( ! ( RstLvl & RstSbg ) ) {  // reset subgrads (but not constrs)- - - - -
-   if( Master->BSize() ) {       // if the bundle is nonempty
-    if( ! Master->BCSize() )     // and it contains only subgradients
-     RemoveItems();              // remove everything
-    else
-     for( Index i = Master->MaxName() ; i-- ; )
-      if( Master->IsSubG( i ) )
-       Delete( i );
-    }
-   }
-  else
-   if( ! ( RstLvl & RstCnt ) ) // reset constrs (but not subgrads) - - - - - -
-    if( Master->BSize() ) {    // if the bundle is nonempty
-     if( Master->BSize() == Master->BCSize() )
-                               // and it contains only constrs
-      RemoveItems();           // remove everything
-     else
-      for( Index i = Master->MaxName() ; i-- ; )
-       if( ! Master->IsSubG( i ) )
-    	Delete( i );
-     }
-
- if( ! ( RstLvl & RstFiV ) )  // reset the current value of Fi( Lambda ) - - -
-  UpFiLmb[ NrFi ] = Inf< VarValue >();
-
- if( !( RstLvl & NoStPt ) ) {  // get an initial point
-  UpFiLmb[ NrFi ] = Inf< VarValue >();
-  for( Index i = 0 ; i < NumVar ; i++ )
-   Lambda[i] = LamVcblr[ i ]->get_value( );
-  }
+ if( ! ( RstLvl & NoStPt ) )    // get an initial point - - - - - - - - - - -
+  for( Index i = 0 ; i < NumVar ; ++i )
+   Lambda[ i ] = LamVcblr[ i ]->get_value();
 
  }  // end( BundleSolver::ReSetAlg ) - - - - - - - - - - - - - - - - - - - - -
 

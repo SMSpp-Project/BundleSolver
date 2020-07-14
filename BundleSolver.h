@@ -698,15 +698,13 @@ public:
   *
   * - intOSImp3 [1]: number of threads ( for OsiMP solver only )
   *
-  * - intRstAlg [ ]: parameter to handle the reset of the algorithm
-  *                  bit-wise coded:
-  *
-  *                  0 bit -> true if don't reset algorithmic parameters
-  *                  1 bit -> true if don't reset current point
-  *                  2 bit -> true if don't reset subgradients
-  *                  3 bit -> true if don't reset constraints
-  *                  4 bit -> true if don't reset FiVals
-  *                  5 bit -> true if don't get an initial point  */
+  * - intRstAlg [2]: parameter to handle the reset of the algorithm when
+  *                  a new Block is set, bit-wise coded:
+  *                  0 bit -> 1 if don't reset algorithmic parameters
+  *                  1 bit -> 1 if don't reset current point to all-0
+  *                  2 bit -> 1 if don't reset current point to using current
+  *                           values of the Variable
+  */
 
  void set_par( const idx_type par , const int value ) override;
 
@@ -1722,12 +1720,6 @@ class FakeFiOracle : public FiOracle
  HpNum Heuristic2( void );
 
 /*--------------------------------------------------------------------------*/
- /** Remove all the items from the bundle, except the (sub)gradient of the
-     linear 0-th component of Fi). */
-
- void RemoveItems( void );
-
-/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  */
 
  void guts_of_destructor( void );
 
@@ -1735,7 +1727,7 @@ class FakeFiOracle : public FiOracle
 
  void ReSetAlg( unsigned char RstLvl = 0 );
 
- /**< Resets the internal state of the Bundle algorithm. Since several
+ /* Resets the internal state of the Bundle algorithm. Since several
     different things can be reset independently, RstLvl is coded bit-wise:
 
     - bit 0: if 0, all the algorithmic parameters are reset to the default
@@ -1745,17 +1737,8 @@ class FakeFiOracle : public FiOracle
     - bit 1: if 0 the current point is reset to the all-0 vector, while if
       1 it is left untouched;
 
-    - bit 2: if 0, all the subgradients are removed from the bundle, except
-      the constant (sub)gradient of the linear 0-th component, while if 1
-      the subgradients are left there;
-
-    - bit 3: if 0, all the constraints are removed from the bundle, while
-      if 1 the constraints are left there.
-
-    - bit 4: if 0 the value of Fi() in the current point is reset to HpINF
-      (i.e., unknown), while if 1 it is left untouched; note that resetting
-      the current point [see bit 1] has this as a side-effect, regardless to
-      the value of bit 4. */
+    - bit 2: if 0, the current point is reset to the value currently in the
+      active Variable of the C05Function, while if 1 it is left untouched. */
 
 /*--------------------------------------------------------------------------*/
 
