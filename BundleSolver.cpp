@@ -730,7 +730,9 @@ void BundleSolver::set_Block( Block * block )
     Constraint.cVariable may have a lower and upper bound. If the lower
     bound  has a finite value, it must be 0. */
 
- if( f_Block->get_nested_Blocks().empty() ) {
+ const auto & sb = f_Block->get_nested_Blocks();
+
+ if( sb.empty() ) {
   // the objective function of the block must be a C05Function  - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -813,7 +815,7 @@ void BundleSolver::set_Block( Block * block )
   LamVcblr.resize( NumVar );
   auto vi = v_c05f[ 0 ]->begin();
   for( Index i = 0 ; i < NumVar ; )
-   LamVcblr[ i++ ] = & (*(vi++));
+   LamVcblr[ i++ ] = static_cast< ColVariable * >( & (*(vi++)) );
 
   if( f_lf ) {
    if( f_lf->get_num_active_var() != NumVar )
@@ -821,7 +823,7 @@ void BundleSolver::set_Block( Block * block )
 
    auto vi = LamVcblr.begin();
    for( auto & v : *f_lf )
-    if( & v != & (*(vi++)) ) 
+    if( static_cast< ColVariable * >( & v ) != *(vi++) )
      throw( std::logic_error( "the list of active Variable do not match" ) );
    }
 
@@ -831,7 +833,7 @@ void BundleSolver::set_Block( Block * block )
 
    auto vi = LamVcblr.begin();
    for( auto & v : *v_c05f[ i ] )
-    if( & v != & (*(vi++)) ) 
+    if( static_cast< ColVariable * >( & v ) != *(vi++) ) 
      throw( std::logic_error( "the list of active Variable do not match" ) );
    }
   } // end decomposed case - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -861,7 +863,7 @@ void BundleSolver::set_Block( Block * block )
 
  Index cnt = 0;
  for( auto & el : v_s_Variable )
-  un_any_static( el , [ & ]( ColVariable & sv ) { LamBVcblr[ cnt++ ] = & svr;
+  un_any_static( el , [ & ]( ColVariable & sv ) { LamBVcblr[ cnt++ ] = & sv;
                   } , un_any_type<ColVariable>() );
 
  std::sort( LamBVcblr.begin() , LamBVcblr.end() );
@@ -903,7 +905,7 @@ void BundleSolver::set_Block( Block * block )
   MILP_s.resize( NrFi , nullptr );
   for( Index k = 0 ; k < NrFi ; ++k ) {
    auto LagB = dynamic_cast< LagBFunction * >( v_c05f[ k ] );
-   if( LagB && LagB->get_inner_block()->get_numcols() ) {
+   if( LagB ) {
     MILP_s[ k ] = new MILPSolver();
     MILP_s[ k ]->set_Block( LagB->get_inner_block() );
     IsEasy[ k ] = true;
@@ -968,7 +970,7 @@ void BundleSolver::set_Block( Block * block )
   InvItemVcblr[ k ].resize( vBPar2[ k ] , InINF );
 
  NrItems.resize( NrFi , 0 );
- FFrItem.resize( NrFi , 0 );
+ FrFItem.resize( NrFi , 0 );
  MaxItem.resize( NrFi , 0 );
 
  FreList = {};
@@ -2036,7 +2038,8 @@ bool BundleSolver::FiAndGi( Index wFi )
   if( f_log && ( LogVerb > 2 ) ) {
    *f_log << std::endl << "            New ";
    if( diagonal ) {
-    if( eps >= std::max( std::abs( UpRifFi[ wFi ] ) , 1 ) * EpsLin / 10 )
+    if( eps >= std::max( std::abs( UpRifFi[ wFi ] ) , double( 1 ) )
+	       * RelAcc / 10 )
      *f_log << "eps-subgradient with eps = " << eps;
     else
      *f_log << "subgradient";
@@ -2056,10 +2059,11 @@ bool BundleSolver::FiAndGi( Index wFi )
            ( ItemVcblr[ cp ].second < vBPar2[ wFi ] ) &&
 	   ( InvItemVcblr[ wFi ][ ItemVcblr[ cp ].second ] == cp ) );
 
-   if( OldA1k >= Alfa1k + std::max( std::abs( Alfa1k ) , 1 ) * EpsLin / 10 ) {
+   if( OldA1k >= Alfa1k + std::max( std::abs( Alfa1k ) , double( 1 ) )
+                          * RelAcc / 10 ) {
     // if the copy has a *substantially* smaller Alfa than the original,
     // replace the original with the copy; in principle relative differences
-    // smaller than EpsLin could be ignored, but we use EpsLin / 10 for safety
+    // smaller than RelAcc could be ignored, but we use RelAcc / 10 for safety
 
     BLOG( 2 , " with smaller Alfa" );
 
@@ -2214,13 +2218,13 @@ void BundleSolver::SimpleBStrat( void )
     }
 
   inhibit_Modification( true );
-  for( Index k = 0 ; k < NrFi , ++k )
-   if( ! tbdltd[ k ].empty )
+  for( Index k = 0 ; k < NrFi ; ++k )
+   if( ! tbdltd[ k ].empty() )
     v_c05f[ k ]->delete_linearizations( std::move( tbdltd[ k ] ) , false );
   inhibit_Modification( false );
   }
  else                        // "lazy" deletion
-  for( Index h = i ; i < Master->MaxName() ; ++i )
+  for( Index i = 0 ; i < Master->MaxName() ; ++i )
    if( ( OOBase[ i ] < Inf<SIndex>() ) && ( OOBase[ i ] > SIndex( BPar1 ) ) )
     Delete( i );
 
@@ -2648,7 +2652,7 @@ void BundleSolver::guts_of_destructor( void )
  FreList = {};
 
  MaxItem.clear();
- FFrItem.clear();
+ FrFItem.clear();
  NrItems.clear();
 
  InvItemVcblr.clear();
@@ -2660,7 +2664,7 @@ void BundleSolver::guts_of_destructor( void )
  Lambda1.clear();
  Lambda.clear();
 
- v_BPar2.clear();
+ vBPar2.clear();
 
  for( auto milpp : MILP_s )
   delete( milpp );
@@ -2693,7 +2697,7 @@ void BundleSolver::ReSetAlg( unsigned char RstLvl )
    aBP3 = BPar3;
   }
 
- f( ! ( RstLvl & RstCrr ) )    // reset the current point to all-0- - - - - -
+ if( ! ( RstLvl & RstCrr ) )    // reset the current point to all-0 - - - - -
   Lambda.assign( NumVar , 0 );
 
  if( ! ( RstLvl & NoStPt ) )    // get an initial point - - - - - - - - - - -
@@ -2714,13 +2718,13 @@ void BundleSolver::Delete( cIndex i , bool ModDelete )
  // whatever BPar7 says, no linearization is physically deleted here inside,
  // this has to be done by the caller (if needed)
 
- cIndex wFi = ItemVcblr[ i ].first;
+ cIndex k = ItemVcblr[ i ].first;
 
  // check if this item was the "representative" for its component - - - - - -
 
  if( Master->IsSubG( i ) )  // it is a subgradient
-  if( whisG1[ wFi ] == i )  // it is the representative of wFi
-   whisG1[ wFi ] = InINF;   // a new representative is needed
+  if( whisG1[ k ] == i )  // it is the representative of wFi
+   whisG1[ k ] = InINF;   // a new representative is needed
 
  // delete the item from the MP - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -2737,14 +2741,14 @@ void BundleSolver::Delete( cIndex i , bool ModDelete )
   FreList.push( i );
 
  OOBase[ i ] = Inf<SIndex>();
- --NrItems[ wFi ];
+ --NrItems[ k ];
 
  // remove from the global pool: the removal is "hard" if either BPar7 says
  // so, or the linearization had been deleted anyway
 
- remove_from_global_pool( k , ItemVcblr[ wh ].second ,
+ remove_from_global_pool( k , ItemVcblr[ i ].second ,
 			  ( ( BPar7 & 3 ) == 3 ) || ModDelete );
- ItemVcblr[ wh ].second = Inf<Index>();
+ ItemVcblr[ i ].second = Inf<Index>();
 
  // check if compacting FreList is appropriate- - - - - - - - - - - - - - - -
  // the issue with having indices of "free" position in the bundle stored in
@@ -2760,9 +2764,9 @@ void BundleSolver::Delete( cIndex i , bool ModDelete )
 
  if( FreList.size() > MxNm ) {
   FreList = {};
-  for( Index i = 0 ; i < MxNm ; ++i )
-   if( ItemVcblr[ i ].second == Inf<Index>() )
-    FreList.push( i );
+  for( Index h = 0 ; h < MxNm ; ++h )
+   if( ItemVcblr[ h ].second == Inf<Index>() )
+    FreList.push( h );
   }
  }  // end( BundleSolver::Delete() ) - - - - - - - - - - - - - - - - - - - - -
 
@@ -3011,7 +3015,7 @@ void BundleSolver::add_to_bundle( Index k , Index i )
 
  auto wh = InvItemVcblr[ k ][ i ];
  if( wh >= vBPar2[ NrFi ] ) {  // the item is not there already
-  wh = FindAPlace( wFi );      // find a "free" spot in the bundle
+  wh = FindAPlace( k );        // find a "free" spot in the bundle
   if( wh == InINF )            // one must be there
    throw( std::logic_error( "no space found in the bundle" ) );
 
@@ -3039,7 +3043,7 @@ void BundleSolver::reset_bundle( void )
   InvItemVcblr[ k ].assign( vBPar2[ k ] , InINF );
 
  NrItems.assign( NrFi , 0 );
- FFrItem.assign( NrFi , 0 );
+ FrFItem.assign( NrFi , 0 );
  MaxItem.assign( NrFi , 0 );
 
  FreList = {};
@@ -3440,11 +3444,8 @@ void BundleSolver::process_outstanding_Modification( void )
  // if any global pool has been reset (or, even better, *all* of them have
  // reset) then delete all items in the (<corresponding) bundle
 
- Dctnry inv_dict;
- 
  if( std::find( reset.begin() , reset.end() , false ) == reset.end() ) {
   // all components have been reset
-
   reset_bundle();
   Master->RmvItems();
   }
@@ -3454,7 +3455,7 @@ void BundleSolver::process_outstanding_Modification( void )
 
    for( Index k = 0 ; k < NrFi ; ++k )
     if( reset[ k ] ) {
-     for( Index i = 0 : i < MaxItem[ k ] ; ++i )
+     for( Index i = 0 ; i < MaxItem[ k ] ; ++i )
       if( InvItemVcblr[ k ][ i ] < vBPar2[ NrFi ] )
        Delete( InvItemVcblr[ k ][ i ] , true );
      }
@@ -3664,9 +3665,9 @@ void BundleSolver::process_outstanding_Modification( void )
  //   always concern all the linearizations), while C05FunctionModLin have
  //   been dealt with already
 
- Dctnry Addd( NrFi );
- Dctnry Rmvd( NrFi );
- Dctnry Chgd( NrFi );
+ std::vector< Subset > Addd( NrFi );
+ std::vector< Subset > Rmvd( NrFi );
+ std::vector< Subset > Chgd( NrFi );
 
  for( auto imod = v_mod_tmp.begin() ; imod != v_mod_tmp.end() ;
       // note the iterator_expression of the for() obtained by defining
@@ -4350,7 +4351,7 @@ void BundleSolver::CheckBundle( void )
     std::cerr << "linearization " << i << " in pool " << k
 	      << " unaccounted for" << std::endl;
 
-   if( ( InvItemVcblr[ k ][ i ] < vBPar2[ NrFI ] ) &&
+   if( ( InvItemVcblr[ k ][ i ] < vBPar2[ NrFi ] ) &&
        ( ( ItemVcblr[ InvItemVcblr[ k ][ i ] ].first != k ) ||
 	 ( ItemVcblr[ InvItemVcblr[ k ][ i ] ].second != i ) ) )
     std::cerr << "linearization " << i << " in pool " << k
