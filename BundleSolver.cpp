@@ -2911,11 +2911,9 @@ void BundleSolver::remove_from_global_pool( Index k , Index i , bool hard )
  while( MaxItem[ k ] &&
 	( InvItemVcblr[ k ][ MaxItem[ k ] - 1 ] == Inf<Index>() ) )
   --MaxItem[ k ];
- if( ! FrFItem[ k ] )         // very first item is free already
-  return;                     // nothing else to do
- if( i + 1 < FrFItem[ k ] )   // creating a new "hole" before the FrFItem
-  FrFItem[ k ] = i + 1;       // this is the new FrFItem
- else                         // deleting something that may be FrFItem
+ if( i < FrFItem[ k ] )   // creating a new "hole" before the FrFItem
+  FrFItem[ k ] = i;       // this is the new FrFItem
+ else                     // deleting something that may be FrFItem
   while( FrFItem[ k ] &&
 	 ( InvItemVcblr[ k ][ FrFItem[ k ] - 1 ] >=
 	   ( ( BPar7 & 3 ) ? vBPar2[ NrFi ] : Inf<Index>() ) ) )
@@ -4347,14 +4345,6 @@ void BundleSolver::CheckBundle( void )
 	     << " items in the bundle for component " << k
 	     << " but NrItems says " << NrItems[ k ] << std::endl;
 
- // check FrFItem == 0, if there are linearizations at all
- for( Index k = 0 ; k < NrFi ; ++k )
-  if( ( FrFItem[ k ] == 0 ) && MaxItem[ k ] &&
-      ( InvItemVcblr[ k ][ 0 ] <
-	( ( BPar7 & 3 ) ? vBPar2[ NrFi ] : Inf<Index>() ) ) )
-   std::cerr << "FrFItem[ " << k << " ] == 0 but first item not free "
-	     << std::endl;
-
  // check InvItemVcblr against ItemVcblr and C05Function
  for( Index k = 0 ; k < NrFi ; ++k )
   for( Index i = 0 ; i < vBPar2[ k ] ; ++i ) {
@@ -4381,13 +4371,12 @@ void BundleSolver::CheckBundle( void )
     std::cerr << "free item in position " << i << " of pool " << k
 	      << " but MaxItem says " << MaxItem[ k ] << std::endl;
 
-   if( FrFItem[ k ] ) {
-    if( ( InvItemVcblr[ k ][ i ] >=
-	  ( ( BPar7 & 3 ) ? vBPar2[ NrFi ] : Inf<Index>() ) ) &&
-	( i < FrFItem[ k ] - 1 ) )
+   if( ( InvItemVcblr[ k ][ i ] >=
+	 ( ( BPar7 & 3 ) ? vBPar2[ NrFi ] : Inf<Index>() ) ) &&
+       ( i < FrFItem[ k ] ) )
      std::cerr << "free item in position " << i << " of pool " << k
 	       << " but FrFItem says " << FrFItem[ k ] << std::endl;
-    }
+
    }  // end( for( i ) )
 
  }  // end( BundleSolver::CheckBundle )
