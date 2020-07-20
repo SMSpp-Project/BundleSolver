@@ -540,7 +540,7 @@ int BundleSolver::compute( bool changedvars )
   // check whether either any error has occurred or time has expired- - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-  if( UpFiLmb1[NrFi] == - Inf<double>() ) {
+  if( UpFiLmb1[ NrFi ] == - Inf<double>() ) {
    BLOG( 1 , " ~ stop (unbounded)" << std::endl );
    Result = kUnbounded;
    break;
@@ -807,36 +807,36 @@ void BundleSolver::set_Block( Block * block )
    if( sb[ i ]->get_dynamic_constraints().size() )
     throw( std::logic_error( "dynamic Constraint are not allowed" ) );
    }
+  }
 
-  // the set of "active" Variable in all Function must be the same - - - - - -
-  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // the set of "active" Variable in all Function must be the same- - - - - - -
+ //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-  NumVar = v_c05f[ 0 ]->get_num_active_var();
-  LamVcblr.resize( NumVar );
-  auto vi = v_c05f[ 0 ]->begin();
-  for( Index i = 0 ; i < NumVar ; )
-   LamVcblr[ i++ ] = static_cast< ColVariable * >( & (*(vi++)) );
+ NumVar = v_c05f[ 0 ]->get_num_active_var();
+ LamVcblr.resize( NumVar );
+ auto vi = std::as_const( v_c05f[ 0 ] )->begin();
+ for( Index i = 0 ; i < NumVar ; ++vi )
+  LamVcblr[ i++ ] = static_cast< ColVariable * >( & (*vi) );
 
-  if( f_lf ) {
-   if( f_lf->get_num_active_var() != NumVar )
+ if( f_lf ) {
+  if( f_lf->get_num_active_var() != NumVar )
+   throw( std::logic_error( "the list of active Variable do not match" ) );
+
+  auto v = f_lf->begin();
+  for( auto vi = LamVcblr.begin() ; vi != LamVcblr.end() ; ++v , ++vi )
+   if( static_cast< ColVariable * >( & (*v) ) != *vi )
     throw( std::logic_error( "the list of active Variable do not match" ) );
+  }
 
-   auto vi = LamVcblr.begin();
-   for( auto & v : *f_lf )
-    if( static_cast< ColVariable * >( & v ) != *(vi++) )
-     throw( std::logic_error( "the list of active Variable do not match" ) );
-   }
+ for( Index i = 1 ; i < sb.size() ; ++i ) {
+  if( v_c05f[ i ]->get_num_active_var() != NumVar )
+   throw( std::logic_error( "the list of active Variable do not match" ) );
 
-  for( Index i = 1 ; i < sb.size() ; ++i ) {
-   if( v_c05f[ i ]->get_num_active_var() != NumVar )
+  auto v = v_c05f[ i ]->begin();
+  for( auto vi = LamVcblr.begin() ; vi != LamVcblr.end() ; ++v , ++vi )
+   if( static_cast< ColVariable * >( & (*v) ) != *vi ) 
     throw( std::logic_error( "the list of active Variable do not match" ) );
-
-   auto vi = LamVcblr.begin();
-   for( auto & v : *v_c05f[ i ] )
-    if( static_cast< ColVariable * >( & v ) != *(vi++) ) 
-     throw( std::logic_error( "the list of active Variable do not match" ) );
-   }
-  } // end decomposed case - - - - - - - - - - - - - - - - - - - - - - - - - -
+  }
 
  // if some Variable are present, they are of the ColVariable type - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -975,6 +975,8 @@ void BundleSolver::set_Block( Block * block )
 
  FreList = {};
  whisZ.resize( NrFi , InINF );
+
+ CurrNrEvls.resize( NrFi , 0 );
 
  FiStatus.resize( NrFi , kUnEval );
  LowerBound = -Inf<double>();     // global lower bounds
@@ -2182,7 +2184,7 @@ bool BundleSolver::FiAndGi( Index wFi )
 
 void BundleSolver::GotoLambda1( void )
 {
- std::vector<VarValue> DeltaFi( NumVar );  // DeltaFi = UpFiLmb1 - UpRifFi
+ std::vector<VarValue> DeltaFi( NrFi + 1 );  // DeltaFi = UpFiLmb1 - UpRifFi
  std::transform( UpFiLmb1.begin() , UpFiLmb1.end() , UpRifFi.begin() ,
 		 DeltaFi.begin() , std::minus<double>() );
 
@@ -2648,6 +2650,8 @@ void BundleSolver::guts_of_destructor( void )
  
  FiStatus.clear();
 
+ CurrNrEvls.clear();
+
  whisZ.clear();
  FreList = {};
 
@@ -2907,10 +2911,15 @@ void BundleSolver::remove_from_global_pool( Index k , Index i , bool hard )
  while( MaxItem[ k ] &&
 	( InvItemVcblr[ k ][ MaxItem[ k ] - 1 ] == Inf<Index>() ) )
   --MaxItem[ k ];
- while( FrFItem[ k ] &&
-	( InvItemVcblr[ k ][ FrFItem[ k ] - 1 ] >=
-	  ( BPar7 & 3 ) ? vBPar2[ NrFi ] : Inf<Index>() ) )
-  --FrFItem[ k ];
+ if( ! FrFItem[ k ] )         // very first item is free already
+  return;                     // nothing else to do
+ if( i + 1 < FrFItem[ k ] )   // creating a new "hole" before the FrFItem
+  FrFItem[ k ] = i + 1;       // this is the new FrFItem
+ else                         // deleting something that may be FrFItem
+  while( FrFItem[ k ] &&
+	 ( InvItemVcblr[ k ][ FrFItem[ k ] - 1 ] >=
+	   ( ( BPar7 & 3 ) ? vBPar2[ NrFi ] : Inf<Index>() ) ) )
+   --FrFItem[ k ];
 
  }  // end( remove_from_global_pool )
 
@@ -2959,7 +2968,7 @@ void BundleSolver::add_to_global_pool( Index k , Index i , Index wh )
   ++MaxItem[ k ];
  while( ( FrFItem[ k ] < MaxItem[ k ] ) &&
 	( InvItemVcblr[ k ][ FrFItem[ k ] ] <
-	  ( BPar7 & 3 ) ? vBPar2[ NrFi ] : Inf<Index>() ) )
+	  ( ( BPar7 & 3 ) ? vBPar2[ NrFi ] : Inf<Index>() ) ) )
   ++FrFItem[ k ];
 
  }  // end( BundleSolver::add_to_global_pool( k , i , wh ) )
@@ -4337,7 +4346,15 @@ void BundleSolver::CheckBundle( void )
    std::cerr << "counted " << tmp[ k ]
 	     << " items in the bundle for component " << k
 	     << " but NrItems says " << NrItems[ k ] << std::endl;
-							
+
+ // check FrFItem == 0, if there are linearizations at all
+ for( Index k = 0 ; k < NrFi ; ++k )
+  if( ( FrFItem[ k ] == 0 ) && MaxItem[ k ] &&
+      ( InvItemVcblr[ k ][ 0 ] <
+	( ( BPar7 & 3 ) ? vBPar2[ NrFi ] : Inf<Index>() ) ) )
+   std::cerr << "FrFItem[ " << k << " ] == 0 but first item not free "
+	     << std::endl;
+
  // check InvItemVcblr against ItemVcblr and C05Function
  for( Index k = 0 ; k < NrFi ; ++k )
   for( Index i = 0 ; i < vBPar2[ k ] ; ++i ) {
@@ -4363,14 +4380,17 @@ void BundleSolver::CheckBundle( void )
        ( i >= MaxItem[ k ] ) )
     std::cerr << "free item in position " << i << " of pool " << k
 	      << " but MaxItem says " << MaxItem[ k ] << std::endl;
-     
-   if( ( InvItemVcblr[ k ][ i ] <
-	 ( BPar7 & 3 ) ? vBPar2[ NrFi ] : Inf<Index>() ) &&
-       ( i < ( FrFItem[ k ] ? FrFItem[ k ] - 1 : Inf<Index>() ) ) )
-    std::cerr << "free item in position " << i << " of pool " << k
-	      << " but FrFItem says " << FrFItem[ k ] << std::endl;
-   }
- }
+
+   if( FrFItem[ k ] ) {
+    if( ( InvItemVcblr[ k ][ i ] >=
+	  ( ( BPar7 & 3 ) ? vBPar2[ NrFi ] : Inf<Index>() ) ) &&
+	( i < FrFItem[ k ] - 1 ) )
+     std::cerr << "free item in position " << i << " of pool " << k
+	       << " but FrFItem says " << FrFItem[ k ] << std::endl;
+    }
+   }  // end( for( i ) )
+
+ }  // end( BundleSolver::CheckBundle )
  
 /*--------------------------------------------------------------------------*/
 
