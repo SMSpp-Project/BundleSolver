@@ -400,10 +400,9 @@ public:
   * template argument derives from MCFClass. */
 
  BundleSolver( void ) : CDASolver() , FakeFi( this ) , Result( kUnEval ) ,
-  NumVar( 0 ) , NrFi( 0 ) , SCalls( 0 ) , ParIter( 0 ) , FiEvaltns( 0 ) ,
-  GiEvaltns ( 0 ) , NrEasy( 0 ) , LHasChgd( true ) ,
-  tHasChgd( true ) , LowerBound( - Inf< VarValue >() ) , t( 0 ) ,
-  Prevt( 0 ) , Sigma( 0 ) , DSTS( 0 ) , vStar( 0 ) , DeltaFi( 0 ) ,
+  NumVar( 0 ) , NrFi( 0 ) , SCalls( 0 ) , ParIter( 0 ) , NrEasy( 0 ) ,
+  LHasChgd( true ) , tHasChgd( true ) , LowerBound( - Inf< VarValue >() ) ,
+  t( 0 ) , Prevt( 0 ) , Sigma( 0 ) , DSTS( 0 ) , vStar( 0 ) , DeltaFi( 0 ) ,
   EpsU( 0 ) , CSSCntr( 0 ) , CNSCntr( 0 ) , TrueLB( false ) ,
   LBHasChgd( false ) , SSDone( true ) , MBDim( 0 ) , aBP3( 0 ) , 
   f_lf( nullptr ) , Master( nullptr ) , UpTrgt( 0 ) , LwTrgt( 0 ) ,
@@ -1259,8 +1258,6 @@ public:
 
  Index SCalls;      ///< nuber of calls to Solve() (the current included)
  Index ParIter;     ///< nuber of iterations in this run
- Index FiEvaltns;   ///< total number of Fi() calls
- Index GiEvaltns;   ///< total number of Gi() calls
 
  Vec_Bool IsEasy;   ///< tells which component of Fi is "easy"
  Index NrEasy;      ///< number of "easy" component of Fi

@@ -1950,8 +1950,6 @@ bool BundleSolver::FiAndGi( Index wFi )
  else
   DeltaFi = UpFiLmb1[ NrFi ] - UpRifFi[ NrFi ];
 
- FiEvaltns++;
-
  // update FiBest, if necessary - - - - - - - - - - - - - - - - - - - - - - -
 
  if( UpFiLmb1[ NrFi ] < UpFiBest ) {
@@ -1966,7 +1964,7 @@ bool BundleSolver::FiAndGi( Index wFi )
  bool HasLinearization;
  bool diagonal;
 
- for( Index Ftchd = 0 ; Ftchd < aBP3 ; ) {
+ for( Index Ftchd = 0 ; Ftchd < aBP3 ; ++Ftchd ) {
   diagonal = true;
 
   if( Ftchd == 0 ) {
@@ -2011,8 +2009,6 @@ bool BundleSolver::FiAndGi( Index wFi )
   HpNum Alfa1k = fwFi->get_linearization_constant();
   HpNum eps;
 
-  GiEvaltns++;
-
   // pass the base to the MP Solver - - - - - - - - - - - - - - - - - - - - -
 
   cIndex_Set SGBse = nullptr;
@@ -2052,8 +2048,12 @@ bool BundleSolver::FiAndGi( Index wFi )
     *f_log << "constraint " << wh << " ~ rhs = " << Alfa1k;
    }
 
+  bool to_insert = true;  // if it has to be inserted
+
   if( cp < InINF ) {  // the item is a copy - - - - - - - - - - - - - - - - -
    BLOG( 2 , " is copy of " << cp << " (" << ItemVcblr[ cp ].second << ")" );
+
+   wh = cp;  // we have it already
 
    auto OldA1k = (Master->ReadLinErr())[ cp ];
 
@@ -2076,24 +2076,21 @@ bool BundleSolver::FiAndGi( Index wFi )
      // sacrificed, it'll be the copy
      auto ngpp = find_place_in_global_pool( wFi );
      if( ngpp < Inf<Index>() ) {       // a free place has been found
+      // although the old linearization is kept, it is removed from the
+      // bundle: the position cp is now associated with ngpp, which
+      // means that position gpp is now free
+      remove_from_global_pool( wFi , gpp , false );
       gpp = ngpp;                      // store the copy there
       BLOG( 2 , " (" << gpp << ")" );  // print the chosen place
       }
      }
 
-    // if the new copy has not been added as a separate entity, it replaces
-    // the old copy, and therefore ItemVcblr, InvItemVcblr, ... would not
-    // need be updated; however this is too complicated to handle and we
-    // will do it anyway
-
-    Master->SubstItem( wh = cp );  // substitute it in the master problem
+    Master->SubstItem( cp );  // substitute it in the master problem
     // note that the number of items of component wFi in the master problem
     // is unchanged
     }
-   else {          // the item is a copy, but not better than the original
-    wh = InINF;    // nothing new has happened
-    Ftchd++;       // anyhow, this counts as a new item
-    }
+   else                 // the item is a copy, but not better than the original
+    to_insert = false;  // do nothing
 
    BLOG( 2 , std::endl );
    }
@@ -2140,10 +2137,20 @@ bool BundleSolver::FiAndGi( Index wFi )
    BLOG( 2 , " stored in " << wh << " (" << gpp << ")" << std::endl  );
    }
 
+  // in all (subgradient) cases, check and update whisG1- - - - - - - - - - -
+
+  if( diagonal ) {     // it is a subgradient
+   if( ( whisG1[ wFi ] == InINF ) || ( Alfa1k < Alfa1[ wFi ] ) ||
+       ( ( Alfa1k == Alfa1[ wFi ] ) && ( ScPr1k > ScPr1[ wFi ] ) ) ) {
+    whisG1[ wFi ] = wh;  // wh is the new representative of wFi
+    Alfa1[ wFi ] = Alfa1k;
+    ScPr1[ wFi ] = ScPr1k;
+    }
+   }
+ 
   // if something was inserted, bookkeeping is needed - - - - - - - - - - - -
 
-  if( wh < InINF ) {
-   Ftchd++;  // one more item fetched
+  if( to_insert ) {
 
    inhibit_Modification( true );
    v_c05f[ wFi ]->store_linearization( gpp );
@@ -2151,16 +2158,8 @@ bool BundleSolver::FiAndGi( Index wFi )
 
    add_to_global_pool( wFi , gpp , wh );
 
-   if( diagonal ) {     // it is a subgradient
+   if( diagonal )       // it is a subgradient
     OOBase[ wh ] = -1;  // ensure it won't be touched again this round
-
-    if( ( whisG1[ wFi ] == InINF ) || ( Alfa1k < Alfa1[ wFi ] ) ||
-       ( ( Alfa1k == Alfa1[ wFi ] ) && ( ScPr1k > ScPr1[ wFi ] ) ) ) {
-     whisG1[ wFi ] = wh;  // wh is the new representative of wFi
-     Alfa1[ wFi ] = Alfa1k;
-     ScPr1[ wFi ] = ScPr1k;
-     }
-    }
    else                 // it is a constraint
     // mark it as permanently fixed: this may be a bad choice in practice,
     // although it is required by the theory (we'll see ...)
