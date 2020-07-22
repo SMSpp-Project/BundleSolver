@@ -3028,6 +3028,8 @@ void BundleSolver::add_to_bundle( Index k , Index i )
   ++NrItems[ k ];              // keep count
   add_to_global_pool( k , i , wh );  // update dictionaries
   }
+ else                          // the item is there already
+  Master->RmvItem( wh );       // remove it so that it can be replaced
 
  Master->SetItem( wh );  // add the item to the master problem
 
@@ -3749,6 +3751,7 @@ void BundleSolver::process_outstanding_Modification( void )
        Chgd[ wFi ] = std::move( tmp2 );
        }
       }
+     continue;
     case( C05FunctionMod::GlobalPoolAdded ):
      // add to Addd[ wFi ] the names in tmod->which(), and remove them
      // from Rmvd[ wFi ], and Chgd[ wFi ] if the component is not reset
@@ -3967,13 +3970,6 @@ void BundleSolver::process_outstanding_Modification( void )
  // coincides with the set of Variable in the C05Function(s), save for the
  // Variable to be added: in other words, the positions from 0 no NumVar - 1
  // in the linearizations corresponds to what BundleSolver expects
-
- // if there are no more Modification to process, no Variable to add, and
- // no component in need of a reset, all done
-  
- if( v_mod_tmp.empty() && ( ! to_add ) &&
-     ( std::find( reset.begin() , reset.end() , true ) == reset.end() ) )
-  return;
 
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // 5th loop: handle "horizontal" changes, i.e., changes of a given range
