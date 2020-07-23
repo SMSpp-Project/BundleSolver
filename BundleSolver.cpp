@@ -77,7 +77,8 @@ using namespace SMSpp_di_unipi_it;
 /*-------------------------------- FUNCTIONS -------------------------------*/
 /*--------------------------------------------------------------------------*/
 
-void Compact( BundleSolver::Vec_VarValue & g , BundleSolver::c_Subset & B )
+static void Compact( BundleSolver::Vec_VarValue & g ,
+		     BundleSolver::c_Subset & B )
 {
  // takes a "dense" n-vector g and "compacts" it deleting the elements whose
  // indices are in B; all elements of B must be in the range 0 .. n, B must
@@ -102,11 +103,14 @@ void Compact( BundleSolver::Vec_VarValue & g , BundleSolver::c_Subset & B )
 
 /*--------------------------------------------------------------------------*/
 
-void set_difference_in_place( BundleSolver::Subset & S1 ,
-			      BundleSolver::c_Subset & S2 )
+static void set_difference_in_place( BundleSolver::Subset & S1 ,
+				     BundleSolver::c_Subset & S2 )
 {
  // removes from S1 all elements in S2, resizing it accordingly
  // both S1 and S2 are assumed to be ordered and with unique elements
+
+ if( S1.empty() )  // nothing to delete from
+  return;          // nothing to do
 
  auto S1rit = S1.begin();
  auto S2rit = S2.begin();
@@ -151,7 +155,45 @@ void set_difference_in_place( BundleSolver::Subset & S1 ,
  
  S1.resize( std::distance( S1.begin() , S1wit ) );
 
- }  // end( Compact )
+ }  // end( set_difference_in_place )
+
+/*--------------------------------------------------------------------------*/
+
+static void set_union_in_place( BundleSolver::Subset & S1 ,
+				BundleSolver::c_Subset & S2 )
+{
+ // make S1 to be the union of S1 and S2
+ if( S2.empty() )
+  return;
+
+ if( S1.empty() )
+  S1 = S2;
+ else {
+  BundleSolver::Subset tmp( S1.size() + S2.size() );
+  std::set_union( S1.begin() , S1.end() , S2.begin() , S2.end() ,
+		  tmp.begin() );
+  S1 = std::move( tmp );
+  }
+ }  // end( set_difference_in_place )
+
+/*--------------------------------------------------------------------------*/
+
+static void set_union_in_place( BundleSolver::Subset & S1 ,
+				BundleSolver::Subset && S2 )
+{
+ // make S1 to be the union of S1 and S2, if useful destroy S2 in the process
+ if( S2.empty() )
+  return;
+
+ if( S1.empty() )
+  S1 = std::move( S2 );
+ else {
+  BundleSolver::Subset tmp( S1.size() + S2.size() );
+  std::set_union( S1.begin() , S1.end() , S2.begin() , S2.end() ,
+		  tmp.begin() );
+  S1 = std::move( tmp );
+  }
+ }  // end( set_difference_in_place )
 
 /*--------------------------------------------------------------------------*/
 /*----------------------------- STATIC MEMBERS -----------------------------*/
@@ -1076,12 +1118,11 @@ void BundleSolver::set_Block( Block * block )
     if( v_c05f[ k ]->is_linearization_there( i ) )
      add_to_bundle( k , i );    
   }
- else {
+ else
   for( Index k = 0 ; k < NrFi ; ++k )
    for( Index i = 0 ; i < vBPar2[ k ] ; ++i )
     if( v_c05f[ k ]->is_linearization_there( i ) )
      add_to_global_pool( k , i );    
-  }
 
  // reset algorithm  - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // - - - -  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1997,16 +2038,16 @@ bool BundleSolver::FiAndGi( Index wFi )
   // only one "un-named item being inserted", so inserting Z[ wFi ] while
   // inserting the new item is complicated
 
-  Index wh = BStrategy( wFi );
+  auto wh = BStrategy( wFi );
 
   // get the space for the item from the MPSolver - - - - - - - - - - - - - -
 
-  double *G1 = Master->GetItem( wFi + 1 );
+  auto G1 = Master->GetItem( wFi + 1 );
 
   // fetch the item from the Oracle - - - - - - - - - - - - - - - - - - - - -
 
   fwFi->get_linearization_coefficients( G1 );
-  HpNum Alfa1k = fwFi->get_linearization_constant();
+  auto Alfa1k = fwFi->get_linearization_constant();
   HpNum eps;
 
   // pass the base to the MP Solver - - - - - - - - - - - - - - - - - - - - -
@@ -2726,8 +2767,8 @@ void BundleSolver::Delete( cIndex i , bool ModDelete )
  // check if this item was the "representative" for its component - - - - - -
 
  if( Master->IsSubG( i ) )  // it is a subgradient
-  if( whisG1[ k ] == i )  // it is the representative of wFi
-   whisG1[ k ] = InINF;   // a new representative is needed
+  if( whisG1[ k ] == i )    // it is the representative of wFi
+   whisG1[ k ] = InINF;     // a new representative is needed
 
  // delete the item from the MP - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -2995,29 +3036,15 @@ void BundleSolver::add_to_global_pool( Index k , Index i )
 void BundleSolver::add_to_bundle( Index k , Index i )
 {
  // add to the bundle (master problem) the item corresponding to the
- // linearization to be found at position i in the global pool of
- // component k; this assumes that the linearization is already there in the
- // global pool. if InvItemVcblr[ k ][ i ] < vBPar2[ NrFi ], i.e., the item
- // is already in the bundle, then it is simply replaced, otherwise it is
- // added
-
- // ask the MPSolver for the space to write the item to
- double *G1 = Master->GetItem( k + 1 );
-
- // recover the linearization from the C05Function
- v_c05f[ k ]->get_linearization_coefficients( G1 , Range( 0 , NumVar ) , i );
-
- // recover the constant and "translate" it w.r.t. Lambda
- auto Ai = v_c05f[ k ]->get_linearization_constant( i );
- Master->SetItemBse( nullptr , NumVar );
- double ScPri;
- if( v_c05f[ k ]->is_linearization_vertical( i ) )
-  Master->CheckCnst( Ai , ScPri , Lambda.data() );
- else {
-  Ai = UpRifFi[ k ] - Ai -
-       std::inner_product( Lambda.begin() , Lambda.end() , G1 , 0 );
-  Master->CheckSubG( 0 , 0 , Ai , ScPri );
-  }
+ // linearization to be found at position i in the global pool of component
+ // k; this assumes that the linearization is already there in the global
+ // pool. if InvItemVcblr[ k ][ i ] < vBPar2[ NrFi ], i.e., the item is
+ // already in the bundle, then it is replaced, otherwise it is added
+ //
+ // note that CheckSubG() or CheckCnst() need be called, but even if the
+ // item is identical to some in the bundle already this information is
+ // ignored and the item is inserted anyway; hence, if the check is active,
+ // it is temporarily deactivated (and then re-activated)
 
  auto wh = InvItemVcblr[ k ][ i ];
  if( wh >= vBPar2[ NrFi ] ) {  // the item is not there already
@@ -3030,6 +3057,32 @@ void BundleSolver::add_to_bundle( Index k , Index i )
   }
  else                          // the item is there already
   Master->RmvItem( wh );       // remove it so that it can be replaced
+
+ // ask the MPSolver for the space to write the item to
+ auto G1 = Master->GetItem( k + 1 );
+
+ // recover the linearization from the C05Function
+ v_c05f[ k ]->get_linearization_coefficients( G1 , Range( 0 , NumVar ) , i );
+
+ // recover the constant and "translate" it w.r.t. Lambda
+ auto Ai = v_c05f[ k ]->get_linearization_constant( i );
+
+ Master->SetItemBse( nullptr , NumVar );
+
+ if( MPName & 8 )                   // is checking for copies is active
+  Master->CheckIdentical( false );  // temporarily de-activate it now
+
+ double ScPri;
+ if( v_c05f[ k ]->is_linearization_vertical( i ) )
+  Master->CheckCnst( Ai , ScPri , Lambda.data() );
+ else {
+  Ai = UpRifFi[ k ] - Ai -
+       std::inner_product( Lambda.begin() , Lambda.end() , G1 , 0 );
+  Master->CheckSubG( 0 , 0 , Ai , ScPri );
+  }
+
+ if( MPName & 8 )                   // is checking for copies is active
+  Master->CheckIdentical();         // re-activate it now
 
  Master->SetItem( wh );  // add the item to the master problem
 
@@ -3173,7 +3226,7 @@ void BundleSolver::process_outstanding_Modification( void )
  // the 1st loop is made in reverse, from the latest Modification to the
  // earlies, and does the following:
  // - reset/change the upper/lower bounds that need to (check all shift() of
- //   all *FunctionMod*
+ //   all *FunctionMod*)
  // - check if some global pool has been "hard" reset, i.e., all the
  //   linearization in there have been deleted; this is brought about by
  //   a C05FunctionMod with type() == GlobalPoolRemoved and which().empty()
@@ -3450,7 +3503,7 @@ void BundleSolver::process_outstanding_Modification( void )
 
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // if any global pool has been reset (or, even better, *all* of them have
- // reset) then delete all items in the (<corresponding) bundle
+ // reset) then delete all corresponding items in the bundle (all the bundle)
 
  if( std::find( reset.begin() , reset.end() , false ) == reset.end() ) {
   // all components have been reset
@@ -3482,12 +3535,18 @@ void BundleSolver::process_outstanding_Modification( void )
  // when all existing linearization changes. any Modification that changes
  // the linearizations happening before a "soft" reset of the global pool
  // (meaning it is found afterwards in the reverse order) is deleted since it
- // is useless. Actually, for this to be true we need to keep track already if
- // all the constants change (so that we can handle AllLinearizationChanged)
+ // is useless.
+ //
+ // note that, due to limitations in the MPSolver interface, changing a
+ // linearization implies changing its constant; therefore, reset[ k ] == true
+ // means that everything is changing. when reset[ k ] == true we take
+ // AlphaC[ k ] == false since in this case che change of constants is not
+ // needed because it is implied by the soft reset. thus, AlphaC[ k ] == true
+ // means that only the constants need be changed, but not all the rest
  //
  // note that Modification changing the linearizations happening *after* a
  // "soft" reset of the global pool (meaning it is found *before* in the
- // reverse order is also useless, since a reset forces the re-reading of all
+ // reverse order) is also useless, since a reset forces the re-reading of all
  // linearizations, which by definition happens at their current (final) state.
  // yet, this is not done immediately
  //
@@ -3498,12 +3557,7 @@ void BundleSolver::process_outstanding_Modification( void )
  // names of the changed Variable may not be current (additions/deletions may
  // happen in the meantime), and keeping track is too burdensome. similarly
  // for "vertical" changes (a set of specific linearizations). some steps
- // in this direction will be done in later stages
- //
- // another note is that BundleSolver (due to limitations in the interface of
- // MPSolver) has an all-or-nothing approach to changing the constants. thus,
- // AlphaC[ wFi ] is set to true whenever a change in any constant happens,
- // even if it is on a subset of the linearizations
+ // in this direction will perhaps be done in later stages of develpment
 
  reset.assign( NrFi , false );  // reset reset (couldn't resist)
  std::vector<bool> AlphaC( NrFi , false );
@@ -3532,13 +3586,30 @@ void BundleSolver::process_outstanding_Modification( void )
    // at detecting this. the only easy case would be NothingChanged, but
    // any such C05FunctionModRngd has been deleted already. however, if the
    // component is "soft" reset already, it can be deleted
+   //
+   // the Modification can also change constants, so this has to be checked.
+   // if the Modification changes all the constants and the component is
+   // reset already, it can be deleted
 
    const auto tmod = std::dynamic_pointer_cast<C05FunctionModRngd>( mod );
    if( tmod ) {
     auto wFi = get_index_of_component( tmod->function() );
-    if( reset[ wFi ] )
-     to_delete = true;
-    continue;
+    switch( tmod->type() ) {
+     case( C05FunctionMod::AllEntriesChanged ):
+      if( reset[ wFi ] )            // component reset already
+       to_delete = true;            // nothing else to do
+      continue;
+     case( C05FunctionMod::AllLinearizationChanged ):
+      if( tmod->which().empty() ) {  // reset of the constants
+       if( reset[ wFi ] )            // component reset already
+	to_delete = true;            // nothing else to do
+       else                          // component not reset
+	AlphaC[ wFi ] = true;        // reset the constants
+       }
+      continue;
+     default:  // this must not happen
+      throw( std::invalid_argument( "wrong type() in C05FunctionModRngd" ) );
+     }
     }  // end( if( ttmod ) )
    }  // end C05FunctionModRngd
 
@@ -3554,9 +3625,22 @@ void BundleSolver::process_outstanding_Modification( void )
    const auto tmod = std::dynamic_pointer_cast<C05FunctionModSbst>( mod );
    if( tmod ) {
     auto wFi = get_index_of_component( tmod->function() );
-    if( reset[ wFi ] )
-     to_delete = true;
-    continue;
+    switch( tmod->type() ) {
+     case( C05FunctionMod::AllEntriesChanged ):
+      if( reset[ wFi ] )            // component reset already
+       to_delete = true;            // nothing else to do
+      continue;
+     case( C05FunctionMod::AllLinearizationChanged ):
+      if( tmod->which().empty() ) {  // reset of the constants
+       if( reset[ wFi ] )            // component reset already
+	to_delete = true;            // nothing else to do
+       else                          // component not reset
+	AlphaC[ wFi ] = true;        // reset the constants
+       }
+      continue;
+     default:  // this must not happen
+      throw( std::invalid_argument( "wrong type() in C05FunctionModSbst" ) );
+     }
     }  // end( if( ttmod ) )
    }  // end C05FunctionModSbst
 
@@ -3567,32 +3651,27 @@ void BundleSolver::process_outstanding_Modification( void )
 
    const auto tmod = std::dynamic_pointer_cast<C05FunctionMod>( mod );
    if( tmod ) {
+    // we only react to which().empty() 
+    if( ! tmod->which().empty() )
+     continue;
+
     auto wFi = get_index_of_component( tmod->function() );
 
-    // AlphaChanged is considered by default applied to all the
-    // linearizations, irrespectively of which()
-    if( tmod->type() == C05FunctionMod::AlphaChanged ) {
-     AlphaC[ wFi ] = true;
-     to_delete = true;
-     continue;
+    switch( tmod->type() ) {
+     case( C05FunctionMod::AlphaChanged ):
+      AlphaC[ wFi ] = true;
+      break;
+     case( C05FunctionMod::AllEntriesChanged ):
+     case( C05FunctionMod::AllLinearizationChanged ):
+      reset[ wFi ] = AlphaC[ wFi ] = true;
+      break;
+     default:  // this must not happen, as GlobalPoolRemoved with
+               // which.empty() has been dealt with and deleted before
+      throw( std::invalid_argument(
+		   "wrong type in C05FunctionMod with empty which()" ) );
      }
 
-    // in all other cases we only react to which().empty() 
-    if( tmod->type() == C05FunctionMod::AllLinearizationChanged ) {
-     AlphaC[ wFi ] = true;
-     if( tmod->which().empty() ) {
-      reset[ wFi ] = true;
-      to_delete = true;
-      }
-     continue;
-     }
-
-    if( tmod->type() == C05FunctionMod::AllEntriesChanged )
-     if( tmod->which().empty() ) {
-      reset[ wFi ] = true;
-      to_delete = true;
-      }
-
+    to_delete = true;
     continue;
     }  // end( if( tmod ) )
    }  // end C05FunctionMod
@@ -3637,16 +3716,16 @@ void BundleSolver::process_outstanding_Modification( void )
    const auto tmod = std::dynamic_pointer_cast<C05FunctionModLin>( mod );
    if( tmod ) {
     auto wFi = get_index_of_component( tmod->function() );
-    reset[ wFi ] = true;
+    reset[ wFi ] = AlphaC[ wFi ] = true;
     to_delete = true;
     }  // end( if( ttmod ) )
    }  // end C05FunctionModLin
   }  // end( 2nd loop, again in reverse )
 
  // note that even if there were no more Modification to process we could not
- // stop because this means that reset[ wFi ] == true for some wFi. in fact
- // v_mod_tmp as not empty(), and elements can be remove from it only if
- // some component is "soft" reset. 
+ // stop because this means that reset[ k ] == true and/or AlphaC[ k ] == true
+ // for some k. in fact v_mod_tmp was not empty(), and elements can be removed
+ // from it only if some component is "soft" reset. 
 
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // 3rd loop, forward: prepare for addition/removal/changes of individual
@@ -3654,13 +3733,20 @@ void BundleSolver::process_outstanding_Modification( void )
  // - linearizations that need be removed
  // - linearizations that need be added
  // - linearizations that need be changed
+ // - constants that need be changed
  // Note that:
+ // - due to limitations in the MPSolver interface, changing a linearization
+ //   implies changing its constant; therefore, Cchg[] contains changes in
+ //   the constants only and nothing else, which means that has empty
+ //   intersection with all other three sets
  // - if a linearization that is added/changed is later removed, it is no
  //   longer added/changed
  // - if a linearization that is removed/changed is later added it is no
  //   longer removed/changed (adding over an existing linearization changes
  //   it anyway, no reason to remove it)
- // - changes to a reset component can be ignored
+ // - thus, Addd[], Rmvd[], Chgd[] and Cchg[] all have empty intersection
+ // - linearization changes to a reset component can be ignored
+ // - constant changes when all constants change can be ignored
  // - due to limitations in the MPSolver interface, "horizontal" changes (of
  //   a given range/subset of entries) to a subset of linearizations are
  //   not supported. these must be either mapped in "horizontal" changes to
@@ -3673,9 +3759,10 @@ void BundleSolver::process_outstanding_Modification( void )
  //   always concern all the linearizations), while C05FunctionModLin have
  //   been dealt with already
 
- std::vector< Subset > Addd( NrFi );
- std::vector< Subset > Rmvd( NrFi );
- std::vector< Subset > Chgd( NrFi );
+ std::vector< Subset > Addd( NrFi );  // which linearizations have been added
+ std::vector< Subset > Rmvd( NrFi );  // which linearizations have been removed
+ std::vector< Subset > Chgd( NrFi );  // which linearizations have been changed
+ std::vector< Subset > Cchg( NrFi );  // which contants have been changed
 
  for( auto imod = v_mod_tmp.begin() ; imod != v_mod_tmp.end() ;
       // note the iterator_expression of the for() obtained by defining
@@ -3709,87 +3796,107 @@ void BundleSolver::process_outstanding_Modification( void )
    auto wFi = get_index_of_component( tmod->function() );
 
    switch( tmod->type() ) {
+    case( C05FunctionMod::AlphaChanged ):
+     assert( ! tmod->which().empty() );
+     // this cannot happen, the case has been dealt with and deleted
+     if( AlphaC[ wFi ] )  // constants are reset already
+      break;              // nothing else to do
+
+     // note that reset[ wFi ] ==> AlphaC[ wFi ], hence surely reset[ wFi ]
+     // is false here
+     // add to Cchg[ wFi ] the names in tmod->which(), save those that are
+     // in either Addd[ wFi ], or Rmvd[ wFi ], or Chgd[ wFi ]
+     if( Addd[ wFi ].empty() && Rmvd[ wFi ].empty() && Chgd[ wFi ].empty() )
+      set_union_in_place( Cchg[ wFi ] , tmod->which() );
+     else {
+      // only those constants corresponding to linearizations that are not
+      // added or removed or changed need be changed
+      Subset tmp( tmod->which() );
+
+      if( ! Addd[ wFi ].empty() )
+       set_difference_in_place( tmp , Addd[ wFi ] );
+
+      if( ( ! Rmvd[ wFi ].empty() ) && ( ! tmp.empty() ) )
+       set_difference_in_place( tmp , Rmvd[ wFi ] );
+
+      if( ( ! Chgd[ wFi ].empty() ) && ( ! tmp.empty() ) )
+       set_difference_in_place( tmp , Chgd[ wFi ] );
+
+      set_union_in_place( Cchg[ wFi ] , std::move( tmp ) );
+      }
+     break;
     case( C05FunctionMod::AllLinearizationChanged ):
     case( C05FunctionMod::AllEntriesChanged ):
+     // AllEntriesChanged is completely equivalent to AllLinearizationChanged
+     // since the change in the linearization implies that of the constant
      // if tmod->which().empty(), this must actually be either a
      // C05FunctionModRngd or a C05FunctionModSbst: save it, for it
      // will be dealt with in the next loop
      if( tmod->which().empty() )
       continue;
-     to_delete = true;   // otherwise, delete it
+
      if( reset[ wFi ] )  // changes in reset components
-      continue;          // are ignored
+      break;             // are ignored
+
      // add to Chgd[ wFi ] the names in tmod->which(), save those that are
      // in either Addd[ wFi ] or Rmvd[ wFi ]
-     if( Addd[ wFi ].empty() && Rmvd[ wFi ].empty() ) {
-      // no items are added/removed, all changed are changed
-      if( Chgd[ wFi ].empty() )
-       Chgd[ wFi ] = tmod->which();
-      else {
-       Subset tmp( std::min( Chgd[ wFi ].size() + tmod->which().size() ,
-			     Subset::size_type( vBPar2[ wFi ] ) ) );
-       std::set_union( Chgd[ wFi ].begin() , Chgd[ wFi ].end() ,
-		       tmod->which().begin() , tmod->which().end() ,
-		       tmp.begin() );
-       Chgd[ wFi ] = std::move( tmp );
-       }
-      }
+     if( Addd[ wFi ].empty() && Rmvd[ wFi ].empty() )
+      set_union_in_place( Chgd[ wFi ] , tmod->which() );
      else {
       // only those items that are not added and/or removed need be changed
       Subset tmp( tmod->which() );
+
       if( ! Addd[ wFi ].empty() )
        set_difference_in_place( tmp , Addd[ wFi ] );
+
       if( ( ! Rmvd[ wFi ].empty() ) && ( ! tmp.empty() ) )
        set_difference_in_place( tmp , Rmvd[ wFi ] );
-      if( Chgd[ wFi ].empty() )
-       Chgd[ wFi ] = std::move( tmp );
-      else {
-       Subset tmp2( std::min( Chgd[ wFi ].size() + tmp.size() ,
-			      Subset::size_type( vBPar2[ wFi ] ) ) );
-       std::set_union( Chgd[ wFi ].begin() , Chgd[ wFi ].end() ,
-		       tmp.begin() , tmp.end() , tmp2.begin() );
-       Chgd[ wFi ] = std::move( tmp2 );
-       }
+
+      set_union_in_place( Chgd[ wFi ] , std::move( tmp ) );
       }
-     continue;
+
+     // changed linearizations imply changed constants
+     if( ! AlphaC[ wFi ] )
+      set_difference_in_place( Cchg[ wFi ] , Chgd[ wFi ] );
+
+     break;
+
     case( C05FunctionMod::GlobalPoolAdded ):
      // add to Addd[ wFi ] the names in tmod->which(), and remove them
-     // from Rmvd[ wFi ], and Chgd[ wFi ] if the component is not reset
-     if( Addd[ wFi ].empty() )
-      Addd[ wFi ] = tmod->which();
-     else {
-      Subset tmp( std::min( Addd[ wFi ].size() + tmod->which().size() ,
-			    Subset::size_type( vBPar2[ wFi ] ) ) );
-      std::set_union( Addd[ wFi ].begin() , Addd[ wFi ].end() ,
-		      tmod->which().begin() , tmod->which().end() ,
-		      tmp.begin() );
-      Addd[ wFi ] = std::move( tmp );
-      }
-     if( ! Rmvd[ wFi ].empty() )
-      set_difference_in_place( Rmvd[ wFi ] , tmod->which() );
-     if( ( ! reset[ wFi ] ) && ( ! Chgd[ wFi ].empty() ) )
+     // from Rmvd[ wFi ], and from Chgd[ wFi ] if the component is not
+     // reset, and from Cchg[ wFi ] is constants are not reset
+
+     set_union_in_place( Addd[ wFi ] , tmod->which() );
+
+     set_difference_in_place( Rmvd[ wFi ] , tmod->which() );
+
+     if( ! reset[ wFi ] )
       set_difference_in_place( Chgd[ wFi ] , tmod->which() );
-     to_delete = true;
-     continue;
+
+     if( ! AlphaC[ wFi ] )
+      set_difference_in_place( Cchg[ wFi ] , tmod->which() );
+     
+     break;
+
     case( C05FunctionMod::GlobalPoolRemoved ):
      // add to Rmvd[ wFi ] the names in tmod->which(), and remove them
-     // from Addd[ wFi ], and Chgd[ wFi ] if the component is not reset
-     if( Rmvd[ wFi ].empty() )
-      Rmvd[ wFi ] = tmod->which();
-     else {
-      Subset tmp( std::min( Rmvd[ wFi ].size() + tmod->which().size() ,
-			    Subset::size_type( vBPar2[ wFi ] ) ) );
-      std::set_union( Rmvd[ wFi ].begin() , Rmvd[ wFi ].end() ,
-		      tmod->which().begin() , tmod->which().end() ,
-		      tmp.begin() );
-      Rmvd[ wFi ] = std::move( tmp );
-      }
-     if( ! Addd[ wFi ].empty() )
-      set_difference_in_place( Addd[ wFi ] , tmod->which() );
-     if( ( ! reset[ wFi ] ) && ( ! Chgd[ wFi ].empty() ) )
+     // from Addd[ wFi ], and from Chgd[ wFi ] if the component is not
+     // reset, and from Cchg[ wFi ] is constants are not reset
+
+     set_union_in_place( Rmvd[ wFi ] , tmod->which() );
+
+     set_difference_in_place( Addd[ wFi ] , tmod->which() );
+
+     if( ! reset[ wFi ] )
       set_difference_in_place( Chgd[ wFi ] , tmod->which() );
-     to_delete = true;
+
+     if( ! AlphaC[ wFi ] )
+      set_difference_in_place( Cchg[ wFi ] , tmod->which() );
+ 
     }  // end( switch( tmod->type() ) )
+
+   to_delete = true;   // delete it
+
    }  // end( if( ttmod ) )
   }  // end( 3rd loop, forward )
 
@@ -4171,8 +4278,10 @@ void BundleSolver::process_outstanding_Modification( void )
    if( Addd[ k ].empty() && Chgd[ k ].empty() )  // nothing to see here
     continue;                                    // move off
 
-   if( Chgd[ k ].size() >= NrItems[ k ] )  // all items change
-    AlphaC[ k ] = reset[ k ] = false;      // this component is served
+   if( Chgd[ k ].size() >= NrItems[ k ] ) {  // all items change
+    reset[ k ] = true;                       // this is a reset
+    continue;
+    }
 
    // first, cleanup Chgd[ k ] from linearizations not in the bundle
    if( ! Chgd[ k ].empty() ) {
@@ -4217,18 +4326,9 @@ void BundleSolver::process_outstanding_Modification( void )
     }
 
    // compute the union between Addd[ k ] and Chgd[ k ] into Addd[ k ]
-   if( Addd[ k ].empty() )
-    Addd[ k ] = std::move( Chgd[ k ] );
-   else
-    if( ! Chgd[ k ].empty() ) {
-     Subset tmp( Addd[ k ].size() + Chgd[ k ].size() );
-     auto it = std::set_union( Addd[ k ].begin() , Addd[ k ].end() ,
-			       Chgd[ k ].begin() , Chgd[ k ].end() ,
-			       tmp.begin() );
-     tmp.resize( it - tmp.begin() );
-     Addd[ k ] = std::move( tmp );
-     }
+   set_union_in_place( Addd[ k ] , Chgd[ k ] );
 
+   // finally, add the resulting stuff to the bundle
    for( auto i : Addd[ k ] )
     add_to_bundle( k , i );
    }
@@ -4239,40 +4339,60 @@ void BundleSolver::process_outstanding_Modification( void )
 
  if( std::find( reset.begin() , reset.end() , true ) != reset.end() )
   for( Index k = 0 ; k < NrFi ; ++k )
-   if( reset[ k ] )
-    Master->ChgSubG( 0 , NumVar , k + 1 );
+   if( reset[ k ] ) {
+    Master->ChgSubG( 0 , NumVar , k + 1 );  // change everything
+    AlphaC[ k ] = 0;                        // constants included
+    }
 
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
- // if there are Alphas to change, do it now in one blow
+ // if there are Alphas to change entirely, do it now in one blow
 
- if( std::find( AlphaC.begin() , AlphaC.end() , true ) != AlphaC.end() ) {
-  std::vector< VarValue > Gi( NumVar );
+ std::vector< VarValue > Gi( NumVar );
 
-  for( Index k = 0 ; k < NrFi ; ++k )
-   if( AlphaC[ k ] ) {
-    std::vector< VarValue > Alfa( Master->MaxName( k + 1 ) );
+ for( Index k = 0 ; k < NrFi ; ++k )
+  if( AlphaC[ k ] ) {  // all the constants of this component are reset
+   Cchg[ k ].clear();  // no need to change them individually
 
-    for( Index i = 0 ; i < Master->MaxName( k + 1 ) ; ++i )
-     if( ( ItemVcblr[ i ].first == k ) &&
-	 ( ItemVcblr[ i ].second < vBPar2[ k ] ) &&
-	 ( ItemVcblr[ i ].second >= 0 )  ) {
-      auto Ai = v_c05f[ k ]->get_linearization_constant(
+   std::vector< VarValue > Alfa( Master->MaxName( k + 1 ) );
+
+   for( Index i = 0 ; i < Master->MaxName( k + 1 ) ; ++i )
+    if( ( ItemVcblr[ i ].first == k ) &&
+	( ItemVcblr[ i ].second < vBPar2[ k ] ) &&
+	( ItemVcblr[ i ].second >= 0 )  ) {
+     auto Ai = v_c05f[ k ]->get_linearization_constant(
 						     ItemVcblr[ i ].second );
-      if( std::isnan( Ai ) )  // linearization no longer valid
-       throw( std::logic_error( "inconsistent ItemVcblr" ) );
+     if( std::isnan( Ai ) )  // linearization no longer valid
+      throw( std::logic_error( "inconsistent ItemVcblr" ) );
 
-      // compute the linearization error in Lambda
-      v_c05f[ k ]->get_linearization_coefficients( Gi.data() ,
-						   Range( 0 , NumVar ) ,
-						   ItemVcblr[ i ].second );
-      Alfa[ i ] = UpRifFi[ k ] - Ai -
-                  std::inner_product( Lambda.begin() , Lambda.end() ,
-				      Gi.data() , 0 );
-      }
+     // compute the linearization error in Lambda
+     v_c05f[ k ]->get_linearization_coefficients( Gi.data() ,
+						  Range( 0 , NumVar ) ,
+						  ItemVcblr[ i ].second );
+     Alfa[ i ] = UpRifFi[ k ] - Ai -
+                 std::inner_product( Lambda.begin() , Lambda.end() ,
+				     Gi.data() , 0 );
+     }
 
-    Master->ChgAlfa( Alfa.data() , k + 1 );
+   Master->ChgAlfa( Alfa.data() , k + 1 );
+   }
+
+ //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // if there subsets of Alphas to change, do it now
+
+ for( Index k = 0 ; k < NrFi ; ++k )
+  for( auto i : Cchg[ k ] )
+   if( InvItemVcblr[ k ][ i ] < vBPar2[ k ] ) {
+    auto Ai = v_c05f[ k ]->get_linearization_constant( i );
+    if( std::isnan( Ai ) )  // linearization no longer valid
+     throw( std::logic_error( "inexistent linearization" ) );
+
+    // compute the linearization error in Lambda
+    v_c05f[ k ]->get_linearization_coefficients( Gi.data() ,
+						 Range( 0 , NumVar ) , i );
+    Ai = UpRifFi[ k ] - Ai - std::inner_product( Lambda.begin() , Lambda.end() ,
+						 Gi.data() , 0 );
+    Master->ChgAlfa( InvItemVcblr[ k ][ i ] , Ai );
     }
-  }
 
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // if there are (still) Variable to add, do it now in one blow
@@ -4290,8 +4410,7 @@ void BundleSolver::process_outstanding_Modification( void )
  // and this, finally, is all!!
 
  #if CHECK_DS
-  // safe possibly some checks
-  CheckBundle();
+  CheckBundle();  // save possibly some checks
  #endif
  
  }  // end( BundleSolver::process_outstanding_Modification ) - - - - - - - - -
