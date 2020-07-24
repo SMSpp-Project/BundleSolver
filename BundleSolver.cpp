@@ -112,46 +112,46 @@ static void set_difference_in_place( BundleSolver::Subset & S1 ,
  if( S1.empty() )  // nothing to delete from
   return;          // nothing to do
 
- auto S1rit = S1.begin();
- auto S2rit = S2.begin();
+ auto S1it = S1.begin();
+ auto S2it = S2.begin();
 
  // first phase: find the first element present in both S1 and S2
 
  for( ; ; ) {
-  while( ( S1rit != S1.end() ) && ( *S1rit < *S2rit ) )
-   ++S1rit;
-  if( S1rit == S1.end() )
+  while( ( S1it != S1.end() ) && ( *S1it < *S2it ) )
+   ++S1it;
+  if( S1it == S1.end() )
    break;
-  while( ( S2rit != S2.end() ) && ( *S1rit > *S2rit ) )
-   ++S2rit;
-  if( S2rit == S2.end() )
+  while( ( S2it != S2.end() ) && ( *S1it > *S2it ) )
+   ++S2it;
+  if( S2it == S2.end() )
    break;
-  if( *S1rit == *S2rit )
+  if( *S1it == *S2it )
    break;
   }
 
- if( S1rit == S1.end() )  // if there are none
-  return;                 // all done
+ if( ( S1it == S1.end() ) || ( S2it == S2.end() ) ) // if there are none
+  return;                                           // all done
 
- // now S1rit points to the first element in S1 == than the first in S2
+ // now S1it points to the first element in S1 == than the first in S2
  // elements in S1 after the common one(s) will have to be moved
- auto S1wit = S1rit++;  // skip the first equal element
- S2rit++;
+ auto S1wit = S1it++;  // skip the first equal element
+ S2it++;
 
- for( ; ( S1rit != S1.end() ) && ( S2rit != S2.end() ) ; ) {
-  while( ( S1rit != S1.end() ) && ( *S1rit < *S2rit ) )
-   *(S1wit++) = *(S1rit++);
-  if( S1rit == S1.end() )
+ for( ; ( S1it != S1.end() ) && ( S2it != S2.end() ) ; ) {
+  while( ( S1it != S1.end() ) && ( *S1it < *S2it ) )
+   *(S1wit++) = *(S1it++);
+  if( S1it == S1.end() )
    break;
-  while( ( S2rit != S2.end() ) && ( *S1rit > *S2rit ) )
-   ++S2rit;
-  if( S2rit == S2.end() )
+  while( ( S2it != S2.end() ) && ( *S1it > *S2it ) )
+   ++S2it;
+  if( S2it == S2.end() )
    break;
-  if( *S1rit == *S2rit ) { ++S1rit; ++S2rit; }
+  if( *S1it == *S2it ) { ++S1it; ++S2it; }
   }
 
- while( S1rit != S1.end() )  // copy the part remaining after the end of S2
-  *(S1wit++) = *(S1rit++);
+ while( S1it != S1.end() )  // copy the part remaining after the end of S2
+  *(S1wit++) = *(S1it++);
  
  S1.resize( std::distance( S1.begin() , S1wit ) );
 
