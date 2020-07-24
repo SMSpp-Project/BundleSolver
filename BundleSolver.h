@@ -699,10 +699,9 @@ public:
   *
   * - intRstAlg [2]: parameter to handle the reset of the algorithm when
   *                  a new Block is set, bit-wise coded:
-  *                  0 bit -> 1 if don't reset algorithmic parameters
-  *                  1 bit -> 1 if don't reset current point to all-0
-  *                  2 bit -> 1 if don't reset current point to using current
-  *                           values of the Variable
+  *                  0 bit == 1 -> don't reset algorithmic parameters
+  *                  1 bit == 1 -> set current point to using current values
+  *                                of the Variable (otherwise reset to all-0)
   */
 
  void set_par( const idx_type par , const int value ) override;

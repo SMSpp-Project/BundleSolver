@@ -310,8 +310,7 @@ const std::vector< int > BundleSolver::dflt_int_par = {
   1 ,  // intOSImp3
   2    // intRstAlg, default value:
        // RstAlg = 0  -  reset algorithmic parameters
-       // RstCrr = 1  -  don't reset current point to all-0
-       // NoStPt = 0  -  do get an initial point
+       // RstCrr = 1  -  set current point to using values of the Variable 
  };
 
 // define and initialize here the default double parameters
@@ -350,7 +349,7 @@ static cIndex kEGTTS = 16;            // "endgame" long-term t-strategy
 
 static const unsigned char RstAlg = 1;  // don't reset algorithmic parameters
 static const unsigned char RstCrr = 2;  // don't reset current point to all-0
-static const unsigned char NoStPt = 4;  // don't get an initial point
+                                        // (use value from the Variable)
 
 static cIndex InINF = SMSpp_di_unipi_it::Inf<Index>();
 
@@ -401,6 +400,8 @@ int BundleSolver::compute( bool changedvars )
   // construct the direction d- - - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
+  //!! PrintBundle();
+ 
   FormD();
 
   if( Result >= kError ) {  // problems in the Master Problem solver
@@ -734,8 +735,6 @@ int BundleSolver::compute( bool changedvars )
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // main cycle ends here- - - - - - - - - - - - - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
- //!! PrintBundle();
 
  return( Result );
 
@@ -1096,6 +1095,14 @@ void BundleSolver::set_Block( Block * block )
 
  InitMP();
 
+ // reset algorithm  - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // - - - -  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // note: this has to be done before the next step since it sets Lambda, and
+ //       if linearizations are added to the bundle their linearization error
+ //       depends on Lambda
+
+ ReSetAlg( RstAlgPrm );  // Lambda is reset inside
+
  // deal with existing linearizations- - - - - - - - - - - - - - - - - - - - -
  // - - - -  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // if BPar7 & 8, read from all the C05Function and immediately add to the
@@ -1124,10 +1131,8 @@ void BundleSolver::set_Block( Block * block )
     if( v_c05f[ k ]->is_linearization_there( i ) )
      add_to_global_pool( k , i );    
 
- // reset algorithm  - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
- // - - - -  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- ReSetAlg( RstAlgPrm );  // Fi( Lambda ) is reset inside
+ //!! PrintBundle();
 
  }  // end( BundleSolver::set_Block )  - - - - - - - - - - - - - - - - - - - -
 
@@ -2742,12 +2747,11 @@ void BundleSolver::ReSetAlg( unsigned char RstLvl )
    aBP3 = BPar3;
   }
 
- if( ! ( RstLvl & RstCrr ) )    // reset the current point to all-0 - - - - -
-  Lambda.assign( NumVar , 0 );
-
- if( ! ( RstLvl & NoStPt ) )    // get an initial point - - - - - - - - - - -
+ if( RstLvl & RstCrr )    // get an initial point - - - - - - - - - - - - - -
   for( Index i = 0 ; i < NumVar ; ++i )
    Lambda[ i ] = LamVcblr[ i ]->get_value();
+ else                     // reset the current point to all-0 - - - - - - - - -
+  Lambda.assign( NumVar , 0 );
 
  }  // end( BundleSolver::ReSetAlg ) - - - - - - - - - - - - - - - - - - - - -
 
@@ -3070,7 +3074,7 @@ void BundleSolver::add_to_bundle( Index k , Index i )
 
  Master->SetItemBse( nullptr , NumVar );
 
- if( MPName & 8 )                   // is checking for copies is active
+ if( MPName & 8 )                   // if checking for copies is active
   Master->CheckIdentical( false );  // temporarily de-activate it now
 
  double ScPri;
@@ -3078,11 +3082,11 @@ void BundleSolver::add_to_bundle( Index k , Index i )
   Master->CheckCnst( Ai , ScPri , Lambda.data() );
  else {
   Ai = UpRifFi[ k ] - Ai -
-       std::inner_product( Lambda.begin() , Lambda.end() , G1 , 0 );
+   std::inner_product( Lambda.begin() , Lambda.end() , G1 , double( 0 ) );
   Master->CheckSubG( 0 , 0 , Ai , ScPri );
   }
 
- if( MPName & 8 )                   // is checking for copies is active
+ if( MPName & 8 )                   // if checking for copies is active
   Master->CheckIdentical();         // re-activate it now
 
  Master->SetItem( wh );  // add the item to the master problem
@@ -3095,7 +3099,7 @@ void BundleSolver::reset_bundle( void )
 {
  // completely resets the bundle, because a (bunch of) Modification(s) saying
  // so has(ve) been received. this only affects the BundleSolver data
- // structures, not the MPSolver or the C05Function(s)
+ // structures and the MPSolver, not the C05Function(s)
 
  OOBase.assign( vBPar2[ NrFi ] , Inf<SIndex>() );
 
@@ -3112,6 +3116,8 @@ void BundleSolver::reset_bundle( void )
  whisZ.assign( NrFi , InINF );
 
  whisG1.assign( NrFi , InINF );
+
+ Master->RmvItems();
  }
 
 /*--------------------------------------------------------------------------*/
@@ -3506,11 +3512,8 @@ void BundleSolver::process_outstanding_Modification( void )
  // if any global pool has been reset (or, even better, *all* of them have
  // reset) then delete all corresponding items in the bundle (all the bundle)
 
- if( std::find( reset.begin() , reset.end() , false ) == reset.end() ) {
-  // all components have been reset
-  reset_bundle();
-  Master->RmvItems();
-  }
+ if( std::find( reset.begin() , reset.end() , false ) == reset.end() )
+  reset_bundle();  // all components have been reset
  else
   if( std::find( reset.begin() , reset.end() , true ) != reset.end() ) {
    // at least a component has been reset
@@ -4348,47 +4351,57 @@ void BundleSolver::process_outstanding_Modification( void )
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // if there are Alphas to change entirely, do it now in one blow
 
- std::vector< VarValue > Gi( NumVar );
+ if( std::find( AlphaC.begin() , AlphaC.end() , true ) != AlphaC.end() ) {
+  std::vector< VarValue > Gi( NumVar );
 
- for( Index k = 0 ; k < NrFi ; ++k )
-  if( AlphaC[ k ] ) {  // all the constants of this component are reset
-   Cchg[ k ].clear();  // no need to change them individually
+  for( Index k = 0 ; k < NrFi ; ++k )
+   if( AlphaC[ k ] ) {  // all the constants of this component are reset
+    Cchg[ k ].clear();  // no need to change them individually
 
-   std::vector< VarValue > Alfa( Master->MaxName( k + 1 ) );
+    std::vector< VarValue > Alfa( Master->MaxName( k + 1 ) );
 
-   for( Index i = 0 ; i < MaxItem[ k ] ; ++i )
-    if( InvItemVcblr[ k ][ i ] < vBPar2[ NrFi ] ) {
-     auto Ai = v_c05f[ k ]->get_linearization_constant( i );
-     if( std::isnan( Ai ) )  // linearization no longer valid
-      throw( std::logic_error( "inconsistent ItemVcblr" ) );
+    for( Index i = 0 ; i < MaxItem[ k ] ; ++i )
+     if( InvItemVcblr[ k ][ i ] < vBPar2[ NrFi ] ) {
+      auto Ai = v_c05f[ k ]->get_linearization_constant( i );
+      if( std::isnan( Ai ) )  // linearization no longer valid
+       throw( std::logic_error( "inconsistent ItemVcblr" ) );
 
-     // compute the linearization error in Lambda
-     v_c05f[ k ]->get_linearization_coefficients( Gi.data() ,
+      // compute the linearization error in Lambda
+      v_c05f[ k ]->get_linearization_coefficients( Gi.data() ,
 						  Range( 0 , NumVar ) , i );
-     Alfa[ InvItemVcblr[ k ][ i ] ] = UpRifFi[ k ] - Ai -
-        std::inner_product( Lambda.begin() , Lambda.end() , Gi.data() , 0 );
-     }
+      Alfa[ InvItemVcblr[ k ][ i ] ] = UpRifFi[ k ] - Ai -
+       std::inner_product( Lambda.begin() , Lambda.end() , Gi.data() ,
+			   double( 0 ) );
+      }
 
-   Master->ChgAlfa( Alfa.data() , k + 1 );
-   }
+    Master->ChgAlfa( Alfa.data() , k + 1 );
+    }
+  }
 
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // if there subsets of Alphas to change, do it now
 
- for( Index k = 0 ; k < NrFi ; ++k )
-  for( auto i : Cchg[ k ] )
-   if( InvItemVcblr[ k ][ i ] < vBPar2[ NrFi ] ) {
-    auto Ai = v_c05f[ k ]->get_linearization_constant( i );
-    if( std::isnan( Ai ) )  // linearization no longer valid
-     throw( std::logic_error( "inexistent linearization" ) );
+ if( std::find_if( Cchg.begin() , Cchg.end() ,
+		   []( Subset & Ck ) { return( ! Ck.empty() ); }
+		   ) != Cchg.end() ) {
+  std::vector< VarValue > Gi( NumVar );
 
-    // compute the linearization error in Lambda
-    v_c05f[ k ]->get_linearization_coefficients( Gi.data() ,
-						 Range( 0 , NumVar ) , i );
-    Ai = UpRifFi[ k ] - Ai - std::inner_product( Lambda.begin() , Lambda.end() ,
-						 Gi.data() , 0 );
-    Master->ChgAlfa( InvItemVcblr[ k ][ i ] , Ai );
-    }
+  for( Index k = 0 ; k < NrFi ; ++k )
+   for( auto i : Cchg[ k ] )
+    if( InvItemVcblr[ k ][ i ] < vBPar2[ NrFi ] ) {
+     auto Ai = v_c05f[ k ]->get_linearization_constant( i );
+     if( std::isnan( Ai ) )  // linearization no longer valid
+      throw( std::logic_error( "inexistent linearization" ) );
+
+     // compute the linearization error in Lambda
+     v_c05f[ k ]->get_linearization_coefficients( Gi.data() ,
+						  Range( 0 , NumVar ) , i );
+     Ai = UpRifFi[ k ] - Ai - std::inner_product( Lambda.begin() ,
+						  Lambda.end() ,
+						  Gi.begin() , double( 0 ) );
+     Master->ChgAlfa( InvItemVcblr[ k ][ i ] , Ai );
+     }
+  }
 
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // if there are (still) Variable to add, do it now in one blow
@@ -4407,6 +4420,7 @@ void BundleSolver::process_outstanding_Modification( void )
 
  #if CHECK_DS
   CheckBundle();  // save possibly some checks
+  //!! PrintBundle();
  #endif
  
  }  // end( BundleSolver::process_outstanding_Modification ) - - - - - - - - -
@@ -4497,6 +4511,11 @@ void BundleSolver::PrintBundle( void )
 {
  if( ! f_log )
   return;
+
+ *f_log << std::endl << "Lambda = [ ";
+ for( Index h = 0 ; h < NumVar - 1 ; ++h )
+  *f_log << Lambda[ h ] << ", ";
+ *f_log << Lambda.back() << " ]";
 
  auto Alfa = Master->ReadLinErr();
  std::vector< VarValue > G( NumVar );
