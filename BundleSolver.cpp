@@ -169,12 +169,12 @@ static void set_union_in_place( BundleSolver::Subset & S1 ,
  if( S1.empty() )
   S1 = S2;
  else {
-  BundleSolver::Subset tmp( S1.size() + S2.size() );
+  BundleSolver::Subset tmp;
   std::set_union( S1.begin() , S1.end() , S2.begin() , S2.end() ,
-		  tmp.begin() );
+		  std::back_inserter( tmp ) );
   S1 = std::move( tmp );
   }
- }  // end( set_difference_in_place )
+ }  // end( set_union_in_place )
 
 /*--------------------------------------------------------------------------*/
 
@@ -188,12 +188,12 @@ static void set_union_in_place( BundleSolver::Subset & S1 ,
  if( S1.empty() )
   S1 = std::move( S2 );
  else {
-  BundleSolver::Subset tmp( S1.size() + S2.size() );
+  BundleSolver::Subset tmp;
   std::set_union( S1.begin() , S1.end() , S2.begin() , S2.end() ,
-		  tmp.begin() );
+		  std::back_inserter( tmp ) );
   S1 = std::move( tmp );
   }
- }  // end( set_difference_in_place )
+ }  // end( set_union_in_place )
 
 /*--------------------------------------------------------------------------*/
 /*----------------------------- STATIC MEMBERS -----------------------------*/
@@ -2674,7 +2674,8 @@ void BundleSolver::guts_of_destructor( void )
 {
  if( Master ) {
   Master->SetDim();
-  delete( Master );
+  delete Master;
+  Master = nullptr;
   }
 
  Alfa1.clear();
@@ -3026,7 +3027,7 @@ void BundleSolver::add_to_global_pool( Index k , Index i )
  if( ! ( BPar7 & 3 ) )  // if items not in the bundle are not "free"
   return;               // nothing else to do
  while( ( FrFItem[ k ] < MaxItem[ k ] ) &&
-	( InvItemVcblr[ k ][ FrFItem[ k ] ] < Inf<Index>() ) )
+	( InvItemVcblr[ k ][ FrFItem[ k ] ] < vBPar2[ NrFi ] ) )
   ++FrFItem[ k ];
 
  }  // end( BundleSolver::add_to_global_pool( k , i ) )
@@ -4326,7 +4327,7 @@ void BundleSolver::process_outstanding_Modification( void )
     }
 
    // compute the union between Addd[ k ] and Chgd[ k ] into Addd[ k ]
-   set_union_in_place( Addd[ k ] , Chgd[ k ] );
+   set_union_in_place( Addd[ k ] , std::move( Chgd[ k ] ) );
 
    // finally, add the resulting stuff to the bundle
    for( auto i : Addd[ k ] )
@@ -4355,22 +4356,17 @@ void BundleSolver::process_outstanding_Modification( void )
 
    std::vector< VarValue > Alfa( Master->MaxName( k + 1 ) );
 
-   for( Index i = 0 ; i < Master->MaxName( k + 1 ) ; ++i )
-    if( ( ItemVcblr[ i ].first == k ) &&
-	( ItemVcblr[ i ].second < vBPar2[ k ] ) &&
-	( ItemVcblr[ i ].second >= 0 )  ) {
-     auto Ai = v_c05f[ k ]->get_linearization_constant(
-						     ItemVcblr[ i ].second );
+   for( Index i = 0 ; i < MaxItem[ k ] ; ++i )
+    if( InvItemVcblr[ k ][ i ] < vBPar2[ NrFi ] ) {
+     auto Ai = v_c05f[ k ]->get_linearization_constant( i );
      if( std::isnan( Ai ) )  // linearization no longer valid
       throw( std::logic_error( "inconsistent ItemVcblr" ) );
 
      // compute the linearization error in Lambda
      v_c05f[ k ]->get_linearization_coefficients( Gi.data() ,
-						  Range( 0 , NumVar ) ,
-						  ItemVcblr[ i ].second );
-     Alfa[ i ] = UpRifFi[ k ] - Ai -
-                 std::inner_product( Lambda.begin() , Lambda.end() ,
-				     Gi.data() , 0 );
+						  Range( 0 , NumVar ) , i );
+     Alfa[ InvItemVcblr[ k ][ i ] ] = UpRifFi[ k ] - Ai -
+        std::inner_product( Lambda.begin() , Lambda.end() , Gi.data() , 0 );
      }
 
    Master->ChgAlfa( Alfa.data() , k + 1 );
@@ -4381,7 +4377,7 @@ void BundleSolver::process_outstanding_Modification( void )
 
  for( Index k = 0 ; k < NrFi ; ++k )
   for( auto i : Cchg[ k ] )
-   if( InvItemVcblr[ k ][ i ] < vBPar2[ k ] ) {
+   if( InvItemVcblr[ k ][ i ] < vBPar2[ NrFi ] ) {
     auto Ai = v_c05f[ k ]->get_linearization_constant( i );
     if( std::isnan( Ai ) )  // linearization no longer valid
      throw( std::logic_error( "inexistent linearization" ) );
