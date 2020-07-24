@@ -4283,7 +4283,7 @@ void BundleSolver::process_outstanding_Modification( void )
     continue;                                    // move off
 
    if( Chgd[ k ].size() >= NrItems[ k ] ) {  // all items change
-    reset[ k ] = true;                       // this is a reset
+    reset[ k ] = AlphaC[ k ] = true;         // this is a reset
     continue;
     }
 
@@ -4339,17 +4339,20 @@ void BundleSolver::process_outstanding_Modification( void )
   }  // end( if( additions or changes ) )
 
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
- // if some component need be reset
+ // if some component need be reset, reset the linearizations: since
+ // reset[ k ] ==> AlphaC[ k ], later on also the constants will be reset
 
  if( std::find( reset.begin() , reset.end() , true ) != reset.end() )
   for( Index k = 0 ; k < NrFi ; ++k )
-   if( reset[ k ] ) {
-    Master->ChgSubG( 0 , NumVar , k + 1 );  // change everything
-    AlphaC[ k ] = 0;                        // constants included
-    }
+   if( reset[ k ] )
+    Master->ChgSubG( 0 , NumVar , k + 1 );
 
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
- // if there are Alphas to change entirely, do it now in one blow
+ // if there are constants to change entirely, do it now in one blow
+ // note: in case of a full reset, get_linearization_coefficients() is
+ //       called twice, once in ChgSubG() (via GetGi()) and once in the
+ //       loop below. this has the potential to be horribly inefficient,
+ //       but the only clean way out is to do away with MPSolver entirely
 
  if( std::find( AlphaC.begin() , AlphaC.end() , true ) != AlphaC.end() ) {
   std::vector< VarValue > Gi( NumVar );
