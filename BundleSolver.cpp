@@ -3766,7 +3766,7 @@ void BundleSolver::process_outstanding_Modification( void )
  std::vector< Subset > Addd( NrFi );  // which linearizations have been added
  std::vector< Subset > Rmvd( NrFi );  // which linearizations have been removed
  std::vector< Subset > Chgd( NrFi );  // which linearizations have been changed
- std::vector< Subset > Cchg( NrFi );  // which contants have been changed
+ std::vector< Subset > Cchg( NrFi );  // which constants have been changed
 
  for( auto imod = v_mod_tmp.begin() ; imod != v_mod_tmp.end() ;
       // note the iterator_expression of the for() obtained by defining
@@ -4342,10 +4342,14 @@ void BundleSolver::process_outstanding_Modification( void )
  // if some component need be reset, reset the linearizations: since
  // reset[ k ] ==> AlphaC[ k ], later on also the constants will be reset
 
- if( std::find( reset.begin() , reset.end() , true ) != reset.end() )
-  for( Index k = 0 ; k < NrFi ; ++k )
-   if( reset[ k ] )
-    Master->ChgSubG( 0 , NumVar , k + 1 );
+ if( std::find( reset.begin() , reset.end() , false ) == reset.end() )
+  Master->ChgSubG( 0 , NumVar , NrFi + 1 );  // all components have been reset
+ else
+  if( std::find( reset.begin() , reset.end() , true ) != reset.end() )
+   // some components have been reset
+   for( Index k = 0 ; k < NrFi ; ++k )
+    if( reset[ k ] )
+     Master->ChgSubG( 0 , NumVar , k + 1 );
 
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // if there are constants to change entirely, do it now in one blow
@@ -4354,32 +4358,59 @@ void BundleSolver::process_outstanding_Modification( void )
  //       loop below. this has the potential to be horribly inefficient,
  //       but the only clean way out is to do away with MPSolver entirely
 
- if( std::find( AlphaC.begin() , AlphaC.end() , true ) != AlphaC.end() ) {
+ if( std::find( AlphaC.begin() , AlphaC.end() , false ) == AlphaC.end() ) {
+  // all components have been reset
   std::vector< VarValue > Gi( NumVar );
+  std::vector< VarValue > Alfa( Master->MaxName() );
 
   for( Index k = 0 ; k < NrFi ; ++k )
-   if( AlphaC[ k ] ) {  // all the constants of this component are reset
-    Cchg[ k ].clear();  // no need to change them individually
+   Cchg[ k ].clear();
 
-    std::vector< VarValue > Alfa( Master->MaxName( k + 1 ) );
+  for( Index i = 0 ; i < Master->MaxName() ; ++i )
+   if( ItemVcblr[ i ].second < vBPar2[ ItemVcblr[ i ].first ] ) {
+    auto Ai = v_c05f[ ItemVcblr[ i ].first ]->get_linearization_constant(
+						     ItemVcblr[ i ].second );
+    if( std::isnan( Ai ) )  // linearization no longer valid
+     throw( std::logic_error( "inconsistent ItemVcblr" ) );
 
-    for( Index i = 0 ; i < MaxItem[ k ] ; ++i )
-     if( InvItemVcblr[ k ][ i ] < vBPar2[ NrFi ] ) {
-      auto Ai = v_c05f[ k ]->get_linearization_constant( i );
-      if( std::isnan( Ai ) )  // linearization no longer valid
-       throw( std::logic_error( "inconsistent ItemVcblr" ) );
-
-      // compute the linearization error in Lambda
-      v_c05f[ k ]->get_linearization_coefficients( Gi.data() ,
-						  Range( 0 , NumVar ) , i );
-      Alfa[ InvItemVcblr[ k ][ i ] ] = UpRifFi[ k ] - Ai -
-       std::inner_product( Lambda.begin() , Lambda.end() , Gi.data() ,
-			   double( 0 ) );
-      }
-
-    Master->ChgAlfa( Alfa.data() , k + 1 );
+    // compute the linearization error in Lambda
+    v_c05f[ ItemVcblr[ i ].first ]->get_linearization_coefficients( Gi.data() ,
+				 Range( 0 , NumVar ) , ItemVcblr[ i ].second );
+    Alfa[ i ] = UpRifFi[ ItemVcblr[ i ].first ] - Ai -
+                std::inner_product( Lambda.begin() , Lambda.end() , Gi.data() ,
+				    double( 0 ) );
     }
+
+  Master->ChgAlfa( Alfa.data() , NrFi + 1 );  
   }
+ else
+  if( std::find( AlphaC.begin() , AlphaC.end() , true ) != AlphaC.end() ) {
+   // some components have been reset
+   std::vector< VarValue > Gi( NumVar );
+
+   for( Index k = 0 ; k < NrFi ; ++k )
+    if( AlphaC[ k ] ) {  // all the constants of this component are reset
+     Cchg[ k ].clear();  // no need to change them individually
+
+     std::vector< VarValue > Alfa( Master->MaxName( k + 1 ) );
+
+     for( Index i = 0 ; i < MaxItem[ k ] ; ++i )
+      if( InvItemVcblr[ k ][ i ] < vBPar2[ NrFi ] ) {
+       auto Ai = v_c05f[ k ]->get_linearization_constant( i );
+       if( std::isnan( Ai ) )  // linearization no longer valid
+	throw( std::logic_error( "inconsistent InvItemVcblr" ) );
+
+       // compute the linearization error in Lambda
+       v_c05f[ k ]->get_linearization_coefficients( Gi.data() ,
+						    Range( 0 , NumVar ) , i );
+       Alfa[ InvItemVcblr[ k ][ i ] ] = UpRifFi[ k ] - Ai -
+	       std::inner_product( Lambda.begin() , Lambda.end() , Gi.data() ,
+				   double( 0 ) );
+       }
+
+     Master->ChgAlfa( Alfa.data() , k + 1 );
+     }
+   }
 
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // if there subsets of Alphas to change, do it now
