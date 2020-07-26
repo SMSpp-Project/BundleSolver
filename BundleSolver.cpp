@@ -46,10 +46,12 @@
 
 /*--------------------------------------------------------------------------*/
 
-#define USE_MPTESTER 0
+#define USE_MPTESTER 1
 
-// if USE_MPTESTER is nonzero, the MPSolver is a MPTester whose master is
-// an OSIMPSolver and whose slave is a QPPenaltyMP
+// if USE_MPTESTER is nonzero, the MPSolver is a MPTester. in particular, if
+// USE_MPTESTER == 1 then the master of the MPTester is an OSIMPSolver and
+// the slave is a QPPenaltyMP, while if USE_MPTESTER != 1 then the master is
+// a QPPenaltyMP and the slave is an OSIMPSolver
 
 #if USE_MPTESTER
  #include "MPTester.h"
@@ -1086,7 +1088,11 @@ void BundleSolver::set_Block( Block * block )
     qp->SetMaxVarAdd( MxAdd );
     qp->SetMaxVarRmv( MxRmv );
     #if( USE_MPTESTER )
-     Master = new MPTester( Master , qp );
+     #if( USE_MPTESTER == 1 )
+      Master = new MPTester( Master , qp );
+     #else
+      Master = new MPTester( qp , Master );
+     #endif
     #else
      Master = qp;
     }
@@ -1560,16 +1566,21 @@ void BundleSolver::FormD( void )
   else
    Master->SetLowerBound( - Inf<double>() );
 
-  if( MPName & 1 )  // QPPenaltyMP does not allow individual lower bounds
-   for( Index k = 0 ; k < NrFi ; k++ ) {
-    if( NrEasy && IsEasy[ k ] )  // skip easy components
-     continue;
+  #if( ! USE_MPTESTER )
+   // QPPenaltyMP does not allow individual lower bounds, and if a MPTester
+   // is used then a QPPenaltyMP is involved anyway
 
-    if( TrueLB && ( LowerBound > - Inf<double>() ) )
-     Master->SetLowerBound( LowerBound - UpFiLmb[ k ] , k + 1 );
-    else
-     Master->SetLowerBound( - Inf<double>() , k + 1 );
-    }
+   if( MPName & 1 ) 
+    for( Index k = 0 ; k < NrFi ; k++ ) {
+     if( NrEasy && IsEasy[ k ] )  // skip easy components
+      continue;
+
+     if( TrueLB && ( LowerBound > - Inf<double>() ) )
+      Master->SetLowerBound( LowerBound - UpFiLmb[ k ] , k + 1 );
+     else
+      Master->SetLowerBound( - Inf<double>() , k + 1 );
+     }
+  #endif
 
   LBHasChgd = false;
   }
