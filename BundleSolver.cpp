@@ -46,7 +46,7 @@
 
 /*--------------------------------------------------------------------------*/
 
-#define USE_MPTESTER 1
+#define USE_MPTESTER 0
 
 // if USE_MPTESTER is nonzero, the MPSolver is a MPTester. in particular, if
 // USE_MPTESTER == 1 then the master of the MPTester is an OSIMPSolver and
@@ -1012,7 +1012,7 @@ void BundleSolver::set_Block( Block * block )
  for( Index k = 0 ; k < NrFi ; ++k )
   InvItemVcblr[ k ].resize( vBPar2[ k ] , InINF );
 
- NrItems.resize( NrFi , 0 );
+ NrItems.resize( NrFi + 1 , 0 );
  FrFItem.resize( NrFi , 0 );
  MaxItem.resize( NrFi , 0 );
 
@@ -2146,7 +2146,7 @@ bool BundleSolver::FiAndGi( Index wFi )
     // note that the number of items of component wFi in the master problem
     // is unchanged
     }
-   else                 // the item is a copy, but not better than the original
+   else                 // the item is a copy, not better than the original
     to_insert = false;  // do nothing
 
    BLOG( 2 , std::endl );
@@ -2171,9 +2171,10 @@ bool BundleSolver::FiAndGi( Index wFi )
     // the place is occupied already: this happens if the bundle was full
     // (and, possibly aggregation has been performed for safety)
     Master->RmvItem( wh );  // the old item has to be removed first
-   else                     // the place is unoccupied
+   else {                   // the place is unoccupied
     ++NrItems[ wFi ];       // one more item in the bundle (otherwise the
-                            // number remains the same as one is replaced)
+    ++NrItems[ NrFi ];      // number remains the same as one is replaced)
+    }
 
    Master->SetItem( wh );   // insert the new item in the MP Solver
 
@@ -2333,7 +2334,7 @@ void BundleSolver::Log1( void )
   return;
 
  *f_log << std::endl << "{" << SCalls << "-" << ParIter << "-"
-	<< Master->MaxName() - FreList.size() << "-" << MBDim << "} t = " << t
+	<< NrItems[ NrFi ] << "-" << MBDim << "} t = " << t
 	<< " ~ D*_1( z* ) = " << Master->ReadDStart( 1 )
 	<< " ~ Sigma = " << Sigma << std::endl << "           ";
 
@@ -2342,7 +2343,7 @@ void BundleSolver::Log1( void )
  if( UpFiLmb[ NrFi ] == Inf<double>() )
   *f_log << " - INF";
  else
-  *f_log << UpFiLmb[NrFi] << " ~ eU = " << EpsU;
+  *f_log << UpFiLmb[ NrFi ] << " ~ eU = " << EpsU;
 
  if( BPar6 )
   *f_log << " ~ BP3 = " << aBP3;
@@ -2802,6 +2803,7 @@ void BundleSolver::Delete( cIndex i , bool ModDelete )
 
  OOBase[ i ] = Inf<SIndex>();
  --NrItems[ k ];
+ --NrItems[ NrFi ];
 
  // remove from the global pool: the removal is "hard" if either BPar7 says
  // so, or the linearization had been deleted anyway
@@ -3069,6 +3071,7 @@ void BundleSolver::add_to_bundle( Index k , Index i )
    throw( std::logic_error( "no space found in the bundle" ) );
 
   ++NrItems[ k ];              // keep count
+  ++NrItems[ NrFi ];
   add_to_global_pool( k , i , wh );  // update dictionaries
   }
  else                          // the item is there already
@@ -3119,7 +3122,7 @@ void BundleSolver::reset_bundle( void )
  for( Index k = 0 ; k < NrFi ; ++k )
   InvItemVcblr[ k ].assign( vBPar2[ k ] , InINF );
 
- NrItems.assign( NrFi , 0 );
+ NrItems.assign( NrFi + 1 , 0 );
  FrFItem.assign( NrFi , 0 );
  MaxItem.assign( NrFi , 0 );
 
@@ -3562,8 +3565,8 @@ void BundleSolver::process_outstanding_Modification( void )
  // note that Modification changing the linearizations happening *after* a
  // "soft" reset of the global pool (meaning it is found *before* in the
  // reverse order) is also useless, since a reset forces the re-reading of all
- // linearizations, which by definition happens at their current (final) state.
- // yet, this is not done immediately
+ // linearizations, which by definition happens at their current (final)
+ // state. yet, this is not done immediately
  //
  // note that we make no serious attempt at keeping track of the combined
  // effect of all changes, in order to detect if a large set of small
@@ -3683,7 +3686,7 @@ void BundleSolver::process_outstanding_Modification( void )
      default:  // this must not happen, as GlobalPoolRemoved with
                // which.empty() has been dealt with and deleted before
       throw( std::invalid_argument(
-		   "wrong type in C05FunctionMod with empty which()" ) );
+		        "wrong type in C05FunctionMod with empty which()" ) );
      }
 
     to_delete = true;
@@ -3774,10 +3777,10 @@ void BundleSolver::process_outstanding_Modification( void )
  //   always concern all the linearizations), while C05FunctionModLin have
  //   been dealt with already
 
- std::vector< Subset > Addd( NrFi );  // which linearizations have been added
- std::vector< Subset > Rmvd( NrFi );  // which linearizations have been removed
- std::vector< Subset > Chgd( NrFi );  // which linearizations have been changed
- std::vector< Subset > Cchg( NrFi );  // which constants have been changed
+ std::vector< Subset > Addd( NrFi );  // added linearizations
+ std::vector< Subset > Rmvd( NrFi );  // removed linearizations
+ std::vector< Subset > Chgd( NrFi );  // changed linearizations
+ std::vector< Subset > Cchg( NrFi );  // changed constants
 
  for( auto imod = v_mod_tmp.begin() ; imod != v_mod_tmp.end() ;
       // note the iterator_expression of the for() obtained by defining
@@ -3916,8 +3919,7 @@ void BundleSolver::process_outstanding_Modification( void )
   }  // end( 3rd loop, forward )
 
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
- // now act on the just gathered information, i.e., delete all linearization
- // that need to, if any
+ // now delete all linearization that need to, if any
 
  if( std::find_if( Rmvd.begin() , Rmvd.end() ,
 		   []( Subset & Rk ) { return( ! Rk.empty() ); }
@@ -4374,8 +4376,8 @@ void BundleSolver::process_outstanding_Modification( void )
   std::vector< VarValue > Gi( NumVar );
   std::vector< VarValue > Alfa( Master->MaxName() );
 
-  for( Index k = 0 ; k < NrFi ; ++k )
-   Cchg[ k ].clear();
+  for( auto & cchk : Cchg )
+   cchk.clear();
 
   for( Index i = 0 ; i < Master->MaxName() ; ++i )
    if( ItemVcblr[ i ].second < vBPar2[ ItemVcblr[ i ].first ] ) {
@@ -4508,6 +4510,12 @@ void BundleSolver::CheckBundle( void )
 	      << Master->WComponent( i ) << std::endl;
 
  // check NrItems
+ if( int diff = ( NrItems[ NrFi ] - std::accumulate( NrItems.begin() ,
+						     NrItems.begin() + NrFi ,
+						     Index( 0 ) ) ) != 0 )
+  std::cerr << " NrItems[ NrFi ] = " << NrItems[ NrFi ] << " but the sum is "
+	    <<  NrItems[ NrFi ] + diff  << std::endl;
+
  for( Index k = 0 ; k < NrFi ; ++k )
   if( tmp[ k ] != NrItems[ k ] )
    std::cerr << "counted " << tmp[ k ]
