@@ -401,10 +401,9 @@ public:
 
  BundleSolver( void ) : CDASolver() , FakeFi( this ) , Result( kUnEval ) ,
   NumVar( 0 ) , NrFi( 0 ) , SCalls( 0 ) , ParIter( 0 ) , NrEasy( 0 ) ,
-  LHasChgd( true ) , tHasChgd( true ) , LowerBound( - Inf< VarValue >() ) ,
-  t( 0 ) , Prevt( 0 ) , Sigma( 0 ) , DSTS( 0 ) , vStar( 0 ) , DeltaFi( 0 ) ,
-  EpsU( 0 ) , CSSCntr( 0 ) , CNSCntr( 0 ) , TrueLB( false ) ,
-  LBHasChgd( false ) , SSDone( true ) , MBDim( 0 ) , aBP3( 0 ) , 
+  LHasChgd( true ) , tHasChgd( true ) , t( 0 ) , Prevt( 0 ) , Sigma( 0 ) ,
+  DSTS( 0 ) , vStar( 0 ) , DeltaFi( 0 ) , EpsU( 0 ) , CSSCntr( 0 ) ,
+  CNSCntr( 0 ) , TrueLB( false ) , SSDone( true ) , MBDim( 0 ) , aBP3( 0 ) ,
   f_lf( nullptr ) , Master( nullptr ) , UpTrgt( 0 ) , LwTrgt( 0 ) ,
   UpFiBest( Inf< VarValue >() ) , MaxNrEvls( 0 ) , DeltaStar( 0 ) , NrmD( 0 )
  {
@@ -434,7 +433,7 @@ public:
   RelAcc = CDASolver::get_dflt_dbl_par( dblRelAcc );
   AbsAcc = CDASolver::get_dflt_dbl_par( dblAbsAcc );
   RAccSol = CDASolver::get_dflt_dbl_par( dblRAccSol );
-  AAccSol = CDASolver::get_dflt_dbl_par(dblAAccSol );
+  AAccSol = CDASolver::get_dflt_dbl_par( dblAAccSol );
   tStar = dflt_dbl_par[ dbltStar - dblLastParCDAS ];
   RelMPAcc = dflt_dbl_par[ dblRelMPAcc - dblLastParCDAS ];
   RMPAccSol = dflt_dbl_par[ dblRMPAccSol - dblLastParCDAS ];
@@ -1147,10 +1146,6 @@ public:
 
 /*--------------------------------------------------------------------------*/
 
- void UpdtLowerBound( void );
-
-/*--------------------------------------------------------------------------*/
-
  double BetaK( Index wFi );
 
 /*--------------------------------------------------------------------------*/
@@ -1280,7 +1275,7 @@ public:
  Vec_VarValue Alfa1;  /**< linearization error of G[ WhIsG1[ k ] ] w.r.t. the
 		       * current point Lambda. */
 
- VarValue LowerBound;  ///< Lower Bound over (the various components of) Fi
+ Vec_VarValue LowerBound;  ///< Lower Bound over (all the components of) Fi
 
  double t;             ///< the (tremendous) t parameter
  double Prevt;         ///< what t were before being changed for funny reasons
@@ -1366,7 +1361,6 @@ public:
 
  bool TrueLB;         /**< true if LowerBound is a "true" lower bound rather
 		       * than a "conditional" one */
- bool LBHasChgd;      ///< true some LowerBound has changed
  bool SSDone;         ///< true if the laste step was a SS
 
  Subset FiStatus;

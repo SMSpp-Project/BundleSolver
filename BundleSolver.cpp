@@ -573,10 +573,6 @@ int BundleSolver::compute( bool changedvars )
    else
     Alfa1[ k ] = ScPr1[ k ] = 0;
 
-  // check whether the Lower Bounds have changed- - - - - - - - - - - - - - -
-
-  UpdtLowerBound();
-
   // some log about the newly obtained information- - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -606,8 +602,9 @@ int BundleSolver::compute( bool changedvars )
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
   if( ( ! TrueLB ) &&
-      ( UpFiBest <= LowerBound *
-	            ( 1 - ( LowerBound > 0 ? RelAcc : - RelAcc ) ) ) ) {
+      ( UpFiBest <= LowerBound[ NrFi ] *
+	            ( 1 - ( LowerBound[ NrFi ] > 0 ? RelAcc : - RelAcc ) ) )
+      ) {
    Result = kUnbounded;
    break;
    }
@@ -952,7 +949,7 @@ void BundleSolver::set_Block( Block * block )
     MILP_s[ k ] = new MILPSolver();
     MILP_s[ k ]->set_Block( LagB->get_inner_block() );
     IsEasy[ k ] = true;
-    NrEasy++;
+    ++NrEasy;
     }
    }
 
@@ -1022,7 +1019,6 @@ void BundleSolver::set_Block( Block * block )
  CurrNrEvls.resize( NrFi , 0 );
 
  FiStatus.resize( NrFi , kUnEval );
- LowerBound = -Inf<double>();     // global lower bounds
  TrueLB = false;
 
  UpFiBest = Inf<VarValue>();      // best, ...
@@ -1032,6 +1028,7 @@ void BundleSolver::set_Block( Block * block )
  UpFiLmb.resize( NrFi + 1 ,  Inf<VarValue>() );  // upper 
  LwFiLmb.resize( NrFi + 1 , -Inf<VarValue>() );  // ... and lower Fi-value
                                                  // ... at the current point
+ LowerBound.resize( NrFi + 1 , -Inf<VarValue>() );  // global lower bounds
  vStar.resize( NrFi + 1 , 0 );
  whisG1.resize( NrFi , InINF );  // no representative yet
 
@@ -1559,31 +1556,64 @@ void BundleSolver::FormD( void )
   }
 
  // collect and set individual and global lower bounds- - - - - - - - - - - -
+ // first of all, check if a "hard" lower bound is available
+ // note: this used to be done elsewhere, in particular after each function
+ //       evaluation. the rationale was that in the Lagrangian case one would
+ //       do heuristics as a part of the computation, and these could produce
+ //       a better lower bound that one may immediately want to check. but
+ //       the truth is that one does not: the real way in which a lower bound
+ //       is useful is when it enters the master problem and helps in getting
+ //       the optimality conditions. thus, the right place to check and
+ //       update the lower bound(s) is right before the master problem is
+ //       solved. the conditional lower bound ( TrueLB == false ) is indeed
+ //       useful right after the function computation to prove unboundedness,
+ //       but it is available then, and anyway it typically does not change
+ //       when the function is computed, unlike the "hard" one
 
- if( LBHasChgd && ( UpFiLmb[ NrFi ] < Inf<double>() ) ) {
-  if( TrueLB && ( LowerBound > - Inf<double>() ) )
-   Master->SetLowerBound( LowerBound - UpFiLmb[ NrFi ] );
-  else
-   Master->SetLowerBound( - Inf<double>() );
-
-  #if( ! USE_MPTESTER )
-   // QPPenaltyMP does not allow individual lower bounds, and if a MPTester
-   // is used then a QPPenaltyMP is involved anyway
-
-   if( MPName & 1 ) 
-    for( Index k = 0 ; k < NrFi ; k++ ) {
-     if( NrEasy && IsEasy[ k ] )  // skip easy components
-      continue;
-
-     if( TrueLB && ( LowerBound > - Inf<double>() ) )
-      Master->SetLowerBound( LowerBound - UpFiLmb[ k ] , k + 1 );
-     else
-      Master->SetLowerBound( - Inf<double>() , k + 1 );
-     }
-  #endif
-
-  LBHasChgd = false;
+ auto LwrBnd = f_Block->get_valid_lower_bound( false );
+ if( LwrBnd > - Inf<double>() ) {
+  TrueLB = true;
+  if( LwrBnd != LowerBound[ NrFi ] ) {
+   LowerBound[ NrFi ] = LwrBnd;
+   Master->SetLowerBound( LowerBound[ NrFi ] - UpRifFi[ NrFi ] );
+   }
   }
+ else {
+  TrueLB = false;
+  if( LwrBnd != LowerBound[ NrFi ] ) {
+   LowerBound[ NrFi ] = - Inf<double>();
+   Master->SetLowerBound( - Inf<double>() );
+   }
+  }
+
+ if( ! TrueLB )  // if not, at least pick the a "conditional" one (if any)
+  LowerBound[ NrFi ] = f_Block->get_valid_lower_bound( true );
+
+ // now, if the MPSolver accepts them, collect and if necessary set the
+ // individual lower bounds. note that if all of them are finite and the
+ // 0-th component is not there their sum would give an alterntive valid
+ // global lower bound. however, the same information is already encoded
+ // in the individual bounds, hence it's of no use. the exception is that
+ // QPPenaltyMP does not allow individual lower bounds, but this is not a
+ // permanent issue and it'll go away when we'll get rid of MPSolver;
+ // besides, it very unlikely to ever really happen
+
+ #if( ! USE_MPTESTER )
+  // QPPenaltyMP does not allow individual lower bounds, and if a MPTester
+  // is used then a QPPenaltyMP is involved anyway
+
+  if( MPName & 1 ) 
+   for( Index k = 0 ; k < NrFi ; ++k ) {
+    if( NrEasy && IsEasy[ k ] )  // skip easy components
+     continue;
+
+    auto LwrBndk = v_c05f[ k ]->get_global_lower_bound();
+    if( LwrBndk != LowerBound[ k ] ) {
+     LowerBound[ k ] = LwrBndk;
+     Master->SetLowerBound( LowerBound[ k ] - UpRifFi[ k ] , k + 1 );
+     }
+    }
+ #endif
 
  /* set termination criterion - - - - - - - - - - - - - - - - - - - - - - - -
   * leftover code for a previous version of MPSolver having a MPSolver::kZero
@@ -2295,36 +2325,7 @@ void BundleSolver::SimpleBStrat( void )
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::UpdtLowerBound( void )
-{
- // note: set LBHasChgd only if the new lower bound has to be set into the
- //       MPSolver, which only happens if a new non-conditional lower bound
- //       if found or if a previously non-conditional lower bound disappears
- //       and only leaves a conditional one (in the latter case, the lower
- //       bound in the MPSolver has to be set to -INF)
-
- // first of all, check if a "hard" lower bound is available
- double LwrBnd = f_Block->get_valid_lower_bound( false );
- if( LwrBnd > - Inf<double>() ) {
-  LBHasChgd = ( ! TrueLB ) || ( LwrBnd != LowerBound );
-  LowerBound = LwrBnd;
-  TrueLB = true;
-  }
- else {
-  // if not, check if at least a "conditional" one is available
-  LwrBnd = f_Block->get_valid_lower_bound( true );
-  LBHasChgd = TrueLB;
-  LowerBound = LwrBnd;
-  TrueLB = false;
-  }
- } // end( BundleSolver::UpdtLowerBound )  - - - - - - - - - - - - - - - - - -
-
-/*--------------------------------------------------------------------------*/
-
-double BundleSolver::BetaK( Index wFi )
-{
- return( 1.0 / double( NrEasy ) );
- }
+double BundleSolver::BetaK( Index wFi ) { return( 1.0 / double( NrEasy ) ); }
 
 /*--------------------------------------------------------------------------*/
 
@@ -2359,7 +2360,7 @@ void BundleSolver::Log2( void )
 
  *f_log << std::endl << "            ";
 
- if( LowerBound > - Inf<double>() )
+ if( LowerBound[ NrFi ] > - Inf<double>() )
   *f_log << "LB = " << LowerBound << " ~ ";
 
  *f_log << "Fi1 = ";
@@ -2381,8 +2382,6 @@ void BundleSolver::Log2( void )
 
 void BundleSolver::InitMP( void )
 {
- // this method is called only when *both* the FiOracle *and* the MPSolver
- // have been set, and it is re-called each time any one of the two changes
  // set the size- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
  Master->SetDim( vBPar2[ NrFi ] , &FakeFi , false );
@@ -2401,11 +2400,10 @@ void BundleSolver::InitMP( void )
   }
 
  tHasChgd = true;
- LBHasChgd = false;
 
  if( MPName & 8 )
   Master->CheckIdentical();
- 
+
  }  // end( BundleSolver::InitMP( ) )  - - - - - - - - - - - - - - - - - - - -
 
 /*--------------------------------------------------------------------------*/
@@ -2700,6 +2698,7 @@ void BundleSolver::guts_of_destructor( void )
  whisG1.clear();
  vStar.clear();
 
+ LowerBound.clear();
  LwFiLmb.clear();
  UpFiLmb.clear();
  LwFiLmb1.clear();
@@ -3221,11 +3220,6 @@ void BundleSolver::process_outstanding_Modification( void )
  // multiple-loop version, where several passes are done in order to gather
  // which kind of Modification have occurred and avoid doing costly work
  // more than once
- //
- // All loops use a Lambda to define a "guts" of the method that can be
- // called recursively. Note the trick of defining the std::function object
- // and "passing" it to the lambda, which allows recursive calls. Note the
- // need to explicitly capture "this" to use fields/methods of the class.
 
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // 0-th loop: "atomically flatten" v_mod into a temporary list to better
@@ -4896,11 +4890,17 @@ Index BundleSolver::FakeFiOracle::GetGi( SgRow SubG , cIndex_Set &SGBse ,
 
 HpNum BundleSolver::FakeFiOracle::GetVal( cIndex Name )
 {
- if( Name == bslv->vBPar2[ bslv->NrFi ] ) // get the zero-component subgradient
-  return( bslv->f_lf->get_linearization_constant( ) );
+ throw( std::logic_error( "this method cannot be called" ) );
+ // the implementation below is wrong, it gives the linearization constant
+ // rather than the linearization error in the point where the component is
+ // computed. this would require translating the value w.r.t. Lambda1,
+ // which is possible but ugly, and anyway not needed
+
+ if( Name == bslv->vBPar2[ bslv->NrFi ] ) // get the 0th-component subgradient
+  return( bslv->f_lf->get_linearization_constant() );
  else
   return( bslv->v_c05f[ bslv->ItemVcblr[ Name ].first ]->
-		 get_linearization_constant( bslv->ItemVcblr[ Name ].second ) );
+	       get_linearization_constant( bslv->ItemVcblr[ Name ].second ) );
  }
 
 /*--------------------------------------------------------------------------*/
@@ -4908,7 +4908,7 @@ HpNum BundleSolver::FakeFiOracle::GetVal( cIndex Name )
 void BundleSolver::FakeFiOracle::SetGiName( cIndex Name )
 {
  throw( std::logic_error( "this method cannot be called" ) );
- } // end ( FakeFiOracle::SetGiName( ) ) - - - - - - - - - - - - - - - - - - -
+ }
 
 /*--------------------------------------------------------------------------*/
 /*-------------------- METHODS FOR READING OTHER RESULTS -------------------*/
