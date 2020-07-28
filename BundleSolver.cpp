@@ -60,7 +60,7 @@
 /*--------------------------------------------------------------------------*/
 
 #ifndef NDEBUG
- #define CHECK_DS 1
+ #define CHECK_DS 0
  /* Perform long and costly checks on the data structures representing the
   * bundle and the global pools, checking them against the MPSolver and the
   * C05Function(s). */
@@ -2361,7 +2361,7 @@ void BundleSolver::Log2( void )
  *f_log << std::endl << "            ";
 
  if( LowerBound[ NrFi ] > - Inf<double>() )
-  *f_log << "LB = " << LowerBound << " ~ ";
+  *f_log << "LB = " << LowerBound[ NrFi ] << " ~ ";
 
  *f_log << "Fi1 = ";
 
