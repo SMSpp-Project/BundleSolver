@@ -968,11 +968,13 @@ void BundleSolver::set_Block( Block * block )
  // - BundleSolver never *decreases* the size of the global pool
  // - BundleSolver only uses the first BPar2 linearizations in each global
  //   pool; if there are more, the other ones are ignored
+ // meanwhile, also set the accuracy of multipliers to RMPAccSol
 
  vBPar2.resize( NrFi + 1, 0 );
  for( Index k = 0 ; k < NrFi ; ++k ) {
   if( NrEasy && IsEasy[ k ] )
    continue;
+  v_c05f[ k ]->set_par( C05Function::dblAAccMlt , RMPAccSol );
   auto gps = v_c05f[ k ]->get_int_par( C05Function::intGPMaxSz );
   if( BPar2 == 0 ) {  // use the current global pool size
    if( gps < 2 )
@@ -1777,9 +1779,9 @@ void BundleSolver::UpdtCntrs( void )
  for( auto OOit = OOBase.begin() ;
       OOit != OOBase.begin() + Master->MaxName() ; ++OOit )
   if( ( *OOit < Inf<SIndex>() ) && ( *OOit > -Inf<SIndex>() ) ) {
-   (*OOit)++;
+   ++(*OOit);
    if( ! *OOit )
-    (*OOit)++;
+    ++(*OOit);
    }
 
  // set to 0 the OOBase[] counter for items in base (if not < 0)- - - - - - -
@@ -1796,7 +1798,7 @@ void BundleSolver::UpdtCntrs( void )
  if( MBse ) {
   for( Index i ; ( i = *(MBse++) ) < InINF ; Mlt++ )
    if( *Mlt >= Eps<HpNum>() ) {
-    if( ( *Mlt >= 1 - RAccSol ) && Master->IsSubG( i ) ) {
+    if( ( *Mlt >= 1 - RMPAccSol ) && Master->IsSubG( i ) ) {
      // will never happen twice for the same wFi
      whisZ[ Master->WComponent( i ) - 1 ] = i;
      OOBase[ i ] = std::min( SIndex( -1 ) , OOBase[ i ] );
