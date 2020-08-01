@@ -1268,8 +1268,17 @@ public:
  bool tHasChgd;       ///< true if t has changed since the last MP
 
  Subset whisZ;     /**< the position in the bundle where the "aggregate
-		    * subgradient" Z[ k ] of "component" k is kept in
+		    * subgradient" Z[ k ] of component k is kept in
 		    * whisZ[ k ]; Inf<Index>() == it is not in the bundle */
+ std::vector< bool > Zvalid;  /**< Zvalid[ k ] == true if the item in position
+			       * whisZ[ k ] is exactly Z[ k ] as computed by
+		    * the last master problee. Zvalid[ k ] == true ==>
+		    * whisZ[ k ] < INF. if Zvalid[ k ] == false and
+		    * whisZ[ k ] < INF, then Z[ k ] had been previously
+		    * stored in position whisZ[ k ], but the master problem has
+		    * been re-solved since and therefore Z[ k ] is no longer
+		    * current. */
+ 
  Subset whisG1;    ///< "representative subgradient" for each component
  Vec_VarValue ScPr1;  ///< ScalarProduct( dir , G[ WhIsG1[ k ] ] )
  Vec_VarValue Alfa1;  /**< linearization error of G[ WhIsG1[ k ] ] w.r.t. the
@@ -1697,11 +1706,6 @@ class FakeFiOracle : public FiOracle
 /*--------------------------------------------------------------------------*/
 
  Index FindAPlace( Index wFi );
-
-/*--------------------------------------------------------------------------*/
-
- void AggregateZ( cHpRow Mlt , cIndex_Set MBse , Index MBDm ,
-		  cIndex wFi , cIndex whr );
 
 /*--------------------------------------------------------------------------*/
 

@@ -60,10 +60,16 @@
 /*--------------------------------------------------------------------------*/
 
 #ifndef NDEBUG
- #define CHECK_DS 0
- /* Perform long and costly checks on the data structures representing the
-  * bundle and the global pools, checking them against the MPSolver and the
-  * C05Function(s). */
+ #define CHECK_DS 1
+ /* Perform long and costly checks on the data structures, coded bit-wise:
+  *
+  * - CHECK_DS & 1 == checks the data structures representing the bundle and
+  *                   the global pools them against the MPSolver and the
+  *                   C05Function(s)
+  * - CHECK_DS & 2 == checks that the aggregated linearization produced by
+  *                   the C05Function agrees with that produced by the
+  *                   MPSolver
+  */
 #else
  #define CHECK_DS 0
  // never change this
@@ -974,7 +980,9 @@ void BundleSolver::set_Block( Block * block )
  for( Index k = 0 ; k < NrFi ; ++k ) {
   if( NrEasy && IsEasy[ k ] )
    continue;
-  v_c05f[ k ]->set_par( C05Function::dblAAccMlt , RMPAccSol );
+  // note: we don't really trust the accuracy of MPSolver, so we give the
+  // C05Function more slack
+  v_c05f[ k ]->set_par( C05Function::dblAAccMlt , 100 * RMPAccSol );
   auto gps = v_c05f[ k ]->get_int_par( C05Function::intGPMaxSz );
   if( BPar2 == 0 ) {  // use the current global pool size
    if( gps < 2 )
@@ -1017,6 +1025,7 @@ void BundleSolver::set_Block( Block * block )
 
  FreList = {};
  whisZ.resize( NrFi , InINF );
+ Zvalid.resize( NrFi , false );
 
  CurrNrEvls.resize( NrFi , 0 );
 
@@ -1745,10 +1754,8 @@ void BundleSolver::FormD( void )
  else
   EpsU = 1;  // ensure EpsU is initialized somehow
 
- // the z[ i ] have changed, so in principle they are no longer in the
- // bundle: it may be the case that they actually are, but this is
- // taken care of in UpdtCntrs()
- whisZ.assign( NrFi , InINF );
+ // the z[ i ] are no longer valid
+ Zvalid.assign( NrFi , false );
 
  // the scalar products have changed
  ScPr1.assign( NrFi , Inf<double>() );
@@ -1785,6 +1792,22 @@ void BundleSolver::UpdtCntrs( void )
    }
 
  // set to 0 the OOBase[] counter for items in base (if not < 0)- - - - - - -
+ // note that chechking if the multiplier is strictly positive should be
+ // redundant, if one was trusting the MPSolver
+ 
+ const Index* MBse;
+ const double* Mlt = Master->ReadMult( MBse , MBDim );
+ if( MBse ) {
+  for( Index i ; ( i = *(MBse++) ) < InINF ; ++Mlt )
+   if( ( *Mlt >= RMPAccSol ) && ( OOBase[ i ] > 0 ) )
+    OOBase[ i ] = 0;
+  }
+ else
+  for( Index i = 0 ; i < MBDim ; ++i , ++Mlt )
+   if( ( *Mlt >= RMPAccSol ) && ( OOBase[ i ] > 0 ) )
+    OOBase[ i ] = 0;
+
+ /*!!
  // note that there is a case in which a component wFi has Z[ wFi ] "for free"
  // in the bundle: this is when wFi only has *one* subgradient in base (or, in
  // practice, a subgradient with multiplier very close to one). This is
@@ -1792,9 +1815,12 @@ void BundleSolver::UpdtCntrs( void )
  // set so as to avoid pointless aggregations and OOBase[] is set to -1,
  // because under no circumnstances such a subgradient can ever be removed
  // from the bundle
+ //
+ // it now seems to me that this is stupid, since if there is only one
+ // subgradient in base no aggregation is ever performed; the only issue
+ // is if the base is all (but one) taken by constraints, but then even
+ // aggregating does not help
 
- const Index* MBse;
- const double* Mlt = Master->ReadMult( MBse , MBDim );
  if( MBse ) {
   for( Index i ; ( i = *(MBse++) ) < InINF ; Mlt++ )
    if( *Mlt >= Eps<HpNum>() ) {
@@ -1820,6 +1846,7 @@ void BundleSolver::UpdtCntrs( void )
      if( OOBase[ i ] > 0 )
       OOBase[ i ] = 0;
     }
+    !!*/
 
  }  // end( UpdtCntrs ) - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -2256,7 +2283,7 @@ bool BundleSolver::FiAndGi( Index wFi )
     OOBase[ wh ] = - Inf<SIndex>();
    }
 
-  #if CHECK_DS
+  #if CHECK_DS & 1
    CheckBundle();
   #endif
 
@@ -2319,7 +2346,7 @@ void BundleSolver::SimpleBStrat( void )
    if( ( OOBase[ i ] < Inf<SIndex>() ) && ( OOBase[ i ] > SIndex( BPar1 ) ) )
     Delete( i );
 
- #if CHECK_DS
+ #if CHECK_DS & 1
   CheckBundle();
  #endif
 
@@ -2510,62 +2537,163 @@ Index BundleSolver::BStrategy( Index wFi )
  // removable, for otherwise we would have selected an item with OOBase > 0;
  // we cannot discard anything before having performed aggregation, but in
  // order to do so we also need to free some space for the Z[ wFi ]
+ //
+ // note: there is an easy case where z is "naturally" in the base without
+ //       any aggregation: there is only one subgradient in base (for the
+ //       component wFi), and therefore, its Mlt[] is == 1. however this
+ //       can never happen here because it would mean vBPar2[ wFi ] == 1
+ //       which is not permitted. the other case in which this could happen
+ //       is that all the items in the bundle for component wF are
+ //       constraints, but then aggregation would not be useful (in fact
+ //       this is checked and reported as a failure)
+ //
+ // note: this also means that wh is the item in base with largest Alpha
+ //
+ // note: that since *all* items of this component are either in base or
+ //       not removable, we can scan MBse[] for the items to be removed,
+ //       possibly ignoring items with Mlt[] == 0 -- but in fact not doing
+ //       it because there is not any
 
  Index MBDm;
  cIndex_Set MBse;
- cHpRow Mlt = Master->ReadMult( MBse , MBDm , wFi , false );
- // note that since *all* items of this component are either in base or
- // not removable we can scan MBse[] for the items to be removed, possibly
- // ignoring items with Mlt[] == 0 -- but in fact not doing it because there
- // is not any
+ cHpRow Mlt = Master->ReadMult( MBse , MBDm , wFi + 1 , false );
 
- if( whisZ[ wFi ] == InINF ) {
-  // Z[ wFi ] is not already in: aggregation has to be performed, so select
-  // the item to take Z[ wFi ] as the "most proising one" already in wh
+ if( ! Zvalid[ wFi ] ) {
+  // a valid Z[ wFi ] is not already in: aggregation has to be performed
 
-  AggregateZ( Mlt , MBse , MBDm , wFi , wh );  // put it in wh
+  Index whZ = InINF;  // the position where Z[ wFi ] has to go
 
-  // and now ensure that Mlt and MBse are reliable again; this is
-  // needed because AggregateZ() calls methods of the MPSolver which
-  // may therefore "invalidate" temporary vectors like Mlt and MBse
-  // in fact, a particularly nasty MPSolver may take the stance that
-  //  Mlt and MBse cannot ever been reliable since the problem has
-  // changed, but our two ones are not that eager
+  if( ( whisZ[ wFi ] < InINF ) && Master->IsSubG( whisZ[ wFi ] ) )
+   whZ = whisZ[ wFi ];  // preferably re-use the last position
+  else {
+   // there is no last position for Z[ wFi ], choose the one with min Mult
+   // among all the removable ones different from wh
+
+   cHpRow tMlt = Mlt;
+   HpNum tMin = Inf<HpNum>();
+   if( MBse ) {
+    cIndex_Set tMBse = MBse;
+    for( Index h ; ( h = *(tMBse++) ) < InINF ; ++tMlt )
+     if( ( h != wh ) && ( *tMlt < tMin ) && ( OOBase[ h ] >= 0 ) ) {
+      whZ = h;
+      tMin = *tMlt;
+      }
+    }
+   else
+    for( Index h = 0 ; h < MBDm ; ++h , ++tMlt )
+     if( ( h != wh ) && ( *tMlt < tMin ) && ( OOBase[ h ] >= 0 ) ) {
+      whZ = h;
+      tMin = *tMlt;
+      }
+   }
+
+  if( whZ == InINF )  // there is no removable item apart from wh
+   return( InINF );   // nothing else to do except complaining very loudly
+
+  // tell the C05Function what is going to happen - - - - - - - - - - - - - -
+  // note that this only happens when the bundle (for component wFi) is "very
+  // full", and therefore also the global pool (for component wFi) is such.
+  // hence, whZ is an item already in the bundle, and therefore in the global
+  // pool. the natural choice is to put the new aggregate linearization in the
+  // same position in the global pool where whZ was, i.e.,
+  // ItemVcblr[ whZ ].second. hence, ItemVcblr, InvItemVcblr and so on need
+  // not be changed
+  
+  LinearCombination coeff( MBDm );
+  if( MBse )
+   for( Index i = 0 ; i < MBDm ; ++i ) {
+    coeff[ i ].first = ItemVcblr[ MBse[ i ] ].second;
+    coeff[ i ].second = Mlt[ i ];
+    }
+  else
+   for( Index i = 0 ; i < MBDm ; ++i ) {
+    coeff[ i ].first = ItemVcblr[ i ].second;
+    coeff[ i ].second = Mlt[ i ];
+    }
+
+  inhibit_Modification( true );
+  v_c05f[ wFi ]->store_combination_of_linearizations( coeff ,
+						   ItemVcblr[ whZ ].second );
+  inhibit_Modification( false );
+
+  Master->RmvItem( whZ );  // remove the old item in position whZ
+
+  // ask the MPSolver the memory for keeping Z[ wFi ] - - - - - - - - - - - -
+  // note: Mlt and MBse could very well be "temporary" memory belonging to the
+  // MPSolver, and any call to a method of the MPSolver may invalidate it;
+  // the calls start now, and in fact MBse and Mlt are no longer used
+
+  SgRow tZ = Master->GetItem( wFi + 1 );
+
+  // read Z[ wFi ]- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+  Index ZBDm;
+  cIndex_Set ZBse;
+  Master->ReadZ( tZ , ZBse , ZBDm , wFi + 1 );
+
+  #if CHECK_DS & 2
+   std::vector<VarValue> Z( NumVar );
+   v_c05f[ wFi ]->get_linearization_coefficients( Z.data() ,
+						  Range( 0 , NumVar ) ,
+						  ItemVcblr[ whZ ].second );
+   if( ZBse ) {
+    Index j = 0;
+    for( Index i = 0 ; i < NumVar ; ++i )
+     if( ( j < ZBDm ) && ( ZBse[ j ] == i ) ) {
+      if( std::abs( Z[ i ] - tZ[ j ] ) >=
+	  RMPAccSol * std::max( Z[ i ] , double( 1 ) ) )
+       std::cerr << "CZ[ " << i << " ] = " << Z[ i ]
+		 << " ~ MZ[ " << i << " ] = " << tZ[ j ] << std::endl;
+      ++j;
+      }
+     else
+      if( std::abs( Z[ i ] ) >= RMPAccSol )
+       std::cerr << "CZ[ " << i << " ] = " << Z[ i ]
+		 << " ~ MZ[ " << i << " ] = 0" << std::endl;
+    }
+   else
+    for( Index i = 0 ; i < NumVar ; ++i )
+     if( std::abs( Z[ i ] - tZ[ i ] ) >=
+	 RMPAccSol * std::max( Z[ i ] , double( 1 ) ) )
+      std::cerr << "CZ[ " << i << " ] = " << Z[ i ]
+		<< " ~ MZ[ " << i << " ] = " << tZ[ i ] << std::endl;
+  #endif
  
-  Mlt = Master->ReadMult( MBse , MBDm , wFi , false );
+  // now pass Z[ wFi ] back to the MP Solver- - - - - - - - - - - - - - - - -
+
+  Master->SetItemBse( ZBse , ZBDm );
+
+  HpNum ScPri;
+  HpNum Ai = Master->ReadSigma( wFi + 1 );      // its alfa is Sigma[ wFi ]
+
+  #if CHECK_DS & 2
+   HpNum tAi = v_c05f[ wFi ]->get_linearization_constant(
+						    ItemVcblr[ whZ ].second );
+   tAi = UpRifFi[ wFi ] - tAi -
+                          std::inner_product( Lambda.begin() , Lambda.end() ,
+					      Z.begin() , double( 0 ) );
+
+   if( std::abs( tAi - Ai ) >=
+       RMPAccSol * std::max( std::max( Ai , UpRifFi[ wFi ] ) , double( 1 ) ) )
+    std::cerr << "Csigma = " << tAi << " ~ Msigma = " << Ai << std::endl;
+  #endif
+
+  // note that Tau == -1, meaning that Ai need not be changed since
+  // Ai is already the linearization error in Lambda, but still the
+  // ScPri need be computed
+  Master->CheckSubG( 0 , -1 , Ai , ScPri );
+  
+  Master->SetItem( whZ );  // set Z[ wFi ] in position whZ
+
+  whisZ[ wFi ] = whZ;      // Z[ wFi ] is in the bundle in position whZ
+  Zvalid[ wFi ] = true;    // ... and it is valid
+  OOBase[ whZ ] = -1;      // ... and it won't be removed in this iteration
+
+  BLOG( 2 , std::endl << "Aggregation performed into " << whZ );
   }
 
- // at this point, Z[ wFi ] is in the bundle: select the exiting item as the
- // one with the smallest Mult[] among these belonging to wFi
- //
- // if aggregation need not be performed, since it had been done already
- // (Z[ wFi ] is in the bundle), the wh selected in the previous cycle is
- // not used, but the selection based on a smaller Mult[] should be better
-
- wh = InINF;
- // this may fail, so one could fear of having just done aggregation to no
- // avoil; yet I don't think this can happen, as the only case would be that
- // of having only one removable subgradient in the wFi base (that is taken
- // by Z[ wFi ]), but the only reasonable case in which this can happen is
- // that there is only one subgradient at all, in which case it is Z[ wFi ]
- // and no aggregation is  done (in other words, you do aggregation only if
- // you have at least two subgradients in base, and there is no reason one of
- // them should be non removable)
-
- HpNum tMin = Inf<HpNum>();
- if( MBse ) {
-  for( Index h ; ( h = *(MBse++) ) < InINF ; ++Mlt )
-   if( ( *Mlt < tMin ) && ( OOBase[ h ] >= 0 ) ) {
-    wh = h;
-    tMin = *Mlt;
-    }
-   }
- else
-  for( Index h = 0 ; h < MBDm ; h++ , ++Mlt )
-   if( ( *Mlt < tMin ) && ( OOBase[ h ] >= 0 ) ) {
-    wh = h;
-    tMin = *Mlt;
-    }
+ // at this point, Z[ wFi ] is in the bundle, hence it is safe to replace wh
+ // with anything the oracle provides us
 
  return( wh );
 
@@ -2598,70 +2726,6 @@ Index BundleSolver::FindAPlace( Index wFi )
  return( wh );
 
  }  // end( BundleSolver::FindAPlace )- - - - - - - - - - - - - - - - - - - -
-
-/*--------------------------------------------------------------------------*/
-
-void BundleSolver::AggregateZ( cHpRow Mlt , cIndex_Set MBse , Index MBDm ,
-			       cIndex wFi , cIndex whr )
-{
- // note: this is *never* called in the "easy" case where aggregation is not
- // needed because there is only one subgradient in base (for the component
- // wFi) and therefore, its Mlt[] is == 1, since in this case whisZ[] has
- // been properly set in UpdtCntrs()
- //
- // note that AggregateZ() is only called when the bundle (for component wFi)
- // is "very full", and therefore also the global pool (for component wFi) is
- // such. hence, whr is an item already in the bundle, and therefore in the
- // global pool. the natural choice is to put the new aggregate linearization
- // in the same position in the global pool where whr was, i.e.,
- // ItemVcblr[ whr ].second. hence, ItemVcblr, InvItemVcblr and so on need
- // not be changed because whr is completely substituted by Z
- 
- // tell the C05Function what is going to happen- - - - - - - - - - - - - - -
-
- LinearCombination coeff( MBDm );
- for( Index i = 0 ; i < MBDm ; ++i ) {
-  coeff[ i ].first = ItemVcblr[ MBse[ i ] ].second;
-  coeff[ i ].second = Mlt[ i ];
-  }
-
- inhibit_Modification( true );
- v_c05f[ wFi ]->store_combination_of_linearizations( coeff ,
-						   ItemVcblr[ whr ].second );
- inhibit_Modification( false );
-
- Master->RmvItem( whr );  // remove the old item in position whr
-
- // ask the MPSolver the memory for keeping Z[ wFi ]- - - - - - - - - - - - -
- // note: Mlt and MBse could very well be "temporary" memory belonging to the
- // MPSolver, and any call to a method of the MPSolver may invalidate it;
- // the calls start now, and in fact MBse and Mlt are no longer used
-
- SgRow tZ = Master->GetItem( wFi );
-
- // read Z[ wFi ] - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
- Index ZBDm;
- cIndex_Set ZBse;
- Master->ReadZ( tZ , ZBse , ZBDm , wFi );
-
- // now pass Z[ wFi ] back to the MP Solver - - - - - - - - - - - - - - - - -
-
- Master->SetItemBse( ZBse , ZBDm );
-
- HpNum ScPri;
- HpNum Ai = Master->ReadSigma( wFi );          // its alfa is Sigma[ wFi ]
-
- Master->CheckSubG( 0 , 0 , Ai , ScPri );      // DFi == Tau == 0
-
- Master->SetItem( whr );  // set Z[ wFi ] in position whr
-
- whisZ[ wFi ] = whr;      // Z[ wFi ] is in the bundle ...
- OOBase[ whr ] = -1;      // ... and it won't be removed in this iteration
-
- BLOG( 2 , std::endl << "Aggregation performed into " << whr );
-
- }  // end( BundleSolver::AggregateZ() ) - - - - - - - - - - - - - - - - - - -
 
 /*--------------------------------------------------------------------------*/
 
@@ -2711,6 +2775,7 @@ void BundleSolver::guts_of_destructor( void )
 
  CurrNrEvls.clear();
 
+ Zvalid.clear();
  whisZ.clear();
  FreList = {};
 
@@ -2784,9 +2849,15 @@ void BundleSolver::Delete( cIndex i , bool ModDelete )
 
  // check if this item was the "representative" for its component - - - - - -
 
- if( Master->IsSubG( i ) )  // it is a subgradient
-  if( whisG1[ k ] == i )    // it is the representative of wFi
-   whisG1[ k ] = InINF;     // a new representative is needed
+ if( whisG1[ k ] == i )  // it is the representative of k
+  whisG1[ k ] = InINF;   // a new representative is needed
+
+ // check if this item was the z* for its component - - - - - - - - - - - - -
+
+ if( whisZ[ k ] == i ) {  // it is the aggregate subgradient of k
+  whisZ[ k ] = InINF;     // no aggregate subgradient is in the bundle
+  Zvalid[ k ] = false;    // a fortiori, no valid one
+  }
 
  // delete the item from the MP - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -3129,6 +3200,7 @@ void BundleSolver::reset_bundle( void )
 
  FreList = {};
  whisZ.assign( NrFi , InINF );
+ Zvalid.assign( NrFi , false );
 
  whisG1.assign( NrFi , InINF );
 
@@ -4461,7 +4533,7 @@ void BundleSolver::process_outstanding_Modification( void )
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // and this, finally, is all!!
 
- #if CHECK_DS
+ #if CHECK_DS & 1
   CheckBundle();  // save possibly some checks
   //!! PrintBundle();
  #endif
