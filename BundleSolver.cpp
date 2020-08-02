@@ -4080,6 +4080,16 @@ void BundleSolver::process_outstanding_Modification( void )
      if( ttmod ) {
       rmvd_vars = true;
       Range rng = ttmod->range();
+
+      if( ( rng.first == 0 ) && ( rng.second >= NumVar ) ) {
+       NumVar = 0;                      // deleting *all* Variable
+       Lambda.clear();
+       Lambda1.clear();
+       LmbdBst.clear();
+       Master->RmvVars( nullptr , 0 );  // remove from MP
+       continue;                        // nothing else to do
+       }
+      
       if( rng.first >= NumVar ) {  // all the Variable are deleted already
        auto nr = rng.second - rng.first;
        if( nr > to_add )
@@ -4118,6 +4128,16 @@ void BundleSolver::process_outstanding_Modification( void )
                       std::dynamic_pointer_cast<FunctionModVarsSbst>( tmod );
      if( ttmod ) {
       rmvd_vars = true;
+
+      if( ttmod->subset().empty() ) {  // deleting *all* Variable
+       NumVar = 0;
+       Lambda.clear();
+       Lambda1.clear();
+       LmbdBst.clear();
+       Master->RmvVars( nullptr , 0 );  // remove from MP
+       continue;                        // nothing else to do
+       }
+
       if( ttmod->subset().front() >= NumVar ) {
        // all the Variable are deleted already
        if( ttmod->subset().size() > to_add )
@@ -4129,7 +4149,7 @@ void BundleSolver::process_outstanding_Modification( void )
       Subset tsbst;
       c_Subset * sbst = & tsbst;
       if( ttmod->subset().back() < NumVar )  // no Variable deleted already
-       sbst = & ttmod->subset();               // delete them all
+       sbst = & ttmod->subset();             // delete them all
       else {                                 // construct the subset to delete
        auto sbstit = ttmod->subset().end();
        while( *(--sbstit) >= NumVar );
