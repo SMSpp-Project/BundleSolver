@@ -60,7 +60,7 @@
 /*--------------------------------------------------------------------------*/
 
 #ifndef NDEBUG
- #define CHECK_DS 1
+ #define CHECK_DS 3
  /* Perform long and costly checks on the data structures, coded bit-wise:
   *
   * - CHECK_DS & 1 == checks the data structures representing the bundle and
@@ -2554,143 +2554,171 @@ Index BundleSolver::BStrategy( Index wFi )
  //       possibly ignoring items with Mlt[] == 0 -- but in fact not doing
  //       it because there is not any
 
+ if( Zvalid[ wFi ] )  // a valid Z[ wFi ] is in the bundle: it is safe to
+  return( wh );       // replace wh with anything the oracle provides us
+
+ // a valid Z[ wFi ] is not already in: aggregation has to be performed
+ 
  Index MBDm;
  cIndex_Set MBse;
  cHpRow Mlt = Master->ReadMult( MBse , MBDm , wFi + 1 , false );
 
- if( ! Zvalid[ wFi ] ) {
-  // a valid Z[ wFi ] is not already in: aggregation has to be performed
+ Index whZ = InINF;  // the position where Z[ wFi ] has to go
 
-  Index whZ = InINF;  // the position where Z[ wFi ] has to go
+ if( ( whisZ[ wFi ] < InINF ) && Master->IsSubG( whisZ[ wFi ] ) ) {
+  whZ = whisZ[ wFi ];  // preferably re-use the last position
 
-  if( ( whisZ[ wFi ] < InINF ) && Master->IsSubG( whisZ[ wFi ] ) )
-   whZ = whisZ[ wFi ];  // preferably re-use the last position
-  else {
-   // there is no last position for Z[ wFi ], choose the one with min Mult
-   // among all the removable ones different from wh
+  if( whZ == wh ) {  // this was the slot selected for the new item
+   // re-select wh as the one with min Mult among all the removable ones
+   // different from whZ
 
+   wh = InINF;
    cHpRow tMlt = Mlt;
    HpNum tMin = Inf<HpNum>();
    if( MBse ) {
     cIndex_Set tMBse = MBse;
     for( Index h ; ( h = *(tMBse++) ) < InINF ; ++tMlt )
-     if( ( h != wh ) && ( *tMlt < tMin ) && ( OOBase[ h ] >= 0 ) ) {
-      whZ = h;
+     if( ( h != whZ ) && ( *tMlt < tMin ) && ( OOBase[ h ] >= 0 ) ) {
+      wh = h;
       tMin = *tMlt;
       }
     }
    else
     for( Index h = 0 ; h < MBDm ; ++h , ++tMlt )
-     if( ( h != wh ) && ( *tMlt < tMin ) && ( OOBase[ h ] >= 0 ) ) {
-      whZ = h;
+     if( ( h != whZ ) && ( *tMlt < tMin ) && ( OOBase[ h ] >= 0 ) ) {
+      wh = h;
       tMin = *tMlt;
       }
+    }
+
+  if( wh == InINF )  // nothing valis found (??)
+   return( wh );
+  }
+ else {
+  // there is no last position for Z[ wFi ], choose the one with min Mult
+  // among all the removable ones different from wh
+
+  cHpRow tMlt = Mlt;
+  HpNum tMin = Inf<HpNum>();
+  if( MBse ) {
+   cIndex_Set tMBse = MBse;
+   for( Index h ; ( h = *(tMBse++) ) < InINF ; ++tMlt )
+    if( ( h != wh ) && ( *tMlt < tMin ) && ( OOBase[ h ] >= 0 ) ) {
+     whZ = h;
+     tMin = *tMlt;
+     }
+   }
+  else
+   for( Index h = 0 ; h < MBDm ; ++h , ++tMlt )
+    if( ( h != wh ) && ( *tMlt < tMin ) && ( OOBase[ h ] >= 0 ) ) {
+     whZ = h;
+     tMin = *tMlt;
+     }
+  }
+
+ if( whZ == InINF )  // there is no removable item apart from wh
+  return( InINF );   // nothing else to do except complaining very loudly
+
+ // tell the C05Function what is going to happen- - - - - - - - - - - - - - -
+ // note that this only happens when the bundle (for component wFi) is "very
+ // full", and therefore also the global pool (for component wFi) is such.
+ // hence, whZ is an item already in the bundle, and therefore in the global
+ // pool. the natural choice is to put the new aggregate linearization in the
+ // same position in the global pool where whZ was, i.e.,
+ // ItemVcblr[ whZ ].second. hence, ItemVcblr, InvItemVcblr and so on need
+ // not be changed
+
+ LinearCombination coeff( MBDm );
+ if( MBse )
+  for( Index i = 0 ; i < MBDm ; ++i ) {
+   coeff[ i ].first = ItemVcblr[ MBse[ i ] ].second;
+   coeff[ i ].second = Mlt[ i ];
+   }
+ else
+  for( Index i = 0 ; i < MBDm ; ++i ) {
+   coeff[ i ].first = ItemVcblr[ i ].second;
+   coeff[ i ].second = Mlt[ i ];
    }
 
-  if( whZ == InINF )  // there is no removable item apart from wh
-   return( InINF );   // nothing else to do except complaining very loudly
-
-  // tell the C05Function what is going to happen - - - - - - - - - - - - - -
-  // note that this only happens when the bundle (for component wFi) is "very
-  // full", and therefore also the global pool (for component wFi) is such.
-  // hence, whZ is an item already in the bundle, and therefore in the global
-  // pool. the natural choice is to put the new aggregate linearization in the
-  // same position in the global pool where whZ was, i.e.,
-  // ItemVcblr[ whZ ].second. hence, ItemVcblr, InvItemVcblr and so on need
-  // not be changed
-  
-  LinearCombination coeff( MBDm );
-  if( MBse )
-   for( Index i = 0 ; i < MBDm ; ++i ) {
-    coeff[ i ].first = ItemVcblr[ MBse[ i ] ].second;
-    coeff[ i ].second = Mlt[ i ];
-    }
-  else
-   for( Index i = 0 ; i < MBDm ; ++i ) {
-    coeff[ i ].first = ItemVcblr[ i ].second;
-    coeff[ i ].second = Mlt[ i ];
-    }
-
-  inhibit_Modification( true );
-  v_c05f[ wFi ]->store_combination_of_linearizations( coeff ,
+ inhibit_Modification( true );
+ v_c05f[ wFi ]->store_combination_of_linearizations( coeff ,
 						   ItemVcblr[ whZ ].second );
-  inhibit_Modification( false );
+ inhibit_Modification( false );
 
-  Master->RmvItem( whZ );  // remove the old item in position whZ
+ Master->RmvItem( whZ );  // remove the old item in position whZ
 
-  // ask the MPSolver the memory for keeping Z[ wFi ] - - - - - - - - - - - -
-  // note: Mlt and MBse could very well be "temporary" memory belonging to the
-  // MPSolver, and any call to a method of the MPSolver may invalidate it;
-  // the calls start now, and in fact MBse and Mlt are no longer used
+ // ask the MPSolver the memory for keeping Z[ wFi ]- - - - - - - - - - - - -
+ // note: Mlt and MBse could very well be "temporary" memory belonging to the
+ // MPSolver, and any call to a method of the MPSolver may invalidate it;
+ // the calls start now, and in fact MBse and Mlt are no longer used
 
-  SgRow tZ = Master->GetItem( wFi + 1 );
+ SgRow tZ = Master->GetItem( wFi + 1 );
 
-  // read Z[ wFi ]- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // read Z[ wFi ] - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-  Index ZBDm;
-  cIndex_Set ZBse;
-  Master->ReadZ( tZ , ZBse , ZBDm , wFi + 1 );
+ Index ZBDm;
+ cIndex_Set ZBse;
+ Master->ReadZ( tZ , ZBse , ZBDm , wFi + 1 );
 
-  #if CHECK_DS & 2
-   std::vector<VarValue> Z( NumVar );
-   v_c05f[ wFi ]->get_linearization_coefficients( Z.data() ,
-						  Range( 0 , NumVar ) ,
-						  ItemVcblr[ whZ ].second );
-   if( ZBse ) {
-    Index j = 0;
-    for( Index i = 0 ; i < NumVar ; ++i )
-     if( ( j < ZBDm ) && ( ZBse[ j ] == i ) ) {
-      if( std::abs( Z[ i ] - tZ[ j ] ) >=
-	  RMPAccSol * std::max( Z[ i ] , double( 1 ) ) )
-       std::cerr << "CZ[ " << i << " ] = " << Z[ i ]
-		 << " ~ MZ[ " << i << " ] = " << tZ[ j ] << std::endl;
-      ++j;
-      }
-     else
-      if( std::abs( Z[ i ] ) >= RMPAccSol )
-       std::cerr << "CZ[ " << i << " ] = " << Z[ i ]
-		 << " ~ MZ[ " << i << " ] = 0" << std::endl;
-    }
-   else
-    for( Index i = 0 ; i < NumVar ; ++i )
-     if( std::abs( Z[ i ] - tZ[ i ] ) >=
+ #if CHECK_DS & 2
+  std::vector<VarValue> Z( NumVar );
+  v_c05f[ wFi ]->get_linearization_coefficients( Z.data() ,
+						 Range( 0 , NumVar ) ,
+						 ItemVcblr[ whZ ].second );
+  if( ZBse ) {
+   Index j = 0;
+   for( Index i = 0 ; i < NumVar ; ++i )
+    if( ( j < ZBDm ) && ( ZBse[ j ] == i ) ) {
+     if( std::abs( Z[ i ] - tZ[ j ] ) >=
 	 RMPAccSol * std::max( Z[ i ] , double( 1 ) ) )
       std::cerr << "CZ[ " << i << " ] = " << Z[ i ]
-		<< " ~ MZ[ " << i << " ] = " << tZ[ i ] << std::endl;
-  #endif
- 
-  // now pass Z[ wFi ] back to the MP Solver- - - - - - - - - - - - - - - - -
+		<< " ~ MZ[ " << i << " ] = " << tZ[ j ] << std::endl;
+     ++j;
+     }
+    else
+     if( std::abs( Z[ i ] ) >= RMPAccSol )
+      std::cerr << "CZ[ " << i << " ] = " << Z[ i ]
+		<< " ~ MZ[ " << i << " ] = 0" << std::endl;
+   }
+  else
+   for( Index i = 0 ; i < NumVar ; ++i )
+    if( std::abs( Z[ i ] - tZ[ i ] ) >=
+	RMPAccSol * std::max( Z[ i ] , double( 1 ) ) )
+     std::cerr << "CZ[ " << i << " ] = " << Z[ i ]
+	       << " ~ MZ[ " << i << " ] = " << tZ[ i ] << std::endl;
+ #endif
 
-  Master->SetItemBse( ZBse , ZBDm );
+ // now pass Z[ wFi ] back to the MP Solver - - - - - - - - - - - - - - - - -
 
-  HpNum ScPri;
-  HpNum Ai = Master->ReadSigma( wFi + 1 );      // its alfa is Sigma[ wFi ]
+ Master->SetItemBse( ZBse , ZBDm );
 
-  #if CHECK_DS & 2
-   HpNum tAi = v_c05f[ wFi ]->get_linearization_constant(
+ HpNum ScPri;
+ HpNum Ai = Master->ReadSigma( wFi + 1 );      // its alfa is Sigma[ wFi ]
+
+ #if CHECK_DS & 2
+  HpNum tAi = v_c05f[ wFi ]->get_linearization_constant(
 						    ItemVcblr[ whZ ].second );
-   tAi = UpRifFi[ wFi ] - tAi -
-                          std::inner_product( Lambda.begin() , Lambda.end() ,
-					      Z.begin() , double( 0 ) );
+  tAi = UpRifFi[ wFi ] - tAi -
+                         std::inner_product( Lambda.begin() , Lambda.end() ,
+					     Z.begin() , double( 0 ) );
 
-   if( std::abs( tAi - Ai ) >=
-       RMPAccSol * std::max( std::max( Ai , UpRifFi[ wFi ] ) , double( 1 ) ) )
-    std::cerr << "Csigma = " << tAi << " ~ Msigma = " << Ai << std::endl;
-  #endif
+  if( std::abs( tAi - Ai ) >=
+      RMPAccSol * std::max( std::max( Ai , UpRifFi[ wFi ] ) , double( 1 ) ) )
+   std::cerr << "Csigma = " << tAi << " ~ Msigma = " << Ai << std::endl;
+ #endif
 
-  // note that Tau == -1, meaning that Ai need not be changed since
-  // Ai is already the linearization error in Lambda, but still the
-  // ScPri need be computed
-  Master->CheckSubG( 0 , -1 , Ai , ScPri );
-  
-  Master->SetItem( whZ );  // set Z[ wFi ] in position whZ
+ // note that Tau == -1, meaning that Ai need not be changed since
+ // Ai is already the linearization error in Lambda, but still the
+ // ScPri need be computed
+ Master->CheckSubG( 0 , -1 , Ai , ScPri );
 
-  whisZ[ wFi ] = whZ;      // Z[ wFi ] is in the bundle in position whZ
-  Zvalid[ wFi ] = true;    // ... and it is valid
-  OOBase[ whZ ] = -1;      // ... and it won't be removed in this iteration
+ Master->SetItem( whZ );  // set Z[ wFi ] in position whZ
 
-  BLOG( 2 , std::endl << "Aggregation performed into " << whZ );
-  }
+ whisZ[ wFi ] = whZ;      // Z[ wFi ] is in the bundle in position whZ
+ Zvalid[ wFi ] = true;    // ... and it is valid
+ OOBase[ whZ ] = -1;      // ... and it won't be removed in this iteration
+
+ BLOG( 2 , std::endl << "Aggregation performed into " << whZ );
 
  // at this point, Z[ wFi ] is in the bundle, hence it is safe to replace wh
  // with anything the oracle provides us
