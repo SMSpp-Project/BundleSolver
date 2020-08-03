@@ -403,7 +403,7 @@ public:
   NumVar( 0 ) , NrFi( 0 ) , SCalls( 0 ) , ParIter( 0 ) , NrEasy( 0 ) ,
   LHasChgd( true ) , tHasChgd( true ) , t( 0 ) , Prevt( 0 ) , Sigma( 0 ) ,
   DSTS( 0 ) , vStar( 0 ) , DeltaFi( 0 ) , EpsU( 0 ) , CSSCntr( 0 ) ,
-  CNSCntr( 0 ) , TrueLB( false ) , SSDone( true ) , MBDim( 0 ) , aBP3( 0 ) ,
+  CNSCntr( 0 ) , TrueLB( false ) , SSDone( true ) , aBP3( 0 ) ,
   f_lf( nullptr ) , Master( nullptr ) , UpTrgt( 0 ) , LwTrgt( 0 ) ,
   UpFiBest( Inf< VarValue >() ) , MaxNrEvls( 0 ) , DeltaStar( 0 ) , NrmD( 0 )
  {
@@ -1303,8 +1303,14 @@ public:
 
  Subset vBPar2;  ///< dimension of the global pools of each component
 
- std::priority_queue< Index > FreList;
+ std::priority_queue< Index , std::vector< Index > ,
+                      std::greater< Index > > FreList;
  ///< list of free positions in the bundle
+ /**< FreList is the priority queue of free positions in the bundle, where
+  * the position with higher priority is that with smaller name. This is why
+  * the comparison parameter has to be explicitly set to
+  * std::greater< Index >, since a priority queue with the default
+  * std::less< Index > spits out the element with larger value. */
 
  /** NrItems[ k ] contains the number of items in the bundle (master problem)
   * for component k. If ( BPar7 & 3 ) < 3, this number may be strictly less
@@ -1322,7 +1328,7 @@ public:
   * (InvItemVcblr[ k ][ i ] == INF), while if ( BPar7 & 3 != 0 ) then
   * another linearization can be in that position already provided that
   * there is no corresponding item in the bundle
-  * (v_BPar2[ k ] <= InvItemVcblr[ k ][ i ] < INF). */
+  * (vBPar2[ k ] <= InvItemVcblr[ k ][ i ] < INF). */
 
  Subset FrFItem;  ///< the first free item in each global pool
 
@@ -1770,9 +1776,7 @@ class FakeFiOracle : public FiOracle
 
  Index find_place_in_global_pool( Index k );
 
- void add_to_global_pool( Index k , Index i , Index wh );
-
- void add_to_global_pool( Index k , Index i );
+ void add_to_global_pool( Index k , Index i , Index wh = Inf<Index>() );
 
  void add_to_bundle( Index k , Index i );
 
@@ -1797,6 +1801,8 @@ class FakeFiOracle : public FiOracle
 #ifndef NDEBUG
 
  void CheckBundle( void );
+
+ void CheckAlpha( void );
  
  void PrintBundle( void );
 
@@ -1805,8 +1811,6 @@ class FakeFiOracle : public FiOracle
 /*--------------------------------------------------------------------------*/
 /*------------------------------ PRIVATE FIELDS  ---------------------------*/
 /*--------------------------------------------------------------------------*/
-
- Index MBDim;      // number of items in the optimal multiplier base
 
  Index aBP3;       // current max number of items to be fetched
 

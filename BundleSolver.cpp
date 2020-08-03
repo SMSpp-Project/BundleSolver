@@ -60,15 +60,21 @@
 /*--------------------------------------------------------------------------*/
 
 #ifndef NDEBUG
- #define CHECK_DS 3
+ #define CHECK_DS 7
  /* Perform long and costly checks on the data structures, coded bit-wise:
   *
   * - CHECK_DS & 1 == checks the data structures representing the bundle and
   *                   the global pools them against the MPSolver and the
   *                   C05Function(s)
+  *
   * - CHECK_DS & 2 == checks that the aggregated linearization produced by
   *                   the C05Function agrees with that produced by the
   *                   MPSolver
+  *
+  * - CHECK_DS & 4 == checks that the aggregated linearization errors
+  *                   directly computed with fresh data (linearization +
+  *                   constant) out of the C05Function agree with these
+  *                   stored in the MPSolver
   */
 #else
  #define CHECK_DS 0
@@ -1145,8 +1151,10 @@ void BundleSolver::set_Block( Block * block )
     if( v_c05f[ k ]->is_linearization_there( i ) )
      add_to_global_pool( k , i );    
 
-
- //!! PrintBundle();
+  #if CHECK_DS & 1
+   CheckBundle();
+  #endif
+  //!! PrintBundle();
 
  }  // end( BundleSolver::set_Block )  - - - - - - - - - - - - - - - - - - - -
 
@@ -1794,9 +1802,10 @@ void BundleSolver::UpdtCntrs( void )
  // set to 0 the OOBase[] counter for items in base (if not < 0)- - - - - - -
  // note that chechking if the multiplier is strictly positive should be
  // redundant, if one was trusting the MPSolver
- 
- const Index* MBse;
- const double* Mlt = Master->ReadMult( MBse , MBDim );
+
+ Index MBDim;
+ const Index * MBse;
+ const double * Mlt = Master->ReadMult( MBse , MBDim );
  if( MBse ) {
   for( Index i ; ( i = *(MBse++) ) < InINF ; ++Mlt )
    if( ( *Mlt >= RMPAccSol ) && ( OOBase[ i ] > 0 ) )
@@ -2320,6 +2329,10 @@ void BundleSolver::GotoLambda1( void )
 
  Alfa1.assign( NrFi + 1 , Inf<double>() );
 
+ #if CHECK_DS & 4
+  CheckAlfa();
+ #endif
+
  }  // end( GotoLambda1 )
 
 /*--------------------------------------------------------------------------*/
@@ -2364,7 +2377,7 @@ void BundleSolver::Log1( void )
   return;
 
  *f_log << std::endl << "{" << SCalls << "-" << ParIter << "-"
-	<< NrItems[ NrFi ] << "-" << MBDim << "} t = " << t
+	<< NrItems[ NrFi ] << "} t = " << t
 	<< " ~ D*_1( z* ) = " << Master->ReadDStart( 1 )
 	<< " ~ Sigma = " << Sigma << std::endl << "           ";
 
@@ -2661,6 +2674,9 @@ Index BundleSolver::BStrategy( Index wFi )
  Master->ReadZ( tZ , ZBse , ZBDm , wFi + 1 );
 
  #if CHECK_DS & 2
+  std::ostream * wlog = ( ( ! f_log ) || ( LogVerb <= 1 ) ) ? & std::cerr
+                                                            : f_log;
+
   std::vector<VarValue> Z( NumVar );
   v_c05f[ wFi ]->get_linearization_coefficients( Z.data() ,
 						 Range( 0 , NumVar ) ,
@@ -2671,21 +2687,21 @@ Index BundleSolver::BStrategy( Index wFi )
     if( ( j < ZBDm ) && ( ZBse[ j ] == i ) ) {
      if( std::abs( Z[ i ] - tZ[ j ] ) >=
 	 RMPAccSol * std::max( Z[ i ] , double( 1 ) ) )
-      std::cerr << "CZ[ " << i << " ] = " << Z[ i ]
-		<< " ~ MZ[ " << i << " ] = " << tZ[ j ] << std::endl;
+      *wlog << std::endl << "Z[ " << i << " ]: F = " << Z[ i ]
+	    << " ~ M = " << tZ[ j ];
      ++j;
      }
     else
      if( std::abs( Z[ i ] ) >= RMPAccSol )
-      std::cerr << "CZ[ " << i << " ] = " << Z[ i ]
-		<< " ~ MZ[ " << i << " ] = 0" << std::endl;
+      *wlog << std::endl << "Z[ " << i << " ]: F = " << Z[ i ]
+	    << " ~ M = 0";
    }
   else
    for( Index i = 0 ; i < NumVar ; ++i )
     if( std::abs( Z[ i ] - tZ[ i ] ) >=
 	RMPAccSol * std::max( Z[ i ] , double( 1 ) ) )
-     std::cerr << "CZ[ " << i << " ] = " << Z[ i ]
-	       << " ~ MZ[ " << i << " ] = " << tZ[ i ] << std::endl;
+     *wlog << std::endl << "Z[ " << i << " ]: F = " << Z[ i ]
+	   << " ~ M = " << tZ[ i ];
  #endif
 
  // now pass Z[ wFi ] back to the MP Solver - - - - - - - - - - - - - - - - -
@@ -2704,7 +2720,7 @@ Index BundleSolver::BStrategy( Index wFi )
 
   if( std::abs( tAi - Ai ) >=
       RMPAccSol * std::max( std::max( Ai , UpRifFi[ wFi ] ) , double( 1 ) ) )
-   std::cerr << "Csigma = " << tAi << " ~ Msigma = " << Ai << std::endl;
+   *wlog << std::endl << "Sigma: F = " << tAi << " ~ M = " << Ai;
  #endif
 
  // note that Tau == -1, meaning that Ai need not be changed since
@@ -2742,14 +2758,19 @@ Index BundleSolver::FindAPlace( Index wFi )
 
  Index wh = InINF;
 
- if( FreList.size() ) {     // there are deleted items
-  wh = FreList.top();       // pick the first one (smaller name)
-  FreList.pop();
+ if( ! FreList.empty() ) {       // there are deleted items
+  wh = FreList.top();            // pick the one with smaller name
+  if( wh >= Master->MaxName() )  // FreList has all items with "large" names
+   FreList = {};                 // clear FreList
+  else {                         // wh is a "small" name
+   FreList.pop();                // take it away
+   return( wh );                 // all done
+   }
   }
- else                       // there are no deleted items ...
-  if( Master->MaxName() < vBPar2[ NrFi ] )
-                            // ... but there is still space
-   wh = Master->MaxName();  // next name
+
+ // if there are no deleted items (with suitably small names)
+ if( Master->MaxName() < vBPar2[ NrFi ] )  // ... but there is still space
+  wh = Master->MaxName();                  // next name
 
  return( wh );
 
@@ -3111,43 +3132,32 @@ void BundleSolver::add_to_global_pool( Index k , Index i , Index wh )
 {
  // update ItemVcblr, InvItemVcblr and all the associated fields the to fact
  // that the linearization in position i in the global global_pool of
- // component k will be kept in the bundle at position wh
+ // component k will be kept in the bundle at position wh; if wh == InINF,
+ // this means the linearization is in the global pool but not in the bundle
  //
  // the actual addition to the global pool is not handled here
 
- ItemVcblr[ wh ].first = k;
- ItemVcblr[ wh ].second = i;
+ if( wh < Inf<Index>() ) {
+  ItemVcblr[ wh ].first = k;
+  ItemVcblr[ wh ].second = i;
+  InvItemVcblr[ k ][ i ] = wh;
+  }
+ else
+  InvItemVcblr[ k ][ i ] = vBPar2[ NrFi ];
 
- InvItemVcblr[ k ][ i ] = wh;
+ if( i >= MaxItem[ k ] )
+  MaxItem[ k ] = i + 1;
+ /*!!
  while( ( MaxItem[ k ] < vBPar2[ k ] ) &&
 	( InvItemVcblr[ k ][ MaxItem[ k ] ] < Inf<Index>() ) )
   ++MaxItem[ k ];
+  !!*/
  while( ( FrFItem[ k ] < MaxItem[ k ] ) &&
 	( InvItemVcblr[ k ][ FrFItem[ k ] ] <
 	  ( ( BPar7 & 3 ) ? vBPar2[ NrFi ] : Inf<Index>() ) ) )
   ++FrFItem[ k ];
 
  }  // end( BundleSolver::add_to_global_pool( k , i , wh ) )
-
-/*--------------------------------------------------------------------------*/
-
-void BundleSolver::add_to_global_pool( Index k , Index i )
-{
- // update InvItemVcblr and all the associated fields the to fact that there
- // is a linerization in position i in the global global_pool of component k,
- // although there is no corresponding item in the bundle
-
- InvItemVcblr[ k ][ i ] = vBPar2[ NrFi ];
- while( ( MaxItem[ k ] < vBPar2[ k ] ) &&
-	( InvItemVcblr[ k ][ MaxItem[ k ] ] < Inf<Index>() ) )
-  ++MaxItem[ k ];
- if( ! ( BPar7 & 3 ) )  // if items not in the bundle are not "free"
-  return;               // nothing else to do
- while( ( FrFItem[ k ] < MaxItem[ k ] ) &&
-	( InvItemVcblr[ k ][ FrFItem[ k ] ] < vBPar2[ NrFi ] ) )
-  ++FrFItem[ k ];
-
- }  // end( BundleSolver::add_to_global_pool( k , i ) )
 
 /*--------------------------------------------------------------------------*/
 
@@ -4579,13 +4589,16 @@ void BundleSolver::process_outstanding_Modification( void )
   }
 
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
- // and this, finally, is all!!
+ // and this, finally, is all!! (save possibly some checks)
 
+ //!! PrintBundle();
  #if CHECK_DS & 1
-  CheckBundle();  // save possibly some checks
-  //!! PrintBundle();
+  CheckBundle();
  #endif
- 
+ #if CHECK_DS & 4
+  CheckAlfa();
+ #endif
+
  }  // end( BundleSolver::process_outstanding_Modification ) - - - - - - - - -
 
 /*--------------------------------------------------------------------------*/
@@ -4594,10 +4607,12 @@ void BundleSolver::process_outstanding_Modification( void )
 
 void BundleSolver::CheckBundle( void )
 {
+ std::ostream * wlog = ( ( ! f_log ) || ( LogVerb <= 1 ) ) ? & std::cerr
+                                                           : f_log;
  // check vBPar2
  for( Index k = 0 ; k < NrFi ; ++k )
   if( v_c05f[ k ]->get_int_par( C05Function::intGPMaxSz ) != vBPar2[ k ] )
-   std::cerr << "size of global pool " << k << " does not match" << std::endl;
+   *wlog << "size of global pool " << k << " does not match" << std::endl;
 
  // check ItemVcblr against InvItemVcblr and Master
  Subset tmp( NrFi , 0 );
@@ -4605,74 +4620,124 @@ void BundleSolver::CheckBundle( void )
   if( ItemVcblr[ i ].second < vBPar2[ ItemVcblr[ i ].first ] ) {
    ++tmp[ ItemVcblr[ i ].first ];
    if( Master->WComponent( i ) != ItemVcblr[ i ].first + 1 ) {
-    std::cerr << "position " << i << " in the bundle should be of component "
-	      << ItemVcblr[ i ].first << " but Master says ";
+    *wlog << "position " << i << " in the bundle should be of component "
+	  << ItemVcblr[ i ].first << " but Master says ";
     if( Master->WComponent( i ) == Inf<Index>() )
-     std::cerr << "empty" << std::endl;
+     *wlog << "empty" << std::endl;
     else
-     std::cerr << Master->WComponent( i ) - 1 << std::endl;
+     *wlog << Master->WComponent( i ) - 1 << std::endl;
     }
 
    if( InvItemVcblr[ ItemVcblr[ i ].first ][ ItemVcblr[ i ].second ] != i )
-    std::cerr << "position " << i << " in the bundle shoud be linearization "
-	      << ItemVcblr[ i ].second << " of component "
-	      << ItemVcblr[ i ].first << " but InvItemVcblr disagrees"
-	      << std::endl;
+    *wlog << "position " << i << " in the bundle shoud be linearization "
+	  << ItemVcblr[ i ].second << " of component "
+	  << ItemVcblr[ i ].first << " but InvItemVcblr disagrees"
+	  << std::endl;
    }
   else
    if( Master->WComponent( i ) < Inf<Index>() )
-    std::cerr << "position " << i
-	      << " in the bundle should be empty but Master says "
-	      << Master->WComponent( i ) << std::endl;
+    *wlog << "position " << i
+	  << " in the bundle should be empty but Master says "
+	  << Master->WComponent( i ) << std::endl;
 
  // check NrItems
  if( int diff = ( NrItems[ NrFi ] - std::accumulate( NrItems.begin() ,
 						     NrItems.begin() + NrFi ,
 						     Index( 0 ) ) ) != 0 )
-  std::cerr << " NrItems[ NrFi ] = " << NrItems[ NrFi ] << " but the sum is "
-	    <<  NrItems[ NrFi ] + diff  << std::endl;
+  *wlog << " NrItems[ NrFi ] = " << NrItems[ NrFi ] << " but the sum is "
+	<<  NrItems[ NrFi ] + diff  << std::endl;
 
  for( Index k = 0 ; k < NrFi ; ++k )
   if( tmp[ k ] != NrItems[ k ] )
-   std::cerr << "counted " << tmp[ k ]
-	     << " items in the bundle for component " << k
-	     << " but NrItems says " << NrItems[ k ] << std::endl;
+   *wlog << "counted " << tmp[ k ] << " items in the bundle for component "
+	 << k << " but NrItems says " << NrItems[ k ] << std::endl;
 
  // check InvItemVcblr against ItemVcblr and C05Function
  for( Index k = 0 ; k < NrFi ; ++k )
   for( Index i = 0 ; i < vBPar2[ k ] ; ++i ) {
    if( ( InvItemVcblr[ k ][ i ] < Inf<Index>() ) &&
        ( ! v_c05f[ k ]->is_linearization_there( i ) ) )
-    std::cerr << "linearization " << i << " in pool " << k
-	      << " does not exist" << std::endl;
+    *wlog << "linearization " << i << " in pool " << k
+	  << " does not exist" << std::endl;
 
    if( ( InvItemVcblr[ k ][ i ] == Inf<Index>() ) &&
        v_c05f[ k ]->is_linearization_there( i ) )
-    std::cerr << "linearization " << i << " in pool " << k
-	      << " unaccounted for" << std::endl;
+    *wlog << "linearization " << i << " in pool " << k
+	  << " unaccounted for" << std::endl;
 
    if( ( InvItemVcblr[ k ][ i ] < vBPar2[ NrFi ] ) &&
        ( ( ItemVcblr[ InvItemVcblr[ k ][ i ] ].first != k ) ||
 	 ( ItemVcblr[ InvItemVcblr[ k ][ i ] ].second != i ) ) )
-    std::cerr << "linearization " << i << " in pool " << k
-	      << " should be in bundle in position "
-	      << InvItemVcblr[ k ][ i ] << " but ItemVcblr disagrees"
-	      << std::endl;
+    *wlog << "linearization " << i << " in pool " << k
+	  << " should be in bundle in position "
+	  << InvItemVcblr[ k ][ i ] << " but ItemVcblr disagrees"
+	  << std::endl;
 
-   if( ( InvItemVcblr[ k ][ i ] < Inf<Index>() ) &&
+   if( ( InvItemVcblr[ k ][ i ] <
+	 ( ( BPar7 & 3 ) ? vBPar2[ NrFi ] : Inf<Index>() ) ) &&
        ( i >= MaxItem[ k ] ) )
-    std::cerr << "free item in position " << i << " of pool " << k
-	      << " but MaxItem says " << MaxItem[ k ] << std::endl;
+    *wlog << "item in position " << i << " of pool " << k
+	  << " but MaxItem says " << MaxItem[ k ] << std::endl;
 
    if( ( InvItemVcblr[ k ][ i ] >=
 	 ( ( BPar7 & 3 ) ? vBPar2[ NrFi ] : Inf<Index>() ) ) &&
        ( i < FrFItem[ k ] ) )
-     std::cerr << "free item in position " << i << " of pool " << k
-	       << " but FrFItem says " << FrFItem[ k ] << std::endl;
+     *wlog << "free item in position " << i << " of pool " << k
+	   << " but FrFItem says " << FrFItem[ k ] << std::endl;
 
    }  // end( for( i ) )
 
+ // check FreList
+ // copy FreList to a vector to check it (this only works since the
+ // underlying container is a std::vector< Index >) and the topmost
+ // element in a heap is the first element of the vector
+ tmp.resize( FreList.size() );
+ std::copy( &( FreList.top() ) , &( FreList.top() ) + FreList.size() ,
+	    tmp.begin() );
+ std::sort( tmp.begin() , tmp.end() );
+
+ for( auto i : tmp )
+  if( ItemVcblr[ i ].second < vBPar2[ ItemVcblr[ i ].first ] )
+    *wlog << "item " << i << " in FreList is not free" << std::endl;
+ 
+ for( Index i = 0 ; i < Master->MaxName() ; ++i )
+  if( ItemVcblr[ i ].second >= vBPar2[ ItemVcblr[ i ].first ] ) {
+   auto it = std::lower_bound( tmp.begin() , tmp.end() , i );
+   if( ( it == tmp.end() ) || ( *it != i ) )
+    *wlog << "free item " << i << " not in FreList" << std::endl;
+   }
+  
  }  // end( BundleSolver::CheckBundle )
+ 
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::CheckAlpha( void )
+{
+ std::ostream * wlog = ( ( ! f_log ) || ( LogVerb <= 1 ) ) ? & std::cerr
+                                                           : f_log;
+ cHpRow tA = Master->ReadLinErr();
+ std::vector<VarValue> G( NumVar );
+
+ for( Index i = 0 ; i < Master->MaxName() ; ++i )
+  if( ItemVcblr[ i ].second < vBPar2[ ItemVcblr[ i ].first ] ) {
+   v_c05f[ ItemVcblr[ i ].first ]->get_linearization_coefficients( G.data() ,
+						        Range( 0 , NumVar ) ,
+						     ItemVcblr[ i ].second );
+
+   HpNum tAi = v_c05f[ ItemVcblr[ i ].first ]->get_linearization_constant(
+						     ItemVcblr[ i ].second );
+   tAi = UpRifFi[ ItemVcblr[ i ].first ] - tAi -
+                         std::inner_product( Lambda.begin() , Lambda.end() ,
+					     G.begin() , double( 0 ) );
+
+   if( std::abs( tAi - tA[ i ] ) >= RMPAccSol *
+       std::max( std::max( tAi , UpRifFi[ ItemVcblr[ i ].first ] ) ,
+		 double( 1 ) ) )
+    *wlog << std::endl << "Alfa[ " << i << " ]: F =  " << tAi << " ~ M = "
+	  << tA[ i ];
+    }
+ 
+ }  // end( BundleSolver::CheckAlpha )
  
 /*--------------------------------------------------------------------------*/
 
