@@ -3254,24 +3254,24 @@ bool BundleSolver::is_special_GroupMod( GroupModification & gmod )
  // contain FunctionModVars* not necessarily C05FunctionModVars* because
  // the Modification may not be strongly quasi-additive
 
- if( gmod.v_sub_Modifications.size() != NrFi + ( f_lf ? 1 : 0 ) )
+ if( gmod.sub_Modifications().size() != NrFi + ( f_lf ? 1 : 0 ) )
   return( false );
 
- auto smi = gmod.v_sub_Modifications.begin();
+ auto smi = gmod.sub_Modifications().begin();
  auto sm0 = *(smi++);
- for( ; smi !=  gmod.v_sub_Modifications.end() ; ++smi )
+ for( ; smi !=  gmod.sub_Modifications().end() ; ++smi )
   if( typeid( sm0 ) != typeid( *smi ) )
    return( false );
 
- smi = gmod.v_sub_Modifications.begin();
+ smi = gmod.sub_Modifications().begin();
  ++smi;
 
  // check FunctionModVarsAddd
  {
-  const auto mod0 = std::dynamic_pointer_cast<FunctionModVarsAddd>( sm0 );
+  const auto mod0 = std::dynamic_pointer_cast< FunctionModVarsAddd >( sm0 );
   if( mod0 ) {
-   for( ; smi != gmod.v_sub_Modifications.end() ; ++smi ) {
-    auto modi = std::static_pointer_cast<FunctionModVarsAddd>( *smi );
+   for( ; smi != gmod.sub_Modifications().end() ; ++smi ) {
+    auto modi = std::static_pointer_cast< FunctionModVarsAddd >( *smi );
     if( ( mod0->first() != modi->first() ) ||
 	( mod0->vars() != modi->vars() ) )
      throw( std::logic_error( "different Variable change in components" ) );
@@ -3283,10 +3283,10 @@ bool BundleSolver::is_special_GroupMod( GroupModification & gmod )
 
  // check FunctionModVarsRngd
  {
-  const auto mod0 = std::dynamic_pointer_cast<FunctionModVarsRngd>( sm0 );
+  const auto mod0 = std::dynamic_pointer_cast< FunctionModVarsRngd >( sm0 );
   if( mod0 ) {
-   for( ; smi != gmod.v_sub_Modifications.end() ; ++smi ) {
-    auto modi = std::static_pointer_cast<FunctionModVarsRngd>( *smi );
+   for( ; smi != gmod.sub_Modifications().end() ; ++smi ) {
+    auto modi = std::static_pointer_cast< FunctionModVarsRngd >( *smi );
     if( mod0->range() != modi->range() )
      throw( std::logic_error( "different Variable change in components" ) );
     }
@@ -3297,9 +3297,9 @@ bool BundleSolver::is_special_GroupMod( GroupModification & gmod )
 
  // check FunctionModVarsSbst
  {
-  const auto mod0 = std::dynamic_pointer_cast<FunctionModVarsSbst>( sm0 );
+  const auto mod0 = std::dynamic_pointer_cast< FunctionModVarsSbst >( sm0 );
   if( mod0 ) {
-   for( ; smi != gmod.v_sub_Modifications.end() ; ++smi ) {
+   for( ; smi != gmod.sub_Modifications().end() ; ++smi ) {
     auto modi = std::static_pointer_cast<FunctionModVarsSbst>( *smi );
     if( mod0->subset() != modi->subset() )
      throw( std::logic_error( "different Variable change in components" ) );
@@ -3319,7 +3319,7 @@ void BundleSolver::flatten_Modification_list( Lst_sp_Mod & vmt , sp_Mod mod )
 {
  const auto tmod = std::dynamic_pointer_cast<GroupModification>( mod );
  if( tmod && ( ! is_special_GroupMod( *tmod ) ) )
-  for( auto submod : tmod->v_sub_Modifications )
+  for( auto submod : tmod->sub_Modifications() )
    flatten_Modification_list( vmt , submod );
  else
   vmt.push_back( mod );
@@ -3566,25 +3566,25 @@ void BundleSolver::process_outstanding_Modification( void )
    // *FunctionModVar*: pick the first one and act on it
    const auto tmod = std::dynamic_pointer_cast<GroupModification>( mod );
    if( tmod ) {
-    auto fmod = tmod->v_sub_Modifications.front();
+    auto fmod = tmod->sub_Modifications().front();
 
     {
      const auto ttmod =
-                    std::dynamic_pointer_cast<C05FunctionModVarsAddd>( fmod );
+                  std::dynamic_pointer_cast< C05FunctionModVarsAddd >( fmod );
      if( ttmod )
       continue;
      }
 
     {
      const auto ttmod =
-                    std::dynamic_pointer_cast<C05FunctionModVarsRngd>( fmod );
+                  std::dynamic_pointer_cast< C05FunctionModVarsRngd >( fmod );
      if( ttmod )
       continue;
      }
 
     {
      const auto ttmod =
-                    std::dynamic_pointer_cast<C05FunctionModVarsSbst>( fmod );
+                 std::dynamic_pointer_cast< C05FunctionModVarsSbst >( fmod );
      if( ttmod )
       continue;
      }
@@ -3598,25 +3598,25 @@ void BundleSolver::process_outstanding_Modification( void )
    }
 
   {
-   const auto tmod = std::dynamic_pointer_cast<ConstraintMod>( mod );
+   const auto tmod = std::dynamic_pointer_cast< ConstraintMod >( mod );
    if( tmod )
     throw( std::invalid_argument( "ConstraintMod not handled (yet)" ) );
    }
 
   {
-   const auto tmod = std::dynamic_pointer_cast<VariableMod>( mod );
+   const auto tmod = std::dynamic_pointer_cast< VariableMod >( mod );
    if( tmod )
     throw( std::invalid_argument( "VariableMod not handled (yet)" ) );
    }
 
   {
-   const auto tmod = std::dynamic_pointer_cast<BlockMod>( mod );
+   const auto tmod = std::dynamic_pointer_cast< BlockMod >( mod );
    if( tmod )
     throw( std::invalid_argument( "BlockMod not handled (yet)" ) );
    }
 
   {
-   const auto tmod = std::dynamic_pointer_cast<BlockModAD>( mod );
+   const auto tmod = std::dynamic_pointer_cast< BlockModAD >( mod );
    if( tmod )
     throw( std::invalid_argument( "BlockModAD not handled (yet)" ) );
    }
@@ -4078,14 +4078,14 @@ void BundleSolver::process_outstanding_Modification( void )
   
   {
    // a "naked" FunctionModVars
-   auto tmod = std::dynamic_pointer_cast<FunctionModVars>( mod );
+   auto tmod = std::dynamic_pointer_cast< FunctionModVars >( mod );
    if( ! tmod ) {
     // if it is not a "naked" FunctionModVars, it can still be a group of
     // identical *FunctionModVars* "dressed" into a GroupModification
     const auto gmod = std::dynamic_pointer_cast<GroupModification>( mod );
     if( gmod )  // if so, pick the first one and act on it
-     tmod = std::static_pointer_cast<FunctionModVars>(
-				        gmod->v_sub_Modifications.front() );
+     tmod = std::static_pointer_cast< FunctionModVars >(
+					 gmod->sub_Modifications().front() );
     }
 
    if( tmod ) {
@@ -4096,7 +4096,7 @@ void BundleSolver::process_outstanding_Modification( void )
 
     {
      const auto ttmod =
-                      std::dynamic_pointer_cast<FunctionModVarsAddd>( tmod );
+                    std::dynamic_pointer_cast< FunctionModVarsAddd >( tmod );
      if( ttmod ) {
       addd_vars = true;
       if( ! to_add ) {
@@ -4114,7 +4114,7 @@ void BundleSolver::process_outstanding_Modification( void )
 
     {
      const auto ttmod =
-                      std::dynamic_pointer_cast<FunctionModVarsRngd>( tmod );
+                    std::dynamic_pointer_cast< FunctionModVarsRngd >( tmod );
      if( ttmod ) {
       rmvd_vars = true;
       Range rng = ttmod->range();
@@ -4163,7 +4163,7 @@ void BundleSolver::process_outstanding_Modification( void )
 
     {
      const auto ttmod =
-                      std::dynamic_pointer_cast<FunctionModVarsSbst>( tmod );
+                    std::dynamic_pointer_cast< FunctionModVarsSbst >( tmod );
      if( ttmod ) {
       rmvd_vars = true;
 
@@ -4251,7 +4251,7 @@ void BundleSolver::process_outstanding_Modification( void )
 
   {
    // a C05FunctionModRngd, that at this point can only have which().empty()
-   const auto tmod = std::dynamic_pointer_cast<C05FunctionModRngd>( mod );
+   const auto tmod = std::dynamic_pointer_cast< C05FunctionModRngd >( mod );
    if( tmod ) {
     if( ! tmod->which().empty() )
      throw( std::logic_error( "unexpected nonempty C05FunctionModRngd" ) );
@@ -4263,7 +4263,7 @@ void BundleSolver::process_outstanding_Modification( void )
 
   {
    // a C05FunctionModSbst, that at this point can only have which().empty()
-   const auto tmod = std::dynamic_pointer_cast<C05FunctionModSbst>( mod );
+   const auto tmod = std::dynamic_pointer_cast< C05FunctionModSbst >( mod );
    if( tmod ) {
     if( ! tmod->which().empty() )
      throw( std::logic_error( "unexpected nonempty C05FunctionModSbst" ) );
@@ -4276,7 +4276,7 @@ void BundleSolver::process_outstanding_Modification( void )
   {
    // a C05FunctionModLinRngd implies that a specific range in all the
    // linearizations must be changed (by adding something)
-   const auto tmod = std::dynamic_pointer_cast<C05FunctionModLinRngd>( mod );
+   const auto tmod = std::dynamic_pointer_cast< C05FunctionModLinRngd >( mod );
    if( tmod ) {
     vars = & tmod->vars();
     range = tmod->range();
@@ -4286,7 +4286,7 @@ void BundleSolver::process_outstanding_Modification( void )
   {
    // a C05FunctionModLinSbst implies that a specific subset in all the
    // linearizations must be changed (by adding something)
-   const auto tmod = std::dynamic_pointer_cast<C05FunctionModLinSbst>( mod );
+   const auto tmod = std::dynamic_pointer_cast< C05FunctionModLinSbst >( mod );
    if( tmod ) {
     vars = & tmod->vars();
     subset = & tmod->subset();
