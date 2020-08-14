@@ -1727,6 +1727,14 @@ void BundleSolver::FormD( void )
   }  // end ( error-handling loop )- - - - - - - - - - - - - - - - - - - - -
   // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
+ // MinQuad (in QPPenaltyMP) has the habit to increase eR when things go
+ // wrong, but never reset it to the original value. over long sequences
+ // of calls this may make eR to become "big", which in turn ultimately
+ // reduces accuracy and created problems. ensure that eR is properly reset
+ // after every successfull call
+ if( ! ( MPName & 1 ) )
+  Master->SetPar( MPSolver::kOptEps , RelMPAcc );
+
  Sigma = Master->ReadSigma();              // read Sigma*
  vStar[ NrFi ] = Master->ReadFiBLambda();  // read v*
 
