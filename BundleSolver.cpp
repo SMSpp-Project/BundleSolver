@@ -4,9 +4,9 @@
 /** @file
  * Implementation of the BunldeSolver class.
  *
- * \version 0.13
+ * \version 0.31
  *
- * \date 25 - 04 - 2020
+ * \date 20 - 08 - 2020
  *
  * \author Antonio Frangioni \n
  *         Operations Research Group \n
@@ -64,7 +64,7 @@
  /* Perform long and costly checks on the data structures, coded bit-wise:
   *
   * - CHECK_DS & 1 == checks the data structures representing the bundle and
-  *                   the global pools them against the MPSolver and the
+  *                   the global pools against the MPSolver and the
   *                   C05Function(s)
   *
   * - CHECK_DS & 2 == checks that the aggregated linearization produced by
@@ -86,6 +86,10 @@
 /*--------------------------------------------------------------------------*/
 
 using namespace SMSpp_di_unipi_it;
+
+/*--------------------------------------------------------------------------*/
+/*-------------------------------- CONSTANTS -------------------------------*/
+/*--------------------------------------------------------------------------*/
 
 /*--------------------------------------------------------------------------*/
 /*-------------------------------- FUNCTIONS -------------------------------*/
@@ -451,7 +455,7 @@ int BundleSolver::compute( bool changedvars )
   // is "random" and there is no reason to believe it's >= than the true
   // value)
 
-  if( ( UpFiLmb[ NrFi ] < Inf<double>() ) &&
+  if( ( UpFiLmb[ NrFi ] < INFshift ) &&
       ( Sigma < - max_error( UpRifFi[ NrFi ] , RelAcc ) ) &&
       ( Sigma <= - m3 * Master->ReadDStart( t ) ) ) {
    if( t >= tMaior ) {
@@ -478,7 +482,7 @@ int BundleSolver::compute( bool changedvars )
 
   if( ( ( ! ( MPName & 1 ) ) || ( MPName & 4 ) ) &&
       ( tStar > 0 ) && ( ( tSPar1 & tSP1Msk ) == kHLTTS ) &&
-      ( UpFiLmb[ NrFi ] < Inf<double>() ) ) {
+      ( UpFiLmb[ NrFi ] < INFshift ) ) {
 
    double AFL = std::abs( UpFiLmb[ NrFi ] );
    if( AFL < 1 )
@@ -572,12 +576,12 @@ int BundleSolver::compute( bool changedvars )
 
   for( Index k = 0 ; k < NrFi ; k++ )
    if( whisG1[ k ] < InINF ) {
-    if( Alfa1[ k ] == Inf<double>() )
+    if( Alfa1[ k ] == INFshift )
      Alfa1[ k ] = (Master->ReadLinErr())[ whisG1[ k ] ];
 
     Alfa1[ NrFi ] += Alfa1[ k ];
 
-    if( ScPr1[ k ] == Inf<double>() )
+    if( ScPr1[ k ] == INFshift )
      ScPr1[ k ] = Master->ReadGid( whisG1[ k ] );
 
     ScPr1[ NrFi ] += ScPr1[ k ];
@@ -593,7 +597,7 @@ int BundleSolver::compute( bool changedvars )
   // check whether either any error has occurred or time has expired- - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-  if( UpFiLmb1[ NrFi ] == - Inf<double>() ) {
+  if( UpFiLmb1[ NrFi ] == - INFshift ) {
    BLOG( 1 , " ~ stop (unbounded)" << std::endl );
    Result = kUnbounded;
    break;
@@ -623,18 +627,26 @@ int BundleSolver::compute( bool changedvars )
 
   // avoid the t-changing phase if Lambda1 is unfeasible- - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  // this is because the new cuts, making Lambda1 unfeasible, surely "change
+  // enough the master problem already"
   // note: one possible alternative t-strategy would be to set t to the
   // largest value that would have produced a feasible point, i.e.
   // t := *Alfa1 / ( - *ScPr1 )
 
-  if( UpFiLmb1[ NrFi ] == Inf<double>() )  // ???
+  if( UpFiLmb1[ NrFi ] == INFshift )
    continue;
-  else
-   if( UpFiLmb[ NrFi ] == Inf<double>() ) {  // if reached feasibility- - - -
-    BLOG( 1 , "           Fi1 < INF ==> SS " << std::endl );
-    GotoLambda1();             // go to the feasible point
-    continue;                  // and start the actual minimization of Fi()
-    }
+
+  // avoid the t-changing phase if Lambda was unfeasible but Lambda1 is not -
+  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  // this is because we have finally reached a feasible point (or, anyway,
+  // we have firmly established one feasible value), which ends the
+  // "phase 0" and starts the "phase 1"
+
+  if( UpFiLmb[ NrFi ] == INFshift ) {  // if reached feasibility- - - -
+   BLOG( 1 , "           Fi1 < INF ==> SS " << std::endl );
+   GotoLambda1();             // go to the feasible point
+   continue;                  // and start the actual minimization of Fi()
+   }
 
   // the NS / SS decision - - - - - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -722,7 +734,7 @@ int BundleSolver::compute( bool changedvars )
   // actually update t- - - - - - - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-  if( ( tSPar1 & kEGTTS ) && ( UpFiLmb[ NrFi ] < Inf< VarValue >() ) )
+  if( ( tSPar1 & kEGTTS ) && ( UpFiLmb[ NrFi ] < INFshift ) )
    // endgame t-strategy: note the "/ 10"!!
    if( DSTS < max_error() / 10 ) {
     tt = std::max( t * ( mxDecr + mnDecr ) / 2 , tMinor );
@@ -1008,7 +1020,7 @@ void BundleSolver::set_Block( Block * block )
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
  t = tInit;
- Prevt = Inf<double>();
+ Prevt = INFshift;
 
  Lambda.resize( NumVar );    // the default starting point
  Lambda1.resize( NumVar );   // the tentative point
@@ -1038,14 +1050,14 @@ void BundleSolver::set_Block( Block * block )
  FiStatus.resize( NrFi , kUnEval );
  TrueLB = false;
 
- UpFiBest = Inf<VarValue>();      // best, ...
+ UpFiBest = INFshift;      // best, ...
  UpRifFi.resize( NrFi + 1 , 0 );  // and reference Fi() values
  UpFiLmb1.resize( NrFi + 1 );     // upper and lower function value
  LwFiLmb1.resize( NrFi + 1 );     // ... at the tentative point
- UpFiLmb.resize( NrFi + 1 ,  Inf<VarValue>() );  // upper 
- LwFiLmb.resize( NrFi + 1 , -Inf<VarValue>() );  // ... and lower Fi-value
+ UpFiLmb.resize( NrFi + 1 ,  INFshift );  // upper 
+ LwFiLmb.resize( NrFi + 1 , -INFshift );  // ... and lower Fi-value
                                                  // ... at the current point
- LowerBound.resize( NrFi + 1 , -Inf<VarValue>() );  // global lower bounds
+ LowerBound.resize( NrFi + 1 , -INFshift );  // global lower bounds
  vStar.resize( NrFi + 1 , 0 );
  whisG1.resize( NrFi , InINF );  // no representative yet
 
@@ -1262,7 +1274,7 @@ void BundleSolver::set_par( const idx_type par , const double value )
    MaxTime = value;
    break;
   case( dblRelAcc ):
-   if( ( value <= 0 ) || ( value >= Inf< VarValue >() ) )
+   if( ( value <= 0 ) || ( value >= INFshift ) )
     throw( std::invalid_argument( "RelAcc must be > 0 and finite" ) );
    RelAcc = value;
    break;
@@ -1554,19 +1566,19 @@ void BundleSolver::FormD( void )
  // restored (Prevt is used to hold it).
 
  if( Master->BCSize() >= Master->BSize() ) {
-  if( ( t > tMinor ) && ( Prevt == Inf<double>() ) ) {
+  if( ( t > tMinor ) && ( Prevt == INFshift ) ) {
    Prevt = t;
    t = tMinor;
    tHasChgd = true;
    }
   }
  else
-  if( Prevt < Inf<double>() ) {
+  if( Prevt < INFshift ) {
    if( t != Prevt ) {
     t = Prevt;
     tHasChgd = true;
     }
-   Prevt = Inf<double>();
+   Prevt = INFshift;
    }
 
  if( tHasChgd ) {
@@ -1590,7 +1602,7 @@ void BundleSolver::FormD( void )
  //       when the function is computed, unlike the "hard" one
 
  auto LwrBnd = f_Block->get_valid_lower_bound( false );
- if( LwrBnd > - Inf<double>() ) {
+ if( LwrBnd > - INFshift ) {
   TrueLB = true;
   if( LwrBnd != LowerBound[ NrFi ] ) {
    LowerBound[ NrFi ] = LwrBnd;
@@ -1600,8 +1612,8 @@ void BundleSolver::FormD( void )
  else {
   TrueLB = false;
   if( LwrBnd != LowerBound[ NrFi ] ) {
-   LowerBound[ NrFi ] = - Inf<double>();
-   Master->SetLowerBound( - Inf<double>() );
+   LowerBound[ NrFi ] = - INFshift;
+   Master->SetLowerBound( - INFshift );
    }
   }
 
@@ -1638,7 +1650,7 @@ void BundleSolver::FormD( void )
   * leftover code for a previous version of MPSolver having a MPSolver::kZero
   * parameter, now removed; to be deleted
 
- if( UpFiLmb[ NrFi ] < Inf<double>() )
+ if( UpFiLmb[ NrFi ] < INFshift )
   Master->SetPar( MPSolver::kZero ,
 		  max_error() / std::max( tStar / t , HpNum( 1 ) ) );
   */
@@ -1749,7 +1761,7 @@ void BundleSolver::FormD( void )
     vStar[ k ] = Master->ReadFiBLambda( k + 1 );     // read model value
 
   // add the contribution of easy components to the total function value
-  if( UpFiLmb[ NrFi ] < Inf<double>() )
+  if( UpFiLmb[ NrFi ] < INFshift )
    for( Index k = 0 ; k < NrFi ; k++ )
     if( IsEasy[ k ] )
      vStar[ NrFi ] += UpRifFi[ k ];
@@ -1764,7 +1776,7 @@ void BundleSolver::FormD( void )
  // Sigma* + D*_{t*}( -z* ) is the "maximum expected increase" used in
  // the stopping criterion, EpsU is that relative to Fi( Lambda )
 
- if( UpFiLmb[ NrFi ] < Inf<double>() )
+ if( UpFiLmb[ NrFi ] < INFshift )
   EpsU = ( DSTS + Sigma ) / std::max( std::abs( UpFiLmb[ NrFi ] ) ,
 				      double( 1 ) );
  else
@@ -1774,7 +1786,7 @@ void BundleSolver::FormD( void )
  Zvalid.assign( NrFi , false );
 
  // the scalar products have changed
- ScPr1.assign( NrFi , Inf<double>() );
+ ScPr1.assign( NrFi , INFshift );
 
  // additional information not present in the Bundle implementation
  // for NDOSolver interface  - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1938,49 +1950,49 @@ void BundleSolver::FormLambda1( HpNum Tau )
    // initialize upper and lower bound for each component  - - - - - - - - - -
 
    c_VarValue Lk = v_c05f[ k ]->get_Lipschitz_constant();
-   if( ( Lk < Inf<VarValue>() ) && ( UpFiLmb[ k ] < Inf<VarValue>() ) )
+   if( ( Lk < INFshift ) && ( UpFiLmb[ k ] < INFshift ) )
     UpFiLmb1[ k ] = UpRifFi[ k ] + Lk * NrmD;
    else
-    UpFiLmb1[ k ] = Inf<VarValue>();
+    UpFiLmb1[ k ] = INFshift;
 
-   if( LwFiLmb[ k ] > -Inf<VarValue>() )
+   if( LwFiLmb[ k ] > -INFshift )
     LwFiLmb1[ k ] = UpRifFi[ k ] + vStar[ k ];
    else
-    LwFiLmb1[ k ] = -Inf<VarValue>();
+    LwFiLmb1[ k ] = -INFshift;
    }
 
   // sum over the components, the 0th-component is already there - - - - - - -
 
-  if( UpFiLmb1[ NrFi ] < Inf<VarValue>() ) {
-   if( UpFiLmb1[ k ] < Inf<VarValue>() )
+  if( UpFiLmb1[ NrFi ] < INFshift ) {
+   if( UpFiLmb1[ k ] < INFshift )
     UpFiLmb1[ NrFi ] += UpFiLmb1[ k ];
    else
-    UpFiLmb1[ NrFi ] = Inf<VarValue>();
+    UpFiLmb1[ NrFi ] = INFshift;
    }
 
-  if( LwFiLmb1[ NrFi ] > -Inf<VarValue>() ) {
-   if( LwFiLmb1[ k ] < Inf<VarValue>() )
+  if( LwFiLmb1[ NrFi ] > -INFshift ) {
+   if( LwFiLmb1[ k ] < INFshift )
     LwFiLmb1[ NrFi ] += LwFiLmb1[ k ];
    else
-    LwFiLmb1[ NrFi ] = -Inf<VarValue>();
+    LwFiLmb1[ NrFi ] = -INFshift;
    }
   }
 
  // update the upper and lower targets - - - - - - - - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- if( UpFiLmb[ NrFi ] < Inf<VarValue>() )
+ if( UpFiLmb[ NrFi ] < INFshift )
   UpTrgt = UpRifFi[ NrFi ] + ( 1.0 - m2 ) * vStar[ NrFi ];
  else
-  UpTrgt = Inf<VarValue>();
+  UpTrgt = INFshift;
 
- if( LwFiLmb[ NrFi ] > -Inf<VarValue>() )
+ if( LwFiLmb[ NrFi ] > -INFshift )
   if( m1 > 0 )
    LwTrgt = UpRifFi[ NrFi ] + vStar[ NrFi ] + m1 * DeltaStar;
   else
    LwTrgt = UpRifFi[ NrFi ] + ( 1.0 + m1 ) * vStar[ NrFi ];
  else
-  LwTrgt = -Inf<VarValue>();
+  LwTrgt = -INFshift;
 
  }  // end( BundleSolver::FormLambda1 ) - - - - - - - - - - - - - - - - - - -
 
@@ -1995,25 +2007,25 @@ bool BundleSolver::FiAndGi( Index wFi )
 
  LwFiK = UpRifFi[ wFi ] + vStar[ wFi ];
 
- if( UpFiLmb[ wFi ] < Inf<VarValue>() )
-  if( UpTrgt < Inf<VarValue>() && UpFiLmb1[ NrFi ] < Inf<VarValue>() )
+ if( UpFiLmb[ wFi ] < INFshift )
+  if( UpTrgt < INFshift && UpFiLmb1[ NrFi ] < INFshift )
    UpCutOff = std::max( UpTrgt - ( UpFiLmb1[ NrFi ] - UpFiLmb1[ wFi ] ) ,
 			LwFiK - m2 * BetaK( wFi ) * vStar[ NrFi ] );
   else
    UpCutOff = LwFiK - m2 * BetaK( wFi ) * vStar[ NrFi ];
  else
-  UpCutOff = Inf<VarValue>();
+  UpCutOff = INFshift;
 
- if( LwFiLmb[ wFi ] > -Inf<VarValue>() )
-  if( LwTrgt > -Inf<VarValue>() && LwFiLmb1[ NrFi ] > -Inf<VarValue>() )
+ if( LwFiLmb[ wFi ] > -INFshift )
+  if( LwTrgt > -INFshift && LwFiLmb1[ NrFi ] > -INFshift )
    LwCutOff = std::max( LwTrgt - ( LwFiLmb1[ NrFi ] - LwFiLmb1[ wFi ] ) ,
 			LwFiK + m1 * BetaK( wFi ) * DeltaStar );
   else
    LwCutOff = LwFiK + m1 * BetaK( wFi ) * DeltaStar;
  else
-  LwCutOff = -Inf<VarValue>();
+  LwCutOff = -INFshift;
 
- if( ( LwCutOff > -Inf<VarValue>() ) && ( UpCutOff < Inf<VarValue>() ) )
+ if( ( LwCutOff > -INFshift ) && ( UpCutOff < INFshift ) )
   EpsCurr = ( UpCutOff - LwCutOff ) / std::max( 1.0 ,
 						std::abs( UpRifFi[ wFi ] ) );
  else
@@ -2033,53 +2045,53 @@ bool BundleSolver::FiAndGi( Index wFi )
 
  FiStatus[ wFi ] = fwFi->compute( ( FiStatus[ wFi ] == kUnEval ) );
 
- if( UpFiLmb1[ NrFi ] < Inf<VarValue>() )
+ if( UpFiLmb1[ NrFi ] < INFshift )
   UpFiLmb1[ NrFi ] -= UpFiLmb1[ wFi ];
 
- if( LwFiLmb1[ NrFi ] > -Inf<VarValue>() )
+ if( LwFiLmb1[ NrFi ] > -INFshift )
   LwFiLmb1[ NrFi ] -= LwFiLmb1[ wFi ];
 
  UpFiLmb1[ wFi ] = std::min( fwFi->get_upper_estimate() , UpFiLmb1[ wFi ] );
  LwFiLmb1[ wFi ] = std::max( fwFi->get_lower_estimate() , LwFiLmb1[ wFi ] );
 
- if( UpFiLmb1[ NrFi ] < Inf<VarValue>() )
+ if( UpFiLmb1[ NrFi ] < INFshift )
   UpFiLmb1[ NrFi ] += UpFiLmb1[ wFi ];
  else
-  if( UpFiLmb1[ wFi ] < Inf<VarValue>() ) {
+  if( UpFiLmb1[ wFi ] < INFshift ) {
    if( f_lf )
     UpFiLmb1[ NrFi ] = f_lf->get_upper_estimate();
    else
     UpFiLmb1[ NrFi ] = 0;
 
    for( Index k = 0 ; k < NrFi ; k++ )
-    if( UpFiLmb1[ k ] < Inf<VarValue>() )
+    if( UpFiLmb1[ k ] < INFshift )
      UpFiLmb1[ NrFi ] += UpFiLmb1[ wFi ];
     else {
-     UpFiLmb1[ NrFi ] = Inf<VarValue>();
+     UpFiLmb1[ NrFi ] = INFshift;
      break;
      }
    }
 
- if( LwFiLmb1[ NrFi ] > -Inf<VarValue>() )
+ if( LwFiLmb1[ NrFi ] > -INFshift )
   LwFiLmb1[ NrFi ] += LwFiLmb1[ wFi ];
  else
-  if( LwFiLmb1[ wFi ] > -Inf<VarValue>() ) {
+  if( LwFiLmb1[ wFi ] > -INFshift ) {
    if( f_lf )
     LwFiLmb1[ NrFi ] = f_lf->get_lower_estimate();
    else
     LwFiLmb1[ NrFi ] = 0;
 
    for( Index k = 0 ; k < NrFi ; k++ )
-    if( LwFiLmb1[ k ] > -Inf<VarValue>() )
+    if( LwFiLmb1[ k ] > -INFshift )
      LwFiLmb1[ NrFi ] += LwFiLmb1[ wFi ];
     else {
-     LwFiLmb1[ NrFi ] = -Inf<VarValue>();
+     LwFiLmb1[ NrFi ] = -INFshift;
      break;
      }
    }
 
- if( UpFiLmb1[ NrFi ] == Inf<VarValue>() )  // Fi() is not defined in Lambda1
-  DeltaFi = Inf<VarValue>();
+ if( UpFiLmb1[ NrFi ] == INFshift )  // Fi() is not defined in Lambda1
+  DeltaFi = INFshift;
  else
   DeltaFi = UpFiLmb1[ NrFi ] - UpRifFi[ NrFi ];
 
@@ -2103,7 +2115,7 @@ bool BundleSolver::FiAndGi( Index wFi )
   if( Ftchd == 0 ) {
    // first look for a constraint then for a sub-gradient
 
-   if( UpFiLmb1[ wFi ] == Inf<VarValue>() ) {
+   if( UpFiLmb1[ wFi ] == INFshift ) {
     HasLinearization = fwFi->has_linearization( diagonal = false );
     if( ! HasLinearization )
      HasLinearization = fwFi->has_linearization( diagonal );
@@ -2112,7 +2124,7 @@ bool BundleSolver::FiAndGi( Index wFi )
     HasLinearization = fwFi->has_linearization( diagonal );
    }
   else {
-   if( UpFiLmb1[ wFi ] == Inf<VarValue>() ) {
+   if( UpFiLmb1[ wFi ] == INFshift ) {
     HasLinearization = fwFi->compute_new_linearization( diagonal = false );
     if( ! HasLinearization )
      HasLinearization = fwFi->compute_new_linearization( diagonal );
@@ -2335,7 +2347,7 @@ void BundleSolver::GotoLambda1( void )
 
  // signal that Alfa1[] is not reliable - - - - - - - - - - - - - - - - - - -
 
- Alfa1.assign( NrFi + 1 , Inf<double>() );
+ Alfa1.assign( NrFi + 1 , INFshift );
 
  #if CHECK_DS & 4
   CheckAlfa();
@@ -2391,7 +2403,7 @@ void BundleSolver::Log1( void )
 
  *f_log <<  " Fi = ";
 
- if( UpFiLmb[ NrFi ] == Inf<double>() )
+ if( UpFiLmb[ NrFi ] == INFshift )
   *f_log << " - INF";
  else
   *f_log << UpFiLmb[ NrFi ] << " ~ eU = " << EpsU;
@@ -2410,15 +2422,15 @@ void BundleSolver::Log2( void )
 
  *f_log << std::endl << "            ";
 
- if( LowerBound[ NrFi ] > - Inf<double>() )
+ if( LowerBound[ NrFi ] > - INFshift )
   *f_log << "LB = " << LowerBound[ NrFi ] << " ~ ";
 
  *f_log << "Fi1 = ";
 
- if( UpFiLmb1[ NrFi ] <= - Inf<double>() )
+ if( UpFiLmb1[ NrFi ] <= - INFshift )
   *f_log << "+ INF => STOP." << std::endl;
  else
-  if( UpFiLmb1[ NrFi ] >= Inf<double>() )
+  if( UpFiLmb1[ NrFi ] >= INFshift )
    *f_log << " - INF" << std::endl;
   else
    *f_log << UpFiLmb1[ NrFi ] << " ~ Alfa1 = " << Alfa1[ NrFi ]
@@ -2970,17 +2982,17 @@ void BundleSolver::UpdtaBP3( void )
 
  switch( BPar6 ) {
   case( 4 ):
-   if( UpFiLmb[ NrFi ] > -Inf<double>() )
+   if( UpFiLmb[ NrFi ] > -INFshift )
     aBP3 = ( BPar5 > 0 ? BPar4 : BPar3 ) +
            Index( BPar5 / std::log10( EpsU / RelAcc ) );
    break;
   case( 3 ):
-   if( UpFiLmb[ NrFi ] > -Inf<double>() )
+   if( UpFiLmb[ NrFi ] > -INFshift )
     aBP3 = ( BPar5 > 0 ? BPar4 : BPar3 ) +
            Index( BPar5 / std::sqrt( EpsU / RelAcc ) );
    break;
   case( 2 ):
-   if( UpFiLmb[ NrFi ] > -Inf<double>() )
+   if( UpFiLmb[ NrFi ] > -INFshift )
     aBP3 = ( BPar5 > 0 ? BPar4 : BPar3 ) +
            Index( BPar5 * ( RelAcc / EpsU ) );
    break;
@@ -3008,11 +3020,11 @@ bool BundleSolver::IsOptimal( double eps ) const
  if( eps <= 0 )
   eps = RelAcc;
 
- if( vStar[ NrFi ] >= Inf< VarValue >() )  // there are no subgradients
+ if( vStar[ NrFi ] >= INFshift )  // there are no subgradients
   return( false );
 
  c_VarValue err = max_error( eps );
- if( err >= Inf< VarValue >() )
+ if( err >= INFshift )
   return( false );
 
  if( tStar > 0 )
@@ -3033,49 +3045,49 @@ bool BundleSolver::CheckAlfa( const bool All )
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::FModChg( VarValue f_shift , Index wFi )
+void BundleSolver::FModChg( VarValue shift , Index wFi )
 {
- if( f_shift == INFshift ) {           // function changed monotonically up
-  UpFiLmb[ wFi ] = Inf<VarValue>();    // reset upper function values
-  UpFiLmb[ NrFi ] = Inf<VarValue>();
-  UpFiBest = Inf<VarValue>();          // comprised best one
+ if( shift == INFshift ) {      // function changed monotonically up
+  UpFiLmb[ wFi ] = INFshift;    // reset upper function values
+  UpFiLmb[ NrFi ] = INFshift;
+  UpFiBest = INFshift;          // comprised best one
   return;
   }
 
- if( f_shift == -INFshift ) {          // function changed monotonically dn
-  LwFiLmb[ wFi ] = -Inf<VarValue>();   // reset lower function values
-  LwFiLmb[ NrFi ] = -Inf<VarValue>();
+ if( shift == -INFshift ) {     // function changed monotonically dn
+  LwFiLmb[ wFi ] = -INFshift;   // reset lower function values
+  LwFiLmb[ NrFi ] = -INFshift;
   return;
   }
 
- if( std::isnan( f_shift ) ) {         // function changed unpredictably
-  UpFiLmb[ wFi ] = Inf<VarValue>();    // reset both upper ...
-  LwFiLmb[ wFi ] = -Inf<VarValue>();   // ... and lower function values
-  UpFiLmb[ NrFi ] = Inf<VarValue>();
-  LwFiLmb[ NrFi ] = -Inf<VarValue>();
-  UpFiBest = Inf<VarValue>();          // and of course best one
+ if( std::isnan( shift ) ) {    // function changed unpredictably
+  UpFiLmb[ wFi ] = INFshift;    // reset both upper ...
+  LwFiLmb[ wFi ] = -INFshift;   // ... and lower function values
+  UpFiLmb[ NrFi ] = INFshift;
+  LwFiLmb[ NrFi ] = -INFshift;
+  UpFiBest = INFshift;          // and of course best one
   return;
   }
 
- // function changed by shift():  just update everything
+ // function changed by shift: just update everything
 
- if( UpFiLmb[ wFi ] < Inf<VarValue>() )
-  UpFiLmb[ wFi ] += f_shift;
+ if( UpFiLmb[ wFi ] < INFshift )
+  UpFiLmb[ wFi ] += shift;
 
- if( UpFiLmb[ NrFi ] < Inf<VarValue>() )
-  UpFiLmb[ NrFi ] += f_shift;
+ if( UpFiLmb[ NrFi ] < INFshift )
+  UpFiLmb[ NrFi ] += shift;
 
- if( UpFiBest < Inf<VarValue>() )
-  UpFiBest += f_shift;
+ if( UpFiBest < INFshift )
+  UpFiBest += shift;
 
- if( LwFiLmb[ wFi ] > -Inf<VarValue>() )
-  LwFiLmb[ wFi ] += f_shift;
+ if( LwFiLmb[ wFi ] > -INFshift )
+  LwFiLmb[ wFi ] += shift;
 
- if( LwFiLmb[ NrFi ] > -Inf<VarValue>() )
-  LwFiLmb[ NrFi ] += f_shift;
+ if( LwFiLmb[ NrFi ] > -INFshift )
+  LwFiLmb[ NrFi ] += shift;
 
- UpRifFi[ wFi ] += f_shift;
- UpRifFi[ NrFi ] += f_shift;
+ UpRifFi[ wFi ] += shift;
+ UpRifFi[ NrFi ] += shift;
 
  } // end ( BundleSolver::FModChg )  - - - - - - - - - - - - - - - - - - - - -
 
@@ -4958,7 +4970,7 @@ void BundleSolver::FakeFiOracle::GetBDesc( cIndex wFi , int *Bbeg ,
  for( Index i = 0 ; i < num_col ; i++ )
   if( MILPSlv->get_sense()[ i ] == 'L' ) {
    rhs[ i ] = MILPSlv->get_rhs()[ i ];
-   lhs[ i ] = -Inf<double>();
+   lhs[ i ] = -INFshift;
    }
   else
    if( MILPSlv->get_sense()[ i ] == 'E' ) {
@@ -4967,12 +4979,12 @@ void BundleSolver::FakeFiOracle::GetBDesc( cIndex wFi , int *Bbeg ,
     }
    else
     if( bslv->MILP_s[ wFi -1 ]->get_sense()[ i ] == 'G' ) {
-     rhs[ i ] = Inf<double>();
+     rhs[ i ] = INFshift;
      lhs[ i ] = MILPSlv->get_rhs()[ i ];
      }
     else {
      double rngval = MILPSlv->get_rngval()[ i ];
-     if( rngval > double(0) ) {
+     if( rngval > double( 0 ) ) {
       rhs[ i ] = MILPSlv->get_rhs()[ i ] + rngval;
       lhs[ i ] = MILPSlv->get_rhs()[ i ];
       }
@@ -4982,7 +4994,7 @@ void BundleSolver::FakeFiOracle::GetBDesc( cIndex wFi , int *Bbeg ,
       }
      }
 
- } // end ( BundleSolver::FakeFiOracle::GetBDesc() ) - - - - - - - - - - - - -
+ }  // end( BundleSolver::FakeFiOracle::GetBDesc() ) - - - - - - - - - - - - -
 
 /*--------------------------------------------------------------------------*/
 

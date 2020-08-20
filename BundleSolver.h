@@ -282,12 +282,12 @@ public:
 
 /*----------------------------- CONSTANTS ----------------------------------*/
 
- static constexpr Function::FunctionValue NaNshift
-                  = std::numeric_limits<Function::FunctionValue>::quiet_NaN();
+ static constexpr VarValue NaNshift
+                              = std::numeric_limits< VarValue >::quiet_NaN();
  ///< convenience constexpr for "NaN", *not* to be used with ==
 
- static constexpr Function::FunctionValue INFshift
-                   = std::numeric_limits<Function::FunctionValue>::infinity();
+ static constexpr VarValue INFshift
+                               = std::numeric_limits< VarValue >::infinity();
  ///< convenience constexpr for "Infty"
 
 /*--------------------------------------------------------------------------*/
@@ -1794,7 +1794,7 @@ class FakeFiOracle : public FiOracle
 
 /*--------------------------------------------------------------------------*/
 
- void FModChg( VarValue f_shift , Index wFi );
+ void FModChg( VarValue shift , Index wFi );
 
 /*--------------------------------------------------------------------------*/
 
