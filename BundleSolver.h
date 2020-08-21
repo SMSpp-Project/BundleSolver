@@ -912,10 +912,10 @@ public:
 
  VarValue get_ub( void ) override
  {
-  if( ( MaxSol > 1 ) && ( UpFiBest < UpRifFi[ NrFi ] ) )
+  if( ( MaxSol > 1 ) && ( UpFiBest < UpFiLmb[ NrFi ] ) )
    return( UpFiBest );
   else
-   return( UpRifFi[ NrFi ] );
+   return( UpFiLmb[ NrFi ] );
   }
 
 /*--------------------------------------------------------------------------*/
