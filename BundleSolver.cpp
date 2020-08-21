@@ -621,6 +621,9 @@ int BundleSolver::compute( bool changedvars )
       ( UpFiBest <= LowerBound[ NrFi ] *
 	            ( 1 - ( LowerBound[ NrFi ] > 0 ? RelAcc : - RelAcc ) ) )
       ) {
+   BLOG( 1 , "           FiBest < conditional LB: unbounded " << std::endl );
+   if( UpFiLmb1[ NrFi ] < UpFiLmb[ NrFi ] )  // Lambda1 is better than Lambda
+    GotoLambda1();                           // go to Lambda1
    Result = kUnbounded;
    break;
    }
