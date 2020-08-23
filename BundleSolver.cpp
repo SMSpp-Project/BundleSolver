@@ -567,6 +567,23 @@ int BundleSolver::compute( bool changedvars )
     Result = kError;
    }
 
+  // compute DeltaFi- - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+  if( UpFiLmb1[ NrFi ] == INFshift )
+   DeltaFi = INFshift;
+  else
+   DeltaFi = UpFiLmb1[ NrFi ] - UpRifFi[ NrFi ];
+
+  // update FiBest- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+  if( UpFiLmb1[ NrFi ] < UpFiBest ) {
+  UpFiBest = UpFiLmb1[ NrFi ];
+  if( MaxSol > 1 )
+   LmbdBst = Lambda1;
+  }
+
   // compute the "aggregated" Alfa1 and ScPr1 - - - - - - - - - - - - - - - -
   // ... using the "representatives" of all components: these are used in
   // some "global" formulae, such as the t heuristics
@@ -764,7 +781,7 @@ int BundleSolver::compute( bool changedvars )
 
  return( Result );
 
- }  // end( BundleSolver::compute() ) - - - - - - - - - - - - - - - - - - - -
+ }  // end( BundleSolver::compute )
 
 /*--------------------------------------------------------------------------*/
 /*-------------------------- OTHER INITIALIZATIONS -------------------------*/
@@ -1171,7 +1188,7 @@ void BundleSolver::set_Block( Block * block )
   #endif
   //!! PrintBundle();
 
- }  // end( BundleSolver::set_Block )  - - - - - - - - - - - - - - - - - - - -
+ }  // end( BundleSolver::set_Block )
 
 /*--------------------------------------------------------------------------*/
 
@@ -1264,7 +1281,7 @@ void BundleSolver::set_par( const idx_type par , const int value )
   default:
    CDASolver::set_par( par , value );
   }
- }  // end( BundleSolver::set_par( int ) )- - - - - - - - - - - - - - - - - -
+ }  // end( BundleSolver::set_par( int ) )
 
 /*--------------------------------------------------------------------------*/
 
@@ -1375,7 +1392,7 @@ void BundleSolver::set_par( const idx_type par , const double value )
   default:
    CDASolver::set_par( par , value );
   }
- }  // end( BundleSolver::set_par( double ) ) - - - - - - - - - - - - - - - -
+ }  // end( BundleSolver::set_par( double ) )
 
 /*--------------------------------------------------------------------------*/
 /*--------------------------------- METHODS --------------------------------*/
@@ -1393,13 +1410,46 @@ void BundleSolver::set_log( std::ostream * log_stream )
 
 void BundleSolver::get_dual_solution( Configuration *solc )
 {
- for( Index i = 0 ; i < zA.size() ; ++i ) {
-  if( zA[ i ].second.empty() )
-   throw( std::invalid_argument( "the combination is not present" ) );
-  v_c05f[ i ]->set_important_linearization( std::move( zA[ i ].second ) ,
-					    zA[ i ].first );
-  }
- }  // end( BundleSolver::get_dual_solution() )  - - - - - - - - - - - - - - -
+ // construct the important linerization for each component (unless it is
+ // already there, and signal to the C05Functions which one it is
+
+ for( Index k = 0 ; k < NrFi ; ++k ) {
+  C05Function::LinearCombination lc;
+
+  if( Zvalid[ k ] ) {
+   // the optimal aggregated linearization for component k is in the
+   // bundle (and, therefore, global pool) already: the optimal
+   // coefficients are very simple, it's just that one
+   lc.resize( 1 );
+   lc[ 0 ].first = ItemVcblr[ whisZ[ k ] ].second;
+   lc[ 0 ].second = 1;
+   }
+  else {
+   // retrieve optimal multipliers from the Master
+   Index MBDm;
+   cIndex_Set MBse;
+   cHpRow Mlt = Master->ReadMult( MBse , MBDm , k + 1 , false );
+
+   // copy them in the LinearCombination
+   lc.resize( MBDm );
+   auto lcit = lc.begin();
+
+   if( MBse )
+    for( Index h ; ( h = *(MBse++) ) < InINF ; ) {
+     lcit->first = ItemVcblr[ h ].second;
+     (lcit++)->second = *(Mlt++);
+     }
+   else
+    for( Index h = 0 ; h < MBDm ; ) {
+     lcit->first = ItemVcblr[ h++ ].second;
+     (lcit++)->second = *(Mlt++);
+     }
+   }
+
+  v_c05f[ k ]->set_important_linearization( std::move( lc ) , 0 ); //??!!
+
+  }  // end( for( k ) )
+ }  // end( BundleSolver::get_dual_solution() )
 
 /*--------------------------------------------------------------------------*/
 
@@ -1472,7 +1522,7 @@ int BundleSolver::get_int_par( const idx_type par ) const
   default:
    return( CDASolver::get_dflt_int_par( par ) );
   }
- }  // end( BundleSolver::get_int_par ) - - - - - - - - - - - - - - - - - - -
+ }  // end( BundleSolver::get_int_par )
 
 /*--------------------------------------------------------------------------*/
 
@@ -1545,7 +1595,7 @@ double BundleSolver::get_dbl_par( const idx_type par ) const
   default:
    return( CDASolver::get_dflt_dbl_par( par ) );
   }
- }  // end( BundleSolver::get_dbl_par ) - - - - - - - - - - - - - - - - - - -
+ }  // end( BundleSolver::get_dbl_par )
 
 /*--------------------------------------------------------------------------*/
 /*----------------------- OTHER PROTECTED METHODS --------------------------*/
@@ -1753,10 +1803,7 @@ void BundleSolver::FormD( void )
  Sigma = Master->ReadSigma();              // read Sigma*
  vStar[ NrFi ] = Master->ReadFiBLambda();  // read v*
 
- if( IsEasy.empty() )                      // there are no easy components
-  for( Index k = 0 ; k < NrFi ; ++k )
-   vStar[ k ] = Master->ReadFiBLambda( k + 1 );  // read model value
- else {                                    // there are easy components
+ if( NrEasy ) {                  // there are easy components
   for( Index k = 0 ; k < NrFi ; ++k )
    if( IsEasy[ k ] )                                 // for easy components
     UpFiLmb1[ k ] = Master->ReadFiBLambda( k + 1 );  // read *exact* Fi-value
@@ -1769,7 +1816,9 @@ void BundleSolver::FormD( void )
     if( IsEasy[ k ] )
      vStar[ NrFi ] += UpRifFi[ k ];
   }
-
+ else                            // there are no easy components
+  for( Index k = 0 ; k < NrFi ; ++k )
+   vStar[ k ] = Master->ReadFiBLambda( k + 1 );  // read model value
 
  if( tStar > 0 )
   DSTS = Master->ReadDStart( tStar );                  // D_{t*,\beta,x}
@@ -1802,7 +1851,7 @@ void BundleSolver::FormD( void )
   NrmD += tdir[ i ] * tdir[ i ];
  NrmD = sqrt(  NrmD );
 
- }  // end( BundleSolver::FormD )  - - - - - - - - - - - - - - - - - - - - - -
+ }  // end( BundleSolver::FormD )
 
 /*--------------------------------------------------------------------------*/
 
@@ -1926,7 +1975,7 @@ void BundleSolver::FormLambda1( HpNum Tau )
 
   }  // end( if( the bounds have to be enforced ) )
 
- // Lambda has changed, pass the new one to the oracle - - - - - - - - - - - -
+ // move the value from Lambda1 to the ColVariable - - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
  FiStatus.assign( NrFi , kUnEval );
@@ -1938,58 +1987,57 @@ void BundleSolver::FormLambda1( HpNum Tau )
  // compute the upper and lower model at the tentative point   - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- if( f_lf ) {  // add the linear part to the "full function"
-  f_lf->compute( true );
-  UpFiLmb1[ NrFi ] = f_lf->get_upper_estimate();
-  LwFiLmb1[ NrFi ] = f_lf->get_lower_estimate();
-  }
- else
-  UpFiLmb1[ NrFi ] = LwFiLmb1[ NrFi ] = 0;
-
- for( Index k = 0 ; k < NrFi ; ++k ) {
-  if( ( ! IsEasy.empty() ) && IsEasy[ k ] )  // if k is an easy component
-   UpFiLmb1[ k ] =  LwFiLmb1[ k ] = Master->ReadFiBLambda( k );
-  else {
-   // initialize upper and lower bound for each component  - - - - - - - - - -
+ UpFiLmb1def = LwFiLmb1def = 0;
+ for( Index k = 0 ; k < NrFi ; ++k )
+  if( NrEasy && IsEasy[ k ] ) {  // k is an easy component
+   UpFiLmb1[ k ] = LwFiLmb1[ k ] = Master->ReadFiBLambda( k );
+   ++UpFiLmb1def;
+   ++LwFiLmb1def;
+   }
+  else {                         // k is a hard component
+   // compute upper and lower bound for k (possibly +/- INF)
 
    c_VarValue Lk = v_c05f[ k ]->get_Lipschitz_constant();
-   if( ( Lk < INFshift ) && ( UpFiLmb[ k ] < INFshift ) )
+   if( ( Lk < INFshift ) && ( UpFiLmb[ k ] < INFshift ) ) {
     UpFiLmb1[ k ] = UpRifFi[ k ] + Lk * NrmD;
+    ++UpFiLmb1def;
+    }
    else
     UpFiLmb1[ k ] = INFshift;
 
-   if( LwFiLmb[ k ] > -INFshift )
+   if( LwFiLmb[ k ] > -INFshift ) {
     LwFiLmb1[ k ] = UpRifFi[ k ] + vStar[ k ];
+    ++LwFiLmb1def;
+    }
    else
     LwFiLmb1[ k ] = -INFshift;
    }
 
-  // sum over the components, the 0th-component is already there - - - - - - -
+ // now compute total upper and lower bound (possibly +/- INF)
 
-  if( UpFiLmb1[ NrFi ] < INFshift ) {
-   if( UpFiLmb1[ k ] < INFshift )
-    UpFiLmb1[ NrFi ] += UpFiLmb1[ k ];
-   else
-    UpFiLmb1[ NrFi ] = INFshift;
-   }
-
-  if( LwFiLmb1[ NrFi ] > -INFshift ) {
-   if( LwFiLmb1[ k ] < INFshift )
-    LwFiLmb1[ NrFi ] += LwFiLmb1[ k ];
-   else
-    LwFiLmb1[ NrFi ] = -INFshift;
-   }
-  }
+ if( UpFiLmb1def == NrFi )
+  UpFiLmb1[ NrFi ] = std::accumulate( UpFiLmb1.begin() , --(UpFiLmb1.end()) ,
+				      f_lf ? f_lf->get_upper_estimate() : 0 );
+ else
+  UpFiLmb1[ NrFi ] = INFshift;
+   
+ if( LwFiLmb1def == NrFi )
+  LwFiLmb1[ NrFi ] = std::accumulate( LwFiLmb1.begin() , --(LwFiLmb1.end()) ,
+				      f_lf ? f_lf->get_lower_estimate() : 0 );
+ else
+  LwFiLmb1[ NrFi ] = -INFshift;
 
  // update the upper and lower targets - - - - - - - - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // note that vStar[ NrFi ] is == INFshift if the bundle of any of the hard
+ // components is empty
 
- if( UpFiLmb[ NrFi ] < INFshift )
+ if( ( UpFiLmb[ NrFi ] < INFshift ) && ( vStar[ NrFi ] < INFshift ) )
   UpTrgt = UpRifFi[ NrFi ] + ( 1.0 - m2 ) * vStar[ NrFi ];
  else
   UpTrgt = INFshift;
 
- if( LwFiLmb[ NrFi ] > -INFshift )
+ if( ( LwFiLmb[ NrFi ] > -INFshift ) && ( vStar[ NrFi ] < INFshift ) )
   if( m1 > 0 )
    LwTrgt = UpRifFi[ NrFi ] + vStar[ NrFi ] + m1 * DeltaStar;
   else
@@ -1997,37 +2045,42 @@ void BundleSolver::FormLambda1( HpNum Tau )
  else
   LwTrgt = -INFshift;
 
- }  // end( BundleSolver::FormLambda1 ) - - - - - - - - - - - - - - - - - - -
+ }  // end( BundleSolver::FormLambda1 )
 
 /*--------------------------------------------------------------------------*/
 
 bool BundleSolver::FiAndGi( Index wFi )
 {
- double UpCutOff, LwCutOff, LwFiK, EpsCurr;
-
- if( ( ! IsEasy.empty() ) && IsEasy[ wFi ] )
+ if( NrEasy && IsEasy[ wFi ] )
   return( false );
 
- LwFiK = UpRifFi[ wFi ] + vStar[ wFi ];
+ double UpCutOff = INFshift;
+ double LwCutOff = -INFshift;
 
- if( UpFiLmb[ wFi ] < INFshift )
-  if( UpTrgt < INFshift && UpFiLmb1[ NrFi ] < INFshift )
-   UpCutOff = std::max( UpTrgt - ( UpFiLmb1[ NrFi ] - UpFiLmb1[ wFi ] ) ,
-			LwFiK - m2 * BetaK( wFi ) * vStar[ NrFi ] );
-  else
-   UpCutOff = LwFiK - m2 * BetaK( wFi ) * vStar[ NrFi ];
- else
-  UpCutOff = INFshift;
+ if( vStar[ wFi ] < INFshift ) {
+  // this can only be done if there are diagonal linearizations of the
+  // component wFi in the bundle, i.e., vStar[ wFi ] is well-defined
 
- if( LwFiLmb[ wFi ] > -INFshift )
-  if( LwTrgt > -INFshift && LwFiLmb1[ NrFi ] > -INFshift )
-   LwCutOff = std::max( LwTrgt - ( LwFiLmb1[ NrFi ] - LwFiLmb1[ wFi ] ) ,
-			LwFiK + m1 * BetaK( wFi ) * DeltaStar );
-  else
-   LwCutOff = LwFiK + m1 * BetaK( wFi ) * DeltaStar;
- else
-  LwCutOff = -INFshift;
+  double LwFiK = UpRifFi[ wFi ] + vStar[ wFi ];
 
+  if( UpFiLmb[ wFi ] < INFshift ) {
+   if( ( UpTrgt < INFshift ) && ( UpFiLmb1[ NrFi ] < INFshift ) )
+    UpCutOff = std::max( UpTrgt - ( UpFiLmb1[ NrFi ] - UpFiLmb1[ wFi ] ) ,
+			 LwFiK - m2 * BetaK( wFi ) * vStar[ NrFi ] );
+   else
+    UpCutOff = LwFiK - m2 * BetaK( wFi ) * vStar[ NrFi ];
+   }
+
+  if( LwFiLmb[ wFi ] > -INFshift ) {
+   if( ( LwTrgt > -INFshift ) && ( LwFiLmb1[ NrFi ] > -INFshift ) )
+    LwCutOff = std::max( LwTrgt - ( LwFiLmb1[ NrFi ] - LwFiLmb1[ wFi ] ) ,
+			 LwFiK + m1 * BetaK( wFi ) * DeltaStar );
+   else
+    LwCutOff = LwFiK + m1 * BetaK( wFi ) * DeltaStar;
+   }
+  }
+
+ double EpsCurr;
  if( ( LwCutOff > -INFshift ) && ( UpCutOff < INFshift ) )
   EpsCurr = ( UpCutOff - LwCutOff ) / std::max( 1.0 ,
 						std::abs( UpRifFi[ wFi ] ) );
@@ -2048,63 +2101,9 @@ bool BundleSolver::FiAndGi( Index wFi )
 
  FiStatus[ wFi ] = fwFi->compute( ( FiStatus[ wFi ] == kUnEval ) );
 
- if( UpFiLmb1[ NrFi ] < INFshift )
-  UpFiLmb1[ NrFi ] -= UpFiLmb1[ wFi ];
+ update_UpFiLambd1( wFi , fwFi->get_upper_estimate() );
+ update_LwFiLambd1( wFi , fwFi->get_lower_estimate() );
 
- if( LwFiLmb1[ NrFi ] > -INFshift )
-  LwFiLmb1[ NrFi ] -= LwFiLmb1[ wFi ];
-
- UpFiLmb1[ wFi ] = std::min( fwFi->get_upper_estimate() , UpFiLmb1[ wFi ] );
- LwFiLmb1[ wFi ] = std::max( fwFi->get_lower_estimate() , LwFiLmb1[ wFi ] );
-
- if( UpFiLmb1[ NrFi ] < INFshift )
-  UpFiLmb1[ NrFi ] += UpFiLmb1[ wFi ];
- else
-  if( UpFiLmb1[ wFi ] < INFshift ) {
-   if( f_lf )
-    UpFiLmb1[ NrFi ] = f_lf->get_upper_estimate();
-   else
-    UpFiLmb1[ NrFi ] = 0;
-
-   for( Index k = 0 ; k < NrFi ; k++ )
-    if( UpFiLmb1[ k ] < INFshift )
-     UpFiLmb1[ NrFi ] += UpFiLmb1[ wFi ];
-    else {
-     UpFiLmb1[ NrFi ] = INFshift;
-     break;
-     }
-   }
-
- if( LwFiLmb1[ NrFi ] > -INFshift )
-  LwFiLmb1[ NrFi ] += LwFiLmb1[ wFi ];
- else
-  if( LwFiLmb1[ wFi ] > -INFshift ) {
-   if( f_lf )
-    LwFiLmb1[ NrFi ] = f_lf->get_lower_estimate();
-   else
-    LwFiLmb1[ NrFi ] = 0;
-
-   for( Index k = 0 ; k < NrFi ; k++ )
-    if( LwFiLmb1[ k ] > -INFshift )
-     LwFiLmb1[ NrFi ] += LwFiLmb1[ wFi ];
-    else {
-     LwFiLmb1[ NrFi ] = -INFshift;
-     break;
-     }
-   }
-
- if( UpFiLmb1[ NrFi ] == INFshift )  // Fi() is not defined in Lambda1
-  DeltaFi = INFshift;
- else
-  DeltaFi = UpFiLmb1[ NrFi ] - UpRifFi[ NrFi ];
-
- // update FiBest, if necessary - - - - - - - - - - - - - - - - - - - - - - -
-
- if( UpFiLmb1[ NrFi ] < UpFiBest ) {
-  UpFiBest = UpFiLmb1[ NrFi ];
-  if( MaxSol > 1 )
-   LmbdBst = Lambda1;
-  }
 
  // get new linearizations- - - - - - - - - - - - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -2326,7 +2325,7 @@ bool BundleSolver::FiAndGi( Index wFi )
 
  return( ( LwFiLmb1[ NrFi ] > LwTrgt ) || ( UpFiLmb1[ NrFi ] < UpTrgt ) );
 
- }  // end( BundleSolver::FiAndGi() )  - - - - - - - - - - - - - - - - - - - -
+ }  // end( BundleSolver::FiAndGi )
 
 /*--------------------------------------------------------------------------*/
 
@@ -2356,7 +2355,7 @@ void BundleSolver::GotoLambda1( void )
   CheckAlfa();
  #endif
 
- }  // end( GotoLambda1 )
+ }  // end( BundleSolver::GotoLambda1 )
 
 /*--------------------------------------------------------------------------*/
 
@@ -2386,7 +2385,7 @@ void BundleSolver::SimpleBStrat( void )
   CheckBundle();
  #endif
 
- }  // end( BundleSolver::SimpleBStrat )- - - - - - - - - - - - - - - - - - -
+ }  // end( BundleSolver::SimpleBStrat )
 
 /*--------------------------------------------------------------------------*/
 
@@ -2414,7 +2413,7 @@ void BundleSolver::Log1( void )
  if( BPar6 )
   *f_log << " ~ BP3 = " << aBP3;
 
- } // end( BundleSolver::Log1 )  - - - - - - - - - - - - - - - - - - - - - - -
+ } // end( BundleSolver::Log1 )
 
 /*--------------------------------------------------------------------------*/
 
@@ -2439,7 +2438,7 @@ void BundleSolver::Log2( void )
    *f_log << UpFiLmb1[ NrFi ] << " ~ Alfa1 = " << Alfa1[ NrFi ]
 	  << " ~ Gi1xd = " << - ScPr1[ NrFi ] << std::endl;
 
- } // end( BundleSolver::Log2 )  - - - - - - - - - - - - - - - - - - - - - - -
+ } // end( BundleSolver::Log2 )
 
 /*--------------------------------------------------------------------------*/
 /*-------------------------- PRIVATE METHODS -------------------------------*/
@@ -2469,25 +2468,24 @@ void BundleSolver::InitMP( void )
  if( MPName & 8 )
   Master->CheckIdentical();
 
- }  // end( BundleSolver::InitMP( ) )  - - - - - - - - - - - - - - - - - - - -
+ }  // end( BundleSolver::InitMP )
 
 /*--------------------------------------------------------------------------*/
 
 bool BundleSolver::FindNext( Index & wFi )
 {
- Index PrWFi = wFi;
- bool NextIsAccepted = false;
+ Index InitwFi = wFi;
  do {
   wFi = ( wFi + 1 ) % NrFi;
   if( ( FiStatus[ wFi ] == kUnEval ) ||
       ( ( FiStatus[ wFi ] < kError ) && ( FiStatus[ wFi ] > kOK ) &&
 	( CurrNrEvls[ wFi ] < MaxNrEvls ) ) )
-   NextIsAccepted = true;
-  } while( ( ! NextIsAccepted ) && ( wFi != PrWFi ) );
+   return( true );
+  } while( wFi != InitwFi );
 
- return( NextIsAccepted );
+ return( false );
 
- } // end( BundleSolver::FindNext( ) )  - - - - - - - - - - - - - - - - - - - -
+ } // end( BundleSolver::FindNext )
 
 /*--------------------------------------------------------------------------*/
 
@@ -2627,7 +2625,7 @@ Index BundleSolver::BStrategy( Index wFi )
       }
     }
 
-  if( wh == InINF )  // nothing valis found (??)
+  if( wh == InINF )  // nothing valid found (??)
    return( wh );
   }
  else {
@@ -2764,7 +2762,7 @@ Index BundleSolver::BStrategy( Index wFi )
 
  return( wh );
 
- }  // end( BundleSolver::BStrategy ) - - - - - - - - - - - - - - - - - - - -
+ }  // end( BundleSolver::BStrategy )
 
 /*--------------------------------------------------------------------------*/
 
@@ -2797,7 +2795,7 @@ Index BundleSolver::FindAPlace( Index wFi )
 
  return( wh );
 
- }  // end( BundleSolver::FindAPlace )- - - - - - - - - - - - - - - - - - - -
+ }  // end( BundleSolver::FindAPlace )
 
 /*--------------------------------------------------------------------------*/
 
@@ -2808,7 +2806,7 @@ HpNum BundleSolver::Heuristic1( void )
  else
   return( t * ( ( DeltaFi + Alfa1[ NrFi ] ) / ( 2 * Alfa1[ NrFi ] ) ) );
 
- } // end( BundleSolver::Heuristic1() ) - -  - - - - - - - - - - - - - - - - -
+ } // end( BundleSolver::Heuristic1 )
 
 /*--------------------------------------------------------------------------*/
 
@@ -2819,7 +2817,7 @@ HpNum BundleSolver::Heuristic2( void )
  else
   return( t * abs( vStar[ NrFi ] / ( 2 * ( vStar[ NrFi ] + DeltaFi ) ) ) );
 
- } // end( BundleSolver::Heuristic2() ) - -  - - - - - - - - - - - - - - - - -
+ } // end( BundleSolver::Heuristic2 )
 
 /*--------------------------------------------------------------------------*/
 
@@ -2875,7 +2873,7 @@ void BundleSolver::guts_of_destructor( void )
 
  v_c05f.clear();
 
- }  // end( BundleSolver:guts_of_destructor ) - - - - - - - - - - - - - - - -
+ }  // end( BundleSolver:guts_of_destructor )
 
 /*--------------------------------------------------------------------------*/
 
@@ -2903,7 +2901,7 @@ void BundleSolver::ReSetAlg( unsigned char RstLvl )
  else                     // reset the current point to all-0 - - - - - - - - -
   Lambda.assign( NumVar , 0 );
 
- }  // end( BundleSolver::ReSetAlg ) - - - - - - - - - - - - - - - - - - - - -
+ }  // end( BundleSolver::ReSetAlg )
 
 /*--------------------------------------------------------------------------*/
 
@@ -2974,7 +2972,7 @@ void BundleSolver::Delete( cIndex i , bool ModDelete )
    if( ItemVcblr[ h ].second == Inf<Index>() )
     FreList.push( h );
   }
- }  // end( BundleSolver::Delete() ) - - - - - - - - - - - - - - - - - - - - -
+ }  // end( BundleSolver::Delete )
 
 /*--------------------------------------------------------------------------*/
 
@@ -3014,7 +3012,7 @@ void BundleSolver::UpdtaBP3( void )
   if( aBP3 < BPar4 )
    aBP3 = BPar4;
 
- }  // end( BundleSolver::UpdtaBP3 ) - - - - - - - - - - - - - - - - - - - - -
+ }  // end( BundleSolver::UpdtaBP3 )
 
 /*--------------------------------------------------------------------------*/
 
@@ -3036,15 +3034,14 @@ bool BundleSolver::IsOptimal( double eps ) const
   return( ( Sigma <= err ) &&
 	  ( DSTS <= std::min( AAccSol , RAccSol * std::abs( tStar ) ) ) );
 
- } // end( BundleSolver::IsOptimal() ) - - - - - - - - - - - - - - - - - - - -
+ } // end( BundleSolver::IsOptimal )
 
 /*--------------------------------------------------------------------------*/
 
 bool BundleSolver::CheckAlfa( const bool All )
 {
  return( Sigma >= - t * m3 * Master->ReadDStart( t ) );
-
- }  // end( CheckAlfa )  - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ }
 
 /*--------------------------------------------------------------------------*/
 
@@ -3092,7 +3089,7 @@ void BundleSolver::FModChg( VarValue shift , Index wFi )
  UpRifFi[ wFi ] += shift;
  UpRifFi[ NrFi ] += shift;
 
- } // end ( BundleSolver::FModChg )  - - - - - - - - - - - - - - - - - - - - -
+ }  // end( BundleSolver::FModChg )
 
 /*--------------------------------------------------------------------------*/
 
@@ -3121,7 +3118,7 @@ void BundleSolver::remove_from_global_pool( Index k , Index i , bool hard )
 	   ( ( BPar7 & 3 ) ? vBPar2[ NrFi ] : Inf<Index>() ) ) )
    --FrFItem[ k ];
 
- }  // end( remove_from_global_pool )
+ }  // end( BundleSolver::remove_from_global_pool )
 
 /*--------------------------------------------------------------------------*/
 
@@ -3147,7 +3144,7 @@ Index BundleSolver::find_place_in_global_pool( Index k )
 
  return( gpp );
 
- }  // end( find_place_in_global_pool )
+ }  // end( BundleSolver::find_place_in_global_pool )
 
 /*--------------------------------------------------------------------------*/
 
@@ -3266,7 +3263,8 @@ void BundleSolver::reset_bundle( void )
  whisG1.assign( NrFi , InINF );
 
  Master->RmvItems();
- }
+
+ }  // end( BundleSolver::reset_bundle )
 
 /*--------------------------------------------------------------------------*/
 
@@ -3334,13 +3332,13 @@ bool BundleSolver::is_special_GroupMod( GroupModification & gmod )
 
  return( false );
 
- }  // end( BundleSolver::is_special_GroupMod )- - - - - - - - - - - - - - - -
+ }  // end( BundleSolver::is_special_GroupMod )
 
 /*--------------------------------------------------------------------------*/
 
 void BundleSolver::flatten_Modification_list( Lst_sp_Mod & vmt , sp_Mod mod )
 {
- const auto tmod = std::dynamic_pointer_cast<GroupModification>( mod );
+ const auto tmod = std::dynamic_pointer_cast< GroupModification >( mod );
  if( tmod && ( ! is_special_GroupMod( *tmod ) ) )
   for( auto submod : tmod->sub_Modifications() )
    flatten_Modification_list( vmt , submod );
@@ -4622,7 +4620,7 @@ void BundleSolver::process_outstanding_Modification( void )
   CheckAlfa();
  #endif
 
- }  // end( BundleSolver::process_outstanding_Modification ) - - - - - - - - -
+ }  // end( BundleSolver::process_outstanding_Modification )
 
 /*--------------------------------------------------------------------------*/
 
@@ -4997,7 +4995,7 @@ void BundleSolver::FakeFiOracle::GetBDesc( cIndex wFi , int *Bbeg ,
       }
      }
 
- }  // end( BundleSolver::FakeFiOracle::GetBDesc() ) - - - - - - - - - - - - -
+ }  // end( BundleSolver::FakeFiOracle::GetBDesc )
 
 /*--------------------------------------------------------------------------*/
 
@@ -5010,7 +5008,7 @@ Index BundleSolver::FakeFiOracle::GetANZ( cIndex wFi ,
  auto LagB = static_cast<LagBFunction *>( bslv->v_c05f[ wFi - 1 ] );
  return( LagB->get_NzMat() );
 
- } // end ( BundleSolver::FakeFiOracle::GetANZ() ) - - - - - - - - - - - - - -
+ } // end ( BundleSolver::FakeFiOracle::GetANZ )
 
 /*--------------------------------------------------------------------------*/
 
@@ -5024,7 +5022,7 @@ void BundleSolver::FakeFiOracle::GetADesc( cIndex wFi , int *Abeg , int *Aind ,
  auto LagB = static_cast<LagBFunction *>( bslv->v_c05f[ wFi - 1 ] );
  LagB->get_MatDesc( Abeg , Aind , Aval , strt , stp );
 
- } // end ( BundleSolver::FakeFiOracle::GetANZ() ) - - - - - - - - - - - - - -
+ } // end ( BundleSolver::FakeFiOracle::GetANZ )
 
 /*--------------------------------------------------------------------------*/
 

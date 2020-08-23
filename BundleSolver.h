@@ -399,13 +399,13 @@ public:
  /** Void constructor: does nothing special, except verifying that the
   * template argument derives from MCFClass. */
 
- BundleSolver( void ) : CDASolver() , FakeFi( this ) , Result( kUnEval ) ,
-  NumVar( 0 ) , NrFi( 0 ) , SCalls( 0 ) , ParIter( 0 ) , NrEasy( 0 ) ,
-  LHasChgd( true ) , tHasChgd( true ) , t( 0 ) , Prevt( 0 ) , Sigma( 0 ) ,
-  DSTS( 0 ) , vStar( 0 ) , DeltaFi( 0 ) , EpsU( 0 ) , CSSCntr( 0 ) ,
-  CNSCntr( 0 ) , TrueLB( false ) , SSDone( true ) , aBP3( 0 ) ,
-  f_lf( nullptr ) , Master( nullptr ) , UpTrgt( 0 ) , LwTrgt( 0 ) ,
-  UpFiBest( Inf< VarValue >() ) , MaxNrEvls( 0 ) , DeltaStar( 0 ) , NrmD( 0 )
+ BundleSolver( void ) : CDASolver() , Result( kUnEval ) , NumVar( 0 ) ,
+  NrFi( 0 ) , SCalls( 0 ) , ParIter( 0 ) , NrEasy( 0 ) , LHasChgd( true ) ,
+  tHasChgd( true ) , t( 0 ) , Prevt( 0 ) , Sigma( 0 ) , DSTS( 0 ) ,
+  DeltaFi( 0 ) , EpsU( 0 ) , CSSCntr( 0 ) , CNSCntr( 0 ) , TrueLB( false ) ,
+  SSDone( true ) , f_lf( nullptr ) , Master( nullptr ) , UpTrgt( 0 ) ,
+  LwTrgt( 0 ) , UpFiBest( INFshift ) , UpFiLmb1def( 0 ) , LwFiLmb1def( 0 ) ,
+  DeltaStar( 0 ) , NrmD( 0 ) , aBP3( 0 ) , FakeFi( this ) 
  {
   // ensure all parameters are properly given their default value
   MaxIter = CDASolver::get_dflt_int_par( intMaxIter );
@@ -1135,6 +1135,50 @@ public:
  bool FiAndGi( Index wFi );
 
 /*--------------------------------------------------------------------------*/
+
+ void update_UpFiLambd1( Index wFi , VarValue nval )
+ {
+  if( UpFiLmb1[ wFi ] <= nval )
+   return;
+
+  if( UpFiLmb1[ wFi ] == INFshift )
+   ++UpFiLmb1def;
+
+  if( UpFiLmb1def == NrFi ) {
+   UpFiLmb1[ wFi ] = nval;
+   UpFiLmb1[ NrFi ] = std::accumulate( UpFiLmb1.begin() , --(UpFiLmb1.end()) ,
+				       f_lf ? f_lf->get_upper_estimate() : 0 );
+   }
+  else {
+   if( UpFiLmb1[ NrFi ] < INFshift )
+    UpFiLmb1[ NrFi ] += nval - UpFiLmb1[ wFi ];
+   UpFiLmb1[ wFi ] = nval;
+   }
+  }
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+
+ void update_LwFiLambd1( Index wFi , VarValue nval )
+ {
+  if( LwFiLmb1[ wFi ] >= nval )
+   return;
+
+  if( LwFiLmb1[ wFi ] == -INFshift )
+   ++LwFiLmb1def;
+
+  if( LwFiLmb1def == NrFi ) {
+   LwFiLmb1[ wFi ] = nval;
+   LwFiLmb1[ NrFi ] = std::accumulate( LwFiLmb1.begin() , --(LwFiLmb1.end()) ,
+				       f_lf ? f_lf->get_lower_estimate() : 0 );
+   }
+  else {
+   if( LwFiLmb1[ NrFi ] > -INFshift )
+    LwFiLmb1[ NrFi ] += nval - LwFiLmb1[ wFi ];
+   LwFiLmb1[ wFi ] = nval;
+   }
+  }
+
+/*--------------------------------------------------------------------------*/
  /* Move the current point to Lambda1. */
 
  void GotoLambda1( void );
@@ -1190,19 +1234,20 @@ public:
 
  // algorthmic parameters - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- int MaxSol;       ///< maximum number of different solutions to report
+ int MaxSol;        ///< maximum number of different solutions to report
+ Index MaxNrEvls;   ///< maximum total number of function evaluations
 
- double RelAcc;    ///< relative accuracy for declaring a solution optimal
- double AbsAcc;    ///< absolute accuracy for declaring a solution optimal
- double RAccSol;   ///< maximum relative error in any reported solution
- double AAccSol;   ///< maximum absolute error in any reported solution
- double RelMPAcc;  ///< relative optimality accuracy for the Master Problem
- double RMPAccSol; ///< relative feasibility accuracy for the Master Problem
+ double RelAcc;     ///< relative accuracy for declaring a solution optimal
+ double AbsAcc;     ///< absolute accuracy for declaring a solution optimal
+ double RAccSol;    ///< maximum relative error in any reported solution
+ double AAccSol;    ///< maximum absolute error in any reported solution
+ double RelMPAcc;   ///< relative optimality accuracy for the Master Problem
+ double RMPAccSol;  ///< relative feasibility accuracy for the Master Problem
 
- Index MaxIter;    ///< maximum number of iterations
- double MaxTime;   ///< maximum time (in seconds) for each call to Solve()
+ Index MaxIter;     ///< maximum number of iterations
+ double MaxTime;    ///< maximum time (in seconds) for each call to Solve()
 
- double tStar;     ///< optimality related parameter: "scaling" of Fi
+ double tStar;      ///< optimality related parameter: "scaling" of Fi
 
  int LogVerb;       ///< "verbosity" of the log
 
@@ -1216,10 +1261,10 @@ public:
 
  double mxIncr;     ///< max increase t parameter
  double mnIncr;     ///< min increase t parameter
- int MnSSC;         ///< min good iterations to do a SS 
+ Index MnSSC;       ///< min good iterations to do a SS 
  double mxDecr;     ///< max decrease t parameter
  double mnDecr;     ///< min decrease t parameter
- int MnNSC;         ///< max bad iterations to do a NS 
+ Index MnNSC;       ///< max bad iterations to do a NS 
 
  double m1;         ///< m1 parameter for deciding if a SS/NS
  double m2;         ///< m2 parameter for deciding if a SS/NS
@@ -1232,6 +1277,12 @@ public:
  int tSPar1;        ///< int parameter for long-term t-strategy
  double tSPar2;     ///< double parameter for long-term t-strategy
 
+ int MPName;        /**< bit 0 = 0: MP solver == QPPenalty
+		     * bit 0 = 1: MP == OSiMPSolver
+		     * bit 1 = 1: Cplex, bit 1 = 0 CLP
+		     * bit 2 = 1: Quadratic, bit 2 = 0 BoxStep
+		     * + bit 3 = 1 (+8) = check for duplicates. */
+
  Index MxAdd;       ///< max variables added per iteration in QPPenaltyMP
  Index MxRmv;       ///< max variables added per iteration in QPPenaltyMP
 
@@ -1242,6 +1293,8 @@ public:
  Index threads;     ///< number of threads ( for OSIMPSolver only )
 
  Index MPlvl;       ///< log verbosity of master problem
+
+ int RstAlgPrm;     ///< reset parameter, bit-wise coded
 
  // generic fields- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -1256,11 +1309,11 @@ public:
  Vec_Bool IsEasy;   ///< tells which component of Fi is "easy"
  Index NrEasy;      ///< number of "easy" component of Fi
 
- std::vector<VarValue> Lambda;   ///< the current point
+ Vec_VarValue Lambda;   ///< the current point
 
- std::vector<VarValue> Lambda1;  ///< the tentative point
+ Vec_VarValue Lambda1;  ///< the tentative point
 
- std::vector<VarValue> LmbdBst;  ///< the best point found so far
+ Vec_VarValue LmbdBst;  ///< the best point found so far
 
  bool LHasChgd;       /**< true if Lambda has changed since the latest call
 		       * to FiAndGi(): allows repeated calls in the same
@@ -1284,24 +1337,24 @@ public:
  Vec_VarValue Alfa1;  /**< linearization error of G[ WhIsG1[ k ] ] w.r.t. the
 		       * current point Lambda. */
 
- Vec_VarValue LowerBound;  ///< Lower Bound over (all the components of) Fi
+ Vec_VarValue LowerBound;  ///< Lower Bound over (each component of) Fi
 
- double t;             ///< the (tremendous) t parameter
- double Prevt;         ///< what t were before being changed for funny reasons
+ VarValue t;           ///< the (tremendous) t parameter
+ VarValue Prevt;       ///< what t were before being changed for funny reasons
 
- double Sigma;         ///< Sigma*: convex combination of the Alfa's
- double DSTS;          /**< D*_{t*}( -z* ), the other part of the dual
+ VarValue Sigma;       ///< Sigma*: convex combination of the Alfa's
+ VarValue DSTS;        /**< D*_{t*}( -z* ), the other part of the dual
 			* objective */
  Vec_VarValue vStar;   ///< v*, the predicted improvement
 
- double DeltaFi;       ///< FiLambda - FiLambda1
- double EpsU;          ///< precison required by the long-term t-strategy
+ VarValue DeltaFi;     ///< FiLambda - FiLambda1
+ VarValue EpsU;        ///< precison required by the long-term t-strategy
 
- int CSSCntr;          ///< counter of consecutive SS
+ Index CSSCntr;        ///< counter of consecutive SS
 
- int CNSCntr;          ///< counter of consecutive NS
+ Index CNSCntr;        ///< counter of consecutive NS
 
- Subset vBPar2;  ///< dimension of the global pools of each component
+ Subset vBPar2;        ///< size of the global pools of each component
 
  std::priority_queue< Index , std::vector< Index > ,
                       std::greater< Index > > FreList;
@@ -1342,8 +1395,8 @@ public:
  Subset MaxItem;  ///< the first unused item in each global pool
 
  /** Vocabulary of items: ItemVcblr[ i ].first is the component name
-  * and ItemVcblr[ i ].second field is the name in the global pool of
-  * that component for item in position i of the bundle (master problem).
+  * and ItemVcblr[ i ].second is the name in the global pool of that
+  * component for item in position i of the bundle (master problem).
   * ItemVcblr[ i ].second == INF means that position i in the bundle is
   * not used. */
 
@@ -1378,50 +1431,37 @@ public:
 		       * than a "conditional" one */
  bool SSDone;         ///< true if the laste step was a SS
 
- Subset FiStatus;
+ Subset FiStatus;     ///< status of last computation of each component
 
- int RstAlgPrm; // reset parameter bt-wise coded
-
-/*--------------------------------------------------------------------------*/
-
- std::vector< std::pair < Index , LinearCombination > > zA;
-
- /* the vector of the pairs  important linearization name and the
-    linear combination used to form it */
-
- std::vector< C05Function * > v_c05f; /* the vector of the components of the
-                                         sum function */
+ std::vector< C05Function * > v_c05f; /**< the vector of the components of the
+                                       * sum function */
  LinearFunction * f_lf;  ///< the 0-th component of the sum function
 
  MPSolver * Master;      ///< (pointer to) the Master Problem Solver
 
- std::vector<MILPSolver*> MILP_s; /* MILP solver used to read the
-                                     easy part of the sub-problems */
+ std::vector< MILPSolver * > MILP_s; /**< MILP solvera used to read the
+				      * easy components */
 
- std::vector<ColVariable *> LamVcblr;    // the set of indices of Lambda
+ std::vector< ColVariable * > LamVcblr;  ///< map Lambda -> ColVariable
 
- int MPName;       // 0 MP solver == QPPenalty
-                   // otherwise MP == OSiMPSolver
-                   // bit 1 = 1 Cplex, bit 1 = 0 CLP
-                   // bit 2 = 1 Quadratic, bit 2 = 0 BoxStep
+ VarValue UpTrgt;        ///< upper target
+ VarValue LwTrgt;        ///< lower target
 
- VarValue UpTrgt; // upper target
- VarValue LwTrgt; // lower target
-
- VarValue UpFiBest;   // Fi best value vector
+ VarValue UpFiBest;      ///< Fi best value vector
 
  Vec_VarValue UpRifFi;    /* The value of Fi[ k ]() where the zero of the
 			   * Cutting Plane models are fixed: it is ==
 			   * FiLambda[ k ]() except when FiLambda[ k ]()
 			   * == INF */
 
- Vec_VarValue UpFiLmb1;   ///< upper function value vector at the Lambda1
- Vec_VarValue LwFiLmb1;   ///< lower function value vector at the Lambda1
+ Vec_VarValue UpFiLmb1;   ///< upper function values at Lambda1
+ Vec_VarValue LwFiLmb1;   ///< lower function values at Lambda1
+ Index UpFiLmb1def;       ///< how many entries of UpFiLmb1 are < INF
+ Index LwFiLmb1def;       ///< how many entries of LwFiLmb1 are > -INF
 
  Vec_VarValue UpFiLmb;    ///< upper function value vector at Lambda
  Vec_VarValue LwFiLmb;    ///< lower function value vector at Lambda
 
- Index MaxNrEvls;
  Subset CurrNrEvls;
 
  double DeltaStar;
@@ -1458,6 +1498,10 @@ public:
 /*--------------------------------------------------------------------------*/
 /*--------------------------- GENERAL NOTES --------------------------------*/
 /*--------------------------------------------------------------------------*/
+/** FakeFiOracle implements the part of the FiOracle interface that is
+ * strictly necessary to use a MPSolver inside BundleSolver. This hack will
+ * one day be replaced with a native implementation of the master problem
+ * solver, but until then, there you go. */
 
 class FakeFiOracle : public FiOracle
 {
@@ -1473,7 +1517,6 @@ class FakeFiOracle : public FiOracle
 /*--------------------------------------------------------------------------*/
 /** @name Public Types
     @{ */
-
 
 /*@} -----------------------------------------------------------------------*/
 /*--------------------- PUBLIC METHODS OF THE CLASS ------------------------*/
@@ -1622,8 +1665,7 @@ class FakeFiOracle : public FiOracle
 
 /*--------------------------------------------------------------------------*/
 
-   Index GetGi( SgRow SubG , cIndex_Set &SGBse ,
-		cIndex Name = Inf<Index>() ,
+   Index GetGi( SgRow SubG , cIndex_Set &SGBse , cIndex Name = Inf<Index>() ,
 		cIndex strt = 0 , Index stp = Inf<Index>() ) override;
 
 /*--------------------------------------------------------------------------*/
@@ -1703,7 +1745,7 @@ class FakeFiOracle : public FiOracle
 
  void InitMP( void );
 
- bool FindNext( Index &wFi );
+ bool FindNext( Index & wFi );
 
 /*--------------------------------------------------------------------------*/
 
