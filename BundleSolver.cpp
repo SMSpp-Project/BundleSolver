@@ -1801,20 +1801,33 @@ void BundleSolver::FormD( void )
   Master->SetPar( MPSolver::kOptEps , RelMPAcc );
 
  Sigma = Master->ReadSigma();              // read Sigma*
- vStar[ NrFi ] = Master->ReadFiBLambda();  // read v*
+ vStar.back() = Master->ReadFiBLambda();   // read the total v*
+ // v* is the predicted decrease in  Lambda1 w.r.t. the value in Lambda;
+ // however, if any (non-easy) component does not have any subgradient
+ // in the bundle this value is not well-defined (the master problem is
+ // added an artificial constraint to make v[ k ] bounded) and +INF is
+ // returned for that component, and therefore for the total v* (the sum)
 
  if( NrEasy ) {                  // there are easy components
   for( Index k = 0 ; k < NrFi ; ++k )
    if( IsEasy[ k ] )                                 // for easy components
-    UpFiLmb1[ k ] = Master->ReadFiBLambda( k + 1 );  // read *exact* Fi-value
+    // the master problem produes the *exact* Fi-value (up = lw) at Lambda1
+    UpFiLmb1[ k ] = LwFiLmb1[ k ] = Master->ReadFiBLambda( k + 1 );
    else                                              // for hard components
     vStar[ k ] = Master->ReadFiBLambda( k + 1 );     // read model value
 
-  // add the contribution of easy components to the total function value
-  if( UpFiLmb[ NrFi ] < INFshift )
+  // adjust the contribution of the easy components to the total v*
+  // easy components are treated differently from hard ones in that
+  // their value in the model is *not* translated by their Fi-value in
+  // Lambda; however, v* has to measure the total decrease predicted by
+  // the model in Lambda1, w.r.t. the value in Lambda. the MPSolver
+  // provides the non-translated value, hence the correction is made
+  // here. note that one could expect a "-=" to be there instead of the
+  // "+=", but this seems to be the right sign for MPSolver behaviour
+  if( ( UpFiLmb.back() < INFshift ) && ( vStar.back() < INFshift ) )
    for( Index k = 0 ; k < NrFi ; k++ )
     if( IsEasy[ k ] )
-     vStar[ NrFi ] += UpRifFi[ k ];
+     vStar.back() += UpRifFi[ k ];
   }
  else                            // there are no easy components
   for( Index k = 0 ; k < NrFi ; ++k )
@@ -1828,8 +1841,8 @@ void BundleSolver::FormD( void )
  // Sigma* + D*_{t*}( -z* ) is the "maximum expected increase" used in
  // the stopping criterion, EpsU is that relative to Fi( Lambda )
 
- if( UpFiLmb[ NrFi ] < INFshift )
-  EpsU = ( DSTS + Sigma ) / std::max( std::abs( UpFiLmb[ NrFi ] ) ,
+ if( UpFiLmb.back() < INFshift )
+  EpsU = ( DSTS + Sigma ) / std::max( std::abs( UpFiLmb.back() ) ,
 				      double( 1 ) );
  else
   EpsU = 1;  // ensure EpsU is initialized somehow
@@ -2014,18 +2027,21 @@ void BundleSolver::FormLambda1( HpNum Tau )
    }
 
  // now compute total upper and lower bound (possibly +/- INF)
-
+ // this requires the value of the linear function, so ensure it is computed
+ if( f_lf )
+  f_lf->compute( true );
+ 
  if( UpFiLmb1def == NrFi )
-  UpFiLmb1[ NrFi ] = std::accumulate( UpFiLmb1.begin() , --(UpFiLmb1.end()) ,
-				      f_lf ? f_lf->get_upper_estimate() : 0 );
+  UpFiLmb1.back() = std::accumulate( UpFiLmb1.begin() , --(UpFiLmb1.end()) ,
+				     f_lf ? f_lf->get_upper_estimate() : 0 );
  else
-  UpFiLmb1[ NrFi ] = INFshift;
+  UpFiLmb1.back() = INFshift;
    
  if( LwFiLmb1def == NrFi )
-  LwFiLmb1[ NrFi ] = std::accumulate( LwFiLmb1.begin() , --(LwFiLmb1.end()) ,
-				      f_lf ? f_lf->get_lower_estimate() : 0 );
+  LwFiLmb1.back() = std::accumulate( LwFiLmb1.begin() , --(LwFiLmb1.end()) ,
+				     f_lf ? f_lf->get_lower_estimate() : 0 );
  else
-  LwFiLmb1[ NrFi ] = -INFshift;
+  LwFiLmb1.back() = -INFshift;
 
  // update the upper and lower targets - - - - - - - - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -2332,8 +2348,21 @@ bool BundleSolver::FiAndGi( Index wFi )
 void BundleSolver::GotoLambda1( void )
 {
  std::vector<VarValue> DeltaFi( NrFi + 1 );  // DeltaFi = UpFiLmb1 - UpRifFi
+ /*!!
+   Note that the code one would expect
+
  std::transform( UpFiLmb1.begin() , UpFiLmb1.end() , UpRifFi.begin() ,
-		 DeltaFi.begin() , std::minus<double>() );
+ 		 DeltaFi.begin() , std::minus<double>() );
+
+   is wrong since the format of DeltaFi expected by ChangeCurrPoint() is
+   different from the one used in BundleSolver; in particular, the total
+   value need be in DeltaFi.front() rather than in DeltaFi.back(), and the
+   value for component i need be in DeltaFi[ i + 1 ] rather than DeltaFi[ i ]
+   !!*/
+
+ DeltaFi.front() = UpFiLmb1.back() - UpRifFi.back();
+ std::transform( UpFiLmb1.begin() , --(UpFiLmb1.end()) , UpRifFi.begin() ,
+ 		 ++(DeltaFi.begin()) , std::minus<double>() );
 
  // do the move - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // Lambda = Lambda1

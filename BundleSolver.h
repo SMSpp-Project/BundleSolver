@@ -1146,8 +1146,8 @@ public:
 
   if( UpFiLmb1def == NrFi ) {
    UpFiLmb1[ wFi ] = nval;
-   UpFiLmb1[ NrFi ] = std::accumulate( UpFiLmb1.begin() , --(UpFiLmb1.end()) ,
-				       f_lf ? f_lf->get_upper_estimate() : 0 );
+   UpFiLmb1.back() = std::accumulate( UpFiLmb1.begin() , --(UpFiLmb1.end()) ,
+				      f_lf ? f_lf->get_upper_estimate() : 0 );
    }
   else {
    if( UpFiLmb1[ NrFi ] < INFshift )
@@ -1168,8 +1168,8 @@ public:
 
   if( LwFiLmb1def == NrFi ) {
    LwFiLmb1[ wFi ] = nval;
-   LwFiLmb1[ NrFi ] = std::accumulate( LwFiLmb1.begin() , --(LwFiLmb1.end()) ,
-				       f_lf ? f_lf->get_lower_estimate() : 0 );
+   LwFiLmb1.back() = std::accumulate( LwFiLmb1.begin() , --(LwFiLmb1.end()) ,
+				      f_lf ? f_lf->get_lower_estimate() : 0 );
    }
   else {
    if( LwFiLmb1[ NrFi ] > -INFshift )
