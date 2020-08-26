@@ -3451,6 +3451,9 @@ void BundleSolver::process_outstanding_Modification( void )
   {
    const auto tmod = std::dynamic_pointer_cast<FunctionMod>( mod );
    if( tmod ) {
+    if( tmod->function() == f_lf )
+     throw( std::logic_error( "changes in 0-th component not handled yet" ) );
+
     auto wFi = get_index_of_component( tmod->function() );
 
     // adjust or reset upper/lower values as needed
@@ -3463,10 +3466,12 @@ void BundleSolver::process_outstanding_Modification( void )
     // sum of the shift, and the order of additions do not change the result
     if( wFi < NrFi )
      FModChg( tmod->shift() , wFi );
-    else
-     // this is a FunctionMod coming from the linear 0-th component,
-     // it surely does not reset any component
+    else {
+     // this is a FunctionMod coming from some unknown Function, not any
+     // business of BundleSolver
+     to_delete = true;
      continue;
+     }
 
     if( reset[ wFi ] ) {
      // any kind of FunctionMod after (before) one that completely reset the

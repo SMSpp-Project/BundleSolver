@@ -1802,14 +1802,11 @@ class FakeFiOracle : public FiOracle
 
  Index get_index_of_component( Function * f )
  {
-  if( f == f_lf )
-   return( Inf< Index >() );
-
   const auto fit = std::find( v_c05f.begin() , v_c05f.end() , f );
   if( fit != v_c05f.end() )
    return( std::distance( v_c05f.begin() , fit ) );
 
-  throw( std::logic_error( "Modifiction from unknonw Function" ) );
+  return( Inf< Index >() );
   }
 
 /*--------------------------------------------------------------------------*/
