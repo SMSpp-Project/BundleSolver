@@ -60,7 +60,7 @@
 /*--------------------------------------------------------------------------*/
 
 #ifndef NDEBUG
- #define CHECK_DS 7
+ #define CHECK_DS 0
  /* Perform long and costly checks on the data structures, coded bit-wise:
   *
   * - CHECK_DS & 1 == checks the data structures representing the bundle and
@@ -560,21 +560,16 @@ int BundleSolver::compute( bool changedvars )
    if( FiAndGi( wFi ) )
     insrtd = true; 
    ++CurrNrEvls[ wFi ];
-   
-   if( MPchgs )  // the MP is guaranteed to change already
-    break;       // all done
 
    // a SS can be performed: note the "<" instead of the "<=" to be found in
    // the actual SS condition below (which means this is ever so slightly
    // stronger than it should), which is there to avoid the condition to
    // work when UpFiLmb1[ NrFi ] == INF == UpTrgt
-   if( UpFiLmb1[ NrFi ] < UpTrgt ) {
+   if( ( ! MPchgs ) && ( UpFiLmb1[ NrFi ] < UpTrgt ) )
     MPchgs = true;
-    break;
-    }
 
-   if( insrtd && ( UpFiLmb[ NrFi ] < INFshift ) &&
-       ( LwFiLmb1[ NrFi ] >= LwTrgt ) ) {
+   if( ( ! MPchgs ) && insrtd && ( UpFiLmb[ NrFi ] < INFshift ) &&
+       ( LwFiLmb1[ NrFi ] >= LwTrgt ) )
     // doing a NS without possibly evaluating all the components is inhibited
     // if the value of (every component of) Fi in Lambda is not known; this
     // corresponds to the assumption in the theory that a finite upper bound
@@ -585,11 +580,12 @@ int BundleSolver::compute( bool changedvars )
     // also, for a NS to guarantee no cycling, at least something must have
     // been inserted (on top of LwFiLmb1 being >= than the lower target)
     MPchgs = true;
-    break;
-    }
 
    if( ! FindNext( wFi ) )  // find next component
-    break;                  // if none, end
+    break;                  // if none, nothing else to do but stop
+
+   if( MPchgs )             // the MP is guaranteed to change
+    break;                  // happily stop
    }
 
   if( ! MPchgs ) {  // noise reduction
@@ -671,7 +667,7 @@ int BundleSolver::compute( bool changedvars )
       ( UpFiBest <= LowerBound[ NrFi ] *
 	            ( 1 - ( LowerBound[ NrFi ] > 0 ? RelAcc : - RelAcc ) ) )
       ) {
-   BLOG( 1 , "           FiBest < conditional LB: unbounded " << std::endl );
+   BLOG( 1 , "            FiBest < conditional LB: unbounded " << std::endl );
    if( UpFiLmb1[ NrFi ] < UpFiLmb[ NrFi ] )  // Lambda1 is better than Lambda
     GotoLambda1();                           // go to Lambda1
    Result = kUnbounded;
