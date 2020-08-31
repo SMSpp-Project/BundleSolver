@@ -60,7 +60,7 @@
 /*--------------------------------------------------------------------------*/
 
 #ifndef NDEBUG
- #define CHECK_DS 0
+ #define CHECK_DS 7
  /* Perform long and costly checks on the data structures, coded bit-wise:
   *
   * - CHECK_DS & 1 == checks the data structures representing the bundle and
@@ -413,6 +413,11 @@ int BundleSolver::compute( bool changedvars )
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // main cycle starts here- - - - - - - - - - - - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // since not all components are necessarily evaluated at all iterations, the
+ // order in which they are seen may be important; keep track of the last
+ // evaluated component so as to proceed round-robin-like across multiple
+ // iterations
+ Index wFi = 0;
 
  do {
   // construct the direction d- - - - - - - - - - - - - - - - - - - - - - - -
@@ -542,18 +547,33 @@ int BundleSolver::compute( bool changedvars )
 
   // calculate Fi( Lambda1 )- - - - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  // here one might change the value of wFi, corresponding to the first
+  // component to be evaluated, if a non-strictly-round-robin order is
+  // sought for
 
-  Index wFi = 0;
   CurrNrEvls.assign( NrFi , Index( 0 ) );
+  MPchgs = false;
 
-  bool MPchgs = false;  // true if no cycling will occur
-  for( ; ; ) {   // ... possibly more than once due to precision issues
+  for( bool insrtd = false ; ; ) {
+   // round-robin-like loop between the different components
 
-   MPchgs = FiAndGi( wFi );
-   CurrNrEvls[ wFi ]++;
-
-   if( MPchgs )  // if something changes
+   insrtd |= FiAndGi( wFi );
+   ++CurrNrEvls[ wFi ];
+   
+   if( MPchgs )  // the MP is guaranteed to change already
     break;       // all done
+
+   if( UpFiLmb1[ NrFi ] < UpTrgt ) {  // a SS can be performed
+    MPchgs = true;                    // ... and this surely changes the MP
+    break;
+    }
+
+   if( insrtd && ( LwFiLmb1[ NrFi ] > LwTrgt ) ) {
+    // for a NS to guarantee no cycling, at least something must have been
+    // inserted (on top of LwFiLmb1 being > than the lower target)
+    MPchgs = true;
+    break;
+    }
 
    if( ! FindNext( wFi ) )  // find next component
     break;                  // if none, end
@@ -663,7 +683,7 @@ int BundleSolver::compute( bool changedvars )
   // "phase 0" and starts the "phase 1"
 
   if( UpFiLmb[ NrFi ] == INFshift ) {  // if reached feasibility- - - -
-   BLOG( 1 , "           Fi1 < INF ==> SS " << std::endl );
+   BLOG( 1 , "            Fi1 < INF ==> SS " << std::endl );
    GotoLambda1();             // go to the feasible point
    continue;                  // and start the actual minimization of Fi()
    }
@@ -1446,7 +1466,7 @@ void BundleSolver::get_dual_solution( Configuration *solc )
      }
    }
 
-  v_c05f[ k ]->set_important_linearization( std::move( lc ) , 0 ); //??!!
+  v_c05f[ k ]->set_important_linearization( std::move( lc ) );
 
   }  // end( for( k ) )
  }  // end( BundleSolver::get_dual_solution() )
@@ -2031,15 +2051,19 @@ void BundleSolver::FormLambda1( HpNum Tau )
  if( f_lf )
   f_lf->compute( true );
  
- if( UpFiLmb1def == NrFi )
+ if( UpFiLmb1def == NrFi ) {
+  ++UpFiLmb1def;  // all components + the sum computed
   UpFiLmb1.back() = std::accumulate( UpFiLmb1.begin() , --(UpFiLmb1.end()) ,
 				     f_lf ? f_lf->get_upper_estimate() : 0 );
+  }
  else
   UpFiLmb1.back() = INFshift;
    
- if( LwFiLmb1def == NrFi )
+ if( LwFiLmb1def == NrFi ) {
+  ++LwFiLmb1def;  // all components + the sum computed
   LwFiLmb1.back() = std::accumulate( LwFiLmb1.begin() , --(LwFiLmb1.end()) ,
 				     f_lf ? f_lf->get_lower_estimate() : 0 );
+  }
  else
   LwFiLmb1.back() = -INFshift;
 
@@ -2067,6 +2091,8 @@ void BundleSolver::FormLambda1( HpNum Tau )
 
 bool BundleSolver::FiAndGi( Index wFi )
 {
+ // returns true if at least one item was inserted
+ 
  if( NrEasy && IsEasy[ wFi ] )
   return( false );
 
@@ -2124,11 +2150,10 @@ bool BundleSolver::FiAndGi( Index wFi )
  // get new linearizations- - - - - - - - - - - - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- bool HasLinearization;
- bool diagonal;
-
- for( Index Ftchd = 0 ; Ftchd < aBP3 ; ++Ftchd ) {
-  diagonal = true;
+ Index Ftchd = 0;
+ for( ; Ftchd < aBP3 ; ++Ftchd ) {
+  bool diagonal = true;
+  bool HasLinearization;
 
   if( Ftchd == 0 ) {
    // first look for a constraint then for a sub-gradient
@@ -2136,7 +2161,7 @@ bool BundleSolver::FiAndGi( Index wFi )
    if( UpFiLmb1[ wFi ] == INFshift ) {
     HasLinearization = fwFi->has_linearization( diagonal = false );
     if( ! HasLinearization )
-     HasLinearization = fwFi->has_linearization( diagonal );
+     HasLinearization = fwFi->has_linearization( diagonal = true );
     }
    else
     HasLinearization = fwFi->has_linearization( diagonal );
@@ -2145,14 +2170,17 @@ bool BundleSolver::FiAndGi( Index wFi )
    if( UpFiLmb1[ wFi ] == INFshift ) {
     HasLinearization = fwFi->compute_new_linearization( diagonal = false );
     if( ! HasLinearization )
-     HasLinearization = fwFi->compute_new_linearization( diagonal );
+     HasLinearization = fwFi->compute_new_linearization( diagonal = true );
     }
    else
     HasLinearization = fwFi->compute_new_linearization( diagonal );
    }
 
-  if( ! HasLinearization )
-   break;
+  if( ! HasLinearization )  // no new linearization of either type available
+   break;                   // nothing else to do
+
+  if( ! diagonal )          // a vertical linearization is going to be inserted
+   MPchgs = true;           // this changes the MP no matter what else happens
 
   // check if aggregation has to be performed - - - - - - - - - - - - - - - -
   // doing this now could occasionally result in useless aggregations, but it
@@ -2254,8 +2282,6 @@ bool BundleSolver::FiAndGi( Index wFi )
     }
    else                 // the item is a copy, not better than the original
     to_insert = false;  // do nothing
-
-   BLOG( 2 , std::endl );
    }
   else {           // the item is not a copy- - - - - - - - - - - - - - - - -
    // insert the item, if there is space
@@ -2284,13 +2310,13 @@ bool BundleSolver::FiAndGi( Index wFi )
 
    Master->SetItem( wh );   // insert the new item in the MP Solver
 
-   // now find a position in the glonal pool of component wFi where to store
+   // now find a position in the global pool of component wFi where to store
    // the new linearization
    gpp = find_place_in_global_pool( wFi );
 
    if( gpp == Inf<Index>() ) {  // there is none
     // this means that not only the global pool is full, but also the bundle
-    // also full: one can therefore put it in the very place of the item it
+    // is full: one can therefore put it in the very place of the item it
     // replaces, which must be an item of the same component because
     // BStrategy() ensures this
     assert( ItemVcblr[ wh ].first == wFi );    
@@ -2298,7 +2324,7 @@ bool BundleSolver::FiAndGi( Index wFi )
     assert( gpp < vBPar2[ NrFi ] );  
     }
 
-   BLOG( 2 , " stored in " << wh << " (" << gpp << ")" << std::endl  );
+   BLOG( 2 , " stored in " << wh << " (" << gpp << ")"  );
    }
 
   // in all (subgradient) cases, check and update whisG1- - - - - - - - - - -
@@ -2336,10 +2362,10 @@ bool BundleSolver::FiAndGi( Index wFi )
 
   }  // end( items-collecting loop )- - - - - - - - - - - - - - - - - - - - -
 
- // update lower and upper estimates  - - - - - - - - - - - - - - - - - - - -
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- return( ( LwFiLmb1[ NrFi ] > LwTrgt ) || ( UpFiLmb1[ NrFi ] < UpTrgt ) );
+ return( Ftchd > 0 );
 
  }  // end( BundleSolver::FiAndGi )
 
@@ -2418,7 +2444,9 @@ void BundleSolver::SimpleBStrat( void )
 
 /*--------------------------------------------------------------------------*/
 
-double BundleSolver::BetaK( Index wFi ) { return( 1.0 / double( NrEasy ) ); }
+double BundleSolver::BetaK( Index wFi ) {
+ return( 1.0 / double( NrFi - NrEasy ) );
+ }
 
 /*--------------------------------------------------------------------------*/
 

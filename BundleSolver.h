@@ -1145,12 +1145,13 @@ public:
    ++UpFiLmb1def;
 
   if( UpFiLmb1def == NrFi ) {
+   ++UpFiLmb1def;  // all components + the sum computed
    UpFiLmb1[ wFi ] = nval;
    UpFiLmb1.back() = std::accumulate( UpFiLmb1.begin() , --(UpFiLmb1.end()) ,
 				      f_lf ? f_lf->get_upper_estimate() : 0 );
    }
   else {
-   if( UpFiLmb1[ NrFi ] < INFshift )
+   if( UpFiLmb1def > NrFi )
     UpFiLmb1[ NrFi ] += nval - UpFiLmb1[ wFi ];
    UpFiLmb1[ wFi ] = nval;
    }
@@ -1167,12 +1168,13 @@ public:
    ++LwFiLmb1def;
 
   if( LwFiLmb1def == NrFi ) {
+   ++LwFiLmb1def;  // all components + the sum computed
    LwFiLmb1[ wFi ] = nval;
    LwFiLmb1.back() = std::accumulate( LwFiLmb1.begin() , --(LwFiLmb1.end()) ,
 				      f_lf ? f_lf->get_lower_estimate() : 0 );
    }
   else {
-   if( LwFiLmb1[ NrFi ] > -INFshift )
+   if( LwFiLmb1def > NrFi )
     LwFiLmb1[ NrFi ] += nval - LwFiLmb1[ wFi ];
    LwFiLmb1[ wFi ] = nval;
    }
@@ -1320,17 +1322,17 @@ public:
 		       * Lambda, e.g. with increasing precision */
  bool tHasChgd;       ///< true if t has changed since the last MP
 
+ bool MPchgs;         ///< true if we can prove no cycling will occur
+ 
  Subset whisZ;     /**< the position in the bundle where the "aggregate
 		    * subgradient" Z[ k ] of component k is kept in
 		    * whisZ[ k ]; Inf<Index>() == it is not in the bundle */
  std::vector< bool > Zvalid;  /**< Zvalid[ k ] == true if the item in position
 			       * whisZ[ k ] is exactly Z[ k ] as computed by
-		    * the last master problee. Zvalid[ k ] == true ==>
-		    * whisZ[ k ] < INF. if Zvalid[ k ] == false and
-		    * whisZ[ k ] < INF, then Z[ k ] had been previously
-		    * stored in position whisZ[ k ], but the master problem has
-		    * been re-solved since and therefore Z[ k ] is no longer
-		    * current. */
+ * the last master problee. Zvalid[ k ] == true ==> whisZ[ k ] < INF.
+ * if Zvalid[ k ] == false and whisZ[ k ] < INF, then Z[ k ] had been
+ * previously stored in position whisZ[ k ], but the master problem has
+ * been re-solved since and therefore Z[ k ] is no longer current. */
  
  Subset whisG1;    ///< "representative subgradient" for each component
  Vec_VarValue ScPr1;  ///< ScalarProduct( dir , G[ WhIsG1[ k ] ] )
