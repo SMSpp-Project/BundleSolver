@@ -557,20 +557,33 @@ int BundleSolver::compute( bool changedvars )
   for( bool insrtd = false ; ; ) {
    // round-robin-like loop between the different components
 
-   insrtd |= FiAndGi( wFi );
+   if( FiAndGi( wFi ) )
+    insrtd = true; 
    ++CurrNrEvls[ wFi ];
    
    if( MPchgs )  // the MP is guaranteed to change already
     break;       // all done
 
-   if( UpFiLmb1[ NrFi ] < UpTrgt ) {  // a SS can be performed
-    MPchgs = true;                    // ... and this surely changes the MP
+   // a SS can be performed: note the "<" instead of the "<=" to be found in
+   // the actual SS condition below (which means this is ever so slightly
+   // stronger than it should), which is there to avoid the condition to
+   // work when UpFiLmb1[ NrFi ] == INF == UpTrgt
+   if( UpFiLmb1[ NrFi ] < UpTrgt ) {
+    MPchgs = true;
     break;
     }
 
-   if( insrtd && ( LwFiLmb1[ NrFi ] > LwTrgt ) ) {
-    // for a NS to guarantee no cycling, at least something must have been
-    // inserted (on top of LwFiLmb1 being > than the lower target)
+   if( insrtd && ( UpFiLmb[ NrFi ] < INFshift ) &&
+       ( LwFiLmb1[ NrFi ] >= LwTrgt ) ) {
+    // doing a NS without possibly evaluating all the components is inhibited
+    // if the value of (every component of) Fi in Lambda is not known; this
+    // corresponds to the assumption in the theory that a finite upper bound
+    // is known for every component. this implies that eventually all
+    // components will be evaluated, which will give a finite value to
+    // UpFiLmb1[ NrFi ], which is then surely <= UpTrgt == +INF
+    //
+    // also, for a NS to guarantee no cycling, at least something must have
+    // been inserted (on top of LwFiLmb1 being >= than the lower target)
     MPchgs = true;
     break;
     }
