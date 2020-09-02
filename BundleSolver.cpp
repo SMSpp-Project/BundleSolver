@@ -1684,20 +1684,27 @@ void BundleSolver::FormD( void )
  //       when the function is computed, unlike the "hard" one
 
  auto LwrBnd = f_Block->get_valid_lower_bound( false );
- if( LwrBnd > - INFshift ) {
-  TrueLB = true;
-  if( LwrBnd != LowerBound[ NrFi ] ) {
-   LowerBound[ NrFi ] = LwrBnd;
-   Master->SetLowerBound( LowerBound[ NrFi ] - UpRifFi[ NrFi ] );
+ if( TrueLB ) {                         // a "hard LB" was available already
+  if( LwrBnd != LowerBound[ NrFi ] ) {  // but it has changed
+   if( LwrBnd > - INFshift ) {          // and it is still available
+    LowerBound[ NrFi ] = LwrBnd;        // record it
+    LwrBnd -= UpRifFi[ NrFi ];          // and translate it
+    }
+   else                                 // it was available
+    TrueLB = false;                     // but now it is not
+
+   // note that the bound has to be set in the master problem even if it is
+   // -INF, because before it was not so, hence it has to be reset
+   Master->SetLowerBound( LwrBnd );
    }
   }
- else {
-  TrueLB = false;
-  if( LwrBnd != LowerBound[ NrFi ] ) {
-   LowerBound[ NrFi ] = - INFshift;
-   Master->SetLowerBound( - INFshift );
+ else                                   // a "hard LB" was not available
+  if( LwrBnd > - INFshift ) {
+   TrueLB = true;                       // but now it is
+   LowerBound[ NrFi ] = LwrBnd;         // record it
+   // set it in the master problem, translated
+   Master->SetLowerBound( LwrBnd - UpRifFi[ NrFi ] );
    }
-  }
 
  if( ! TrueLB )  // if not, at least pick the a "conditional" one (if any)
   LowerBound[ NrFi ] = f_Block->get_valid_lower_bound( true );
@@ -1723,7 +1730,10 @@ void BundleSolver::FormD( void )
     auto LwrBndk = v_c05f[ k ]->get_global_lower_bound();
     if( LwrBndk != LowerBound[ k ] ) {
      LowerBound[ k ] = LwrBndk;
-     Master->SetLowerBound( LowerBound[ k ] - UpRifFi[ k ] , k + 1 );
+     if( LwrBndk > - INFshift )
+      LwrBndk -= UpRifFi[ k ];
+
+     Master->SetLowerBound( LwrBndk ,  k + 1 );
      }
     }
  #endif
