@@ -75,6 +75,9 @@
   *                   directly computed with fresh data (linearization +
   *                   constant) out of the C05Function agree with these
   *                   stored in the MPSolver
+  *
+  * - CHECK_DS & 8 == checks that the lower bounds out of the C05Function
+  *                   agree with these stored in the MPSolver
   */
 #else
  #define CHECK_DS 0
@@ -1212,11 +1215,14 @@ void BundleSolver::set_Block( Block * block )
     if( v_c05f[ k ]->is_linearization_there( i ) )
      add_to_global_pool( k , i );    
 
-  #if CHECK_DS & 1
-   CheckBundle();
-  #endif
-  //!! PrintBundle();
-
+ //!! PrintBundle();
+ #if CHECK_DS & 1
+  CheckBundle();
+ #endif
+ #if CHECK_DS & 4
+  CheckAlpha();
+ #endif
+ 
  }  // end( BundleSolver::set_Block )
 
 /*--------------------------------------------------------------------------*/
@@ -1733,7 +1739,7 @@ void BundleSolver::FormD( void )
      if( LwrBndk > - INFshift )
       LwrBndk -= UpRifFi[ k ];
 
-     Master->SetLowerBound( LwrBndk ,  k + 1 );
+     Master->SetLowerBound( LwrBndk , k + 1 );
      }
     }
  #endif
@@ -2426,7 +2432,10 @@ void BundleSolver::GotoLambda1( void )
  Alfa1.assign( NrFi + 1 , INFshift );
 
  #if CHECK_DS & 4
-  CheckAlfa();
+  CheckAlpha();
+ #endif
+ #if CHECK_DS & 8
+  CheckLBs();
  #endif
 
  }  // end( BundleSolver::GotoLambda1 )
@@ -2901,6 +2910,25 @@ void BundleSolver::guts_of_destructor( void )
 {
  if( Master ) {
   Master->SetDim();
+  #if( USE_MPTESTER )
+   auto t = dynamic_cast< MPTester * >( Master );
+   assert( t );
+   #if( USE_MPTESTER == 1 )
+    auto o = dynamic_cast< OSIMPSolver * >( t->get_master() );
+   #else
+    auto o = dynamic_cast< OSIMPSolver * >( t->get_slave() );
+   #endif
+   assert( o );
+   o->SetOsi();
+  #else
+   if( MPName & 1 ) {
+    auto o = dynamic_cast< OSIMPSolver * >( Master );
+    assert( o );
+    o->SetOsi();
+    }
+  #endif
+  
+  
   delete Master;
   Master = nullptr;
   }
@@ -3111,13 +3139,6 @@ bool BundleSolver::IsOptimal( double eps ) const
 	  ( DSTS <= std::min( AAccSol , RAccSol * std::abs( tStar ) ) ) );
 
  } // end( BundleSolver::IsOptimal )
-
-/*--------------------------------------------------------------------------*/
-
-bool BundleSolver::CheckAlfa( const bool All )
-{
- return( Sigma >= - t * m3 * Master->ReadDStart( t ) );
- }
 
 /*--------------------------------------------------------------------------*/
 
@@ -4698,7 +4719,7 @@ void BundleSolver::process_outstanding_Modification( void )
   CheckBundle();
  #endif
  #if CHECK_DS & 4
-  CheckAlfa();
+  CheckAlpha();
  #endif
 
  }  // end( BundleSolver::process_outstanding_Modification )
@@ -4819,6 +4840,8 @@ void BundleSolver::CheckAlpha( void )
                                                            : f_log;
  cHpRow tA = Master->ReadLinErr();
  std::vector<VarValue> G( NumVar );
+ //!! const double eps = RMPAccSol;
+ const double eps = 1e-8;
 
  for( Index i = 0 ; i < Master->MaxName() ; ++i )
   if( ItemVcblr[ i ].second < vBPar2[ ItemVcblr[ i ].first ] ) {
@@ -4832,14 +4855,90 @@ void BundleSolver::CheckAlpha( void )
                          std::inner_product( Lambda.begin() , Lambda.end() ,
 					     G.begin() , double( 0 ) );
 
-   if( std::abs( tAi - tA[ i ] ) >= RMPAccSol *
-       std::max( std::max( tAi , UpRifFi[ ItemVcblr[ i ].first ] ) ,
+   if( std::abs( tAi - tA[ i ] ) >= eps *
+       std::max( std::max( std::abs( tAi ) ,
+			   std::abs( UpRifFi[ ItemVcblr[ i ].first ] ) ) ,
 		 double( 1 ) ) )
     *wlog << std::endl << "Alfa[ " << i << " ]: F =  " << tAi << " ~ M = "
 	  << tA[ i ];
     }
  
  }  // end( BundleSolver::CheckAlpha )
+ 
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::CheckLBs( void )
+{
+ std::ostream * wlog = ( ( ! f_log ) || ( LogVerb <= 1 ) ) ? & std::cerr
+                                                           : f_log;
+ //!! const double eps = RMPAccSol;
+ const double eps = 1e-8;
+
+ auto LB = Master->ReadLowerBound();
+ auto GLB = f_Block->get_valid_lower_bound( false );
+ if( TrueLB ) {  // a finite global lower bound is set
+  if( GLB != LowerBound[ NrFi ] )
+   *wlog << std::endl << "globalLB = " << GLB << " != from stored = "
+	 << LowerBound[ NrFi ];
+ 
+  if( LowerBound[ NrFi ] == -INFshift )
+   *wlog << std::endl << "TrueLB but stored LB = - INF";
+  else
+   if( LB == -INFshift )
+    *wlog << std::endl << "LB = " << GLB << " not set in MP";
+   else {
+    LB += UpRifFi[ NrFi ];
+    if( std::abs( LB - GLB ) >= eps *
+	std::max( std::max( std::abs( LB ) , std::abs( UpRifFi[ NrFi ] ) ) ,
+		  double( 1 ) ) )
+     *wlog << std::endl << "LB: F =  " << GLB << " ~ M = " << LB;
+    }
+  }
+ else {
+  GLB = f_Block->get_valid_lower_bound( true );
+  if( GLB != LowerBound[ NrFi ] )
+   *wlog << std::endl << "conditional LB = " << GLB
+	 << " != from stored = " << LowerBound[ NrFi ];
+
+  if( LB > -INFshift )
+   *wlog << std::endl << "unexpected LB = " << LB << " in MP";
+  }
+
+ #if( ! USE_MPTESTER )
+  // QPPenaltyMP does not allow individual lower bounds, and if a MPTester
+  // is used then a QPPenaltyMP is involved anyway
+
+  if( MPName & 1 ) 
+   for( Index k = 0 ; k < NrFi ; ++k ) {
+    if( NrEasy && IsEasy[ k ] )  // skip easy components
+     continue;
+
+    LB = Master->ReadLowerBound( k + 1 );
+    auto C05LB = v_c05f[ k ]->get_global_lower_bound();
+    if( C05LB != LowerBound[ k ] )
+     *wlog << std::endl << "LB( " << k << " ) = " << C05LB
+	   << " != from stored = " << LowerBound[ k ];
+
+    if( LB == -INFshift ) {
+     if( C05LB > -INFshift )
+      *wlog << std::endl << "LB( " << k << " ) = " << C05LB
+	    << " not set in MP";
+     }
+    else
+     if( C05LB == -INFshift )
+      *wlog << std::endl << "unexpected LB( " << k << " ) = " << C05LB
+	    << " in MP";
+     else {
+      LB += UpRifFi[ k ];
+      if( std::abs( LB - C05LB ) >= RMPAccSol *
+	  std::max( std::max( LB , UpRifFi[ k ] ) , double( 1 ) ) )
+       *wlog << std::endl << "LB( " << k << " ): F =  " << C05LB
+	     << " ~ M = " << LB;
+      }
+    }
+ #endif
+ 
+ }  // end( BundleSolver::CheckLBs )
  
 /*--------------------------------------------------------------------------*/
 

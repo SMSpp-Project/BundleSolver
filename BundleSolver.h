@@ -1798,10 +1798,6 @@ class FakeFiOracle : public FiOracle
 
 /*--------------------------------------------------------------------------*/
 
- bool CheckAlfa( const bool All = false );
-
-/*--------------------------------------------------------------------------*/
-
  Index get_index_of_component( Function * f )
  {
   const auto fit = std::find( v_c05f.begin() , v_c05f.end() , f );
@@ -1844,7 +1840,9 @@ class FakeFiOracle : public FiOracle
  void CheckBundle( void );
 
  void CheckAlpha( void );
- 
+
+ void CheckLBs( void );
+
  void PrintBundle( void );
 
 #endif
