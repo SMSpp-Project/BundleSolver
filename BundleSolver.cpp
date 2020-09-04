@@ -46,7 +46,7 @@
 
 /*--------------------------------------------------------------------------*/
 
-#define USE_MPTESTER 0
+#define USE_MPTESTER 1
 
 // if USE_MPTESTER is nonzero, the MPSolver is a MPTester. in particular, if
 // USE_MPTESTER == 1 then the master of the MPTester is an OSIMPSolver and
@@ -60,7 +60,7 @@
 /*--------------------------------------------------------------------------*/
 
 #ifndef NDEBUG
- #define CHECK_DS 0
+ #define CHECK_DS 15
  /* Perform long and costly checks on the data structures, coded bit-wise:
   *
   * - CHECK_DS & 1 == checks the data structures representing the bundle and
@@ -4859,7 +4859,7 @@ void BundleSolver::CheckAlpha( void )
        std::max( std::max( std::abs( tAi ) ,
 			   std::abs( UpRifFi[ ItemVcblr[ i ].first ] ) ) ,
 		 double( 1 ) ) )
-    *wlog << std::endl << "Alfa[ " << i << " ]: F =  " << tAi << " ~ M = "
+    *wlog << std::endl << "Alfa[ " << i << " ]: F = " << tAi << " ~ M = "
 	  << tA[ i ];
     }
  
@@ -4891,7 +4891,7 @@ void BundleSolver::CheckLBs( void )
     if( std::abs( LB - GLB ) >= eps *
 	std::max( std::max( std::abs( LB ) , std::abs( UpRifFi[ NrFi ] ) ) ,
 		  double( 1 ) ) )
-     *wlog << std::endl << "LB: F =  " << GLB << " ~ M = " << LB;
+     *wlog << std::endl << "LB: F = " << GLB << " ~ M = " << LB;
     }
   }
  else {
@@ -4932,7 +4932,7 @@ void BundleSolver::CheckLBs( void )
       LB += UpRifFi[ k ];
       if( std::abs( LB - C05LB ) >= RMPAccSol *
 	  std::max( std::max( LB , UpRifFi[ k ] ) , double( 1 ) ) )
-       *wlog << std::endl << "LB( " << k << " ): F =  " << C05LB
+       *wlog << std::endl << "LB( " << k << " ): F = " << C05LB
 	     << " ~ M = " << LB;
       }
     }
