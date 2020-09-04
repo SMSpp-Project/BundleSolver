@@ -5262,6 +5262,11 @@ Index BundleSolver::FakeFiOracle::GetGi( SgRow SubG , cIndex_Set &SGBse ,
 					 cIndex Name , cIndex strt , Index stp
 					 )
 {
+
+ Index NumVar = bslv->v_c05f[ 0 ]->get_num_active_var();
+ if( stp > NumVar )
+  stp = NumVar;
+
  auto range = make_pair( strt , stp );
 
  if( Name == bslv->vBPar2[ bslv->NrFi ] ) // get the zero-component subgradient
