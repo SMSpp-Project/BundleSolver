@@ -1694,7 +1694,12 @@ void BundleSolver::FormD( void )
   if( LwrBnd != LowerBound[ NrFi ] ) {  // but it has changed
    if( LwrBnd > - INFshift ) {          // and it is still available
     LowerBound[ NrFi ] = LwrBnd;        // record it
-    LwrBnd -= UpRifFi[ NrFi ];          // and translate it
+
+    // translate the value using the reference value of the hard components,
+    // but not that of the easy ones
+    for( Index k = 0 ; k < NrFi ; ++k )
+     if( ( ! NrEasy ) || ( ! IsEasy[ k ] ) )
+      LwrBnd -= UpRifFi[ k ];
     }
    else                                 // it was available
     TrueLB = false;                     // but now it is not
@@ -1708,8 +1713,15 @@ void BundleSolver::FormD( void )
   if( LwrBnd > - INFshift ) {
    TrueLB = true;                       // but now it is
    LowerBound[ NrFi ] = LwrBnd;         // record it
+
+   // translate the value using the reference value of the hard components,
+   // but not that of the easy ones
+   for( Index k = 0 ; k < NrFi ; ++k )
+    if( ( ! NrEasy ) || ( ! IsEasy[ k ] ) )
+     LwrBnd -= UpRifFi[ k ];
+
    // set it in the master problem, translated
-   Master->SetLowerBound( LwrBnd - UpRifFi[ NrFi ] );
+   Master->SetLowerBound( LwrBnd );
    }
 
  if( ! TrueLB )  // if not, at least pick the a "conditional" one (if any)
