@@ -353,9 +353,11 @@ public:
   dbltStar = dblLastParCDAS ,
   ///< optimality parameter: "scaling" of the linearizations
 
-  dblRelMPAcc , ///< relative optimality accuracy for the Master Problem
+  dblMinNrEvls ,  ///< min fraction of components to evaluate at each iter.
 
-  dblRMPAccSol , ///< relative feasibility accuracy for the Master Problem
+  dblRelMPAcc ,   ///< relative optimality accuracy for the Master Problem
+
+  dblRMPAccSol ,  ///< relative feasibility accuracy for the Master Problem
 
   dblBPar5 ,   ///< see intBPar6 above
 
@@ -405,6 +407,7 @@ public:
   DeltaFi( 0 ) , EpsU( 0 ) , CSSCntr( 0 ) , CNSCntr( 0 ) , TrueLB( false ) ,
   SSDone( true ) , f_lf( nullptr ) , Master( nullptr ) , UpTrgt( 0 ) ,
   LwTrgt( 0 ) , UpFiBest( INFshift ) , UpFiLmb1def( 0 ) , LwFiLmb1def( 0 ) ,
+  UpFiLmbdef( 0 ) , LwFiLmbdef( 0 ) , Fi0Lmb( 0 ) , Fi0Lmb1( 0 ) ,
   DeltaStar( 0 ) , NrmD( 0 ) , aBP3( 0 ) , FakeFi( this ) 
  {
   // ensure all parameters are properly given their default value
@@ -435,6 +438,7 @@ public:
   RAccSol = CDASolver::get_dflt_dbl_par( dblRAccSol );
   AAccSol = CDASolver::get_dflt_dbl_par( dblAAccSol );
   tStar = dflt_dbl_par[ dbltStar - dblLastParCDAS ];
+  MinNrEvls = dflt_dbl_par[ dblMinNrEvls - dblLastParCDAS ];
   RelMPAcc = dflt_dbl_par[ dblRelMPAcc - dblLastParCDAS ];
   RMPAccSol = dflt_dbl_par[ dblRMPAccSol - dblLastParCDAS ];
   m1 = dflt_dbl_par[ dblm1 - dblLastParCDAS ];
@@ -478,9 +482,9 @@ public:
   *                  Bundle methods are "almost" monotone ones, they typically
   *   produce only one solution, which is the stability center at termination.
   *   However, this is "almost" true: in fact, that solution may not be the
-  *   best one ever found. If intMaxSol > 1, also the best solution wll to
-  *   be kept and separately reported (assuming the stability center at
-  *   termination is not it).
+  *   best one ever found. If intMaxSol > 1, also the best solution will be
+  *   kept and separately reported (assuming it is not the stability center
+  *   at termination).
   *
   * - intLogVerb [0]: "verbosity" of the BundleSolver log
   *                   0 = no log
@@ -509,6 +513,7 @@ public:
   *
   * - intBPar4 [1]: minmum number of new linearizations to be fetched from
   *                 each (non-easy) C05Function at each function evaluation
+  *
   * - intBPar6 [0]: together with the double parameters dblBPar3, dblBPar4
   *                 and dblBPar5, controls how the actual number of
   *   linearization that are requested to the C05Function evolves as the
@@ -676,7 +681,14 @@ public:
   *              are at the end, especially if the oracle dynamically
   *              generates its variables, so use with caution
   *
-  * - intMaxNrEvls [2]: max number of function evaluation for each iteration
+  * - intMaxNrEvls [2]: max number of function evaluations for each
+  *                (non-easy) C05Function for each iteration; multiple
+  *   iterations may be needed if the C05Function has something like time
+  *   or resource limits which causes it to stop its computation before
+  *   having reached the required thresholds/accuracy. computation may be
+  *   resumed multiple time to try to reach the required results, and this
+  *   is the limit on how many times this will be attempted (for each
+  *   non-easy C05Function) before giving up for good
   *
   * - intMPName [1]: bit-wise encoding of which MPSolver is used:
   *                  bit 0: 0 = QPPenalty, 1 = OSiMPSolver
@@ -771,6 +783,28 @@ public:
   *   Thus, one can directly provide the required absolute accuracy, or
   *   still use tStar to provide the order-of-magnitude of || g ||, and
   *   then use the relative accuracy dblRAccSol.
+  *
+  * - dblMinNrEvls [0]: min fraction of non-easy C05Function evaluated for
+  *                     each iteration. The solver can stop computing
+  *   function values (and linearizations) as soon as the conditions required
+  *   to declare either a SS or a NS are satisfied. If there are many non-easy
+  *   C05Function, this may lead to many master problems been solved before
+  *   even each component being evaluated once. This is especially true at the
+  *   beginning when the value of the function values at the current point are
+  *   unknown, since then the lower target is -INF and it is "too easy" to get
+  *   the NS condition satisfied. This parameter specifies the fraction of the
+  *   total number of non-easy components that need be evaluated before the
+  *   conditions for NS/SS conditions are even checked and the function values
+  *   collecting loop be terminated. It may be useful to do this differently
+  *   depending on the fact that all function values at the current point are
+  *   known or not, which is encoded in the sign of the parameter. If it is
+  *   >= 0, then the minimum number of evaluated components is just
+  *   < number of non-easy C05Function > * dblMinNrEvls. If dblMinNrEvls < 0
+  *   < number of non-easy C05Function > is multiplied by ( - dblMinNrEvls )
+  *   if the value of all non-easy C05Function in the current point is known,
+  *   and by 1 otherwise (which means that, hopefully, all the non-easy
+  *   C05Function will get finite estimates before the master problem is
+  *   solved again).
   *
   * - dblRelMPAcc [1e-8]: relative optimality accuracy for the Master Problem
   *
@@ -1148,7 +1182,7 @@ public:
    ++UpFiLmb1def;  // all components + the sum computed
    UpFiLmb1[ wFi ] = nval;
    UpFiLmb1.back() = std::accumulate( UpFiLmb1.begin() , --(UpFiLmb1.end()) ,
-				      f_lf ? f_lf->get_upper_estimate() : 0 );
+				      Fi0Lmb1 );
    }
   else {
    if( UpFiLmb1def > NrFi )
@@ -1171,12 +1205,58 @@ public:
    ++LwFiLmb1def;  // all components + the sum computed
    LwFiLmb1[ wFi ] = nval;
    LwFiLmb1.back() = std::accumulate( LwFiLmb1.begin() , --(LwFiLmb1.end()) ,
-				      f_lf ? f_lf->get_lower_estimate() : 0 );
+				      Fi0Lmb1 );
    }
   else {
    if( LwFiLmb1def > NrFi )
     LwFiLmb1[ NrFi ] += nval - LwFiLmb1[ wFi ];
    LwFiLmb1[ wFi ] = nval;
+   }
+  }
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+
+ void update_UpFiLambd( Index wFi , VarValue nval )
+ {
+  if( UpFiLmb[ wFi ] <= nval )
+   return;
+
+  if( UpFiLmb[ wFi ] == INFshift )
+   ++UpFiLmbdef;
+
+  if( UpFiLmbdef == NrFi ) {
+   ++UpFiLmbdef;  // all components + the sum computed
+   UpFiLmb[ wFi ] = nval;
+   UpFiLmb.back() = std::accumulate( UpFiLmb.begin() , --(UpFiLmb.end()) ,
+				     Fi0Lmb );
+   }
+  else {
+   if( UpFiLmbdef > NrFi )
+    UpFiLmb[ NrFi ] += nval - UpFiLmb[ wFi ];
+   UpFiLmb[ wFi ] = nval;
+   }
+  }
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+
+ void update_LwFiLambd( Index wFi , VarValue nval )
+ {
+  if( LwFiLmb[ wFi ] >= nval )
+   return;
+
+  if( LwFiLmb[ wFi ] == -INFshift )
+   ++LwFiLmbdef;
+
+  if( LwFiLmbdef == NrFi ) {
+   ++LwFiLmbdef;  // all components + the sum computed
+   LwFiLmb[ wFi ] = nval;
+   LwFiLmb.back() = std::accumulate( LwFiLmb.begin() , --(LwFiLmb.end()) ,
+				     Fi0Lmb );
+   }
+  else {
+   if( LwFiLmbdef > NrFi )
+    LwFiLmb[ NrFi ] += nval - LwFiLmb[ wFi ];
+   LwFiLmb[ wFi ] = nval;
    }
   }
 
@@ -1251,6 +1331,7 @@ public:
 
  double tStar;      ///< optimality related parameter: "scaling" of Fi
 
+ double MinNrEvls;  ///< min fraction of components to evaluate at each iter.
  int LogVerb;       ///< "verbosity" of the log
 
  int BPar1;         ///< parameter for removal of items (B-strategy)
@@ -1463,7 +1544,12 @@ public:
 
  Vec_VarValue UpFiLmb;    ///< upper function value vector at Lambda
  Vec_VarValue LwFiLmb;    ///< lower function value vector at Lambda
+ Index UpFiLmbdef;        ///< how many entries of UpFiLmb are < INF
+ Index LwFiLmbdef;        ///< how many entries of LwFiLmb are > -INF
 
+ VarValue Fi0Lmb;         ///< value of the linear 0-th component in Lambda
+ VarValue Fi0Lmb1;        ///< value of the linear 0-th component in Lambda1
+ 
  Subset CurrNrEvls;
 
  double DeltaStar;

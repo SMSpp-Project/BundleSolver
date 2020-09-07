@@ -46,7 +46,7 @@
 
 /*--------------------------------------------------------------------------*/
 
-#define USE_MPTESTER 1
+#define USE_MPTESTER 0
 
 // if USE_MPTESTER is nonzero, the MPSolver is a MPTester. in particular, if
 // USE_MPTESTER == 1 then the master of the MPTester is an OSIMPSolver and
@@ -60,7 +60,7 @@
 /*--------------------------------------------------------------------------*/
 
 #ifndef NDEBUG
- #define CHECK_DS 15
+ #define CHECK_DS 0
  /* Perform long and costly checks on the data structures, coded bit-wise:
   *
   * - CHECK_DS & 1 == checks the data structures representing the bundle and
@@ -249,6 +249,7 @@ const std::vector< std::string > BundleSolver::int_pars_str = {
 // define and initialize here the vector of double parameters names
 const std::vector< std::string > BundleSolver::dbl_pars_str = {
  "dbltStar" ,
+ "dblMinNrEvls" ,
  "dblRelMPAcc" ,
  "dblRMPAccSol" ,
  "dblBPar5" ,
@@ -293,6 +294,7 @@ const std::map< std::string , BundleSolver::idx_type >
 const std::map< std::string , BundleSolver::idx_type >
  BundleSolver::dbl_pars_map = {
  { "dbltStar" , BundleSolver::dbltStar } ,
+ { "dblMinNrEvls" , BundleSolver::dblMinNrEvls } ,
  { "dblRelMPAcc" , BundleSolver::dblRelMPAcc } ,
  { "dblRMPAccSol" , BundleSolver::dblRMPAccSol } ,
  { "dblBPar5" , BundleSolver::dblBPar5 } ,
@@ -337,6 +339,7 @@ const std::vector< int > BundleSolver::dflt_int_par = {
 // define and initialize here the default double parameters
 const std::vector<double> BundleSolver::dflt_dbl_par = {
  1e+2 ,   // dbltStar
+ 0 ,      // dblMinNrEvls
  1e-8 ,   // dblRelMPAcc
  1e-8 ,   // dblRMPAccSol
  30 ,     // dblBPar5
@@ -557,12 +560,20 @@ int BundleSolver::compute( bool changedvars )
   CurrNrEvls.assign( NrFi , Index( 0 ) );
   MPchgs = false;
 
+  // compute the minimum number of components to evaluate
+  Index minceval = ( NrFi - NrEasy );
+  if( ( MinNrEvls >= 0 ) || ( LwFiLmb1def > NrFi ) )
+   minceval *= std::abs( MinNrEvls );
+  Index ceval = 0;  // how many components have been evaluated so far
+
   for( bool insrtd = false ; ; ) {
    // round-robin-like loop between the different components
 
    if( FiAndGi( wFi ) )
-    insrtd = true; 
-   ++CurrNrEvls[ wFi ];
+    insrtd = true;
+   if( ! CurrNrEvls[ wFi ] )  // not evaluated before
+    ++ceval;                  // one more evaluated
+   ++CurrNrEvls[ wFi ];       // evaluated once more
 
    // a SS can be performed: note the "<" instead of the "<=" to be found in
    // the actual SS condition below (which means this is ever so slightly
@@ -587,6 +598,9 @@ int BundleSolver::compute( bool changedvars )
    if( ! FindNext( wFi ) )  // find next component
     break;                  // if none, nothing else to do but stop
 
+   if( ceval < minceval )   // not evaluated enough components yet
+    continue;               // do not stop regardless of MPchgs
+    
    if( MPchgs )             // the MP is guaranteed to change
     break;                  // happily stop
    }
@@ -1108,8 +1122,9 @@ void BundleSolver::set_Block( Block * block )
  LwFiLmb1.resize( NrFi + 1 );     // ... at the tentative point
  UpFiLmb.resize( NrFi + 1 ,  INFshift );  // upper 
  LwFiLmb.resize( NrFi + 1 , -INFshift );  // ... and lower Fi-value
-                                                 // ... at the current point
+ UpFiLmbdef = LwFiLmbdef = 0;             // ... at the current point
  LowerBound.resize( NrFi + 1 , -INFshift );  // global lower bounds
+
  vStar.resize( NrFi + 1 , 0 );
  whisG1.resize( NrFi , InINF );  // no representative yet
 
@@ -1351,6 +1366,9 @@ void BundleSolver::set_par( const idx_type par , const double value )
   case( dbltStar ):
    tStar = value;
    break;
+  case( dblMinNrEvls ):
+   MinNrEvls = std::max( double( -1 ) , std::min( double( 0 ) , value ) );
+   break;
   case( dblRelMPAcc ):
    if( value <= 0 )
     throw( std::invalid_argument( "RelMPAcc must be > 0" ) );
@@ -1581,6 +1599,9 @@ double BundleSolver::get_dbl_par( const idx_type par ) const
    break;
   case( dbltStar ):
    return( tStar );
+   break;
+  case( dblMinNrEvls ):
+   return( MinNrEvls );
    break;
   case( dblRelMPAcc ):
    return( RelMPAcc );
@@ -2085,13 +2106,18 @@ void BundleSolver::FormLambda1( HpNum Tau )
 
  // now compute total upper and lower bound (possibly +/- INF)
  // this requires the value of the linear function, so ensure it is computed
- if( f_lf )
+ if( f_lf ) {
   f_lf->compute( true );
- 
+  Fi0Lmb1 = f_lf->get_upper_estimate();
+  }
+ else
+  Fi0Lmb1 = 0;
+
+
  if( UpFiLmb1def == NrFi ) {
   ++UpFiLmb1def;  // all components + the sum computed
   UpFiLmb1.back() = std::accumulate( UpFiLmb1.begin() , --(UpFiLmb1.end()) ,
-				     f_lf ? f_lf->get_upper_estimate() : 0 );
+				     Fi0Lmb1 );
   }
  else
   UpFiLmb1.back() = INFshift;
@@ -2099,7 +2125,7 @@ void BundleSolver::FormLambda1( HpNum Tau )
  if( LwFiLmb1def == NrFi ) {
   ++LwFiLmb1def;  // all components + the sum computed
   LwFiLmb1.back() = std::accumulate( LwFiLmb1.begin() , --(LwFiLmb1.end()) ,
-				     f_lf ? f_lf->get_lower_estimate() : 0 );
+				     Fi0Lmb1 );
   }
  else
   LwFiLmb1.back() = -INFshift;
@@ -2180,9 +2206,21 @@ bool BundleSolver::FiAndGi( Index wFi )
 
  FiStatus[ wFi ] = fwFi->compute( ( FiStatus[ wFi ] == kUnEval ) );
 
+ // update UpFiLambd1[ wFi ] (and possibly UpFiLambd1[ NrFi ])
  update_UpFiLambd1( wFi , fwFi->get_upper_estimate() );
- update_LwFiLambd1( wFi , fwFi->get_lower_estimate() );
 
+ // compute the upper bound in Lambda provided by the upper bound in Lambda1
+ // and try to update UpFiLmb[ wFi ] (and possibly UpFiLambd1[ NrFi ])
+ // note that, even if this suceeds and therefore decreases UpFiLmb[ wFi ]
+ // (and possibly UpFiLambd[ NrFi ], which would be a "rather big" decrease
+ // from +INF to something finite), as the theory requires the upper target
+ // is *not* changed
+ c_VarValue LwFi = v_c05f[ wFi ]->get_Lipschitz_constant();
+ if( ( LwFi < INFshift ) && ( UpFiLmb1[ wFi ] < INFshift ) )
+  update_UpFiLambd( wFi , UpFiLmb1[ wFi ] + LwFi * NrmD );
+
+ // update LwFiLambd1[ wFi ] (and possibly LwFiLambd1[ NrFi ])
+ update_LwFiLambd1( wFi , fwFi->get_lower_estimate() );
 
  // get new linearizations- - - - - - - - - - - - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -2216,8 +2254,8 @@ bool BundleSolver::FiAndGi( Index wFi )
   if( ! HasLinearization )  // no new linearization of either type available
    break;                   // nothing else to do
 
-  if( ! diagonal )          // a vertical linearization is going to be inserted
-   MPchgs = true;           // this changes the MP no matter what else happens
+  if( ! diagonal )          // a vertical linearization changes the MP
+   MPchgs = true;           // no matter what else happens
 
   // check if aggregation has to be performed - - - - - - - - - - - - - - - -
   // doing this now could occasionally result in useless aggregations, but it
@@ -2248,13 +2286,32 @@ bool BundleSolver::FiAndGi( Index wFi )
   HpNum ScPr1k;
 
   if( diagonal ) {  // it is a subgradient
-   // update alpha value at Lambda1 point
+   // compute the lower bound in Lambda provided by the subgradient
+   auto FikLmb = Alfa1k +
+    std::inner_product( Lambda.begin() , Lambda.end() , G1 , double( 0 ) );
+
+   // try to update LwFiLmb[ wFi ] (and possibly LwFiLambd[ NrFi ])
+   // note that, even if this suceeds and therefore increases LwFiLmb[ wFi ]
+   // (and possibly LwFiLambd[ NrFi ], which would be a "rather big" increase
+   // from -INF to something finite), as the theory requires the lower target
+   // is *not* changed
+   update_LwFiLambd( wFi , FikLmb );
+
+   // note that given FikLmb, the linearization error in Lambda is obtained
+   // for free as UpFiLmb[ wFi ] - FikLmb; however, the MPSolver interface
+   // requires CheckSubG() to be called and the computation to be done there
+   // (possibly with a larger error, but one day MPSolver will go ...)
+
+   // compute the linearization error in Lambda1
    Alfa1k = UpFiLmb1[ wFi ] - Alfa1k -
     std::inner_product( Lambda1.begin() , Lambda1.end() , G1 , double( 0 ) );
-   eps = Alfa1k;  // this is how much G1 is an eps-subgradent in Lambda1
+
+   // this is the eps so that G1 is an eps-subgradent in Lambda1
+   eps = Alfa1k;
+
    // CheckSubG changes Alfa1k so that G1 is an Alfa1k-subgradent in Lambda
-   cp = Master->CheckSubG( UpFiLmb1[ wFi ] - UpRifFi[ wFi ] , t ,
-			   Alfa1k , ScPr1k );
+   cp = Master->CheckSubG( UpFiLmb1[ wFi ] - UpRifFi[ wFi ] , t , Alfa1k ,
+			   ScPr1k );
    }
   else              // it is a constraint
    cp = Master->CheckCnst( Alfa1k , ScPr1k , Lambda.data() );
@@ -2428,12 +2485,15 @@ void BundleSolver::GotoLambda1( void )
  		 ++(DeltaFi.begin()) , std::minus<double>() );
 
  // do the move - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
- // Lambda = Lambda1
+ // Lambda = Lambda1 and all associated data structures
 
  Lambda.swap( Lambda1 );
  UpFiLmb.swap( UpFiLmb1 );
  LwFiLmb.swap( LwFiLmb1 );
  UpRifFi = UpFiLmb;
+ UpFiLmbdef = UpFiLmb1def;
+ LwFiLmbdef = LwFiLmb1def;
+ Fi0Lmb1 = Fi0Lmb;
 
  // change the current point in the MP Solver - - - - - - - - - - - - - - - -
 
@@ -3014,9 +3074,20 @@ void BundleSolver::ReSetAlg( unsigned char RstLvl )
  if( RstLvl & RstCrr )    // get an initial point - - - - - - - - - - - - - -
   for( Index i = 0 ; i < NumVar ; ++i )
    Lambda[ i ] = LamVcblr[ i ]->get_value();
- else                     // reset the current point to all-0 - - - - - - - - -
+ else {                   // reset the current point to all-0 - - - - - - - -
   Lambda.assign( NumVar , 0 );
+  // "tell" this to the ColVariable of the C05Function(s)
+  for( Index i = 0 ; i < NumVar ; ++i )
+   LamVcblr[ i++ ]->set_value( 0 );
+  }
 
+ if( f_lf ) {
+  f_lf->compute( true );
+  Fi0Lmb = f_lf->get_upper_estimate();
+  }
+ else
+  Fi0Lmb = 0;
+ 
  }  // end( BundleSolver::ReSetAlg )
 
 /*--------------------------------------------------------------------------*/
@@ -3157,24 +3228,48 @@ bool BundleSolver::IsOptimal( double eps ) const
 void BundleSolver::FModChg( VarValue shift , Index wFi )
 {
  if( shift == INFshift ) {      // function changed monotonically up
-  UpFiLmb[ wFi ] = INFshift;    // reset upper function values
-  UpFiLmb[ NrFi ] = INFshift;
+  if( UpFiLmb[ wFi ] < INFshift ) {
+   UpFiLmb[ wFi ] = INFshift;   // reset upper function value for component
+   --UpFiLmbdef;                // one less known
+   }
+  if( UpFiLmb[ NrFi ] < INFshift ) {
+   UpFiLmb[ NrFi ] = INFshift;  // reset total upper function value
+   --UpFiLmbdef;                // one less known
+   }
   UpFiBest = INFshift;          // comprised best one
   return;
   }
 
  if( shift == -INFshift ) {     // function changed monotonically dn
-  LwFiLmb[ wFi ] = -INFshift;   // reset lower function values
-  LwFiLmb[ NrFi ] = -INFshift;
+  if( LwFiLmb[ wFi ] > -INFshift ) {
+   LwFiLmb[ wFi ] = -INFshift;  // reset lower function value for component
+   --LwFiLmbdef;                // one less known
+   }
+  if( LwFiLmb[ NrFi ] > -INFshift ) {
+   LwFiLmb[ NrFi ] = -INFshift; // reset total lower function value
+   --LwFiLmbdef;                // one less known
+   }
   return;
   }
 
  if( std::isnan( shift ) ) {    // function changed unpredictably
-  UpFiLmb[ wFi ] = INFshift;    // reset both upper ...
-  LwFiLmb[ wFi ] = -INFshift;   // ... and lower function values
-  UpFiLmb[ NrFi ] = INFshift;
-  LwFiLmb[ NrFi ] = -INFshift;
+  if( UpFiLmb[ wFi ] < INFshift ) {
+   UpFiLmb[ wFi ] = INFshift;   // reset upper function value for component
+   --UpFiLmbdef;                // one less known
+   }
+  if( UpFiLmb[ NrFi ] < INFshift ) {
+   UpFiLmb[ NrFi ] = INFshift;  // reset total upper function value
+   --UpFiLmbdef;                // one less known
+   }
   UpFiBest = INFshift;          // and of course best one
+  if( LwFiLmb[ wFi ] > -INFshift ) {
+   LwFiLmb[ wFi ] = -INFshift;  // reset lower function value for component
+   --LwFiLmbdef;                // one less known
+   }
+  if( LwFiLmb[ NrFi ] > -INFshift ) {
+   LwFiLmb[ NrFi ] = -INFshift; // reset total lower function value
+   --LwFiLmbdef;                // one less known
+   }
   return;
   }
 
