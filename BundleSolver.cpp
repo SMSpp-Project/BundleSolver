@@ -415,6 +415,7 @@ int BundleSolver::compute( bool changedvars )
  ParIter = 0;
  Result = kStopIter;
  SCalls++;
+ RifeqFi = ( UpRifFi == UpFiLmb );
 
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // main cycle starts here- - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -461,13 +462,12 @@ int BundleSolver::compute( bool changedvars )
   // do the check only if Sigma is "negative enough to matter", otherwise do
   // not even call ReadDStart()
   //
-  // however, avoid doing any of this if Fi( Lambda ) is defined, because if
-  // not then negative linearization errors are "normal" (the reference value
-  // is "random" and there is no reason to believe it's >= than the true
-  // value)
+  // however, avoid doing any of this if the linearization errors are not
+  // computed w.r.t. the "true" value of UpFiLmb but w.r.t. a "random"
+  // reference value, since then the fact that linearization errors are
+  // negative is not meaningful
 
-  if( ( UpFiLmb[ NrFi ] < INFshift ) &&
-      ( Sigma < - max_error( UpRifFi[ NrFi ] , RelAcc ) ) &&
+  if( RifeqFi && ( Sigma < - max_error( UpRifFi[ NrFi ] , RelAcc ) ) &&
       ( Sigma <= - m3 * Master->ReadDStart( t ) ) ) {
    if( t >= tMaior ) {
     BLOG( 1 , " ~ NR required but t maximum" << std::endl );
@@ -490,10 +490,12 @@ int BundleSolver::compute( bool changedvars )
   // the hard long-term t-strategy requires t to increase if the step is too
   // small, and therefore has to be checked before the others
   // however, it is only viable under a quadratic stabilization
-
+  //
+  // however, avoid doing any of this if the linearization errors are not
+  // computed w.r.t. the "true" value of UpFiLmb
+  
   if( ( ( ! ( MPName & 1 ) ) || ( MPName & 4 ) ) &&
-      ( tStar > 0 ) && ( ( tSPar1 & tSP1Msk ) == kHLTTS ) &&
-      ( UpFiLmb[ NrFi ] < INFshift ) ) {
+      ( tStar > 0 ) && ( ( tSPar1 & tSP1Msk ) == kHLTTS ) && RifeqFi ) {
 
    double AFL = std::abs( UpFiLmb[ NrFi ] );
    if( AFL < 1 )
@@ -579,17 +581,16 @@ int BundleSolver::compute( bool changedvars )
    // the actual SS condition below (which means this is ever so slightly
    // stronger than it should), which is there to avoid the condition to
    // work when UpFiLmb1[ NrFi ] == INF == UpTrgt
-   if( ( ! MPchgs ) && ( UpFiLmb1[ NrFi ] < UpTrgt ) )
+   if( ( ! MPchgs ) && ( UpFiLmb1.back() < UpTrgt ) )
     MPchgs = true;
 
-   if( ( ! MPchgs ) && insrtd && ( UpFiLmb[ NrFi ] < INFshift ) &&
-       ( LwFiLmb1[ NrFi ] >= LwTrgt ) )
+   if( ( ! MPchgs ) && insrtd && RifeqFi && ( LwFiLmb1.back() >= LwTrgt ) )
     // doing a NS without possibly evaluating all the components is inhibited
-    // if the value of (every component of) Fi in Lambda is not known; this
-    // corresponds to the assumption in the theory that a finite upper bound
-    // is known for every component. this implies that eventually all
-    // components will be evaluated, which will give a finite value to
-    // UpFiLmb1[ NrFi ], which is then surely <= UpTrgt == +INF
+    // if the linearization errors are not computed w.r.t. the "true" value
+    // of (every component of); this corresponds to the assumption in the
+    // theory that a finite upper bound is known for every component. this
+    // implies that eventually all components will be evaluated, which will
+    // yield a SS
     //
     // also, for a NS to guarantee no cycling, at least something must have
     // been inserted (on top of LwFiLmb1 being >= than the lower target)
@@ -605,49 +606,41 @@ int BundleSolver::compute( bool changedvars )
     break;                  // happily stop
    }
 
-  if( ! MPchgs ) {  // noise reduction
-   t = std::min( t * mxIncr , tMaior );
-   BLOG( 1 , " ~ noise reduction: t increased to " << t << std::endl );
-   tHasChgd = true;
-   if( t >= tMaior )
-    Result = kError;
-   }
-
   // compute DeltaFi- - - - - - - - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-  if( UpFiLmb1[ NrFi ] == INFshift )
+  if( UpFiLmb1.back() == INFshift )
    DeltaFi = INFshift;
   else
-   DeltaFi = UpFiLmb1[ NrFi ] - UpRifFi[ NrFi ];
+   DeltaFi = UpFiLmb1.back() - UpRifFi.back();
 
   // update FiBest- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-  if( UpFiLmb1[ NrFi ] < UpFiBest ) {
-  UpFiBest = UpFiLmb1[ NrFi ];
-  if( MaxSol > 1 )
-   LmbdBst = Lambda1;
-  }
+  if( UpFiLmb1.back() < UpFiBest ) {
+   UpFiBest = UpFiLmb1.back();
+   if( MaxSol > 1 )
+    LmbdBst = Lambda1;
+   }
 
   // compute the "aggregated" Alfa1 and ScPr1 - - - - - - - - - - - - - - - -
   // ... using the "representatives" of all components: these are used in
   // some "global" formulae, such as the t heuristics
 
-  Alfa1[ NrFi ] = 0;
-  ScPr1[ NrFi ] = Master->ReadGid();
+  Alfa1.back() = 0;
+  ScPr1.back() = Master->ReadGid();
 
   for( Index k = 0 ; k < NrFi ; k++ )
    if( whisG1[ k ] < InINF ) {
     if( Alfa1[ k ] == INFshift )
      Alfa1[ k ] = (Master->ReadLinErr())[ whisG1[ k ] ];
 
-    Alfa1[ NrFi ] += Alfa1[ k ];
+    Alfa1.back() += Alfa1[ k ];
 
     if( ScPr1[ k ] == INFshift )
      ScPr1[ k ] = Master->ReadGid( whisG1[ k ] );
 
-    ScPr1[ NrFi ] += ScPr1[ k ];
+    ScPr1.back() += ScPr1[ k ];
     }
    else
     Alfa1[ k ] = ScPr1[ k ] = 0;
@@ -660,7 +653,7 @@ int BundleSolver::compute( bool changedvars )
   // check whether either any error has occurred or time has expired- - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-  if( UpFiLmb1[ NrFi ] == - INFshift ) {
+  if( UpFiLmb1.back() == - INFshift ) {
    BLOG( 1 , " ~ stop (unbounded)" << std::endl );
    Result = kUnbounded;
    break;
@@ -672,21 +665,20 @@ int BundleSolver::compute( bool changedvars )
    break;
    }
 
-  if( tHasChgd ) {  // "noise reduction": t has changed
-   BLOG( 1 , " ~ NR" << std::endl );  // so go solve the master problem again
-   continue;                          // (no NS/SS decision can be made)
-   }
-
   // check for the conditional lower bound- - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
   if( ( ! TrueLB ) &&
-      ( UpFiBest <= LowerBound[ NrFi ] *
-	            ( 1 - ( LowerBound[ NrFi ] > 0 ? RelAcc : - RelAcc ) ) )
+      ( UpFiBest <= LowerBound.back() *
+	            ( 1 - ( LowerBound.back() > 0 ? RelAcc : - RelAcc ) ) )
       ) {
    BLOG( 1 , "            FiBest < conditional LB: unbounded " << std::endl );
-   if( UpFiLmb1[ NrFi ] < UpFiLmb[ NrFi ] )  // Lambda1 is better than Lambda
-    GotoLambda1();                           // go to Lambda1
+   if( UpFiLmb1.back() < UpFiLmb.back() )  // Lambda1 is better than Lambda
+    GotoLambda1();                         // go to Lambda1
+   else                                    // if not
+    if( ! RifeqFi )    // and the alfas are not computed w.r.t. UpFiLmb
+     GotoLambda();     // ensure they are so
+
    Result = kUnbounded;
    break;
    }
@@ -699,21 +691,36 @@ int BundleSolver::compute( bool changedvars )
   // largest value that would have produced a feasible point, i.e.
   // t := *Alfa1 / ( - *ScPr1 )
 
-  if( UpFiLmb1[ NrFi ] == INFshift )
+  if( UpFiLmb1.back() == INFshift )
    continue;
 
-  // avoid the t-changing phase if Lambda was unfeasible but Lambda1 is not -
+  // avoid the t-changing phase if the linearization errors are not reliable-
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-  // this is because we have finally reached a feasible point (or, anyway,
-  // we have firmly established one feasible value), which ends the
-  // "phase 0" and starts the "phase 1"
+  // this is because we have firmly established one feasible (finite) upper
+  // estimate in Lambda1, which ends the "phase 0" in which the linearization
+  // errors were computed against an arbitrary value and starts the "phase 1"
 
-  if( UpFiLmb[ NrFi ] == INFshift ) {  // if reached feasibility- - - -
+  if( ! RifeqFi ) {       // if we are still in "phase 0"
    BLOG( 1 , "            Fi1 < INF ==> SS " << std::endl );
-   GotoLambda1();             // go to the feasible point
-   continue;                  // and start the actual minimization of Fi()
+   GotoLambda1();         // go to the feasible point
+   continue;              // and start the actual minimization of Fi()
    }
 
+  // check if noise reduction has to be done- - - - - - - - - - - - - - - - -
+  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+  if( ! MPchgs ) {
+   t = std::min( t * mxIncr , tMaior );
+   BLOG( 1 , " ~ noise reduction: t increased to " << t << std::endl );
+   tHasChgd = true;
+   if( t >= tMaior )
+    Result = kError;
+   }
+
+
+
+
+  
   // the NS / SS decision - - - - - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -724,7 +731,7 @@ int BundleSolver::compute( bool changedvars )
 
   HpNum tt;
   if( ( SSDone && ( ! ( tSPar1 & 1 ) ) ) ||
-       ( ( ! SSDone ) && ( tSPar1 & 2 ) ) )
+      ( ( ! SSDone ) && ( tSPar1 & 2 ) ) )
    tt = Heuristic1();
   else
    tt = Heuristic2();
@@ -1118,6 +1125,7 @@ void BundleSolver::set_Block( Block * block )
 
  UpFiBest = INFshift;      // best, ...
  UpRifFi.resize( NrFi + 1 , 0 );  // and reference Fi() values
+ RifeqFi = false;                 // reference values != UpFiLmb
  UpFiLmb1.resize( NrFi + 1 );     // upper and lower function value
  LwFiLmb1.resize( NrFi + 1 );     // ... at the tentative point
  UpFiLmb.resize( NrFi + 1 ,  INFshift );  // upper 
@@ -1659,7 +1667,6 @@ double BundleSolver::get_dbl_par( const idx_type par ) const
 
 void BundleSolver::FormD( void )
 {
- // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // initialize the Master Problem Solver- - - - - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -1714,7 +1721,7 @@ void BundleSolver::FormD( void )
  if( TrueLB ) {                         // a "hard LB" was available already
   if( LwrBnd != LowerBound[ NrFi ] ) {  // but it has changed
    if( LwrBnd > - INFshift ) {          // and it is still available
-    LowerBound[ NrFi ] = LwrBnd;        // record it
+    LowerBound.back() = LwrBnd;         // record it
 
     // translate the value using the reference value of the hard components,
     // but not that of the easy ones
@@ -1733,7 +1740,7 @@ void BundleSolver::FormD( void )
  else                                   // a "hard LB" was not available
   if( LwrBnd > - INFshift ) {
    TrueLB = true;                       // but now it is
-   LowerBound[ NrFi ] = LwrBnd;         // record it
+   LowerBound.back() = LwrBnd;          // record it
 
    // translate the value using the reference value of the hard components,
    // but not that of the easy ones
@@ -1745,8 +1752,10 @@ void BundleSolver::FormD( void )
    Master->SetLowerBound( LwrBnd );
    }
 
- if( ! TrueLB )  // if not, at least pick the a "conditional" one (if any)
-  LowerBound[ NrFi ] = f_Block->get_valid_lower_bound( true );
+ if( TrueLB )  // if it is a true LB, use it to improve the lower estimate
+  LwFiLmb.back() = std::max( LwFiLmb.back() , LowerBound.back() );
+ else          // if not, at least pick a "conditional" one (if any)
+  LowerBound.back() = f_Block->get_valid_lower_bound( true );
 
  // now, if the MPSolver accepts them, collect and if necessary set the
  // individual lower bounds. note that if all of them are finite and the
@@ -1757,25 +1766,32 @@ void BundleSolver::FormD( void )
  // permanent issue and it'll go away when we'll get rid of MPSolver;
  // besides, it very unlikely to ever really happen
 
- #if( ! USE_MPTESTER )
-  // QPPenaltyMP does not allow individual lower bounds, and if a MPTester
-  // is used then a QPPenaltyMP is involved anyway
+ for( Index k = 0 ; k < NrFi ; ++k ) {
+  if( NrEasy && IsEasy[ k ] )  // skip easy components
+   continue;
 
-  if( MPName & 1 ) 
-   for( Index k = 0 ; k < NrFi ; ++k ) {
-    if( NrEasy && IsEasy[ k ] )  // skip easy components
-     continue;
+  // get the lower bound out of the C05Function
+  auto LwrBndk = v_c05f[ k ]->get_global_lower_bound();
 
-    auto LwrBndk = v_c05f[ k ]->get_global_lower_bound();
-    if( LwrBndk != LowerBound[ k ] ) {
-     LowerBound[ k ] = LwrBndk;
-     if( LwrBndk > - INFshift )
+  // use it to update the lower estimate in Lambda
+  update_LwFiLambd( k , LwrBndk );
+
+  if( LwrBndk != LowerBound[ k ] ) {  // if it has changed
+   LowerBound[ k ] = LwrBndk;         // record the new value
+
+   #if( ! USE_MPTESTER )
+    // QPPenaltyMP does not allow individual lower bounds, and if a MPTester
+    // is used then a QPPenaltyMP is involved anyway
+    if( MPName & 1 ) {
+     if( LwrBndk > - INFshift )  // translate it w.r.t. UpRifFi
       LwrBndk -= UpRifFi[ k ];
 
+     // pass it to the master problem
      Master->SetLowerBound( LwrBndk , k + 1 );
      }
-    }
- #endif
+   #endif
+   }
+  }
 
  /* set termination criterion - - - - - - - - - - - - - - - - - - - - - - - -
   * leftover code for a previous version of MPSolver having a MPSolver::kZero
@@ -2088,20 +2104,21 @@ void BundleSolver::FormLambda1( HpNum Tau )
   else {                         // k is a hard component
    // compute upper and lower bound for k (possibly +/- INF)
 
-   c_VarValue Lk = v_c05f[ k ]->get_Lipschitz_constant();
-   if( ( Lk < INFshift ) && ( UpFiLmb[ k ] < INFshift ) ) {
-    UpFiLmb1[ k ] = UpRifFi[ k ] + Lk * NrmD;
-    ++UpFiLmb1def;
+   UpFiLmb1[ k ] = INFshift;
+   if( UpFiLmb[ k ] < INFshift ) {
+    c_VarValue Lk = v_c05f[ k ]->get_Lipschitz_constant();
+    if( Lk < INFshift ) {
+     UpFiLmb1[ k ] = UpFiLmb[ k ] + Lk * NrmD;
+     ++UpFiLmb1def;
+     }
     }
-   else
-    UpFiLmb1[ k ] = INFshift;
 
-   if( LwFiLmb[ k ] > -INFshift ) {
-    LwFiLmb1[ k ] = UpRifFi[ k ] + vStar[ k ];
+   LwFiLmb1[ k ] = TrueLB ? LowerBound[ k ] : - INFshift;
+   if( vStar[ k ] < INFshift )
+    LwFiLmb1[ k ] = std::max( UpRifFi[ k ] + vStar[ k ] , LwFiLmb1[ k ] );
+
+   if( LwFiLmb1[ k ] > -INFshift )
     ++LwFiLmb1def;
-    }
-   else
-    LwFiLmb1[ k ] = -INFshift;
    }
 
  // now compute total upper and lower bound (possibly +/- INF)
@@ -2113,7 +2130,6 @@ void BundleSolver::FormLambda1( HpNum Tau )
  else
   Fi0Lmb1 = 0;
 
-
  if( UpFiLmb1def == NrFi ) {
   ++UpFiLmb1def;  // all components + the sum computed
   UpFiLmb1.back() = std::accumulate( UpFiLmb1.begin() , --(UpFiLmb1.end()) ,
@@ -2121,33 +2137,33 @@ void BundleSolver::FormLambda1( HpNum Tau )
   }
  else
   UpFiLmb1.back() = INFshift;
-   
+
+ LwFiLmb1.back() = TrueLB ? LowerBound.back() : -INFshift;
  if( LwFiLmb1def == NrFi ) {
   ++LwFiLmb1def;  // all components + the sum computed
-  LwFiLmb1.back() = std::accumulate( LwFiLmb1.begin() , --(LwFiLmb1.end()) ,
-				     Fi0Lmb1 );
+  LwFiLmb1.back() = std::max( LwFiLmb1.back() ,
+			      std::accumulate( LwFiLmb1.begin() ,
+					       --(LwFiLmb1.end()) ,
+					       Fi0Lmb1 ) );
   }
- else
-  LwFiLmb1.back() = -INFshift;
 
  // update the upper and lower targets - - - - - - - - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
- // note that vStar[ NrFi ] is == INFshift if the bundle of any of the hard
+ // note that vStar.back() == INFshift if the bundle of any of the hard
  // components is empty
 
- if( ( UpFiLmb[ NrFi ] < INFshift ) && ( vStar[ NrFi ] < INFshift ) )
-  UpTrgt = UpRifFi[ NrFi ] + ( 1.0 - m2 ) * vStar[ NrFi ];
- else
-  UpTrgt = INFshift;
+ if( vStar.back() < INFshift ) {
+  UpTrgt = UpRifFi.back() + ( 1.0 - m2 ) * vStar.back();
 
- if( ( LwFiLmb[ NrFi ] > -INFshift ) && ( vStar[ NrFi ] < INFshift ) )
   if( m1 > 0 )
-   LwTrgt = UpRifFi[ NrFi ] + vStar[ NrFi ] + m1 * DeltaStar;
+   LwTrgt = UpRifFi.back() + vStar[ NrFi ] + m1 * DeltaStar;
   else
-   LwTrgt = UpRifFi[ NrFi ] + ( 1.0 + m1 ) * vStar[ NrFi ];
- else
+   LwTrgt = UpRifFi.back() + ( 1.0 + m1 ) * vStar.back();
+  }
+ else {
+  UpTrgt = INFshift;
   LwTrgt = -INFshift;
-
+  }
  }  // end( BundleSolver::FormLambda1 )
 
 /*--------------------------------------------------------------------------*/
@@ -2215,9 +2231,11 @@ bool BundleSolver::FiAndGi( Index wFi )
  // (and possibly UpFiLambd[ NrFi ], which would be a "rather big" decrease
  // from +INF to something finite), as the theory requires the upper target
  // is *not* changed
- c_VarValue LwFi = v_c05f[ wFi ]->get_Lipschitz_constant();
- if( ( LwFi < INFshift ) && ( UpFiLmb1[ wFi ] < INFshift ) )
-  update_UpFiLambd( wFi , UpFiLmb1[ wFi ] + LwFi * NrmD );
+ if( UpFiLmb1[ wFi ] < INFshift ) {
+  c_VarValue LwFi = v_c05f[ wFi ]->get_Lipschitz_constant();
+  if( LwFi < INFshift )
+   update_UpFiLambd( wFi , UpFiLmb1[ wFi ] + LwFi * NrmD );
+  }
 
  // update LwFiLambd1[ wFi ] (and possibly LwFiLambd1[ NrFi ])
  update_LwFiLambd1( wFi , fwFi->get_lower_estimate() );
@@ -2467,18 +2485,19 @@ bool BundleSolver::FiAndGi( Index wFi )
 
 void BundleSolver::GotoLambda1( void )
 {
+ // compute DeltaFi - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
  std::vector<VarValue> DeltaFi( NrFi + 1 );  // DeltaFi = UpFiLmb1 - UpRifFi
- /*!!
-   Note that the code one would expect
+ /* Note that the code one may expect
 
- std::transform( UpFiLmb1.begin() , UpFiLmb1.end() , UpRifFi.begin() ,
- 		 DeltaFi.begin() , std::minus<double>() );
+    std::transform( UpFiLmb1.begin() , UpFiLmb1.end() , UpRifFi.begin() ,
+                    DeltaFi.begin() , std::minus<double>() );
 
-   is wrong since the format of DeltaFi expected by ChangeCurrPoint() is
-   different from the one used in BundleSolver; in particular, the total
-   value need be in DeltaFi.front() rather than in DeltaFi.back(), and the
-   value for component i need be in DeltaFi[ i + 1 ] rather than DeltaFi[ i ]
-   !!*/
+    is wrong since the format of DeltaFi expected by ChangeCurrPoint() is
+    different from the one used in BundleSolver; in particular, the total
+    value need be in DeltaFi.front() rather than in DeltaFi.back(), and the
+    value for component i need be in DeltaFi[ i + 1 ] rather than in
+    DeltaFi[ i ]. */
 
  DeltaFi.front() = UpFiLmb1.back() - UpRifFi.back();
  std::transform( UpFiLmb1.begin() , --(UpFiLmb1.end()) , UpRifFi.begin() ,
@@ -2491,6 +2510,7 @@ void BundleSolver::GotoLambda1( void )
  UpFiLmb.swap( UpFiLmb1 );
  LwFiLmb.swap( LwFiLmb1 );
  UpRifFi = UpFiLmb;
+ RifeqFi = true;
  UpFiLmbdef = UpFiLmb1def;
  LwFiLmbdef = LwFiLmb1def;
  Fi0Lmb1 = Fi0Lmb;
@@ -2511,6 +2531,84 @@ void BundleSolver::GotoLambda1( void )
  #endif
 
  }  // end( BundleSolver::GotoLambda1 )
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::GotoLambda( void )
+{
+ // compute DeltaFi - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+ std::vector<VarValue> DeltaFi( NrFi + 1 );  // DeltaFi = UpFiLmb - UpRifFi
+
+ DeltaFi.front() = UpFiLmb.back() - UpRifFi.back();
+ std::transform( UpFiLmb.begin() , --(UpFiLmb.end()) , UpRifFi.begin() ,
+ 		 ++(DeltaFi.begin()) , std::minus<double>() );
+
+ UpRifFi = UpFiLmb;        // set UpFiLmb as the reference values
+
+ // "change the current point in the MP Solver" - - - - - - - - - - - - - - -
+ // use the special case of ChangeCurrPoint() with Tau == 0, whereby only
+ // the DeltaFi component of the change is effective: the current point
+ // does not really change, but the linearization errors (and bounds) do
+
+ Master->ChangeCurrPoint( double( 0 ) , DeltaFi.data() );
+
+ #if CHECK_DS & 4
+  CheckAlpha();
+ #endif
+ #if CHECK_DS & 8
+  CheckLBs();
+ #endif
+
+ }  // end( BundleSolver::GotoLambda )
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::ResetAlfa( Index k )
+{
+ std::vector< VarValue > Gi( NumVar );
+ std::vector< VarValue > Alfa( Master->MaxName( k == NrFi ? Inf<Index>()
+						          : k + 1 ) );
+ if( k == NrFi ) {  // all components need be reset
+  for( Index i = 0 ; i < Master->MaxName() ; ++i )
+   if( ItemVcblr[ i ].second < vBPar2[ ItemVcblr[ i ].first ] ) {
+    auto Ai = v_c05f[ ItemVcblr[ i ].first ]->get_linearization_constant(
+						     ItemVcblr[ i ].second );
+    #ifndef NDEBUG
+     if( std::isnan( Ai ) )  // linearization no longer valid
+      throw( std::logic_error( "inconsistent ItemVcblr" ) );
+    #endif
+
+    // compute the linearization error in Lambda
+    v_c05f[ ItemVcblr[ i ].first ]->get_linearization_coefficients(
+		   Gi.data() , Range( 0 , NumVar ) , ItemVcblr[ i ].second );
+    Alfa[ i ] = UpRifFi[ ItemVcblr[ i ].first ] - Ai -
+              std::inner_product( Lambda.begin() , Lambda.end() , Gi.data() ,
+				  double( 0 ) );
+    }
+  }
+ else {             // only that specific component need be reset
+  for( Index i = 0 ; i < MaxItem[ k ] ; ++i )
+   if( InvItemVcblr[ k ][ i ] < vBPar2[ NrFi ] ) {
+    auto Ai = v_c05f[ k ]->get_linearization_constant( i );
+
+    #ifndef NDEBUG
+     if( std::isnan( Ai ) )  // linearization no longer valid
+      throw( std::logic_error( "inconsistent ItemVcblr" ) );
+    #endif
+
+    // compute the linearization error in Lambda
+    v_c05f[ k ]->get_linearization_coefficients( Gi.data() ,
+						 Range( 0 , NumVar ) , i );
+    Alfa[ InvItemVcblr[ k ][ i ] ] = UpRifFi[ k ] - Ai -
+	       std::inner_product( Lambda.begin() , Lambda.end() , Gi.data() ,
+				   double( 0 ) );
+    }
+  }
+
+ Master->ChgAlfa( Alfa.data() , k + 1 );
+
+ }  // end( BundleSolver::ResetAlfa )
 
 /*--------------------------------------------------------------------------*/
 
@@ -3205,11 +3303,14 @@ void BundleSolver::UpdtaBP3( void )
 
 bool BundleSolver::IsOptimal( double eps ) const
 {
+ if( ! RifeqFi )    // the linearization errors are not "properly computed"
+  return( false );  // no way one can detect optimality
+
  if( eps <= 0 )
   eps = RelAcc;
 
- if( vStar[ NrFi ] >= INFshift )  // there are no subgradients
-  return( false );
+ if( vStar[ NrFi ] >= INFshift )  // some components have no subgradients
+  return( false );                // no way one can detect optimality
 
  c_VarValue err = max_error( eps );
  if( err >= INFshift )
@@ -3290,8 +3391,11 @@ void BundleSolver::FModChg( VarValue shift , Index wFi )
  if( LwFiLmb[ NrFi ] > -INFshift )
   LwFiLmb[ NrFi ] += shift;
 
- UpRifFi[ wFi ] += shift;
- UpRifFi[ NrFi ] += shift;
+ //!! the changes below are wrong: UpRifFi[] is the value with which the
+ //!! linearization errors have been computed, and these change only when
+ //!! the linearization errors change
+ //!! UpRifFi[ wFi ] += shift;
+ //!! UpRifFi[ NrFi ] += shift;
 
  }  // end( BundleSolver::FModChg )
 
@@ -4728,58 +4832,18 @@ void BundleSolver::process_outstanding_Modification( void )
  //       but the only clean way out is to do away with MPSolver entirely
 
  if( std::find( AlphaC.begin() , AlphaC.end() , false ) == AlphaC.end() ) {
-  // all components have been reset
-  std::vector< VarValue > Gi( NumVar );
-  std::vector< VarValue > Alfa( Master->MaxName() );
+  for( auto & cchk : Cchg )  // all components have been reset
+   cchk.clear();             // no need to change them individually
 
-  for( auto & cchk : Cchg )
-   cchk.clear();
-
-  for( Index i = 0 ; i < Master->MaxName() ; ++i )
-   if( ItemVcblr[ i ].second < vBPar2[ ItemVcblr[ i ].first ] ) {
-    auto Ai = v_c05f[ ItemVcblr[ i ].first ]->get_linearization_constant(
-						     ItemVcblr[ i ].second );
-    if( std::isnan( Ai ) )  // linearization no longer valid
-     throw( std::logic_error( "inconsistent ItemVcblr" ) );
-
-    // compute the linearization error in Lambda
-    v_c05f[ ItemVcblr[ i ].first ]->get_linearization_coefficients( Gi.data() ,
-				 Range( 0 , NumVar ) , ItemVcblr[ i ].second );
-    Alfa[ i ] = UpRifFi[ ItemVcblr[ i ].first ] - Ai -
-                std::inner_product( Lambda.begin() , Lambda.end() , Gi.data() ,
-				    double( 0 ) );
-    }
-
-  Master->ChgAlfa( Alfa.data() , NrFi + 1 );  
+  ResetAlfa( NrFi );
   }
  else
-  if( std::find( AlphaC.begin() , AlphaC.end() , true ) != AlphaC.end() ) {
-   // some components have been reset
-   std::vector< VarValue > Gi( NumVar );
+  for( Index k = 0 ; k < NrFi ; ++k )
+   if( AlphaC[ k ] ) {  // all the constants of this component are reset
+    Cchg[ k ].clear();  // no need to change them individually
 
-   for( Index k = 0 ; k < NrFi ; ++k )
-    if( AlphaC[ k ] ) {  // all the constants of this component are reset
-     Cchg[ k ].clear();  // no need to change them individually
-
-     std::vector< VarValue > Alfa( Master->MaxName( k + 1 ) );
-
-     for( Index i = 0 ; i < MaxItem[ k ] ; ++i )
-      if( InvItemVcblr[ k ][ i ] < vBPar2[ NrFi ] ) {
-       auto Ai = v_c05f[ k ]->get_linearization_constant( i );
-       if( std::isnan( Ai ) )  // linearization no longer valid
-	throw( std::logic_error( "inconsistent InvItemVcblr" ) );
-
-       // compute the linearization error in Lambda
-       v_c05f[ k ]->get_linearization_coefficients( Gi.data() ,
-						    Range( 0 , NumVar ) , i );
-       Alfa[ InvItemVcblr[ k ][ i ] ] = UpRifFi[ k ] - Ai -
-	       std::inner_product( Lambda.begin() , Lambda.end() , Gi.data() ,
-				   double( 0 ) );
-       }
-
-     Master->ChgAlfa( Alfa.data() , k + 1 );
-     }
-   }
+    ResetAlfa( k );
+    }
 
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // if there subsets of Alphas to change, do it now
@@ -4793,8 +4857,11 @@ void BundleSolver::process_outstanding_Modification( void )
    for( auto i : Cchg[ k ] )
     if( InvItemVcblr[ k ][ i ] < vBPar2[ NrFi ] ) {
      auto Ai = v_c05f[ k ]->get_linearization_constant( i );
-     if( std::isnan( Ai ) )  // linearization no longer valid
-      throw( std::logic_error( "inexistent linearization" ) );
+
+     #ifndef NDEBUG
+      if( std::isnan( Ai ) )  // linearization no longer valid
+       throw( std::logic_error( "inexistent linearization" ) );
+     #endif
 
      // compute the linearization error in Lambda
      v_c05f[ k ]->get_linearization_coefficients( Gi.data() ,

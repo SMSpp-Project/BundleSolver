@@ -406,9 +406,9 @@ public:
   tHasChgd( true ) , t( 0 ) , Prevt( 0 ) , Sigma( 0 ) , DSTS( 0 ) ,
   DeltaFi( 0 ) , EpsU( 0 ) , CSSCntr( 0 ) , CNSCntr( 0 ) , TrueLB( false ) ,
   SSDone( true ) , f_lf( nullptr ) , Master( nullptr ) , UpTrgt( 0 ) ,
-  LwTrgt( 0 ) , UpFiBest( INFshift ) , UpFiLmb1def( 0 ) , LwFiLmb1def( 0 ) ,
-  UpFiLmbdef( 0 ) , LwFiLmbdef( 0 ) , Fi0Lmb( 0 ) , Fi0Lmb1( 0 ) ,
-  DeltaStar( 0 ) , NrmD( 0 ) , aBP3( 0 ) , FakeFi( this ) 
+  LwTrgt( 0 ) , RifeqFi( false ) , UpFiBest( INFshift ) , UpFiLmb1def( 0 ) ,
+  LwFiLmb1def( 0 ) , UpFiLmbdef( 0 ) , LwFiLmbdef( 0 ) , Fi0Lmb( 0 ) ,
+  Fi0Lmb1( 0 ) , DeltaStar( 0 ) , NrmD( 0 ) , aBP3( 0 ) , FakeFi( this ) 
  {
   // ensure all parameters are properly given their default value
   MaxIter = CDASolver::get_dflt_int_par( intMaxIter );
@@ -1204,8 +1204,10 @@ public:
   if( LwFiLmb1def == NrFi ) {
    ++LwFiLmb1def;  // all components + the sum computed
    LwFiLmb1[ wFi ] = nval;
-   LwFiLmb1.back() = std::accumulate( LwFiLmb1.begin() , --(LwFiLmb1.end()) ,
-				      Fi0Lmb1 );
+   LwFiLmb1.back() = std::max( LwFiLmb1.back() ,
+			       std::accumulate( LwFiLmb1.begin() ,
+						--(LwFiLmb1.end()) ,
+						Fi0Lmb1 ) );
    }
   else {
    if( LwFiLmb1def > NrFi )
@@ -1250,8 +1252,10 @@ public:
   if( LwFiLmbdef == NrFi ) {
    ++LwFiLmbdef;  // all components + the sum computed
    LwFiLmb[ wFi ] = nval;
-   LwFiLmb.back() = std::accumulate( LwFiLmb.begin() , --(LwFiLmb.end()) ,
-				     Fi0Lmb );
+   LwFiLmb.back() = std::max( LwFiLmb.back() ,
+			      std::accumulate( LwFiLmb.begin() ,
+					       --(LwFiLmb.end()) ,
+					       Fi0Lmb ) );
    }
   else {
    if( LwFiLmbdef > NrFi )
@@ -1264,6 +1268,17 @@ public:
  /* Move the current point to Lambda1. */
 
  void GotoLambda1( void );
+
+/*--------------------------------------------------------------------------*/
+ /* Ensure that the linearization errors agree with the current point.  */
+
+ void GotoLambda( void );
+
+/*--------------------------------------------------------------------------*/
+ /* Ensure that the linearization errors of the component k; if k >= NrFi,
+  * do it for all. */
+
+ void ResetAlfa( Index k );
 
 /*--------------------------------------------------------------------------*/
  /* Eliminate outdated items, i.e., these with "large" out-of-base counter. */
@@ -1512,7 +1527,7 @@ public:
 
  bool TrueLB;         /**< true if LowerBound is a "true" lower bound rather
 		       * than a "conditional" one */
- bool SSDone;         ///< true if the laste step was a SS
+ bool SSDone;         ///< true if the last step was a SS
 
  Subset FiStatus;     ///< status of last computation of each component
 
@@ -1532,28 +1547,28 @@ public:
 
  VarValue UpFiBest;      ///< Fi best value vector
 
- Vec_VarValue UpRifFi;    /* The value of Fi[ k ]() where the zero of the
-			   * Cutting Plane models are fixed: it is ==
-			   * FiLambda[ k ]() except when FiLambda[ k ]()
-			   * == INF */
+ Vec_VarValue UpRifFi;   /** The value of Fi[ k ]() where the zero of the
+			  * translated Cutting Plane models are fixed */
+ bool RifeqFi;           ///< true if UpRifFi == UpFiLmb
 
- Vec_VarValue UpFiLmb1;   ///< upper function values at Lambda1
- Vec_VarValue LwFiLmb1;   ///< lower function values at Lambda1
- Index UpFiLmb1def;       ///< how many entries of UpFiLmb1 are < INF
- Index LwFiLmb1def;       ///< how many entries of LwFiLmb1 are > -INF
+ Vec_VarValue UpFiLmb1;  ///< upper function values at Lambda1
+ Vec_VarValue LwFiLmb1;  ///< lower function values at Lambda1
+ Index UpFiLmb1def;      ///< how many entries of UpFiLmb1 are < INF
+ Index LwFiLmb1def;      ///< how many entries of LwFiLmb1 are > -INF
 
- Vec_VarValue UpFiLmb;    ///< upper function value vector at Lambda
- Vec_VarValue LwFiLmb;    ///< lower function value vector at Lambda
- Index UpFiLmbdef;        ///< how many entries of UpFiLmb are < INF
- Index LwFiLmbdef;        ///< how many entries of LwFiLmb are > -INF
+ Vec_VarValue UpFiLmb;   ///< upper function value vector at Lambda
+ Vec_VarValue LwFiLmb;   ///< lower function value vector at Lambda
+ Index UpFiLmbdef;       ///< how many entries of UpFiLmb are < INF
+ Index LwFiLmbdef;       ///< how many entries of LwFiLmb are > -INF
 
- VarValue Fi0Lmb;         ///< value of the linear 0-th component in Lambda
- VarValue Fi0Lmb1;        ///< value of the linear 0-th component in Lambda1
+ VarValue Fi0Lmb;        ///< value of the linear 0-th component in Lambda
+ VarValue Fi0Lmb1;       ///< value of the linear 0-th component in Lambda1
  
- Subset CurrNrEvls;
+ Subset CurrNrEvls;      /**< how many times compute() has been called for
+			  * each component in the current iteration */
 
- double DeltaStar;
- double NrmD;
+ double DeltaStar;       ///< crucial quantity in the SS/NS formula
+ double NrmD;            ///< Euclidean norm of the current direction d*
 
 /*--------------------------------------------------------------------------*/
 
