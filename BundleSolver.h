@@ -4,7 +4,7 @@
 /** @file
  * Header file for the BunldeSolver class, which implements the Solver
  * interface, in particular in its CDASolver version, using a "Generalized
- * Bundle" algorithm.
+ * Bundle" algorithm for the solution of convex nondifferentiable problems.
  *
  * The user is assumed to be familiar with the algorithm: refer to
  *
@@ -12,6 +12,7 @@
  *  SIAM Journal on Optimization 13(1), p. 117 - 156, 2002
  *
  * available at
+ *
  * \link
  *  http://www.di.unipi.it/~frangio/abstracts.html#SIOPT02
  * \endlink
@@ -19,9 +20,12 @@
  * or
  *
  *  A. Frangioni "Standard Bundle Methods: Untrusted Models and Duality"
- *  Technical Report, Dipartimento di Informatica, Università di Pisa, 2018
+ *  in Numerical Nonsmooth Optimization: State of the Art Algorithms,
+ *  A.M. Bagirov, M. Gaudioso, N. Karmitsa, M. Mäkelä, S. Taheri (Eds.),
+ *  61--116, Springer, 2020
  *
  * available at
+ *
  * \link
  *  http://www.di.unipi.it/~frangio/abstracts.html#NDOB18
  * \endlink
@@ -42,16 +46,17 @@
  *
  * A special treatment is given to the case where some of the C05Function
  * actually are LagBFunction whose inner Block only contains ColVariable,
- * whose Objective is a is a FRealObjective containing a LinearFunction,
- * ans whose Constraint are linear (either FRowConstraint containing a
- * LinearFunction, or BoxConstraint). These are passes to the Master Problem
- * of the Bundle as "easy components" see
+ * whose Objective is linear (a FRealObjective containing a LinearFunction)
+ * and whose Constraint are linear (either FRowConstraint containing a
+ * LinearFunction, or BoxConstraint). These can be passed to the Master
+ * Problem of the bundle algorithm as "easy components", see
  *
  *   A. Frangioni, E. Gorgone "Generalized Bundle Methods for Sum-Functions
  *   with ``Easy'' Components: Applications to Multicommodity Network Design"
  *   Mathematical Programming 145(1), 133–161, 2014
  *
  * available at
+ *
  * \link
  *  http://www.di.unipi.it/~frangio/abstracts.html#MP11c
  * \endlink
@@ -60,7 +65,7 @@
  * is no need for a Solver to be attached to the inner Block.
  *
  * If the Block has multiple Objective (that is, it has sub-Block whose
- * Objective FRealObjective containing a C05Function), a very strong
+ * Objective is a FRealObjective containing a C05Function), a very strong
  * assumption is required on them:
  *
  *     ALL THE Function IN THE Objective HAVE EXACTLY THE SAME SET OF
@@ -89,9 +94,9 @@
  *     C05FunctionModVarsRngd, OR ALL C05FunctionModVarsSbst, AND THEY MUST
  *     CHANGE THE "ACTIVE" Variable IN PRECISELY THE SAME WAY.
  *
- * \version 0.30
+ * \version 0.40
  *
- * \date 07 - 07 - 2020
+ * \date 12 - 09 - 2020
  *
  * \author Antonio Frangioni \n
  *         Operations Research Group \n
@@ -162,6 +167,7 @@ namespace SMSpp_di_unipi_it
  *  SIAM Journal on Optimization 13(1), p. 117 - 156, 2002
  *
  * available at
+ *
  * \link
  *  http://www.di.unipi.it/~frangio/abstracts.html#SIOPT02
  * \endlink
@@ -169,9 +175,12 @@ namespace SMSpp_di_unipi_it
  * or
  *
  *  A. Frangioni "Standard Bundle Methods: Untrusted Models and Duality"
- *  Technical Report, Dipartimento di Informatica, Università di Pisa, 2018
+ *  in Numerical Nonsmooth Optimization: State of the Art Algorithms,
+ *  A.M. Bagirov, M. Gaudioso, N. Karmitsa, M. Mäkelä, S. Taheri (Eds.),
+ *  61--116, Springer, 2020
  *
  * available at
+ *
  * \link
  *  http://www.di.unipi.it/~frangio/abstracts.html#NDOB18
  * \endlink
@@ -192,22 +201,24 @@ namespace SMSpp_di_unipi_it
  *
  * A special treatment is given to the case where some of the C05Function
  * actually are LagBFunction whose inner Block only contains ColVariable,
- * whose Objective is a is a FRealObjective containing a LinearFunction,
- * ans whose Constraint are linear (either FRowConstraint containing a
- * LinearFunction, or BoxConstraint). These are passes to the Master Problem
- * of the Bundle as "easy components" see
+ * whose Objective is linear (a FRealObjective containing a LinearFunction)
+ * and whose Constraint are linear (either FRowConstraint containing a
+ * LinearFunction, or BoxConstraint). These can be passed to the Master
+ * Problem of the bundle algorithm as "easy components", see
  *
  *   A. Frangioni, E. Gorgone "Generalized Bundle Methods for Sum-Functions
  *   with ``Easy'' Components: Applications to Multicommodity Network Design"
  *   Mathematical Programming 145(1), 133–161, 2014
  *
  * available at
+ *
  * \link
  *  http://www.di.unipi.it/~frangio/abstracts.html#MP11c
  * \endlink
  *
  * In that case, the LagBFunction is never evaluated, which means that there
  * is no need for a Solver to be attached to the inner Block.
+ *
  * If the Block has multiple Objective (that is, it has sub-Block whose
  * Objective FRealObjective containing a C05Function), a very strong
  * assumption is required on them:
@@ -320,6 +331,8 @@ public:
 
  intMaxNrEvls ,  ///< max number of function evaluation for each iteration
 
+ intNoEasy,  ///< whether "easy" components are ignored
+
  intMPName,  ///< whether the MP solver is QPPenalty or OSIMPSolver
 
  intMPlvl ,  ///< log verbosity of Master Problem
@@ -424,6 +437,7 @@ public:
   MnNSC = dflt_int_par[ intMnNSC - intLastParCDAS ];
   tSPar1 = dflt_int_par[ inttSPar1 - intLastParCDAS ];
   MaxNrEvls = dflt_int_par[ intMaxNrEvls - intLastParCDAS ];
+  NoEasy = bool( dflt_int_par[ intNoEasy - intLastParCDAS ] );
   MPName = dflt_int_par[ intMPName - intLastParCDAS ];
   MPlvl = dflt_int_par[ intMPlvl - intLastParCDAS ];
   MxAdd = dflt_int_par[ intQPmp1 - intLastParCDAS ];
@@ -690,6 +704,9 @@ public:
   *   is the limit on how many times this will be attempted (for each
   *   non-easy C05Function) before giving up for good
   *
+  * - intNoEasy [0]: if nonzero, instructs BundleSolver to disregard potential
+  *                  "easy" components and to treat each as a "difficult" one
+  *
   * - intMPName [1]: bit-wise encoding of which MPSolver is used:
   *                  bit 0: 0 = QPPenalty, 1 = OSiMPSolver
   *                  bit 1: 1 = OsiCpxInterface, 0 = OsiCLPInterface
@@ -784,27 +801,21 @@ public:
   *   still use tStar to provide the order-of-magnitude of || g ||, and
   *   then use the relative accuracy dblRAccSol.
   *
-  * - dblMinNrEvls [0]: min fraction of non-easy C05Function evaluated for
-  *                     each iteration. The solver can stop computing
+  * - dblMinNrEvls [0]: min number/fraction of non-easy C05Function evaluated
+  *                     at each iteration. The solver can stop computing
   *   function values (and linearizations) as soon as the conditions required
   *   to declare either a SS or a NS are satisfied. If there are many non-easy
-  *   C05Function, this may lead to many master problems been solved before
-  *   even each component being evaluated once. This is especially true at the
-  *   beginning when the value of the function values at the current point are
-  *   unknown, since then the lower target is -INF and it is "too easy" to get
-  *   the NS condition satisfied. This parameter specifies the fraction of the
-  *   total number of non-easy components that need be evaluated before the
-  *   conditions for NS/SS conditions are even checked and the function values
-  *   collecting loop be terminated. It may be useful to do this differently
-  *   depending on the fact that all function values at the current point are
-  *   known or not, which is encoded in the sign of the parameter. If it is
-  *   >= 0, then the minimum number of evaluated components is just
-  *   < number of non-easy C05Function > * dblMinNrEvls. If dblMinNrEvls < 0
-  *   < number of non-easy C05Function > is multiplied by ( - dblMinNrEvls )
-  *   if the value of all non-easy C05Function in the current point is known,
-  *   and by 1 otherwise (which means that, hopefully, all the non-easy
-  *   C05Function will get finite estimates before the master problem is
-  *   solved again).
+  *   C05Function, this may lead to many master problems being solved, which
+  *   may not be convenient depending on the relative cost of the master
+  *   problem and of the oracle. This parameter specifies the number/fraction
+  *   of the total number of non-easy components that need be evaluated before
+  *   the conditions for NS/SS conditions are even checked and the function
+  *   values. If the parameter is >= 0, then the minimum number of evaluated
+  *   components is just int( dblMinNrEvls ). If, instead, dblMinNrEvls < 0,
+  *   then the minimum number of evaluated components is
+  *   < number of non-easy C05Function > * ( - dblMinNrEvls ), i.e.,
+  *   (-) dblMinNrEvls indicates the fraction of components that necessarily
+  *   have to be evaluated.
   *
   * - dblRelMPAcc [1e-8]: relative optimality accuracy for the Master Problem
   *
@@ -1375,6 +1386,8 @@ public:
  int tSPar1;        ///< int parameter for long-term t-strategy
  double tSPar2;     ///< double parameter for long-term t-strategy
 
+ bool NoEasy;       ///< true if easy components are ignored
+ 
  int MPName;        /**< bit 0 = 0: MP solver == QPPenalty
 		     * bit 0 = 1: MP == OSiMPSolver
 		     * bit 1 = 1: Cplex, bit 1 = 0 CLP

@@ -236,6 +236,7 @@ const std::vector< std::string > BundleSolver::int_pars_str = {
  "intMnNSC" ,
  "inttSPar1" ,
  "intMaxNrEvls" ,
+ "intNoEasy" ,
  "intMPName" ,
  "intMPlvl" ,
  "intQPmp1" ,
@@ -280,6 +281,7 @@ const std::map< std::string , BundleSolver::idx_type >
  { "intMnNSC" , BundleSolver::intMnNSC } ,
  { "inttSPar1" , BundleSolver::inttSPar1 } ,
  { "intMaxNrEvls" , BundleSolver::intMaxNrEvls } ,
+ { "intNoEasy" , BundleSolver::intNoEasy } ,
  { "intMPName" , BundleSolver::intMPName } ,
  { "intMPlvl" , BundleSolver::intMPlvl } ,
  { "intQPmp1" , BundleSolver::intQPmp1 } ,
@@ -324,6 +326,7 @@ const std::vector< int > BundleSolver::dflt_int_par = {
   3 ,  // intMnNSC
  12 ,  // inttSPar1
   2 ,  // intMaxNrEvls
+  0 ,  // intNoEasy
   0 ,  // intMPName
   0 ,  // intMPlvl
   0 ,  // intQPmp1
@@ -560,12 +563,13 @@ int BundleSolver::compute( bool changedvars )
   // sought for
 
   CurrNrEvls.assign( NrFi , Index( 0 ) );
-  MPchgs = false;
+  MPchgs = false;  // true if the MP is guaranteed to change enugh after the
+                   // insertion of new information to ensure that the
+                   // algorithm will converge
 
   // compute the minimum number of components to evaluate
-  Index minceval = ( NrFi - NrEasy );
-  if( ( MinNrEvls >= 0 ) || ( LwFiLmb1def > NrFi ) )
-   minceval *= std::abs( MinNrEvls );
+  Index minceval = ( MinNrEvls >= 0 ? Index( MinNrEvls )
+		                    : ( NrFi - NrEasy ) * ( - MinNrEvls ) );
   Index ceval = 0;  // how many components have been evaluated so far
 
   for( bool insrtd = false ; ; ) {
@@ -573,6 +577,7 @@ int BundleSolver::compute( bool changedvars )
 
    if( FiAndGi( wFi ) )
     insrtd = true;
+
    if( ! CurrNrEvls[ wFi ] )  // not evaluated before
     ++ceval;                  // one more evaluated
    ++CurrNrEvls[ wFi ];       // evaluated once more
@@ -1037,12 +1042,14 @@ void BundleSolver::set_Block( Block * block )
  NrEasy = 0;
  NrFi = v_c05f.size();
 
- if( NrFi > 1 ) {
+ if( ( NrFi > 1 ) && ( ! NoEasy ) ) {
   IsEasy.resize( NrFi , false );
   MILP_s.resize( NrFi , nullptr );
   for( Index k = 0 ; k < NrFi ; ++k ) {
    auto LagB = dynamic_cast< LagBFunction * >( v_c05f[ k ] );
    if( LagB ) {
+    // TODO: check that the MILP is actually a LP, i.e., there are no
+    //       integer variables
     MILP_s[ k ] = new MILPSolver();
     MILP_s[ k ]->set_Block( LagB->get_inner_block() );
     IsEasy[ k ] = true;
@@ -1310,6 +1317,9 @@ void BundleSolver::set_par( const idx_type par , const int value )
   case( intMaxNrEvls ):
    MaxNrEvls = value;
    break;
+  case( intNoEasy ):
+   NoEasy = bool( value );
+   break;
   case( intMPName ):
    if( ( value < 0 ) || ( value > 15 ) )
     throw( std::invalid_argument( "MPName must be in [0, 15]" ) );
@@ -1555,6 +1565,9 @@ int BundleSolver::get_int_par( const idx_type par ) const
    break;
   case( intMaxNrEvls ):
    return( MaxNrEvls );
+   break;
+  case( intNoEasy ):
+   return( NoEasy );
    break;
   case( intMPName ):
    return( MPName );
