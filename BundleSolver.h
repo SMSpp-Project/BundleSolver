@@ -121,6 +121,9 @@
 /*------------------------------ INCLUDES ----------------------------------*/
 /*--------------------------------------------------------------------------*/
 
+#include <ctime>
+#include <queue>
+
 #include "CDASolver.h"
 
 #include "C05Function.h"
@@ -135,7 +138,6 @@
 #include "MPSolver.h"
 
 #include "NDOSlver.h"
-#include <queue>
 
 /*--------------------------------------------------------------------------*/
 /*-------------------------- NAMESPACE & USING -----------------------------*/
@@ -421,11 +423,13 @@ public:
   SSDone( true ) , f_lf( nullptr ) , Master( nullptr ) , UpTrgt( 0 ) ,
   LwTrgt( 0 ) , RifeqFi( false ) , UpFiBest( INFshift ) , UpFiLmb1def( 0 ) ,
   LwFiLmb1def( 0 ) , UpFiLmbdef( 0 ) , LwFiLmbdef( 0 ) , Fi0Lmb( 0 ) ,
-  Fi0Lmb1( 0 ) , DeltaStar( 0 ) , NrmD( 0 ) , aBP3( 0 ) , FakeFi( this ) 
+  Fi0Lmb1( 0 ) , DeltaStar( 0 ) , NrmD( 0 ) , c_start( 0 ) , aBP3( 0 ) ,
+  FakeFi( this ) 
  {
   // ensure all parameters are properly given their default value
   MaxIter = CDASolver::get_dflt_int_par( intMaxIter );
   MaxSol = CDASolver::get_dflt_int_par( intMaxSol );
+  EverykIt = CDASolver::get_dflt_int_par( intEverykIt );
   LogVerb = CDASolver::get_dflt_int_par( intLogVerb );
   BPar1 = dflt_int_par[ intBPar1 - intLastParCDAS ];
   BPar2 = dflt_int_par[ intBPar2 - intLastParCDAS ];
@@ -451,6 +455,7 @@ public:
   AbsAcc = CDASolver::get_dflt_dbl_par( dblAbsAcc );
   RAccSol = CDASolver::get_dflt_dbl_par( dblRAccSol );
   AAccSol = CDASolver::get_dflt_dbl_par( dblAAccSol );
+  EveryTTm = CDASolver::get_dflt_dbl_par( dblEveryTTm );
   tStar = dflt_dbl_par[ dbltStar - dblLastParCDAS ];
   MinNrEvls = dflt_dbl_par[ dblMinNrEvls - dblLastParCDAS ];
   RelMPAcc = dflt_dbl_par[ dblRelMPAcc - dblLastParCDAS ];
@@ -467,6 +472,8 @@ public:
   tInit = dflt_dbl_par[ dbltInit - dblLastParCDAS ];
   tSPar2 = dflt_dbl_par[ dbltSPar2 - dblLastParCDAS ];
   CtOff = dflt_dbl_par[ dblCtOff - dblLastParCDAS ];
+
+  v_events.resize( max_event_number() );
   }
 
 /*--------------------------------------------------------------------------*/
@@ -499,6 +506,9 @@ public:
   *   best one ever found. If intMaxSol > 1, also the best solution will be
   *   kept and separately reported (assuming it is not the stability center
   *   at termination).
+  *
+  * - intEverykIt [0]: after how many iteration call the eEverykIteration
+  *                    events
   *
   * - intLogVerb [0]: "verbosity" of the BundleSolver log
   *                   0 = no log
@@ -758,6 +768,8 @@ public:
   *                               solution; it is used in the stopping
   *   condition if dbltStar < 0 (see below for details);
   *
+  * - dblEveryTTm [0]: periodicity of eEveryTTime events
+  *
   * - dbltStar [1e+2]: optimality parameter related to subgradient scaling.
   *                    Proving that some point Lambda is optimal for a
   *   NonDifferentiable Optimization problem involves finding an all-0
@@ -935,6 +947,75 @@ public:
 
  void set_log( std::ostream *log_stream = nullptr ) override;
 
+/**@} ----------------------------------------------------------------------*/
+/*----------------- METHODS FOR ACCESSING THE DATA OF THE Block ------------*/
+/*--------------------------------------------------------------------------*/
+/** @name Accessing the data of the Block
+ *
+ * These methods provide convenient shortcuts for directly asking to the
+ * BundleSolver some relevant data about the Block it is solving.
+ *
+ *  @{ */
+
+ /// returns the number of "components", i.e., C05Function in the objective
+ /** Returns the total number of "components", i.e., the C05Function whose
+  * sum (possibly together with one LinearFunction) makes up the objective of
+  * the Block that the BundleSolver is solving. This method should not be
+  * called if set_Block() has not been called, or has last been called with
+  * nullptr argument. */
+
+ Index n_components( void ) const { return( NrFi ); }
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ /// returns a pointer to the i-th C05Function in the objective
+ /** Returns a pointer to the i-th C05Function, i.e., the i-th term of the
+  * sum of C05Function that (possibly together with one LinearFunction) 
+  * makes up the objective of the Block that the BundleSolver is solving. 
+  * It must ve 0 <= \p i <= n_components(). All returned pointers are not
+  * nullptr provided that set_Block() has last been called with not nullptr
+  * argument (otherwise this method should not be called). */
+
+ C05Function * component( Index i ) const {
+  #ifndef NDEBUG
+   if( i >= NrFi )
+    throw( std::invalid_argument( "wrong component number" ) );
+  #endif
+  return( v_c05f[ i ] );
+  }
+
+ /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ /// returns a pointer to the LinearFunction in the objective
+ /** Returns a pointer to the single LinearFunction that is summed with the
+  * C05Function in the objective, if any. If the method returns nullptr,
+  * there is no such LinearFunction (it is constantly 0, i.e., all its
+  * coefficients are 0). This method should not be called if set_Block() has
+  * not been called, or has last been called with nullptr argument. */
+
+ LinearFunction * l_component( void ) const { return( f_lf ); }
+  
+/**@} ----------------------------------------------------------------------*/
+/*---------------------- METHODS FOR EVENTS HANDLING -----------------------*/
+/*--------------------------------------------------------------------------*/
+/** @name Set event handlers
+ *
+ *  BundleSolver heeds to all three "basic" types of events:
+ *
+ * - eBeforeTermination, called just before optimality stop (but not all
+ *   other kinds of stop), with return action eForceContinue forcing one
+ *   new iteration (master problem solution) to be performed;
+ *
+ * - eEverykIteration, called every intEverykIt iterations (if intEverykIt
+ *   != 0), with possible return actions eStopOK and eStopError;
+ *
+ * - eEveryTTime, called every dblEveryTTm seconds (if dblEveryTTm != 0),
+ *   with possible return actions eStopOK and eStopError;
+ *
+ * Of course, events have been set with set_event_handler() for them to be
+ * called.
+ *  @{ */
+
+ EventID max_event_number( void ) const override { return( 3 ); }
+
 /*@} -----------------------------------------------------------------------*/
 /*--------------------- METHODS FOR SOLVING THE MODEL ----------------------*/
 /*--------------------------------------------------------------------------*/
@@ -945,6 +1026,40 @@ public:
 
  int compute( bool changedvars = true ) override;
 
+/*--------------------------------------------------------------------------*/
+ /// returns the number of calls to compute() (the current included)
+
+ Index n_calls( void ) const { return( SCalls ); }
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ /// returns the number of iterations in the current call to compute()
+ /** Returns the number of iterations in the current call to compute(), the
+  * last one included. Note that this is the number of master problem
+  * solutions, as clearly the number of function evaluations may be rather
+  * different. */
+
+ Index n_iter( void ) const { return( ParIter ); }
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ /// returns the number of evaluations of a component in the current compute()
+ /** Returns the number of evaluations of the component \p i in the current
+  * call to compute(). */
+
+ Index n_f_eval( Index i ) const {
+  #ifndef NDEBUG
+   if( i >= NrFi )
+    throw( std::invalid_argument( "wrong component number" ) );
+  #endif
+  return( CurrNrEvls[ i ] );
+  }
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ /// returns the elapsed CPU time since the start of the last compute()
+
+ double elapsed( void ) const {
+  return( ( std::clock() - c_start) / CLOCKS_PER_SEC );
+  }
+ 
 /*@} -----------------------------------------------------------------------*/
 /*---------------------- METHODS FOR READING RESULTS -----------------------*/
 /*--------------------------------------------------------------------------*/
@@ -1349,6 +1464,8 @@ public:
  double AbsAcc;     ///< absolute accuracy for declaring a solution optimal
  double RAccSol;    ///< maximum relative error in any reported solution
  double AAccSol;    ///< maximum absolute error in any reported solution
+ double EveryTTm;   ///< periodicity of eEveryTTime events
+
  double RelMPAcc;   ///< relative optimality accuracy for the Master Problem
  double RMPAccSol;  ///< relative feasibility accuracy for the Master Problem
 
@@ -1359,6 +1476,7 @@ public:
 
  double MinNrEvls;  ///< min fraction of components to evaluate at each iter.
  int LogVerb;       ///< "verbosity" of the log
+ int EverykIt;      ///< periodicity of eEverykIteration events
 
  int BPar1;         ///< parameter for removal of items (B-strategy)
  int BPar2;         ///< max Bundle size
@@ -1414,8 +1532,8 @@ public:
  Index NumVar;      ///< (current) number of variables
  Index NrFi;        ///< number of components of Fi()
 
- Index SCalls;      ///< nuber of calls to Solve() (the current included)
- Index ParIter;     ///< nuber of iterations in this run
+ Index SCalls;      ///< number of calls to compute() (the current included)
+ Index ParIter;     ///< number of iterations in this call to compute() 
 
  Vec_Bool IsEasy;   ///< tells which component of Fi is "easy"
  Index NrEasy;      ///< number of "easy" component of Fi
@@ -1583,7 +1701,11 @@ public:
  double DeltaStar;       ///< crucial quantity in the SS/NS formula
  double NrmD;            ///< Euclidean norm of the current direction d*
 
-/*--------------------------------------------------------------------------*/
+ // fields for events - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+ std::clock_t c_start;   ///< starting instant of last call to compute()
+
+ // static fields - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
  const static std::vector<int> dflt_int_par;
  ///< the (static const) vector of int parameters default values

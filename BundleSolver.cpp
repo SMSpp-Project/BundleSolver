@@ -29,11 +29,17 @@
 /*--------------------------------------------------------------------------*/
 
 #include "BundleSolver.h"
+
 #include "LagBFunction.h"
+
 #include "QPPnltMP.h"
+
 #include "OSIMPSolver.h"
+
 #include "ilcplex/cplex.h"
+
 #include "OsiCpxSolverInterface.hpp"
+
 #include "OsiClpSolverInterface.hpp"
 
 /*--------------------------------------------------------------------------*/
@@ -386,14 +392,19 @@ static cIndex InINF = SMSpp_di_unipi_it::Inf<Index>();
 
 int BundleSolver::compute( bool changedvars )
 {
- if( MaxIter == 0 )  // No iteration must be performed
-  return kStopIter;
+ if( MaxIter == 0 )  // no iteration must be performed
+  return( kStopIter );
 
  // basic sanity checks - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
  if( ! f_Block )
   return( kBlockLocked );
+
+ // start timer (so that processing Modification is included) - - - - - - - -
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+ c_start = std::clock();
 
  // first, process any outstanding Modification - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -415,8 +426,9 @@ int BundleSolver::compute( bool changedvars )
  // initializations - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
+ double lastETT = 0;  // last "time" eEveryTTime events have been called
  ParIter = 0;
- Result = kStopIter;
+ Result = kUnEval;
  SCalls++;
  RifeqFi = ( UpRifFi == UpFiLmb );
 
@@ -429,7 +441,34 @@ int BundleSolver::compute( bool changedvars )
  // iterations
  Index wFi = 0;
 
- do {
+ for(;;) {
+  // check if time is elapsed - - - - - - - - - - - - - - - - - - - - - - - -
+  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+  if( elapsed() > MaxTime ) {
+   BLOG( 1 , " ~ stop due to max time" << std::endl );
+   Result = kStopTime;
+   break;
+   }
+
+  // run time-periodic events - - - - - - - - - - - - - - - - - - - - - - - -
+  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+  if( EveryTTm && ( elapsed() >= lastETT + EveryTTm ) ) {
+   for( auto & ev : v_events[ eEveryTTime ] ) {
+    auto res = ev();
+    if( res == eStopOK ) { Result = kOK; break; }
+    if( res == eStopError ) { Result = kError; break; }
+    }
+
+   lastETT = elapsed();  // reset counter
+   }
+
+  if( Result != kUnEval ) {
+   BLOG( 1 , " ~ stop due to time-periodic event" << std::endl );
+   break;
+   }
+
   // construct the direction d- - - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -446,14 +485,52 @@ int BundleSolver::compute( bool changedvars )
 
   Log1();
 
+  // a real iteration (iterations where Fi() is not evaluated do not count) -
+  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+  ParIter++;
+
   // check for optimality - - - - - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
   if( IsOptimal() ) {
+   // run optimality events
+   int res = eContinue;
+   for( auto & ev : v_events[ eBeforeTermination ] )
+    if( ( res = ev() ) != eContinue )
+     break;
+
+   if( res == eForceContinue ) {
+    BLOG( 1 , " ~ optimal stop aborted by optimality event" << std::endl );
+    continue;  // go back to master problem solution
+    }
+
+   if( res == eStopError ) {
+    BLOG( 1 , " ~ stop (error) by optimality event" << std::endl );
+    Result = kError;
+    break;
+    }
+    
    BLOG( 1 , " ~ stop (optimal)" << std::endl );
    Result = kOK;
    break;
    }
+
+  // run iteration-periodic events- - - - - - - - - - - - - - - - - - - - - -
+  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+  if( EverykIt && ( ! ( ParIter % EverykIt ) ) )
+   for( auto & ev : v_events[ eEverykIteration ] ) {
+    auto res = ev();
+    if( res == eStopOK ) { Result = kOK; break; }
+    if( res == eStopError ) { Result = kError; break; }
+    }
+
+  if( Result != kUnEval ) {
+   BLOG( 1 , " ~ stop due to time-periodic event" << std::endl );
+   break;
+   }
+
 
   // check if "ex-ante" Noise Reduction is needed - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -529,11 +606,6 @@ int BundleSolver::compute( bool changedvars )
    }  // end if( Hard t-strategy )  - - - - - - - - - - - - - - - - - - - - -
       //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-  // a real iteration (iterations where Fi() is not evaluated do not count) -
-  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
-  ParIter++;
-
   // calculate Lambda1- - - - - - - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -604,12 +676,19 @@ int BundleSolver::compute( bool changedvars )
    if( ! FindNext( wFi ) )  // find next component
     break;                  // if none, nothing else to do but stop
 
+   if( elapsed() > MaxTime )  // time has ran up
+    break;                    // nothing else to do but stop
+
    if( ceval < minceval )   // not evaluated enough components yet
     continue;               // do not stop regardless of MPchgs
     
    if( MPchgs )             // the MP is guaranteed to change
     break;                  // happily stop
-   }
+
+   }  // end( for( functions evaluation loop ) )
+
+  if( elapsed() > MaxTime )  // time has ran up
+   continue;                 // go back at the beginning to stop
 
   // compute DeltaFi- - - - - - - - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -722,10 +801,6 @@ int BundleSolver::compute( bool changedvars )
     Result = kError;
    }
 
-
-
-
-  
   // the NS / SS decision - - - - - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -828,10 +903,15 @@ int BundleSolver::compute( bool changedvars )
    t = tt;
    }
 
-  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  // check max number of iterations - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-  } while( ParIter < MaxIter );
+  if( ParIter >= MaxIter ) {
+   BLOG( 1 , " ~ stop due to max iter" << std::endl );
+   Result = kStopIter;
+   break;
+   }  
+  }  // end( main loop )
 
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // main cycle ends here- - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1048,12 +1128,26 @@ void BundleSolver::set_Block( Block * block )
   for( Index k = 0 ; k < NrFi ; ++k ) {
    auto LagB = dynamic_cast< LagBFunction * >( v_c05f[ k ] );
    if( LagB ) {
-    // TODO: check that the MILP is actually a LP, i.e., there are no
-    //       integer variables
     MILP_s[ k ] = new MILPSolver();
-    MILP_s[ k ]->set_Block( LagB->get_inner_block() );
-    IsEasy[ k ] = true;
-    ++NrEasy;
+    try {  // check if the inner Block of the LagBFunction is an LP
+     MILP_s[ k ]->set_Block( LagB->get_inner_block() );
+     /*!!
+     // the component is easy only if all variables are continuous
+     if( ! MILP_s[ k ]->get_num_integer_vars() )
+     !!*/
+     {
+      IsEasy[ k ] = true;
+      ++NrEasy;
+      }
+     }
+    catch( ... ) {  // exception means that something nonlinear is there
+     IsEasy[ k ] = false;
+     }
+
+    if( ! IsEasy[ k ] ) {
+     delete MILP_s[ k ];
+     MILP_s[ k ] = nullptr;
+     }
     }
    }
 
@@ -1270,6 +1364,9 @@ void BundleSolver::set_par( const idx_type par , const int value )
     throw( std::invalid_argument( "MaxSol must be >= 1" ) );
    MaxSol = value;
    break;
+  case( intEverykIt ):
+   EverykIt = value;
+   break;
   case( intLogVerb ):
    LogVerb = value;
    break;
@@ -1380,6 +1477,11 @@ void BundleSolver::set_par( const idx_type par , const double value )
    if( value <= 0 )
     throw( std::invalid_argument( "AAccSol must be > 0" ) );
    AAccSol = value;
+   break;
+  case( dblEveryTTm ):
+   if( value < 0 )
+    throw( std::invalid_argument( "EveryTTm must be >= 0" ) );
+   EveryTTm = value;
    break;
   case( dbltStar ):
    tStar = value;
@@ -1533,6 +1635,9 @@ int BundleSolver::get_int_par( const idx_type par ) const
   case( intMaxSol ):
    return( MaxSol );
    break;
+  case( intEverykIt ):
+   return( EverykIt );
+   break;
   case( intLogVerb ):
    return( LogVerb );
    break;
@@ -1617,6 +1722,9 @@ double BundleSolver::get_dbl_par( const idx_type par ) const
    break;
   case( dblAAccSol ):
    return( AAccSol );
+   break;
+  case( dblEveryTTm ):
+   return( EveryTTm );
    break;
   case( dbltStar ):
    return( tStar );
@@ -1817,6 +1925,12 @@ void BundleSolver::FormD( void )
 
  for(;;)  // error-handling loop - - - - - - - - - - - - - - - - - - - - - -
  {        // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+  // ensure the MPSolver will not take too much time
+  if( MaxTime < Inf<double>() ) {
+   Master->SetMPTime();
+   Master->SetPar( MPSolver::kMaxTme , MaxTime - elapsed() );
+   }
 
   MPSolver::MPStatus mps = Master->SolveMP();  // solve the MP
 
@@ -2227,9 +2341,15 @@ bool BundleSolver::FiAndGi( Index wFi )
  auto fwFi = v_c05f[ wFi ];
 
  fwFi->set_par( dblUpCutOff , UpCutOff );
+
  fwFi->set_par( dblLwCutOff , LwCutOff );
+
  fwFi->set_par( dblRelAcc , EpsCurr );
 
+ // also set a "time cutoff" with the remaining total time
+ if( MaxTime < Inf<double>() )
+  fwFi->set_par( dblMaxTime , MaxTime - elapsed() );
+ 
  // now compute the C05Function and retrieve upper and lower estimates- - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -5303,14 +5423,14 @@ Index BundleSolver::FakeFiOracle::GetBNC( cIndex wFi )
 
 Index BundleSolver::FakeFiOracle::GetBNR( cIndex wFi )
 {
- return( bslv->MILP_s[ wFi -1 ]->get_numrows() );
+ return( bslv->MILP_s[ wFi - 1 ]->get_numrows() );
  }
 
 /*--------------------------------------------------------------------------*/
 
 Index BundleSolver::FakeFiOracle::GetBNZ( cIndex wFi )
 {
- return( bslv->MILP_s[ wFi -1 ]->get_nzelements() );
+ return( bslv->MILP_s[ wFi - 1 ]->get_nzelements() );
  }
 
 /*--------------------------------------------------------------------------*/
@@ -5321,7 +5441,7 @@ void BundleSolver::FakeFiOracle::GetBDesc( cIndex wFi , int *Bbeg ,
 					   double *cst , double *lbd ,
 					   double *ubd )
 {
- auto MILPSlv = bslv->MILP_s[wFi-1];
+ auto MILPSlv = bslv->MILP_s[ wFi - 1 ];
 
  int num_col = MILPSlv->get_numcols();
 
@@ -5346,7 +5466,7 @@ void BundleSolver::FakeFiOracle::GetBDesc( cIndex wFi , int *Bbeg ,
     lhs[ i ] = MILPSlv->get_rhs()[ i ];
     }
    else
-    if( bslv->MILP_s[ wFi -1 ]->get_sense()[ i ] == 'G' ) {
+    if( bslv->MILP_s[ wFi - 1 ]->get_sense()[ i ] == 'G' ) {
      rhs[ i ] = INFshift;
      lhs[ i ] = MILPSlv->get_rhs()[ i ];
      }
@@ -5379,9 +5499,9 @@ Index BundleSolver::FakeFiOracle::GetANZ( cIndex wFi ,
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::FakeFiOracle::GetADesc( cIndex wFi , int *Abeg , int *Aind ,
-					   double *Aval , cIndex strt ,
-					   Index stp )
+void BundleSolver::FakeFiOracle::GetADesc( cIndex wFi , int *Abeg ,
+					   int *Aind , double *Aval ,
+					   cIndex strt , Index stp )
 {
  if( ! bslv->IsEasy[ wFi - 1 ] )
   throw( std::logic_error( "the Function is not a Lagrangian one" ) );
@@ -5439,17 +5559,16 @@ bool BundleSolver::FakeFiOracle::NewGi( cIndex wFi )
 {
  if( wFi == 0 )
   throw( std::invalid_argument( "asking for the 0th component" ) );
- last_c05 =  wFi - 1;
+ last_c05 = wFi - 1;
  return( true );
  }
 
 /*--------------------------------------------------------------------------*/
 
 Index BundleSolver::FakeFiOracle::GetGi( SgRow SubG , cIndex_Set &SGBse ,
-					 cIndex Name , cIndex strt , Index stp
-					 )
+					 cIndex Name , cIndex strt ,
+					 Index stp )
 {
-
  Index NumVar = bslv->v_c05f[ 0 ]->get_num_active_var();
  if( stp > NumVar )
   stp = NumVar;
