@@ -1,33 +1,33 @@
 ##############################################################################
 ################################ makefile-c ##################################
 ##############################################################################
-#									     #
-#   complete makefile of MCFBlock / MCFSolver                                #
-#									     #
+#                                                                            #
+#   complete makefile of BundleSolver                                        #
+#                                                                            #
 #   The makefile defines internally all external libraries (comprised the    #
-#   SMS++ one) required by BundleSolver. Accordingly, all necessary          #
-#   OBJ, H, -I directives, external libraries + -L<libdirs> are added to the #
-#   corresponding MCFBk* macros.                                             #
+#   SMS++ one) required by BundleSolver. Accordingly, all necessary OBJ, H,  #
+#   -I directives, external libraries + -L<libdirs> are added to the         #
+#   corresponding BNDSLV* macros.                                            #
 #                                                                            #
 #   Input:  $(CC)       = compiler command                                   #
 #           $(SW)       = compiler options                                   #
-#           $(BNDSLVSDR) = the directory where MCFBlock / MCFSolver source is#
+#           $(BNDSLVSDR) = the directory where BundleSolver source is        #
 #           $(BNDSLVODR) = the directory where the objects have to be put    #
 #                                                                            #
 #   Output: $(BNDSLVOBJ) = the final object(s) / library                     #
 #           $(BNDSLVLIB) = external libraries + -L<libdirs>                  #
-#           $(BNDSLVH)   = the .h files to include for MCFBlock / MCFSolver  #
-#           $(BNDSLVINC) = the -I$( MCFBlock / MCFSolver directory )         #
+#           $(BNDSLVH)   = the .h files to include for BundleSolver          #
+#           $(BNDSLVINC) = the -I$( BundleSolver directory )                 #
 #                                                                            #
-#                                VERSION 1.00                                #
-#                               13 - 05 - 2019                               #
+#                                VERSION 1.10                                #
+#                               18 - 06 - 2020                               #
 #                                                                            #
 #                              Antonio Frangioni                             #
 #                               Enrico Gorgone                               #
 #                          Operations Research Group                         #
 #                         Dipartimento di Informatica                        #
 #                             Universita' di Pisa                            #
-#									     #
+#                                                                            #
 ##############################################################################
 
 # define & include the necessary modules- - - - - - - - - - - - - - - - - - -
@@ -48,7 +48,7 @@ libNDOSDR = $(BNDSLVSDR)NdoFiOracle/
 include $(libNDOSDR)lib/makefile-inc
 
 # define input macros for SMS++ library makefile, then include it
-#libCPLEXDIR = $(BNDSLVSDR)../extlib/
+# not necessary, MILPSolver does it already
 #SMS++SDR = $(BNDSLVSDR)../SMS++/
 #include $(SMS++SDR)lib/makefile-inc
 
@@ -68,6 +68,6 @@ BNDSLVINC := $(BNDSLVINC) $(SMS++INC) $(libNDOINC) $(MILPSINC)
 BNDSLVH := $(BNDSLVH) $(libNDOH) 
 
 # external libreries for BundleSolver
-BNDSLVLIB = $(libNDOLIB) $(SMS++LIB) 
+BNDSLVLIB = $(libNDOLIB) $(MILPSLIB) $(SMS++LIB) 
 
 ############################ End of makefile #################################

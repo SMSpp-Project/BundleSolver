@@ -5,7 +5,7 @@
 #   makefile of BundleSolver                                                 #
 #                                                                            #
 #   The makefile takes in input the -I directives for all the external       #
-#   libraries needed by BundleSolver, i.e., core SMS++.                      #   
+#   libraries needed by BundleSolver, i.e., core SMS++.                      #
 #                                                                            #
 #   Note that, conversely, $(SMS++INC) is also assumed to include any        #
 #   -I directive corresponding to external libraries needed by SMS++, at     #
@@ -50,7 +50,7 @@ clean::
 # dependencies: every .o from its .cpp + every recursively included .h- - - -
 
 $(BNDSLVSDR)BundleSolver.o: $(BNDSLVSDR)BundleSolver.cpp $(BNDSLVH) \
-	$(SMS++OBJ) $(libNDOOBJ) 
+	$(SMS++OBJ) $(libNDOOBJ)
 	$(CC) -c $*.cpp -o $@ $(BNDSLVINC) $(SMS++INC) $(libNDOINC) $(SW)
 
 ########################## End of makefile ###################################
