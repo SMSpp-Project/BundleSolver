@@ -962,7 +962,7 @@ void BundleSolver::set_Block( Block * block )
   if( ! obj )
    throw( std::logic_error( "objective is not a FRealObjective" ) );
 
-  auto c05f = dynamic_cast< C05Function * >( (obj)->get_function() );
+  auto c05f = dynamic_cast< C05Function * >( obj->get_function() );
   if( ! c05f )
    throw( std::logic_error( "the objective is not a C05Function" ) );
 
@@ -1003,7 +1003,7 @@ void BundleSolver::set_Block( Block * block )
    if( ! obj )
     throw( std::logic_error( "the objective is not a real function" ) );
 
-   auto c05f = dynamic_cast<C05Function *>( (obj)->get_function() );
+   auto c05f = dynamic_cast<C05Function *>( obj->get_function() );
    if( ! c05f )
     throw( std::logic_error( "the objective is not a C05Function" ) );
    v_c05f[ i ] = c05f;
@@ -3729,46 +3729,40 @@ bool BundleSolver::is_special_GroupMod( GroupModification & gmod )
  ++smi;
 
  // check FunctionModVarsAddd
- {
-  const auto mod0 = std::dynamic_pointer_cast< FunctionModVarsAddd >( sm0 );
-  if( mod0 ) {
-   for( ; smi != gmod.sub_Modifications().end() ; ++smi ) {
-    auto modi = std::static_pointer_cast< FunctionModVarsAddd >( *smi );
-    if( ( mod0->first() != modi->first() ) ||
-	( mod0->vars() != modi->vars() ) )
-     throw( std::logic_error( "different Variable change in components" ) );
-    }
-
-   return( true );
+ if( const auto mod0 =
+     std::dynamic_pointer_cast< FunctionModVarsAddd >( sm0 ) ) {
+  for( ; smi != gmod.sub_Modifications().end() ; ++smi ) {
+   auto modi = std::static_pointer_cast< FunctionModVarsAddd >( *smi );
+   if( ( mod0->first() != modi->first() ) ||
+       ( mod0->vars() != modi->vars() ) )
+    throw( std::logic_error( "different Variable change in components" ) );
    }
+
+  return( true );
   }
 
  // check FunctionModVarsRngd
- {
-  const auto mod0 = std::dynamic_pointer_cast< FunctionModVarsRngd >( sm0 );
-  if( mod0 ) {
-   for( ; smi != gmod.sub_Modifications().end() ; ++smi ) {
-    auto modi = std::static_pointer_cast< FunctionModVarsRngd >( *smi );
-    if( mod0->range() != modi->range() )
-     throw( std::logic_error( "different Variable change in components" ) );
-    }
-
-   return( true );
+ if( const auto mod0 =
+     std::dynamic_pointer_cast< FunctionModVarsRngd >( sm0 ) ) {
+  for( ; smi != gmod.sub_Modifications().end() ; ++smi ) {
+   auto modi = std::static_pointer_cast< FunctionModVarsRngd >( *smi );
+   if( mod0->range() != modi->range() )
+    throw( std::logic_error( "different Variable change in components" ) );
    }
+
+  return( true );
   }
 
  // check FunctionModVarsSbst
- {
-  const auto mod0 = std::dynamic_pointer_cast< FunctionModVarsSbst >( sm0 );
-  if( mod0 ) {
-   for( ; smi != gmod.sub_Modifications().end() ; ++smi ) {
-    auto modi = std::static_pointer_cast<FunctionModVarsSbst>( *smi );
-    if( mod0->subset() != modi->subset() )
-     throw( std::logic_error( "different Variable change in components" ) );
-    }
-
-   return( true );
+ if( const auto mod0 =
+     std::dynamic_pointer_cast< FunctionModVarsSbst >( sm0 ) ) {
+  for( ; smi != gmod.sub_Modifications().end() ; ++smi ) {
+   auto modi = std::static_pointer_cast<FunctionModVarsSbst>( *smi );
+   if( mod0->subset() != modi->subset() )
+    throw( std::logic_error( "different Variable change in components" ) );
    }
+
+  return( true );
   }
 
  return( false );
@@ -3857,236 +3851,189 @@ void BundleSolver::process_outstanding_Modification( void )
   // patiently sift through the possible Modification types to find what mod
   // exactly is and react accordingly
 
-  // first check if it is any kinf of FunctionMod, since this gives immediate
+  // first check if it is any kind of FunctionMod, since this gives immediate
   // access to the component, and any FunctionMod pertaining to an already
   // reset component can be almost immediately deleted
-  {
-   const auto tmod = std::dynamic_pointer_cast<FunctionMod>( mod );
-   if( tmod ) {
-    if( tmod->function() == f_lf )
-     throw( std::logic_error( "changes in 0-th component not handled yet" ) );
+  if( const auto tmod = std::dynamic_pointer_cast<FunctionMod>( mod ) ) {
+   if( tmod->function() == f_lf )
+    throw( std::logic_error( "changes in 0-th component not handled yet" ) );
 
-    auto wFi = get_index_of_component( tmod->function() );
+   auto wFi = get_index_of_component( tmod->function() );
 
-    // adjust or reset upper/lower values as needed
-    // note that the list is scanned in reverse, hence these changes are
-    // applied in reverse order. however, if the upper/lower values are
-    // reset at any point in the list they stay reset forever. indeed,
-    // even if a function has a finite shift after a reset, this says
-    // nothing because there are no known values to shift. if, rather, the
-    // values are only shifted by finite amounts, the total shift is the
-    // sum of the shift, and the order of additions do not change the result
-    if( wFi < NrFi )
-     FModChg( tmod->shift() , wFi );
-    else {
-     // this is a FunctionMod coming from some unknown Function, not any
-     // business of BundleSolver
-     to_delete = true;
-     continue;
-     }
-
-    if( reset[ wFi ] ) {
-     // any kind of FunctionMod after (before) one that completely reset the
-     // component is useless, delete it and move forward (backward)
-     to_delete = true;
-     continue;
-     }
-
-    // if the component is not reset (yet), one must look in details what
-    // exact type the *FunctionMod* is and react accordingly
-
-    {
-     // a C05FunctionModRngd only changes existing linearizations, and
-     // therefore is never a "hard" reset; the only easy case is
-     // NothingChanged, which by definition does nothing save for the
-     // shift(), that has been dealt with already
-     const auto ttmod = std::dynamic_pointer_cast<C05FunctionModRngd>( tmod );
-     if( ttmod ) {
-      switch( ttmod->type() ) {
-       case( C05FunctionMod::NothingChanged ):
-	to_delete = true;
-       case( C05FunctionMod::AllLinearizationChanged ):
-       case( C05FunctionMod::AllEntriesChanged ):
-        continue;
-       default:
-	throw( std::invalid_argument( "wrong type in C05FunctionModRngd" ) );
-       }  // end( switch( ttmod->f_type ) )
-      }  // end( if( ttmod ) )
-     }  // end C05FunctionModRngd
-
-    {
-     // a C05FunctionModSbst only changes existing linearizations, and
-     // therefore is never a "hard" reset; the only easy case is
-     // NothingChanged, which by definition does nothing save for the
-     // shift(), that has been dealt with already
-     const auto ttmod = std::dynamic_pointer_cast<C05FunctionModSbst>( tmod );
-     if( ttmod ) {
-      switch( ttmod->type() ) {
-       case( C05FunctionMod::NothingChanged ):
-	to_delete = true;
-       case( C05FunctionMod::AllLinearizationChanged ):
-       case( C05FunctionMod::AllEntriesChanged ):
-        continue;
-       default:
-	throw( std::invalid_argument( "wrong type in C05FunctionModSbst" ) );
-       }  // end( switch( ttmod->f_type ) )
-      }  // end( if( ttmod ) )
-     }  // end C05FunctionModSbst
-
-    {
-     // a C05FunctionMod of type GlobalPoolRemoved with which.empty() resets
-     // all the component. NothingChanged by definition does nothing (save
-     // for the shift(), that has been dealt with already). all other cases
-     // will have to be dealt with later
-     const auto ttmod = std::dynamic_pointer_cast<C05FunctionMod>( tmod );
-     if( ttmod ) {
-      switch( ttmod->type() ) {
-       case( C05FunctionMod::GlobalPoolRemoved ):
-	if( ttmod->which().empty() ) {
-	 reset[ wFi ] = true;
-	 to_delete = true;
-	 }
-	continue;
-       case( C05FunctionMod::NothingChanged ):
-	to_delete = true;
-       case( C05FunctionMod::AllLinearizationChanged ):
-       case( C05FunctionMod::AllEntriesChanged ):
-       case( C05FunctionMod::AlphaChanged ):
-       case( C05FunctionMod::GlobalPoolAdded ):
-	continue;
-       default:
-	throw( std::invalid_argument( "wrong type in C05FunctionMod" ) );
-       }  // end( switch( ttmod->f_type ) )
-      }  // end( if( ttmod ) )
-     }  // end C05FunctionMod
-
-    {
-     // a C05FunctionModLin* only changes existing linearizations, and
-     // therefore is never a "hard" reset
-     const auto ttmod = std::dynamic_pointer_cast<C05FunctionModLinRngd>(
-								       tmod );
-     if( ttmod )
-      continue;
-     }
-
-    // if control reaches this point, mod is (indistinguishable from) a base
-    // FunctionMod, and in particular it is not a C05FunctionMod*. hence the
-    // change in the Function is not quasi-additive, and therefore a fortiori
-    // not strongly quasi-additive. as a result, this is a "hard" reset
-
-    reset[ wFi ] = true;
+   // adjust or reset upper/lower values as needed
+   // note that the list is scanned in reverse, hence these changes are
+   // applied in reverse order. however, if the upper/lower values are
+   // reset at any point in the list they stay reset forever. indeed,
+   // even if a function has a finite shift after a reset, this says
+   // nothing because there are no known values to shift. if, rather, the
+   // values are only shifted by finite amounts, the total shift is the
+   // sum of the shift, and the order of additions do not change the result
+   if( wFi < NrFi )
+    FModChg( tmod->shift() , wFi );
+   else {
+    // this is a FunctionMod coming from some unknown Function, not any
+    // business of BundleSolver
     to_delete = true;
-
-    }  // end( if( tmod ) )
-   }  // end FunctionMod
-
-  {
-   // a "naked" FunctionModVars is only allowed if there is only one
-   // component (comprised the linear one). if it is allowed, it is
-   // of no consequence here, except for the possible effect on the
-   // function values, if it is a C05FunctionModVars*, meaning that it
-   // represents a strongly quasi-additive variable change. if not, the
-   // variable change also implies a reset
-   // in no case, however, the Modification is removed from the list
-
-   const auto tmod = std::dynamic_pointer_cast<FunctionModVars>( mod );
-   if( tmod ) {
-    if( ( NrFi > 1 ) || f_lf )
-     throw( std::invalid_argument( "naked FunctionModVars not allowed" ) );
-
-    auto wFi = get_index_of_component( tmod->function() );
-
-    FModChg( tmod->shift() , wFi );  // change/reset upper/lower values
-
-    {
-     const auto ttmod =
-                    std::dynamic_pointer_cast<C05FunctionModVarsAddd>( tmod );
-     if( ttmod )
-      continue;
-     }
-
-    {
-     const auto ttmod =
-                    std::dynamic_pointer_cast<C05FunctionModVarsRngd>( tmod );
-     if( ttmod )
-      continue;
-     }
-
-    {
-     const auto ttmod =
-                    std::dynamic_pointer_cast<C05FunctionModVarsSbst>( tmod );
-     if( ttmod )
-      continue;
-     }
-
-    // if control reaches here, this is a FunctionModVars* that is not a
-    // C05FunctionModVars*, i.e., a non strongly quasi-additive variable
-    // change, which implies a "hard" reset for the component
-    reset[ wFi ] = true;
-    continue;
-
-    }  // end( if( tmod ) )
-   }  // end FunctionModVars
-
-  {
-   // a GroupModification here can only be a bunch of identical
-   // *FunctionModVar*: pick the first one and act on it
-   const auto tmod = std::dynamic_pointer_cast<GroupModification>( mod );
-   if( tmod ) {
-    auto fmod = tmod->sub_Modifications().front();
-
-    {
-     const auto ttmod =
-                  std::dynamic_pointer_cast< C05FunctionModVarsAddd >( fmod );
-     if( ttmod )
-      continue;
-     }
-
-    {
-     const auto ttmod =
-                  std::dynamic_pointer_cast< C05FunctionModVarsRngd >( fmod );
-     if( ttmod )
-      continue;
-     }
-
-    {
-     const auto ttmod =
-                 std::dynamic_pointer_cast< C05FunctionModVarsSbst >( fmod );
-     if( ttmod )
-      continue;
-     }
-
-    // if control reaches here, this is a FunctionModVars* that is not a
-    // C05FunctionModVars*, i.e., a non strongly quasi-additive variable
-    // change, which implies a "hard" reset for *all* components
-    reset.assign( NrFi , true );
     continue;
     }
-   }
 
-  {
-   const auto tmod = std::dynamic_pointer_cast< ConstraintMod >( mod );
-   if( tmod )
-    throw( std::invalid_argument( "ConstraintMod not handled (yet)" ) );
-   }
+   if( reset[ wFi ] ) {
+    // any kind of FunctionMod after (before) one that completely reset the
+    // component is useless, delete it and move forward (backward)
+    to_delete = true;
+    continue;
+    }
 
-  {
-   const auto tmod = std::dynamic_pointer_cast< VariableMod >( mod );
-   if( tmod )
-    throw( std::invalid_argument( "VariableMod not handled (yet)" ) );
-   }
+   // if the component is not reset (yet), one must look in details what
+   // exact type the *FunctionMod* is and react accordingly
 
-  {
-   const auto tmod = std::dynamic_pointer_cast< BlockMod >( mod );
-   if( tmod )
-    throw( std::invalid_argument( "BlockMod not handled (yet)" ) );
-   }
+   // a C05FunctionModRngd only changes existing linearizations, and
+   // therefore is never a "hard" reset; the only easy case is
+   // NothingChanged, which by definition does nothing save for the
+   // shift(), that has been dealt with already
+   if( const auto ttmod =
+       std::dynamic_pointer_cast<C05FunctionModRngd>( tmod ) ) {
+    switch( ttmod->type() ) {
+     case( C05FunctionMod::NothingChanged ):
+      to_delete = true;
+     case( C05FunctionMod::AllLinearizationChanged ):
+     case( C05FunctionMod::AllEntriesChanged ):
+      continue;
+     default:
+      throw( std::invalid_argument( "wrong type in C05FunctionModRngd" ) );
+     }  // end( switch( ttmod->f_type ) )
+    }  // end( if( ttmod - C05FunctionModRngd ) )
 
-  {
-   const auto tmod = std::dynamic_pointer_cast< BlockModAD >( mod );
-   if( tmod )
-    throw( std::invalid_argument( "BlockModAD not handled (yet)" ) );
-   }
+   // a C05FunctionModSbst only changes existing linearizations, and
+   // therefore is never a "hard" reset; the only easy case is
+   // NothingChanged, which by definition does nothing save for the
+   // shift(), that has been dealt with already
+   if( const auto ttmod =
+       std::dynamic_pointer_cast<C05FunctionModSbst>( tmod ) ) {
+    switch( ttmod->type() ) {
+     case( C05FunctionMod::NothingChanged ):
+      to_delete = true;
+     case( C05FunctionMod::AllLinearizationChanged ):
+     case( C05FunctionMod::AllEntriesChanged ):
+      continue;
+     default:
+      throw( std::invalid_argument( "wrong type in C05FunctionModSbst" ) );
+     }  // end( switch( ttmod->f_type ) )
+    }  // end( if( ttmod - C05FunctionModSbst ) )
+
+   // a C05FunctionMod of type GlobalPoolRemoved with which.empty() resets
+   // all the component. NothingChanged by definition does nothing (save
+   // for the shift(), that has been dealt with already). all other cases
+   // will have to be dealt with later
+   if( const auto ttmod =
+       std::dynamic_pointer_cast<C05FunctionMod>( tmod ) ) {
+    switch( ttmod->type() ) {
+     case( C05FunctionMod::GlobalPoolRemoved ):
+      if( ttmod->which().empty() ) {
+       reset[ wFi ] = true;
+       to_delete = true;
+       }
+      continue;
+     case( C05FunctionMod::NothingChanged ):
+      to_delete = true;
+     case( C05FunctionMod::AllLinearizationChanged ):
+     case( C05FunctionMod::AllEntriesChanged ):
+     case( C05FunctionMod::AlphaChanged ):
+     case( C05FunctionMod::GlobalPoolAdded ):
+      continue;
+     default:
+      throw( std::invalid_argument( "wrong type in C05FunctionMod" ) );
+     }  // end( switch( ttmod->f_type ) )
+    }  // end( if( ttmod - C05FunctionMod ) )
+
+   // a C05FunctionModLin* only changes existing linearizations, and
+   // therefore is never a "hard" reset
+   if( const auto ttmod =
+       std::dynamic_pointer_cast<C05FunctionModLinRngd>( tmod ) )
+    continue;
+
+   // if control reaches this point, mod is (indistinguishable from) a base
+   // FunctionMod, and in particular it is not a C05FunctionMod*. hence the
+   // change in the Function is not quasi-additive, and therefore a fortiori
+   // not strongly quasi-additive. as a result, this is a "hard" reset
+
+   reset[ wFi ] = true;
+   to_delete = true;
+
+   }  // end( if( tmod - FunctionMod ) )
+
+  // a "naked" FunctionModVars is only allowed if there is only one
+  // component (comprised the linear one). if it is allowed, it is
+  // of no consequence here, except for the possible effect on the
+  // function values, if it is a C05FunctionModVars*, meaning that it
+  // represents a strongly quasi-additive variable change. if not, the
+  // variable change also implies a reset
+  // in no case, however, the Modification is removed from the list
+  if( const auto tmod = std::dynamic_pointer_cast<FunctionModVars>( mod ) ) {
+   if( ( NrFi > 1 ) || f_lf )
+    throw( std::invalid_argument( "naked FunctionModVars not allowed" ) );
+
+   auto wFi = get_index_of_component( tmod->function() );
+
+   FModChg( tmod->shift() , wFi );  // change/reset upper/lower values
+
+   if( const auto ttmod =
+       std::dynamic_pointer_cast<C05FunctionModVarsAddd>( tmod ) )
+    continue;
+
+   if( const auto ttmod =
+       std::dynamic_pointer_cast<C05FunctionModVarsRngd>( tmod ) )
+    continue;
+
+   if( const auto ttmod =
+       std::dynamic_pointer_cast<C05FunctionModVarsSbst>( tmod ) )
+    continue;
+
+   // if control reaches here, this is a FunctionModVars* that is not a
+   // C05FunctionModVars*, i.e., a non strongly quasi-additive variable
+   // change, which implies a "hard" reset for the component
+   reset[ wFi ] = true;
+   continue;
+
+   }  // end( if( tmod - FunctionModVars ) )
+
+  // a GroupModification here can only be a bunch of identical
+  // *FunctionModVar*: pick the first one and act on it
+  if( const auto tmod =
+      std::dynamic_pointer_cast< GroupModification >( mod ) ) {
+   auto fmod = tmod->sub_Modifications().front();
+
+   if( const auto ttmod =
+       std::dynamic_pointer_cast< C05FunctionModVarsAddd >( fmod ) )
+    continue;
+
+   if( const auto ttmod =
+       std::dynamic_pointer_cast< C05FunctionModVarsRngd >( fmod ) )
+    continue;
+
+   if( const auto ttmod =
+       std::dynamic_pointer_cast< C05FunctionModVarsSbst >( fmod ) )
+    continue;
+
+   // if control reaches here, this is a FunctionModVars* that is not a
+   // C05FunctionModVars*, i.e., a non strongly quasi-additive variable
+   // change, which implies a "hard" reset for *all* components
+   reset.assign( NrFi , true );
+   continue;
+
+   }  // end( if( tmod - GroupModification ) )
+
+  if( const auto tmod = std::dynamic_pointer_cast< ConstraintMod >( mod ) )
+   throw( std::invalid_argument( "ConstraintMod not handled (yet)" ) );
+
+  if( const auto tmod = std::dynamic_pointer_cast< VariableMod >( mod ) )
+   throw( std::invalid_argument( "VariableMod not handled (yet)" ) );
+
+  if( const auto tmod = std::dynamic_pointer_cast< BlockMod >( mod ) )
+   throw( std::invalid_argument( "BlockMod not handled (yet)" ) );
+
+  if( const auto tmod = std::dynamic_pointer_cast< BlockModAD >( mod ) )
+   throw( std::invalid_argument( "BlockModAD not handled (yet)" ) );
 
   // if control reaches here, the Modification is "unknown", probably a
   // "physical" Modification that BundleSolver does not care about
@@ -4169,148 +4116,131 @@ void BundleSolver::process_outstanding_Modification( void )
   // patiently sift through the possible Modification types to find what mod
   // exactly is and react accordingly
 
-  {
-   // a C05FunctionModRngd only changes a range of the linearizations,
-   // and therefore is not considered a "soft" reset even if which().empty()
-   // in fact the range could be so large as to be (almost) all the
-   // variables, which would count as a reset, but so far we don't attempt
-   // at detecting this. the only easy case would be NothingChanged, but
-   // any such C05FunctionModRngd has been deleted already. however, if the
-   // component is "soft" reset already, it can be deleted
-   //
-   // the Modification can also change constants, so this has to be checked.
-   // if the Modification changes all the constants and the component is
-   // reset already, it can be deleted
-
-   const auto tmod = std::dynamic_pointer_cast<C05FunctionModRngd>( mod );
-   if( tmod ) {
-    auto wFi = get_index_of_component( tmod->function() );
-    switch( tmod->type() ) {
-     case( C05FunctionMod::AllEntriesChanged ):
-      if( reset[ wFi ] )            // component reset already
-       to_delete = true;            // nothing else to do
-      continue;
-     case( C05FunctionMod::AllLinearizationChanged ):
-      if( tmod->which().empty() ) {  // reset of the constants
-       if( reset[ wFi ] )            // component reset already
-	to_delete = true;            // nothing else to do
-       else                          // component not reset
-	AlphaC[ wFi ] = true;        // reset the constants
-       }
-      continue;
-     default:  // this must not happen
-      throw( std::invalid_argument( "wrong type() in C05FunctionModRngd" ) );
-     }
-    }  // end( if( ttmod ) )
-   }  // end C05FunctionModRngd
-
-  {
-   // a C05FunctionModSbst only changes a subet of the linearizations,
-   // and therefore is not considered a "soft" reset even if which().empty()
-   // in fact the subet could be so large as to be (almost) all the
-   // variables, which would count as a reset, but so far we don't attempt
-   // at detecting this. the only easy case would be NothingChanged, but
-   // any such C05FunctionModSbst has been deleted already. however, if the
-   // component is "soft" reset already, it can be deleted
-
-   const auto tmod = std::dynamic_pointer_cast<C05FunctionModSbst>( mod );
-   if( tmod ) {
-    auto wFi = get_index_of_component( tmod->function() );
-    switch( tmod->type() ) {
-     case( C05FunctionMod::AllEntriesChanged ):
-      if( reset[ wFi ] )            // component reset already
-       to_delete = true;            // nothing else to do
-      continue;
-     case( C05FunctionMod::AllLinearizationChanged ):
-      if( tmod->which().empty() ) {  // reset of the constants
-       if( reset[ wFi ] )            // component reset already
-	to_delete = true;            // nothing else to do
-       else                          // component not reset
-	AlphaC[ wFi ] = true;        // reset the constants
-       }
-      continue;
-     default:  // this must not happen
-      throw( std::invalid_argument( "wrong type() in C05FunctionModSbst" ) );
-     }
-    }  // end( if( ttmod ) )
-   }  // end C05FunctionModSbst
-
-  {
-   // a C05FunctionMod of type AllLinearizationChanged or AllEntriesChanged
-   // with which.empty() "soft" resets all the component, and in the former
-   // case also Alpha; AlphaChanged only changes the constants (obviously)
-
-   const auto tmod = std::dynamic_pointer_cast<C05FunctionMod>( mod );
-   if( tmod ) {
-    // we only react to which().empty() 
-    if( ! tmod->which().empty() )
+  // a C05FunctionModRngd only changes a range of the linearizations,
+  // and therefore is not considered a "soft" reset even if which().empty()
+  // in fact the range could be so large as to be (almost) all the
+  // variables, which would count as a reset, but so far we don't attempt
+  // at detecting this. the only easy case would be NothingChanged, but
+  // any such C05FunctionModRngd has been deleted already. however, if the
+  // component is "soft" reset already, it can be deleted
+  //
+  // the Modification can also change constants, so this has to be checked.
+  // if the Modification changes all the constants and the component is
+  // reset already, it can be deleted
+  if( const auto tmod =
+      std::dynamic_pointer_cast<C05FunctionModRngd>( mod ) ) {
+   auto wFi = get_index_of_component( tmod->function() );
+   switch( tmod->type() ) {
+    case( C05FunctionMod::AllEntriesChanged ):
+     if( reset[ wFi ] )            // component reset already
+      to_delete = true;            // nothing else to do
      continue;
+    case( C05FunctionMod::AllLinearizationChanged ):
+     if( tmod->which().empty() ) {  // reset of the constants
+      if( reset[ wFi ] )            // component reset already
+       to_delete = true;            // nothing else to do
+      else                          // component not reset
+       AlphaC[ wFi ] = true;        // reset the constants
+      }
+     continue;
+    default:  // this must not happen
+     throw( std::invalid_argument( "wrong type() in C05FunctionModRngd" ) );
+    }
+   }  // end( if( ttmod - C05FunctionModRngd ) )
 
-    auto wFi = get_index_of_component( tmod->function() );
+  // a C05FunctionModSbst only changes a subet of the linearizations,
+  // and therefore is not considered a "soft" reset even if which().empty()
+  // in fact the subet could be so large as to be (almost) all the
+  // variables, which would count as a reset, but so far we don't attempt
+  // at detecting this. the only easy case would be NothingChanged, but
+  // any such C05FunctionModSbst has been deleted already. however, if the
+  // component is "soft" reset already, it can be deleted
+  if( const auto tmod =
+      std::dynamic_pointer_cast<C05FunctionModSbst>( mod ) ) {
+   auto wFi = get_index_of_component( tmod->function() );
+   switch( tmod->type() ) {
+    case( C05FunctionMod::AllEntriesChanged ):
+     if( reset[ wFi ] )            // component reset already
+      to_delete = true;            // nothing else to do
+     continue;
+    case( C05FunctionMod::AllLinearizationChanged ):
+     if( tmod->which().empty() ) {  // reset of the constants
+      if( reset[ wFi ] )            // component reset already
+       to_delete = true;            // nothing else to do
+      else                          // component not reset
+       AlphaC[ wFi ] = true;        // reset the constants
+      }
+     continue;
+    default:  // this must not happen
+     throw( std::invalid_argument( "wrong type() in C05FunctionModSbst" ) );
+    }
+   }  // end( if( ttmod - C05FunctionModSbst ) )
 
-    switch( tmod->type() ) {
-     case( C05FunctionMod::AlphaChanged ):
-      AlphaC[ wFi ] = true;
-      break;
-     case( C05FunctionMod::AllEntriesChanged ):
-     case( C05FunctionMod::AllLinearizationChanged ):
-      reset[ wFi ] = AlphaC[ wFi ] = true;
-      break;
-     default:  // this must not happen, as GlobalPoolRemoved with
-               // which.empty() has been dealt with and deleted before
-      throw( std::invalid_argument(
+  // a C05FunctionMod of type AllLinearizationChanged or AllEntriesChanged
+  // with which.empty() "soft" resets all the component, and in the former
+  // case also Alpha; AlphaChanged only changes the constants (obviously)
+  if( const auto tmod = std::dynamic_pointer_cast<C05FunctionMod>( mod ) ) {
+   // we only react to which().empty() 
+   if( ! tmod->which().empty() )
+    continue;
+
+   auto wFi = get_index_of_component( tmod->function() );
+
+   switch( tmod->type() ) {
+    case( C05FunctionMod::AlphaChanged ):
+     AlphaC[ wFi ] = true;
+     break;
+    case( C05FunctionMod::AllEntriesChanged ):
+    case( C05FunctionMod::AllLinearizationChanged ):
+     reset[ wFi ] = AlphaC[ wFi ] = true;
+     break;
+    default:  // this must not happen, as GlobalPoolRemoved with
+              // which.empty() has been dealt with and deleted before
+     throw( std::invalid_argument(
 		        "wrong type in C05FunctionMod with empty which()" ) );
-     }
+    }
 
-    to_delete = true;
-    continue;
-    }  // end( if( tmod ) )
-   }  // end C05FunctionMod
+   to_delete = true;
+   continue;
+   }  // end( if( tmod - C05FunctionMod ) )
 
-  {
-   // a C05FunctionModLinRngd implies that a specific range in all the
-   // linearizations must be changed by adding; this is never considered a
-   // "soft" reset even if in fact the range could be so large as to be
-   // (almost) all the variables, which would count as a reset, but so far
-   // we don't attempt at detecting this. however, if the component is "soft"
-   // reset already, it can be deleted
-   const auto tmod = std::dynamic_pointer_cast<C05FunctionModLinRngd>( mod );
-   if( tmod ) {
-    auto wFi = get_index_of_component( tmod->function() );
+  // a C05FunctionModLinRngd implies that a specific range in all the
+  // linearizations must be changed by adding; this is never considered a
+  // "soft" reset even if in fact the range could be so large as to be
+  // (almost) all the variables, which would count as a reset, but so far
+  // we don't attempt at detecting this. however, if the component is "soft"
+  // reset already, it can be deleted
+  if( const auto tmod =
+      std::dynamic_pointer_cast<C05FunctionModLinRngd>( mod ) ) {
+   auto wFi = get_index_of_component( tmod->function() );
     if( reset[ wFi ] )
      to_delete = true;
     continue;
-    }  // end( if( ttmod ) )
-   }  // end C05FunctionModLinRngd
+    }  // end( if( ttmod - C05FunctionModLinRngd ) )
 
-  {
-   // a C05FunctionModLinSbst implies that a specific subset in all the
-   // linearizations must be changed by adding; this is never considered a
-   // "soft" reset even if in fact the subset could be so large as to be
-   // (almost) all the variables, which would count as a reset, but so far
-   // we don't attempt at detecting this. however, if the component is "soft"
-   // reset already, it can be deleted
-   const auto tmod = std::dynamic_pointer_cast<C05FunctionModLinSbst>( mod );
-   if( tmod ) {
-    auto wFi = get_index_of_component( tmod->function() );
-    if( reset[ wFi ] )
-     to_delete = true;
-    continue;
-    }  // end( if( ttmod ) )
-   }  // end C05FunctionModLinSbst
-
-  {
-   // a C05FunctionModLin implies that *all* the linearizations must be
-   // changed by adding them \delta; this may in principle be handled in
-   // a specialised way by BundleSolver, but is currently not, and
-   // therefore it is a "full" reset
-   const auto tmod = std::dynamic_pointer_cast<C05FunctionModLin>( mod );
-   if( tmod ) {
-    auto wFi = get_index_of_component( tmod->function() );
-    reset[ wFi ] = AlphaC[ wFi ] = true;
+  // a C05FunctionModLinSbst implies that a specific subset in all the
+  // linearizations must be changed by adding; this is never considered a
+  // "soft" reset even if in fact the subset could be so large as to be
+  // (almost) all the variables, which would count as a reset, but so far
+  // we don't attempt at detecting this. however, if the component is "soft"
+  // reset already, it can be deleted
+  if( const auto tmod =
+      std::dynamic_pointer_cast<C05FunctionModLinSbst>( mod ) ) {
+   auto wFi = get_index_of_component( tmod->function() );
+   if( reset[ wFi ] )
     to_delete = true;
-    }  // end( if( ttmod ) )
-   }  // end C05FunctionModLin
+   continue;
+   }  // end( if( ttmod - C05FunctionModLinSbst ) )
+
+  // a C05FunctionModLin implies that *all* the linearizations must be
+  // changed by adding them \delta; this may in principle be handled in
+  // a specialised way by BundleSolver, but is currently not, and
+  // therefore it is a "full" reset
+  if( const auto tmod = std::dynamic_pointer_cast<C05FunctionModLin>( mod ) ) {
+   auto wFi = get_index_of_component( tmod->function() );
+   reset[ wFi ] = AlphaC[ wFi ] = true;
+   to_delete = true;
+   }  // end( if( ttmod - C05FunctionModLin ) )
   }  // end( 2nd loop, again in reverse )
 
  // note that even if there were no more Modification to process we could not
@@ -4382,8 +4312,7 @@ void BundleSolver::process_outstanding_Modification( void )
   // also, note that NothingChanged and AlphaChanged cannot happen, since
   // again these cases have been dealt with already
 
-  const auto tmod = std::dynamic_pointer_cast<C05FunctionMod>( mod );
-  if( tmod ) {
+  if( const auto tmod = std::dynamic_pointer_cast<C05FunctionMod>( mod ) ) {
    auto wFi = get_index_of_component( tmod->function() );
 
    switch( tmod->type() ) {
@@ -4549,8 +4478,9 @@ void BundleSolver::process_outstanding_Modification( void )
    if( ! tmod ) {
     // if it is not a "naked" FunctionModVars, it can still be a group of
     // identical *FunctionModVars* "dressed" into a GroupModification
-    const auto gmod = std::dynamic_pointer_cast<GroupModification>( mod );
-    if( gmod )  // if so, pick the first one and act on it
+    if( const auto gmod =
+	std::dynamic_pointer_cast< GroupModification >( mod ) )
+     // if so, pick the first one and act on it
      tmod = std::static_pointer_cast< FunctionModVars >(
 					 gmod->sub_Modifications().front() );
     }
@@ -4561,120 +4491,113 @@ void BundleSolver::process_outstanding_Modification( void )
     // Modification is processed and can be deleted
     to_delete = true;
 
-    {
-     const auto ttmod =
-                    std::dynamic_pointer_cast< FunctionModVarsAddd >( tmod );
-     if( ttmod ) {
-      addd_vars = true;
-      if( ! to_add ) {
-       // the first time, check that the Modification data agrees with what
-       // we expect
-       if( ttmod->first() != NumVar )
-	throw( std::logic_error( "wrong Variable names in FunctionModVars" )
-	       );
-       }
+    if( const auto ttmod =
+	std::dynamic_pointer_cast< FunctionModVarsAddd >( tmod ) ) {
+     addd_vars = true;
+     if( ! to_add ) {
+      // the first time, check that the Modification data agrees with what
+      // we expect
+      if( ttmod->first() != NumVar )
+       throw( std::logic_error( "wrong Variable names in FunctionModVars" ) );
+      }
       
-      to_add += ttmod->vars().size();
-      continue;
+     to_add += ttmod->vars().size();
+     continue;
+
+     } // end( if( ttmod - FunctionModVarsAddd ) )
+
+    if( const auto ttmod =
+	std::dynamic_pointer_cast< FunctionModVarsRngd >( tmod ) ) {
+     rmvd_vars = true;
+     Range rng = ttmod->range();
+
+     if( ( rng.first == 0 ) && ( rng.second >= NumVar ) ) {
+      NumVar = 0;                      // deleting *all* Variable
+      Lambda.clear();
+      Lambda1.clear();
+      LmbdBst.clear();
+      Master->RmvVars( nullptr , 0 );  // remove from MP
+      continue;                        // nothing else to do
       }
-     }
-
-    {
-     const auto ttmod =
-                    std::dynamic_pointer_cast< FunctionModVarsRngd >( tmod );
-     if( ttmod ) {
-      rmvd_vars = true;
-      Range rng = ttmod->range();
-
-      if( ( rng.first == 0 ) && ( rng.second >= NumVar ) ) {
-       NumVar = 0;                      // deleting *all* Variable
-       Lambda.clear();
-       Lambda1.clear();
-       LmbdBst.clear();
-       Master->RmvVars( nullptr , 0 );  // remove from MP
-       continue;                        // nothing else to do
-       }
       
-      if( rng.first >= NumVar ) {  // all the Variable are deleted already
-       auto nr = rng.second - rng.first;
-       if( nr > to_add )
-	throw( std::logic_error( "removing non-existing Variable" ) );
-       to_add -= nr;               // "virtually" remove them
-       continue;                   // nothing else to do
-       }
-      if( rng.second >= NumVar ) {  // some of the Variable deleted already
-       auto nr = rng.second - NumVar;
-       if( nr > to_add )
-	throw( std::logic_error( "removing non-existing Variable" ) );
-       to_add -= nr;               // "virtually" remove them
-       rng.second = NumVar;
-       }
-      if( rng.second < NumVar ) {
-       // if deleting the last range of Variable nothing has to be done,
-       // but deleting Variable "in the middle" rather requires moving
-       // down the remaining range of values in Lambda
-       std::copy( Lambda.begin() + rng.second , Lambda.end() ,
-		  Lambda.begin() + rng.first );
-       }
-      Subset tdlt( rng.second - rng.first );
-      NumVar -= tdlt.size();
-      Lambda.resize( NumVar );  // adjust Lambda
-      Lambda1.resize( NumVar );
-      if( MaxSol > 1 )
-       LmbdBst.resize( NumVar );
-      std::iota( tdlt.begin() , tdlt.end() , rng.first );
-      Master->RmvVars( tdlt.data() , tdlt.size() );  // remove from MP
-      continue;
+     if( rng.first >= NumVar ) {  // all the Variable are deleted already
+      auto nr = rng.second - rng.first;
+      if( nr > to_add )
+       throw( std::logic_error( "removing non-existing Variable" ) );
+      to_add -= nr;               // "virtually" remove them
+      continue;                   // nothing else to do
       }
-     }
-
-    {
-     const auto ttmod =
-                    std::dynamic_pointer_cast< FunctionModVarsSbst >( tmod );
-     if( ttmod ) {
-      rmvd_vars = true;
-
-      if( ttmod->subset().empty() ) {  // deleting *all* Variable
-       NumVar = 0;
-       Lambda.clear();
-       Lambda1.clear();
-       LmbdBst.clear();
-       Master->RmvVars( nullptr , 0 );  // remove from MP
-       continue;                        // nothing else to do
-       }
-
-      if( ttmod->subset().front() >= NumVar ) {
-       // all the Variable are deleted already
-       if( ttmod->subset().size() > to_add )
-	throw( std::logic_error( "removing non-existing Variable" ) );
-       to_add -= ttmod->subset().size();  // "virtually" remove them
-       continue;                          // nothing else to do
-       }
-
-      Subset tsbst;
-      c_Subset * sbst = & tsbst;
-      if( ttmod->subset().back() < NumVar )  // no Variable deleted already
-       sbst = & ttmod->subset();             // delete them all
-      else {                                 // construct the subset to delete
-       auto sbstit = ttmod->subset().end();
-       while( *(--sbstit) >= NumVar );
-       tsbst = Subset( ttmod->subset().begin() , ++sbstit );
-       auto nr = ttmod->subset().size() - tsbst.size();
-       if( nr > to_add )
-	throw( std::logic_error( "removing non-existing Variable" ) );
-       to_add -= nr;               // "virtually" remove them
-       }
-
-      Compact( Lambda , *sbst );  // adjust Lambda
-      NumVar -= sbst->size();
-      Lambda.resize( NumVar );
-      Lambda1.resize( NumVar );
-      if( MaxSol > 1 )
-       LmbdBst.resize( NumVar );
-      Master->RmvVars( sbst->data() , sbst->size() );  // remove from MP
-      continue;
+     if( rng.second >= NumVar ) {  // some of the Variable deleted already
+      auto nr = rng.second - NumVar;
+      if( nr > to_add )
+       throw( std::logic_error( "removing non-existing Variable" ) );
+      to_add -= nr;               // "virtually" remove them
+      rng.second = NumVar;
       }
-     }
+     if( rng.second < NumVar ) {
+      // if deleting the last range of Variable nothing has to be done,
+      // but deleting Variable "in the middle" rather requires moving
+      // down the remaining range of values in Lambda
+      std::copy( Lambda.begin() + rng.second , Lambda.end() ,
+		 Lambda.begin() + rng.first );
+      }
+     Subset tdlt( rng.second - rng.first );
+     NumVar -= tdlt.size();
+     Lambda.resize( NumVar );  // adjust Lambda
+     Lambda1.resize( NumVar );
+     if( MaxSol > 1 )
+      LmbdBst.resize( NumVar );
+     std::iota( tdlt.begin() , tdlt.end() , rng.first );
+     Master->RmvVars( tdlt.data() , tdlt.size() );  // remove from MP
+     continue;
+
+     }  // end( if( ttmod - FunctionModVarsRngd ) )
+
+    if( const auto ttmod =
+	std::dynamic_pointer_cast< FunctionModVarsSbst >( tmod ) ) {
+     rmvd_vars = true;
+
+     if( ttmod->subset().empty() ) {  // deleting *all* Variable
+      NumVar = 0;
+      Lambda.clear();
+      Lambda1.clear();
+      LmbdBst.clear();
+      Master->RmvVars( nullptr , 0 );  // remove from MP
+      continue;                        // nothing else to do
+      }
+
+     if( ttmod->subset().front() >= NumVar ) {
+      // all the Variable are deleted already
+      if( ttmod->subset().size() > to_add )
+       throw( std::logic_error( "removing non-existing Variable" ) );
+      to_add -= ttmod->subset().size();  // "virtually" remove them
+      continue;                          // nothing else to do
+      }
+
+     Subset tsbst;
+     c_Subset * sbst = & tsbst;
+     if( ttmod->subset().back() < NumVar )  // no Variable deleted already
+      sbst = & ttmod->subset();             // delete them all
+     else {                                 // construct the subset to delete
+      auto sbstit = ttmod->subset().end();
+      while( *(--sbstit) >= NumVar );
+      tsbst = Subset( ttmod->subset().begin() , ++sbstit );
+      auto nr = ttmod->subset().size() - tsbst.size();
+      if( nr > to_add )
+       throw( std::logic_error( "removing non-existing Variable" ) );
+      to_add -= nr;               // "virtually" remove them
+      }
+
+     Compact( Lambda , *sbst );  // adjust Lambda
+     NumVar -= sbst->size();
+     Lambda.resize( NumVar );
+     Lambda1.resize( NumVar );
+     if( MaxSol > 1 )
+      LmbdBst.resize( NumVar );
+     Master->RmvVars( sbst->data() , sbst->size() );  // remove from MP
+     continue;
+
+     }  // end( if( ttmod - FunctionModVarsSbst ) )
 
     // if control reaches here, this is an unknown *FunctionModVars* (??)
     throw( std::logic_error( "unknown FunctionModVars" ) );
@@ -4716,48 +4639,40 @@ void BundleSolver::process_outstanding_Modification( void )
   // patiently sift through the possible Modification types to find what mod
   // exactly is and react accordingly
 
-  {
-   // a C05FunctionModRngd, that at this point can only have which().empty()
-   const auto tmod = std::dynamic_pointer_cast< C05FunctionModRngd >( mod );
-   if( tmod ) {
-    if( ! tmod->which().empty() )
-     throw( std::logic_error( "unexpected nonempty C05FunctionModRngd" ) );
+  // a C05FunctionModRngd, that at this point can only have which().empty()
+  if( const auto tmod =
+      std::dynamic_pointer_cast< C05FunctionModRngd >( mod ) ) {
+   if( ! tmod->which().empty() )
+    throw( std::logic_error( "unexpected nonempty C05FunctionModRngd" ) );
 
-    vars = & tmod->vars();
-    range = tmod->range();
-    }
+   vars = & tmod->vars();
+   range = tmod->range();
    }
 
-  {
-   // a C05FunctionModSbst, that at this point can only have which().empty()
-   const auto tmod = std::dynamic_pointer_cast< C05FunctionModSbst >( mod );
-   if( tmod ) {
-    if( ! tmod->which().empty() )
-     throw( std::logic_error( "unexpected nonempty C05FunctionModSbst" ) );
+  // a C05FunctionModSbst, that at this point can only have which().empty()
+  if( const auto tmod =
+      std::dynamic_pointer_cast< C05FunctionModSbst >( mod ) ) {
+   if( ! tmod->which().empty() )
+    throw( std::logic_error( "unexpected nonempty C05FunctionModSbst" ) );
 
-    vars = & tmod->vars();
-    subset = & tmod->subset();
-    }
+   vars = & tmod->vars();
+   subset = & tmod->subset();
    }
 
-  {
-   // a C05FunctionModLinRngd implies that a specific range in all the
-   // linearizations must be changed (by adding something)
-   const auto tmod = std::dynamic_pointer_cast< C05FunctionModLinRngd >( mod );
-   if( tmod ) {
-    vars = & tmod->vars();
-    range = tmod->range();
-    }
+  // a C05FunctionModLinRngd implies that a specific range in all the
+  // linearizations must be changed (by adding something)
+  if( const auto tmod =
+      std::dynamic_pointer_cast< C05FunctionModLinRngd >( mod ) ) {
+   vars = & tmod->vars();
+   range = tmod->range();
    }
 
-  {
-   // a C05FunctionModLinSbst implies that a specific subset in all the
-   // linearizations must be changed (by adding something)
-   const auto tmod = std::dynamic_pointer_cast< C05FunctionModLinSbst >( mod );
-   if( tmod ) {
-    vars = & tmod->vars();
-    subset = & tmod->subset();
-    }
+  // a C05FunctionModLinSbst implies that a specific subset in all the
+  // linearizations must be changed (by adding something)
+  if( const auto tmod =
+      std::dynamic_pointer_cast< C05FunctionModLinSbst >( mod ) ) {
+   vars = & tmod->vars();
+   subset = & tmod->subset();
    }
 
   if( ( range.first >= range.second ) && ( ! subset ) )
