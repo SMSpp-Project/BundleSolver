@@ -635,8 +635,8 @@ int BundleSolver::compute( bool changedvars )
   // sought for
 
   CurrNrEvls.assign( NrFi , Index( 0 ) );
-  MPchgs = false;  // true if the MP is guaranteed to change enugh after the
-                   // insertion of new information to ensure that the
+  MPchgs = 0;      // != 0 if the MP is guaranteed to change enugh after
+                   // the insertion of new information to ensure that the
                    // algorithm will converge
 
   // compute the minimum number of components to evaluate
@@ -659,7 +659,7 @@ int BundleSolver::compute( bool changedvars )
    // stronger than it should), which is there to avoid the condition to
    // work when UpFiLmb1[ NrFi ] == INF == UpTrgt
    if( ( ! MPchgs ) && ( UpFiLmb1.back() < UpTrgt ) )
-    MPchgs = true;
+    MPchgs = 1;
 
    if( ( ! MPchgs ) && insrtd && RifeqFi && ( LwFiLmb1.back() >= LwTrgt ) )
     // doing a NS without possibly evaluating all the components is inhibited
@@ -671,7 +671,7 @@ int BundleSolver::compute( bool changedvars )
     //
     // also, for a NS to guarantee no cycling, at least something must have
     // been inserted (on top of LwFiLmb1 being >= than the lower target)
-    MPchgs = true;
+    MPchgs = 1;
 
    if( ! FindNext( wFi ) )  // find next component
     break;                  // if none, nothing else to do but stop
@@ -767,15 +767,15 @@ int BundleSolver::compute( bool changedvars )
    break;
    }
 
-  // avoid the t-changing phase if Lambda1 is unfeasible- - - - - - - - - - -
+  // avoid the t-changing phase if a vertical linearization has been found- -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-  // this is because the new cuts, making Lambda1 unfeasible, surely "change
-  // enough the master problem already"
+  // this is because the vertical linearizatio making Lambda1 unfeasible,
+  // surely "change enough the master problem already"
   // note: one possible alternative t-strategy would be to set t to the
   // largest value that would have produced a feasible point, i.e.
   // t := *Alfa1 / ( - *ScPr1 )
 
-  if( UpFiLmb1.back() == INFshift )
+  if( MPchgs > 1 )
    continue;
 
   // avoid the t-changing phase if the linearization errors are not reliable-
@@ -2406,7 +2406,7 @@ bool BundleSolver::FiAndGi( Index wFi )
    break;                   // nothing else to do
 
   if( ! diagonal )          // a vertical linearization changes the MP
-   MPchgs = true;           // no matter what else happens
+   MPchgs = 2;              // no matter what else happens
 
   // check if aggregation has to be performed - - - - - - - - - - - - - - - -
   // doing this now could occasionally result in useless aggregations, but it

@@ -418,13 +418,13 @@ public:
 
  BundleSolver( void ) : CDASolver() , Result( kUnEval ) , NumVar( 0 ) ,
   NrFi( 0 ) , SCalls( 0 ) , ParIter( 0 ) , NrEasy( 0 ) , LHasChgd( true ) ,
-  tHasChgd( true ) , t( 0 ) , Prevt( 0 ) , Sigma( 0 ) , DSTS( 0 ) ,
-  DeltaFi( 0 ) , EpsU( 0 ) , CSSCntr( 0 ) , CNSCntr( 0 ) , TrueLB( false ) ,
-  SSDone( true ) , f_lf( nullptr ) , Master( nullptr ) , UpTrgt( 0 ) ,
-  LwTrgt( 0 ) , RifeqFi( false ) , UpFiBest( INFshift ) , UpFiLmb1def( 0 ) ,
-  LwFiLmb1def( 0 ) , UpFiLmbdef( 0 ) , LwFiLmbdef( 0 ) , Fi0Lmb( 0 ) ,
-  Fi0Lmb1( 0 ) , DeltaStar( 0 ) , NrmD( 0 ) , c_start( 0 ) , aBP3( 0 ) ,
-  FakeFi( this ) 
+  tHasChgd( true ) , MPchgs( 0 ) , t( 0 ) , Prevt( 0 ) , Sigma( 0 ) ,
+  DSTS( 0 ) , DeltaFi( 0 ) , EpsU( 0 ) , CSSCntr( 0 ) , CNSCntr( 0 ) ,
+  TrueLB( false ) , SSDone( true ) , f_lf( nullptr ) , Master( nullptr ) ,
+  UpTrgt( 0 ) , LwTrgt( 0 ) , RifeqFi( false ) , UpFiBest( INFshift ) ,
+  UpFiLmb1def( 0 ) , LwFiLmb1def( 0 ) , UpFiLmbdef( 0 ) , LwFiLmbdef( 0 ) ,
+  Fi0Lmb( 0 ) , Fi0Lmb1( 0 ) , DeltaStar( 0 ) , NrmD( 0 ) , c_start( 0 ) ,
+  aBP3( 0 ) , FakeFi( this ) 
  {
   // ensure all parameters are properly given their default value
   MaxIter = CDASolver::get_dflt_int_par( intMaxIter );
@@ -1289,8 +1289,8 @@ public:
 
 /*--------------------------------------------------------------------------*/
  /* Computes Fi( Lambda1 ), inserting the obtained items (subgradients or
-  * constraints) in the bundle. Returns true <=> the newly obtained
-  * information changes the solution of the MP. */
+  * constraints) in the bundle. Returns true <=> at least one item was
+  * inserted. It also "sneakily" sets MPchgs if appropriate. */
 
  bool FiAndGi( Index wFi );
 
@@ -1549,7 +1549,13 @@ public:
 		       * Lambda, e.g. with increasing precision */
  bool tHasChgd;       ///< true if t has changed since the last MP
 
- bool MPchgs;         ///< true if we can prove no cycling will occur
+ char MPchgs;         ///< nonzero if we can prove no cycling will occur
+                      /**< MPchgs == 1 means that the conditions for
+		       * ensuring that no cycle will occur have been found
+  * due to the function value (a SS can be done) or a diagonal linearization
+  * (a NS can be done); MPchgs == 2 means that a vertical linearization
+  * (cutting off Lambda1) has been found, and this by itself ensures no
+  * cycling. */
  
  Subset whisZ;     /**< the position in the bundle where the "aggregate
 		    * subgradient" Z[ k ] of component k is kept in
@@ -1662,8 +1668,9 @@ public:
 
  Subset FiStatus;     ///< status of last computation of each component
 
- std::vector< C05Function * > v_c05f; /**< the vector of the components of the
-                                       * sum function */
+ std::vector< C05Function * > v_c05f;
+ ///< the vector of (pointers to) the components of the sum function
+
  LinearFunction * f_lf;  ///< the 0-th component of the sum function
 
  MPSolver * Master;      ///< (pointer to) the Master Problem Solver
