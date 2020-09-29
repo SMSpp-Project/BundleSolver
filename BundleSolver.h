@@ -1144,19 +1144,25 @@ public:
 
   void get_dual_direction( Configuration *dirc = nullptr ) override {}
 
-  virtual bool new_var_direction( void ) override { return( false ); }
+  bool new_var_direction( void ) override { return( false ); }
   
-  virtual bool new_dual_direction( void ) override{ return( false ); }
+  bool new_dual_direction( void ) override{ return( false ); }
 */
 
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 /*@} -----------------------------------------------------------------------*/
 /*-------------- METHODS FOR READING THE DATA OF THE Solver ----------------*/
 /*--------------------------------------------------------------------------*/
-
 /*
  virtual bool is_dual_exact( void ) const override { return( true ); }
 */
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ 
+ c_Vec_VarValue & get_current_point( void ) const { return( Lambda ); }
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ 
+ c_Vec_VarValue & get_tentative_point( void ) const { return( Lambda1 ); }
  
 /*--------------------------------------------------------------------------*/
 /*------------------- METHODS FOR HANDLING THE PARAMETERS ------------------*/

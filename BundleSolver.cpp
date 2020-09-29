@@ -66,7 +66,7 @@
 /*--------------------------------------------------------------------------*/
 
 #ifndef NDEBUG
- #define CHECK_DS 0
+ #define CHECK_DS 15
  /* Perform long and costly checks on the data structures, coded bit-wise:
   *
   * - CHECK_DS & 1 == checks the data structures representing the bundle and
@@ -5351,43 +5351,52 @@ Index BundleSolver::FakeFiOracle::GetBNZ( cIndex wFi )
 /*--------------------------------------------------------------------------*/
 
 void BundleSolver::FakeFiOracle::GetBDesc( cIndex wFi , int *Bbeg ,
-					   int *Bind , double *Bval ,
-					   double *lhs , double *rhs ,
-					   double *cst , double *lbd ,
-					   double *ubd )
+		        int *Bind , double *Bval , double *lhs , double *rhs ,
+			double *cst , double *lbd , double *ubd )
 {
  auto MILPSlv = bslv->MILP_s[ wFi - 1 ];
 
- int num_col = MILPSlv->get_numcols();
+ if( Bbeg && Bind && Bval ) {
+  // these three parameters can only be either all nullptr or all non-nullptr
+  std::copy( MILPSlv->get_matbeg().begin() , MILPSlv->get_matbeg().end() ,
+	     Bbeg );
+  std::copy( MILPSlv->get_matind().begin() , MILPSlv->get_matind().end() ,
+	     Bind );
+  std::copy( MILPSlv->get_matval().begin() , MILPSlv->get_matval().end() ,
+	     Bval );
+  }
 
- std::copy( MILPSlv->get_matbeg().begin() , MILPSlv->get_matbeg().end() ,
-	    Bbeg );
- std::copy( MILPSlv->get_matind().begin() , MILPSlv->get_matind().end() ,
-	    Bind );
- std::copy( MILPSlv->get_matval().begin() , MILPSlv->get_matval().end() ,
-	    Bval );
+ if( cst )
+  std::copy( MILPSlv->get_objective().begin() ,
+	     MILPSlv->get_objective().end() , cst );
 
- std::copy( MILPSlv->get_lb().begin() , MILPSlv->get_lb().end() , lbd );
- std::copy( MILPSlv->get_ub().begin() , MILPSlv->get_ub().end() , ubd );
+ if( lbd )
+  std::copy( MILPSlv->get_lb().begin() , MILPSlv->get_lb().end() , lbd );
 
- for( Index i = 0 ; i < num_col ; i++ )
-  if( MILPSlv->get_sense()[ i ] == 'L' ) {
-   rhs[ i ] = MILPSlv->get_rhs()[ i ];
-   lhs[ i ] = -INFshift;
-   }
-  else
-   if( MILPSlv->get_sense()[ i ] == 'E' ) {
-    rhs[ i ] = MILPSlv->get_rhs()[ i ];
-    lhs[ i ] = MILPSlv->get_rhs()[ i ];
-    }
-   else
-    if( bslv->MILP_s[ wFi - 1 ]->get_sense()[ i ] == 'G' ) {
+ if( ubd )
+  std::copy( MILPSlv->get_ub().begin() , MILPSlv->get_ub().end() , ubd );
+
+ if( lhs && rhs ) {
+  // although the FiOracle interface allows setting all the parameters to
+  // nullptr (save the first three) individually, OSIMPSolver never
+  // requires lhs without rhs, so we don't handle the case
+  for( Index i = 0 ; i < MILPSlv->get_numcols() ; i++ )
+   switch( MILPSlv->get_sense()[ i ] ) {
+    case( 'L' ):  // <= constraint
+     rhs[ i ] = MILPSlv->get_rhs()[ i ];
+     lhs[ i ] = -INFshift;
+     break;
+    case( 'E' ):  // == constraint
+     rhs[ i ] = MILPSlv->get_rhs()[ i ];
+     lhs[ i ] = MILPSlv->get_rhs()[ i ];
+     break;
+    case( 'G' ):  // >= constraint
      rhs[ i ] = INFshift;
      lhs[ i ] = MILPSlv->get_rhs()[ i ];
-     }
-    else {
+     break;
+    default: {    // that's a Ranged constraint
      double rngval = MILPSlv->get_rngval()[ i ];
-     if( rngval > double( 0 ) ) {
+     if( rngval > 0 ) {
       rhs[ i ] = MILPSlv->get_rhs()[ i ] + rngval;
       lhs[ i ] = MILPSlv->get_rhs()[ i ];
       }
@@ -5396,7 +5405,8 @@ void BundleSolver::FakeFiOracle::GetBDesc( cIndex wFi , int *Bbeg ,
       lhs[ i ] = MILPSlv->get_rhs()[ i ] + rngval;
       }
      }
-
+    }
+  }
  }  // end( BundleSolver::FakeFiOracle::GetBDesc )
 
 /*--------------------------------------------------------------------------*/
