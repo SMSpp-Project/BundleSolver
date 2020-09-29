@@ -445,7 +445,7 @@ int BundleSolver::compute( bool changedvars )
   // check if time is elapsed - - - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-  if( elapsed() > MaxTime ) {
+  if( ( MaxTime < INFshift ) && ( elapsed() > MaxTime ) ) {
    BLOG( 1 , " ~ stop due to max time" << std::endl );
    Result = kStopTime;
    break;
@@ -676,8 +676,8 @@ int BundleSolver::compute( bool changedvars )
    if( ! FindNext( wFi ) )  // find next component
     break;                  // if none, nothing else to do but stop
 
-   if( elapsed() > MaxTime )  // time has ran up
-    break;                    // nothing else to do but stop
+   if( ( MaxTime < INFshift ) && ( elapsed() > MaxTime ) )
+    break;                  // time has ran up: nothing else to do but stop
 
    if( ceval < minceval )   // not evaluated enough components yet
     continue;               // do not stop regardless of MPchgs
@@ -687,8 +687,8 @@ int BundleSolver::compute( bool changedvars )
 
    }  // end( for( functions evaluation loop ) )
 
-  if( elapsed() > MaxTime )  // time has ran up
-   continue;                 // go back at the beginning to stop
+  if( ( MaxTime < INFshift ) && ( elapsed() > MaxTime ) )
+   continue;  // time has ran up: go back at the beginning to stop
 
   // compute DeltaFi- - - - - - - - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1927,7 +1927,7 @@ void BundleSolver::FormD( void )
  {        // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
   // ensure the MPSolver will not take too much time
-  if( MaxTime < Inf<double>() ) {
+  if( MaxTime < INFshift ) {
    Master->SetMPTime();
    Master->SetPar( MPSolver::kMaxTme , MaxTime - elapsed() );
    }
@@ -2347,7 +2347,7 @@ bool BundleSolver::FiAndGi( Index wFi )
  fwFi->set_par( dblRelAcc , EpsCurr );
 
  // also set a "time cutoff" with the remaining total time
- if( MaxTime < Inf<double>() )
+ if( MaxTime < INFshift )
   fwFi->set_par( dblMaxTime , MaxTime - elapsed() );
  
  // now compute the C05Function and retrieve upper and lower estimates- - - -
@@ -2864,11 +2864,14 @@ bool BundleSolver::FindNext( Index & wFi )
 {
  Index InitwFi = wFi;
  do {
-  wFi = ( wFi + 1 ) % NrFi;
+  wFi = ( wFi + 1 ) % NrFi;      // next patient, please
+  if( NrEasy && IsEasy[ wFi ] )  // skip easy components
+   continue;
   if( ( FiStatus[ wFi ] == kUnEval ) ||
       ( ( FiStatus[ wFi ] < kError ) && ( FiStatus[ wFi ] > kOK ) &&
 	( CurrNrEvls[ wFi ] < MaxNrEvls ) ) )
    return( true );
+
   } while( wFi != InitwFi );
 
  return( false );
