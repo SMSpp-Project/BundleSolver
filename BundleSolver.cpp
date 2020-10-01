@@ -1122,20 +1122,17 @@ void BundleSolver::set_Block( Block * block )
  NrEasy = 0;
  NrFi = v_c05f.size();
 
- if( ( NrFi > 1 ) && ( ! NoEasy ) ) {
+ if( ! NoEasy ) {
   IsEasy.resize( NrFi , false );
   MILP_s.resize( NrFi , nullptr );
   for( Index k = 0 ; k < NrFi ; ++k ) {
    auto LagB = dynamic_cast< LagBFunction * >( v_c05f[ k ] );
    if( LagB ) {
     MILP_s[ k ] = new MILPSolver();
-    try {  // check if the inner Block of the LagBFunction is an LP
+    try {  // check if the inner Block of the LagBFunction is all-linear
      MILP_s[ k ]->set_Block( LagB->get_inner_block() );
-     /*!!
      // the component is easy only if all variables are continuous
-     if( ! MILP_s[ k ]->get_num_integer_vars() )
-     !!*/
-     {
+     if( ! MILP_s[ k ]->get_num_integer_vars() ) {
       IsEasy[ k ] = true;
       ++NrEasy;
       }
@@ -2031,9 +2028,11 @@ void BundleSolver::FormD( void )
 
  if( NrEasy ) {                  // there are easy components
   for( Index k = 0 ; k < NrFi ; ++k )
-   if( IsEasy[ k ] )                                 // for easy components
+   if( IsEasy[ k ] ) {                               // for easy components
     // the master problem produes the *exact* Fi-value (up = lw) at Lambda1
     UpFiLmb1[ k ] = LwFiLmb1[ k ] = Master->ReadFiBLambda( k + 1 );
+    vStar[ k ] = UpFiLmb1[ k ] - UpRifFi[ k ];
+    }
    else                                              // for hard components
     vStar[ k ] = Master->ReadFiBLambda( k + 1 );     // read model value
 
@@ -2048,6 +2047,7 @@ void BundleSolver::FormD( void )
   if( ( UpFiLmb.back() < INFshift ) && ( vStar.back() < INFshift ) )
    for( Index k = 0 ; k < NrFi ; k++ )
     if( IsEasy[ k ] )
+     //!! vStar.back() -= UpRifFi[ k ];
      vStar.back() += UpRifFi[ k ];
   }
  else                            // there are no easy components
@@ -3305,10 +3305,29 @@ void BundleSolver::ReSetAlg( unsigned char RstLvl )
    aBP3 = BPar3;
   }
 
- if( RstLvl & RstCrr )    // get an initial point - - - - - - - - - - - - - -
+ if( RstLvl & RstCrr ) {  // get an initial point - - - - - - - - - - - - - -
+  // note that the thusly constructed Master Problem assumes the stability
+  // centre to be all-0, in particular when constructing the Lagrangian costs
+  // of the easy components, so if that's not happening the right value has
+  // to be explicitly passed
   for( Index i = 0 ; i < NumVar ; ++i )
    Lambda[ i ] = LamVcblr[ i ]->get_value();
+
+  bool nonzero = false;
+  for( Index i = 0 ; i < NumVar ; ++i )
+   if( Lambda[ i ] ) { nonzero = true; break; }
+
+  if( nonzero ) {
+   // call ChangeCurrPoint( DLambda ) with DLambda == Lambda - oldLambda ==
+   // Lambda since oldLambda == 0 by construction
+   Vec_VarValue foo( NumVar , 0 );  // no change in the (unknown) f-values
+   Master->ChangeCurrPoint( Lambda.data() , foo.data() );
+   }
+  }
  else {                   // reset the current point to all-0 - - - - - - - -
+  // note that the thusly constructed Master Problem precisely assumes
+  // the stability centre to be all-0, in particular when constructing the
+  // Lagrangian costs of the easy components, so that's fine as it is
   Lambda.assign( NumVar , 0 );
   // "tell" this to the ColVariable of the C05Function(s)
   for( Index i = 0 ; i < NumVar ; ++i )
@@ -5420,22 +5439,26 @@ Index BundleSolver::FakeFiOracle::GetANZ( cIndex wFi ,
  if( ! bslv->IsEasy[ wFi - 1 ] )
   throw( std::logic_error( "the Function is not a Lagrangian one" ) );
 
- auto LagB = static_cast<LagBFunction *>( bslv->v_c05f[ wFi - 1 ] );
+ auto LagB = static_cast< LagBFunction * >( bslv->v_c05f[ wFi - 1 ] );
  return( LagB->get_NzMat() );
 
  } // end ( BundleSolver::FakeFiOracle::GetANZ )
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::FakeFiOracle::GetADesc( cIndex wFi , int *Abeg ,
-					   int *Aind , double *Aval ,
+void BundleSolver::FakeFiOracle::GetADesc( cIndex wFi , int * Abeg ,
+					   int * Aind , double * Aval ,
 					   cIndex strt , Index stp )
 {
  if( ! bslv->IsEasy[ wFi - 1 ] )
   throw( std::logic_error( "the Function is not a Lagrangian one" ) );
 
- auto LagB = static_cast<LagBFunction *>( bslv->v_c05f[ wFi - 1 ] );
+ auto LagB = static_cast< LagBFunction * >( bslv->v_c05f[ wFi - 1 ] );
  LagB->get_MatDesc( Abeg , Aind , Aval , strt , stp );
+ //!!
+ const auto nz = LagB->get_NzMat();
+ for( int i = 0 ; i < nz ; ++i )
+  Aval[ i ] = - Aval[ i ];
 
  } // end ( BundleSolver::FakeFiOracle::GetANZ )
 
