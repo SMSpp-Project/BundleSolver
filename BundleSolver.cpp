@@ -2026,16 +2026,14 @@ void BundleSolver::FormD( void )
  // added an artificial constraint to make v[ k ] bounded) and +INF is
  // returned for that component, and therefore for the total v* (the sum)
 
- if( NrEasy ) {                  // there are easy components
-  for( Index k = 0 ; k < NrFi ; ++k )
-   if( IsEasy[ k ] ) {                               // for easy components
-    // the master problem produes the *exact* Fi-value (up = lw) at Lambda1
-    UpFiLmb1[ k ] = LwFiLmb1[ k ] = Master->ReadFiBLambda( k + 1 );
-    vStar[ k ] = UpFiLmb1[ k ] - UpRifFi[ k ];
-    }
-   else                                              // for hard components
-    vStar[ k ] = Master->ReadFiBLambda( k + 1 );     // read model value
+ // now retrieve vStar[ k ] for each component: for easy ones, the master
+ // problem produes the *exact* Fi-value (up = lw) at Lambda1, which we
+ // store unmodified in vStar[ k ] (which is not used anyway) for it to be
+ // retrieved later by FormLambda1()
+ for( Index k = 0 ; k < NrFi ; ++k )
+  vStar[ k ] = Master->ReadFiBLambda( k + 1 );  // read model value
 
+ if( NrEasy ) {  // there are easy components
   // adjust the contribution of the easy components to the total v*
   // easy components are treated differently from hard ones in that
   // their value in the model is *not* translated by their Fi-value in
@@ -2050,9 +2048,6 @@ void BundleSolver::FormD( void )
      //!! vStar.back() -= UpRifFi[ k ];
      vStar.back() += UpRifFi[ k ];
   }
- else                            // there are no easy components
-  for( Index k = 0 ; k < NrFi ; ++k )
-   vStar[ k ] = Master->ReadFiBLambda( k + 1 );  // read model value
 
  if( tStar > 0 )
   DSTS = Master->ReadDStart( tStar );                  // D_{t*,\beta,x}
@@ -2224,9 +2219,9 @@ void BundleSolver::FormLambda1( HpNum Tau )
  UpFiLmb1def = LwFiLmb1def = 0;
  for( Index k = 0 ; k < NrFi ; ++k )
   if( NrEasy && IsEasy[ k ] ) {  // k is an easy component
-   UpFiLmb1[ k ] = LwFiLmb1[ k ] = Master->ReadFiBLambda( k );
-   ++UpFiLmb1def;
-   ++LwFiLmb1def;
+   UpFiLmb1[ k ] = LwFiLmb1[ k ] = vStar[ k ];  // we know the exact value
+   ++UpFiLmb1def;                               // thus both UpFi1 and LwFi1
+   ++LwFiLmb1def;                               // are known (and equal)
    }
   else {                         // k is a hard component
    // compute upper and lower bound for k (possibly +/- INF)
