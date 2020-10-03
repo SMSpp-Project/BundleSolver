@@ -1955,13 +1955,12 @@ void BundleSolver::FormD( void )
    }
 
   if( mps == MPSolver::kStppd ) {  // stopped by time limit
-   //!! so far, the time limit in the MPSolver is only due to the
-   //!! global time limit in the NDOSolver, but one day we may want
-   //!! to set it independently; then, some checks will have to be
-   //!! done if the solution is feasible and it can still be used
-   //!! and v is sufficiently < 0: in this case we can use the
-   //!! solution as well, otherwise we have to give the MPSolver
-   //!! more time
+   //!! so far, the time limit in the MPSolver is only due to the global time
+   //!! limit in the NDOSolver, but one day we may want to set it
+   //!! independently; then, some checks will have to be done if the
+   //!! solution is feasible and it can still be used and v is sufficiently
+   //!! < 0: in this case we can use the direction as well, otherwise we
+   //!! have to give the MPSolver more time
    Result = kStopTime;
    break;
    }
@@ -1992,14 +1991,14 @@ void BundleSolver::FormD( void )
      break;
      }
 
-  if( i == InINF )  // there are no *removable* items in Base - - - -
-   for( Index j = Master->MaxName() ; j-- ; )  // pick any removable item
+  if( i == InINF )  // there are no *removable* items in Base - - - - - - - -
+  for( Index j = Master->MaxName() ; j-- ; )  // pick any removable item
     if( ( OOBase[ j ] >= 0 ) && ( OOBase[ j ] < Inf<SIndex>() ) ) {
      i = j;
      break;
      }
 
-  if( i == InINF ) {  // there are no removable items at all- - - - -
+  if( i == InINF ) {  // there are no removable items at all - - - - - - - -
    BLOG( 0 , std::endl << "Bundle::FormD: unrecoverable MP failure." );
    Result = kError;
    return;
@@ -2028,25 +2027,30 @@ void BundleSolver::FormD( void )
 
  // now retrieve vStar[ k ] for each component: for easy ones, the master
  // problem produes the *exact* Fi-value (up = lw) at Lambda1, which we
- // store unmodified in vStar[ k ] (which is not used anyway) for it to be
+ // store unmodified in vStar[ k ] (that is not used anyway) for it to be
  // retrieved later by FormLambda1()
  for( Index k = 0 ; k < NrFi ; ++k )
   vStar[ k ] = Master->ReadFiBLambda( k + 1 );  // read model value
 
  if( NrEasy ) {  // there are easy components
-  // adjust the contribution of the easy components to the total v*
-  // easy components are treated differently from hard ones in that
-  // their value in the model is *not* translated by their Fi-value in
-  // Lambda; however, v* has to measure the total decrease predicted by
-  // the model in Lambda1, w.r.t. the value in Lambda. the MPSolver
-  // provides the non-translated value, hence the correction is made
-  // here. note that one could expect a "-=" to be there instead of the
-  // "+=", but this seems to be the right sign for MPSolver behaviour
-  if( ( UpFiLmb.back() < INFshift ) && ( vStar.back() < INFshift ) )
-   for( Index k = 0 ; k < NrFi ; k++ )
-    if( IsEasy[ k ] )
-     //!! vStar.back() -= UpRifFi[ k ];
-     vStar.back() += UpRifFi[ k ];
+  // adjust the contribution of the easy components to v* and Sigma*
+  // easy components are treated differently from hard ones in that their
+  // value in the model is *not* translated by their (reference) Fi-value in
+  // Lambda; however, v* has to measure the total decrease predicted by the
+  // model in Lambda1 w.r.t. the (reference) Fi-value in Lambda, and Sigma*
+  // the error, again, w.r.t. the (reference) Fi-value in Lambda. since the
+  // MPSolver provides non-translated Fi-values, the correction has to be
+  // made here.
+  VarValue EasyRifFi = 0;
+  for( Index k = 0 ; k < NrFi ; ++k )
+   if( IsEasy[ k ] )
+    EasyRifFi += UpRifFi[ k ];
+
+  // note that v* and Sigma* have "opposite signs" (the former is negative,
+  // the latter positive) which justifies why one finds a "-=" and a "+="
+  if( vStar.back() < INFshift )
+   vStar.back() -= EasyRifFi;
+  Sigma += EasyRifFi;
   }
 
  if( tStar > 0 )
