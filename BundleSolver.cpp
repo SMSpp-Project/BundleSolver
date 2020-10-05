@@ -2060,30 +2060,34 @@ void BundleSolver::FormD( void )
 
  // Sigma* + D*_{t*}( -z* ) is the "maximum expected increase" used in
  // the stopping criterion, EpsU is that relative to Fi( Lambda )
-
  if( UpFiLmb.back() < INFshift )
   EpsU = ( DSTS + Sigma ) / std::max( std::abs( UpFiLmb.back() ) ,
 				      double( 1 ) );
  else
   EpsU = 1;  // ensure EpsU is initialized somehow
 
- // the z[ i ] are no longer valid
- Zvalid.assign( NrFi , false );
+ Zvalid.assign( NrFi , false );    // the z[ i ] are no longer valid
 
- // the scalar products have changed
- ScPr1.assign( NrFi , INFshift );
+ ScPr1.assign( NrFi , INFshift );  // the scalar products have changed
 
- // additional information not present in the Bundle implementation
- // for NDOSolver interface  - - - - - - - - - - - - - - - - - - - - - - - - -
+ // read (or compute, if the stabilization is not quadratic) || d* ||_2
 
- DeltaStar = Master->ReadDStart( t ) / 2.0 + Sigma;
- cLMRow tdir = Master->Readd( true );
+ DeltaStar = Master->ReadDStart( t );
+ if( ( ! ( MPName & 1 ) ) || ( MPName & 4 ) )  // quadratic stabilization
+  // ReadDStart( t ) == t || z* ||_2^2 / 2   and   d = - t z*   ==>
+  // || d* ||_2 == t || z* ||_2 == t * sqrt( 2 * DeltaStar / t )
+  NrmD = t * sqrt( 2 * DeltaStar / t );
+ else {                                        // boxstep stabilization
+  auto tdir = Master->Readd();
+  NrmD = 0;                                    // || d* ||_2 need be computed
+  for( Index i = 0 ; i < NumVar ; ++i )
+   NrmD += tdir[ i ] * tdir[ i ];
+  NrmD = sqrt(  NrmD );
+  }
 
- NrmD = 0;                                    // d-norm
- for( Index i = 0 ; i < NumVar ; ++i )
-  NrmD += tdir[ i ] * tdir[ i ];
- NrmD = sqrt(  NrmD );
-
+ DeltaStar /= 2;
+ DeltaStar += Sigma;
+ 
  }  // end( BundleSolver::FormD )
 
 /*--------------------------------------------------------------------------*/
