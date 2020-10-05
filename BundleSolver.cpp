@@ -5396,10 +5396,12 @@ void BundleSolver::FakeFiOracle::GetBDesc( cIndex wFi , int *Bbeg ,
 	     MILPSlv->get_objective().end() , cst );
 
  if( lbd )
-  std::copy( MILPSlv->get_lb().begin() , MILPSlv->get_lb().end() , lbd );
+  std::copy( MILPSlv->get_var_lb().begin() ,
+             MILPSlv->get_var_lb().end() , lbd );
 
  if( ubd )
-  std::copy( MILPSlv->get_ub().begin() , MILPSlv->get_ub().end() , ubd );
+  std::copy( MILPSlv->get_var_ub().begin() ,
+             MILPSlv->get_var_ub().end() , ubd );
 
  if( lhs && rhs ) {
   // although the FiOracle interface allows setting all the parameters to
