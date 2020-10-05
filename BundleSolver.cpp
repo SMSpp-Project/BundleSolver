@@ -5405,7 +5405,7 @@ void BundleSolver::FakeFiOracle::GetBDesc( cIndex wFi , int *Bbeg ,
   // although the FiOracle interface allows setting all the parameters to
   // nullptr (save the first three) individually, OSIMPSolver never
   // requires lhs without rhs, so we don't handle the case
-  for( Index i = 0 ; i < MILPSlv->get_numcols() ; i++ )
+  for( Index i = 0 ; i < MILPSlv->get_numrows() ; ++i )
    switch( MILPSlv->get_sense()[ i ] ) {
     case( 'L' ):  // <= constraint
      rhs[ i ] = MILPSlv->get_rhs()[ i ];
