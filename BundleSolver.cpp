@@ -656,10 +656,9 @@ int BundleSolver::compute( bool changedvars )
     ++ceval;                  // one more evaluated
    ++CurrNrEvls[ wFi ];       // evaluated once more
 
-   // a SS can be performed: note the "<" instead of the "<=" to be found in
-   // the actual SS condition below (which means this is ever so slightly
-   // stronger than it should), which is there to avoid the condition to
-   // work when UpFiLmb1.back() == INF == UpTrgt
+   // a SS can be performed: note the "<" in the SS condition below (which
+   // means it is ever so slightly stronger than it should), which is there
+   // to avoid the condition to work when UpFiLmb1.back() == INF == UpTrgt
    if( ( ! MPchgs ) && ( UpFiLmb1.back() < UpTrgt ) )
     MPchgs = 1;
 
@@ -810,8 +809,11 @@ int BundleSolver::compute( bool changedvars )
 
   // the NS / SS decision - - - - - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  // note again the "<" in the SS condition below (which means this is ever so
+  // slightly stronger than it should), which is there to avoid the condition
+  // to work when UpFiLmb1.back() == INF == UpTrgt
 
-  SSDone = ( UpFiLmb1.back() <= UpTrgt ) ? true : false;
+  SSDone = ( UpFiLmb1.back() < UpTrgt ) ? true : false;
 
   // compute the heuristic t- - - - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
