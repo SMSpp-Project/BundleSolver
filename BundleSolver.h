@@ -96,7 +96,7 @@
  *
  * \version 0.40
  *
- * \date 12 - 09 - 2020
+ * \date 08 - 10 - 2020
  *
  * \author Antonio Frangioni \n
  *         Operations Research Group \n

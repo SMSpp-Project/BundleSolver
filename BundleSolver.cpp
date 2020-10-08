@@ -4,9 +4,9 @@
 /** @file
  * Implementation of the BunldeSolver class.
  *
- * \version 0.31
+ * \version 0.40
  *
- * \date 20 - 08 - 2020
+ * \date 08 - 10 - 2020
  *
  * \author Antonio Frangioni \n
  *         Operations Research Group \n
@@ -401,10 +401,12 @@ int BundleSolver::compute( bool changedvars )
  if( ! f_Block )
   return( kBlockLocked );
 
- // start timer (so that processing Modification is included) - - - - - - - -
+ // start timer now (so that processing Modification is included) - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // ... but only if the timer is used somewhere
 
- c_start = std::clock();
+ if( ( MaxTime < INFshift ) || EveryTTm )
+  c_start = std::clock();
 
  // first, process any outstanding Modification - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -657,20 +659,25 @@ int BundleSolver::compute( bool changedvars )
    // a SS can be performed: note the "<" instead of the "<=" to be found in
    // the actual SS condition below (which means this is ever so slightly
    // stronger than it should), which is there to avoid the condition to
-   // work when UpFiLmb1[ NrFi ] == INF == UpTrgt
+   // work when UpFiLmb1.back() == INF == UpTrgt
    if( ( ! MPchgs ) && ( UpFiLmb1.back() < UpTrgt ) )
     MPchgs = 1;
 
-   if( ( ! MPchgs ) && insrtd && RifeqFi && ( LwFiLmb1.back() >= LwTrgt ) )
+   if( ( ! MPchgs ) && insrtd && RifeqFi && ( LwFiLmb1.back() > LwTrgt ) )
     // doing a NS without possibly evaluating all the components is inhibited
     // if the linearization errors are not computed w.r.t. the "true" value
     // of (every component of); this corresponds to the assumption in the
     // theory that a finite upper bound is known for every component. this
     // implies that eventually all components will be evaluated, which will
-    // yield a SS
+    // typically yield a SS
     //
-    // also, for a NS to guarantee no cycling, at least something must have
-    // been inserted (on top of LwFiLmb1 being >= than the lower target)
+    // for a NS to be performed, LwFiLmb1 must be > than the lower target;
+    // again, note the ">" instead of the ">=" (which means this is ever so
+    // slightly stronger than it should), which is there to avoid the
+    // condition to work when LwFiLmb1.back() == - INF == LwTrgt
+    //
+    // however, for a NS to guarantee no cycling, at least something must
+    // have been inserted (on top of all the other conditions)
     MPchgs = 1;
 
    if( ! FindNext( wFi ) )  // find next component
@@ -804,7 +811,7 @@ int BundleSolver::compute( bool changedvars )
   // the NS / SS decision - - - - - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-  SSDone = ( UpFiLmb1[ NrFi ] <= UpTrgt ) ? true : false;
+  SSDone = ( UpFiLmb1.back() <= UpTrgt ) ? true : false;
 
   // compute the heuristic t- - - - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -841,9 +848,10 @@ int BundleSolver::compute( bool changedvars )
    CNSCntr = 0;
    }
   else {        // NS - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-   BLOG( 1 , std::endl << " NS[" << CNSCntr << "]: DFi = " << DeltaFi
-	     <<  " ~ Lw1(" << LwFiLmb1[ NrFi ] << ") >= LwTrgt(" << LwTrgt
-	     << ") ~ Ht = " << tt );
+   BLOG( 1 , std::endl << " NS[" << CNSCntr << "]: " );
+   BLOG2( 1 , DeltaFi < INFshift , "DFi = " << DeltaFi <<  " ~ " );
+   BLOG( 1 , "Lw1(" << LwFiLmb1[ NrFi ] << ") >= LwTrgt(" << LwTrgt
+	            << ") ~ Ht = " << tt );
 
    tt = std::max( std::max( tMinor , t * mxDecr ) ,
  		  std::min( t * mnDecr , tt ) );
@@ -2085,8 +2093,18 @@ void BundleSolver::FormD( void )
   NrmD = sqrt(  NrmD );
   }
 
- DeltaStar /= 2;
- DeltaStar += Sigma;
+ if( vStar.back() < INFshift ) {
+  DeltaStar /= 2;
+  DeltaStar += Sigma;
+  }
+ else
+  // Delta* is supposed to be <= - v*, and to be a weaker requirement about
+  // how much the (total) function must increase for a NS to be declared;
+  // however, this only holds if v* is "true", which means that all the
+  // components have some diagonal linearization in their bundle; otherwise
+  // v* is "fake" and so is Delta* (but anyway, this means that any finite
+  // lower bound is much better than what we currently have)
+  DeltaStar = - INFshift;
  
  }  // end( BundleSolver::FormD )
 
@@ -2279,8 +2297,10 @@ void BundleSolver::FormLambda1( HpNum Tau )
 
  // update the upper and lower targets - - - - - - - - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
- // note that vStar.back() == INFshift if the bundle of any of the hard
- // components is empty
+ // note that vStar.back() == INFshift and DeltaStar == - INFshift if the
+ // bundle of any of the hard components is empty, in which case there are
+ // no targets: any "finite" information about them is better than what we
+ // currently have
 
  if( vStar.back() < INFshift ) {
   UpTrgt = UpRifFi.back() + ( 1.0 - m2 ) * vStar.back();
@@ -2305,38 +2325,62 @@ bool BundleSolver::FiAndGi( Index wFi )
  if( NrEasy && IsEasy[ wFi ] )
   return( false );
 
- double UpCutOff = INFshift;
- double LwCutOff = -INFshift;
+ // compute upper and lower cutoffs and the accuracy
+ double UpCutOff , LwCutOff , EpsCurr;
 
- if( vStar[ wFi ] < INFshift ) {
-  // this can only be done if there are diagonal linearizations of the
-  // component wFi in the bundle, i.e., vStar[ wFi ] is well-defined
+ // finite upper and lower cutoffs can (and make sense to) be set only if the
+ // upper and lower targets are finite (they either both are or none of them
+ // are), which depends on the fact that vStar.back() (and its "cousin"
+ // DeltaStar) is finite, which means that *all* (non-easy) components have
+ // diagonal linearizations in their bundle; otherwise, any "finite"
+ // information about them is better than what we currently have, and hence
+ // the cutoffs are "as weak as they can be"
+ //
+ // note that this implies that vStar[ wFi ] (for this particular component)
+ // must also be well-defined (< INF)
+ //
+ 
+ if( UpTrgt < INFshift ) {
+  const auto LwFiK = UpRifFi[ wFi ] + vStar[ wFi ];
+  const auto bk = BetaK( wFi );
 
-  double LwFiK = UpRifFi[ wFi ] + vStar[ wFi ];
+  UpCutOff = LwFiK - m2 * bk * vStar.back();
+  LwCutOff = LwFiK + m1 * bk * DeltaStar;
 
-  if( UpFiLmb[ wFi ] < INFshift ) {
-   if( ( UpTrgt < INFshift ) && ( UpFiLmb1[ NrFi ] < INFshift ) )
-    UpCutOff = std::max( UpTrgt - ( UpFiLmb1[ NrFi ] - UpFiLmb1[ wFi ] ) ,
-			 LwFiK - m2 * BetaK( wFi ) * vStar[ NrFi ] );
-   else
-    UpCutOff = LwFiK - m2 * BetaK( wFi ) * vStar[ NrFi ];
-   }
+  // the second part of the Up/LwCutOff computation, conditional to the fact
+  // that the function value is available, corresponds to the following
+  // argument: assume we want
+  //
+  //     \bar{f}_{tot}( x ) = \sum_i \bar{f}_i( x ) <= \bar{tar}
+  //
+  // this means
+  //
+  //     \bar{f}_h( x ) <= \bar{tar} - \sum_{i \neq k} i \bar{f}_i( x )
+  //
+  // but
+  //
+  //  \sum_{i \neq k} i \bar{f}_i( x ) = \bar{f}_{tot}( x ) - \bar{f}_h( x )
+  //
+  // (and of course the symmetric argument for the lower cutoff)
 
-  if( LwFiLmb[ wFi ] > -INFshift ) {
-   if( ( LwTrgt > -INFshift ) && ( LwFiLmb1[ NrFi ] > -INFshift ) )
-    LwCutOff = std::max( LwTrgt - ( LwFiLmb1[ NrFi ] - LwFiLmb1[ wFi ] ) ,
-			 LwFiK + m1 * BetaK( wFi ) * DeltaStar );
-   else
-    LwCutOff = LwFiK + m1 * BetaK( wFi ) * DeltaStar;
-   }
-  }
+  // note that UpFiLmb1.back() < INFshift ==> UpFiLmb1[ wFi ] < INFshift
+  if( UpFiLmb1.back() < INFshift )
+   UpCutOff = std::min( UpTrgt - ( UpFiLmb1.back() - UpFiLmb1[ wFi ] ) ,
+			UpCutOff );
 
- double EpsCurr;
- if( ( LwCutOff > -INFshift ) && ( UpCutOff < INFshift ) )
+  // note that LwFiLmb1.back() > -INFshift ==> LwFiLmb1[ wFi ] > -INFshift
+  if( LwFiLmb1.back() > -INFshift )
+   LwCutOff = std::max( LwTrgt - ( LwFiLmb1.back() - LwFiLmb1[ wFi ] ) ,
+			LwCutOff );
+
   EpsCurr = ( UpCutOff - LwCutOff ) / std::max( 1.0 ,
 						std::abs( UpRifFi[ wFi ] ) );
- else
+  }
+ else {
+  UpCutOff = INFshift;
+  LwCutOff = -INFshift;
   EpsCurr = RelAcc / Nearly;
+  }
 
  // assign the cutoff values to the C05Function - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -2378,15 +2422,13 @@ bool BundleSolver::FiAndGi( Index wFi )
 
  // get new linearizations- - - - - - - - - - - - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ bool insrtd = false;  // keep track if anything new at all was inserted
 
- Index Ftchd = 0;
- for( ; Ftchd < aBP3 ; ++Ftchd ) {
+ for( Index Ftchd = 0 ; Ftchd < aBP3 ; ++Ftchd ) {
   bool diagonal = true;
   bool HasLinearization;
 
-  if( Ftchd == 0 ) {
-   // first look for a constraint then for a sub-gradient
-
+  if( ! Ftchd ) {  // first look for a constraint then for a sub-gradient
    if( UpFiLmb1[ wFi ] == INFshift ) {
     HasLinearization = fwFi->has_linearization( diagonal = false );
     if( ! HasLinearization )
@@ -2444,9 +2486,9 @@ bool BundleSolver::FiAndGi( Index wFi )
    auto FikLmb = Alfa1k +
     std::inner_product( Lambda.begin() , Lambda.end() , G1 , double( 0 ) );
 
-   // try to update LwFiLmb[ wFi ] (and possibly LwFiLambd[ NrFi ])
+   // try to update LwFiLmb[ wFi ] (and possibly LwFiLambd.back())
    // note that, even if this suceeds and therefore increases LwFiLmb[ wFi ]
-   // (and possibly LwFiLambd[ NrFi ], which would be a "rather big" increase
+   // (and possibly LwFiLambd.back(), which would be a "rather big" increase
    // from -INF to something finite), as the theory requires the lower target
    // is *not* changed
    update_LwFiLambd( wFi , FikLmb );
@@ -2589,11 +2631,11 @@ bool BundleSolver::FiAndGi( Index wFi )
   // if something was inserted, bookkeeping is needed - - - - - - - - - - - -
 
   if( to_insert ) {
-
    inhibit_Modification( true );
    v_c05f[ wFi ]->store_linearization( gpp );
    inhibit_Modification( false );
 
+   insrtd = true;
    add_to_global_pool( wFi , gpp , wh );
 
    if( diagonal )       // it is a subgradient
@@ -2613,7 +2655,7 @@ bool BundleSolver::FiAndGi( Index wFi )
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- return( Ftchd > 0 );
+ return( insrtd );
 
  }  // end( BundleSolver::FiAndGi )
 
@@ -5383,25 +5425,23 @@ void BundleSolver::FakeFiOracle::GetBDesc( cIndex wFi , int *Bbeg ,
 
  if( Bbeg && Bind && Bval ) {
   // these three parameters can only be either all nullptr or all non-nullptr
-  std::copy( MILPSlv->get_matbeg().begin() , MILPSlv->get_matbeg().end() ,
-	     Bbeg );
-  std::copy( MILPSlv->get_matind().begin() , MILPSlv->get_matind().end() ,
-	     Bind );
-  std::copy( MILPSlv->get_matval().begin() , MILPSlv->get_matval().end() ,
-	     Bval );
+  std::copy( MILPSlv->get_matbeg().begin() ,
+	     MILPSlv->get_matbeg().end() , Bbeg );
+  std::copy( MILPSlv->get_matind().begin() ,
+	     MILPSlv->get_matind().end() , Bind );
+  std::copy( MILPSlv->get_matval().begin() ,
+	     MILPSlv->get_matval().end() , Bval );
   }
 
  if( cst )
   std::copy( MILPSlv->get_objective().begin() ,
 	     MILPSlv->get_objective().end() , cst );
-
  if( lbd )
   std::copy( MILPSlv->get_var_lb().begin() ,
-             MILPSlv->get_var_lb().end() , lbd );
-
+	     MILPSlv->get_var_lb().end() , lbd );
  if( ubd )
   std::copy( MILPSlv->get_var_ub().begin() ,
-             MILPSlv->get_var_ub().end() , ubd );
+	     MILPSlv->get_var_ub().end() , ubd );
 
  if( lhs && rhs ) {
   // although the FiOracle interface allows setting all the parameters to
@@ -5445,9 +5485,9 @@ Index BundleSolver::FakeFiOracle::GetANZ( cIndex wFi ,
   throw( std::logic_error( "the Function is not a Lagrangian one" ) );
 
  auto LagB = static_cast< LagBFunction * >( bslv->v_c05f[ wFi - 1 ] );
- return( LagB->get_NzMat() );
+ return( LagB->get_A_nz() );
 
- } // end ( BundleSolver::FakeFiOracle::GetANZ )
+ }  // end( BundleSolver::FakeFiOracle::GetANZ )
 
 /*--------------------------------------------------------------------------*/
 
@@ -5456,16 +5496,38 @@ void BundleSolver::FakeFiOracle::GetADesc( cIndex wFi , int * Abeg ,
 					   cIndex strt , Index stp )
 {
  if( ! bslv->IsEasy[ wFi - 1 ] )
-  throw( std::logic_error( "the Function is not a Lagrangian one" ) );
+  throw( std::invalid_argument( "the Function is not a Lagrangian one" ) );
 
  auto LagB = static_cast< LagBFunction * >( bslv->v_c05f[ wFi - 1 ] );
- LagB->get_MatDesc( Abeg , Aind , Aval , strt , stp );
- //!!
- const auto nz = LagB->get_NzMat();
- for( int i = 0 ; i < nz ; ++i )
-  Aval[ i ] = - Aval[ i ];
+ auto MILPSlv = bslv->MILP_s[ wFi - 1 ];
+ c_Index nc = MILPSlv->get_numcols();
+ Index count = 0;
+ for( Index j = 0 ; j < nc ; ++j ) {
+  Abeg[ j ] = count;
+  if( auto cp = LagB->get_A_by_col( MILPSlv->variable_with_index( j ) ) ) {
+   auto & mons = cp->second;
+   auto it = mons.begin();
+   if( strt )
+    it = std::lower_bound( it , mons.end() , std::make_pair( strt , 0 ) ,
+			   []( const auto & a , const auto & b )
+			     { return( a.first < b.first ); } );
 
- } // end ( BundleSolver::FakeFiOracle::GetANZ )
+   if( stp < LagB->get_num_active_var() ) {
+    for( ; it != mons.end() ; ++it ) {
+     if( it->first >= stp )
+      break;
+     Aind[ count ] = it->first;
+     Aval[ count++ ] = - it->second;
+     }
+    }
+   else
+    for( ; it != mons.end() ; ++it ) {
+     Aind[ count ] = it->first;
+     Aval[ count++ ] = - it->second;
+     }
+   }  // end( if( the variable has a Lagrangian term ) )
+  }  // end( for( all columns ) )
+ }  // end( BundleSolver::FakeFiOracle::GetANZ )
 
 /*--------------------------------------------------------------------------*/
 
