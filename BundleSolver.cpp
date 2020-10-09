@@ -5529,6 +5529,9 @@ void BundleSolver::FakeFiOracle::GetADesc( cIndex wFi , int * Abeg ,
      }
    }  // end( if( the variable has a Lagrangian term ) )
   }  // end( for( all columns ) )
+
+ Abeg[ nc ] = count;  // end marker
+
  }  // end( BundleSolver::FakeFiOracle::GetANZ )
 
 /*--------------------------------------------------------------------------*/
