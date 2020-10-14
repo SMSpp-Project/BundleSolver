@@ -380,7 +380,7 @@ const std::vector< int > BundleSolver::dflt_int_par = {
 
 // define and initialize here the default double parameters
 const std::vector<double> BundleSolver::dflt_dbl_par = {
- 1e-6 ,   // dblNZEps
+ 0 ,      // dblNZEps
  1e+2 ,   // dbltStar
  0 ,      // dblMinNrEvls
  30 ,     // dblBPar5
@@ -1517,8 +1517,8 @@ void BundleSolver::set_par( const idx_type par , const double value )
    EveryTTm = value;
    break;
   case( dblNZEps ):
-   if( value <= 0 )
-    throw( std::invalid_argument( "NZEps must be > 0" ) );
+   if( value < 0 )
+    throw( std::invalid_argument( "NZEps must be >= 0" ) );
    NZEps = value;
    break;
   case( dbltStar ):
@@ -2110,10 +2110,27 @@ void BundleSolver::FormD( void )
   }
 
  // in the easy case NrmD also gives the (2-)norm of z*
- if( ( ( ! ( MPName & 1 ) ) || ( MPName & 4 ) ) &&
-     ( ( intWZNorm & 3 ) == 2 ) )
+ // important note: the relationship d* = - t z* upon which the following is
+ // based is actually NOT VALID WHEN THERE ARE CONSTRAINTS, if z* is to be
+ // interpreted as the aggregate subgradient of the objective. however, it
+ // IS VALID IF z* IS TO BE INTERPRETED AS THE AGGREGATE SUBGRADIENT OF THE
+ // ESSENTIAL OBJECTIVE (f + i_X), WHICH IS EXACTLY WHAT IS NEEDED HERE.
+ // in fact, consider the case where the constraints are just Lambda >= 0;
+ // what we have is that d* = t proj_{>= 0}( - z* ); but it is exactly the
+ // condition proj_{>= 0}( - z* ) == 0 that gives the optimality condition.
+ // in the Lagrangian case, \Lambda >= 0 corresponds to having relaxed
+ // inequalities A u <= b, and z* = b - A u*; hence, it is only required that
+ // z* == 0 (that is, proj_{>= 0}( - z* ) == 0) to ensure that u* is feasible
+ // and therefore Sigma*-optimal, as opposed to requiring z* == 0
+ if( ( ( ! ( MPName & 1 ) ) || ( MPName & 4 ) ) && ( ( WZNorm & 3 ) == 2 ) )
   NrmZ = NrmD / t;
  else {  // otherwise it has to be computed the hard way
+  // NOTE: THIS CODE IS BOTH HORRIBLY INEFFCIENT DUE TO A CRAP IMPLEMENTATION
+  // OF OsiMPSolver::ReadZ AND INCORRECT WHEN THERE ARE CONSTRAINTS, AS THE
+  // z* COMPUTED BY ReadZ() IS THAT OF THE OBJECTIVE BUT NOT OF THE ESSENTIAL
+  // OBJECTIVE. the right vector should be easy to compute since it's basically
+  // the slack s that is explicit in the dual formulation of the master problem,
+  // adjusted with the slacks, but this is no time to dawdle with this
   Index dim;
   const Index * nms;
   std::vector< double > tZ( NumVar );

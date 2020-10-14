@@ -820,7 +820,7 @@ public:
   *
   * - dblEveryTTm [0]: periodicity of eEveryTTime events
   *
-  * - dblNZEps [1e-6]: parameter controlling when the norm of the aggregated
+  * - dblNZEps [0]:    parameter controlling when the norm of the aggregated
   *                    subgradient z* is declared to be "almost 0". See
   *   intWZNorm for the details of how this is done in terms of which norm is
   *   used and how this constant is treated, as well as on the impact it has
@@ -909,7 +909,8 @@ public:
   *   turns out not to give a reliable stopping test. If, instead, tStar > 0,
   *   then both stopping tests are employed in parallel; note that it is
   *   always easy to ensure that the second stopping condition never "wrongly
-  *   fires" by just setting dblNZEps == 0.
+  *   fires" by just setting dblNZEps == 0 (although this will make it very
+  *   difficult to ever generate a valid global upper bound).
   *
   * - dblMinNrEvls [0]: min number/fraction of non-easy C05Function evaluated
   *                     at each iteration. The solver can stop computing
