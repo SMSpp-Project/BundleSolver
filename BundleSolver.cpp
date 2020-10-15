@@ -66,7 +66,7 @@
 /*--------------------------------------------------------------------------*/
 
 #ifndef NDEBUG
- #define CHECK_DS 0
+ #define CHECK_DS 15
  /* Perform long and costly checks on the data structures, coded bit-wise:
   *
   * - CHECK_DS & 1 == checks the data structures representing the bundle and
@@ -712,7 +712,8 @@ int BundleSolver::compute( bool changedvars )
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
   if( UpFiLmb1.back() == - INFshift ) {
-   BLOG( 1 , " ~ stop (Fi = -INF)" << std::endl );
+   BLOG2( 1 , f_convex , " ~ stop (Fi = -INF)" << std::endl );
+   BLOG2( 1 , ! f_convex , " ~ stop (Fi = INF)" << std::endl );
    Result = kUnbounded;
    break;
    }
@@ -2519,7 +2520,8 @@ bool BundleSolver::FiAndGi( Index wFi )
  FiStatus[ wFi ] = fwFi->compute( ( FiStatus[ wFi ] == kUnEval ) );
 
  // update UpFiLambd1[ wFi ] (and possibly UpFiLambd1[ NrFi ])
- update_UpFiLambd1( wFi , rs( fwFi->get_upper_estimate() ) );
+ update_UpFiLambd1( wFi , f_convex ?   fwFi->get_upper_estimate()
+		                   : - fwFi->get_lower_estimate() );
 
  // compute the upper bound in Lambda provided by the upper bound in Lambda1
  // and try to update UpFiLmb[ wFi ] (and possibly UpFiLambd1[ NrFi ])
@@ -2530,11 +2532,12 @@ bool BundleSolver::FiAndGi( Index wFi )
  if( UpFiLmb1[ wFi ] < INFshift ) {
   c_VarValue LwFi = v_c05f[ wFi ]->get_Lipschitz_constant();
   if( LwFi < INFshift )
-   update_UpFiLambd( wFi , rs( UpFiLmb1[ wFi ] + LwFi * NrmD ) );
+   update_UpFiLambd( wFi , UpFiLmb1[ wFi ] + LwFi * NrmD );
   }
 
  // update LwFiLambd1[ wFi ] (and possibly LwFiLambd1[ NrFi ])
- update_LwFiLambd1( wFi , rs( fwFi->get_lower_estimate() ) );
+ update_LwFiLambd1( wFi , f_convex ?   fwFi->get_lower_estimate()
+		                   : - fwFi->get_upper_estimate() );
 
  // get new linearizations- - - - - - - - - - - - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -2958,14 +2961,14 @@ void BundleSolver::Log1( void )
   return;
 
  *f_log << std::endl << "{" << SCalls << "-" << ParIter << "-"
-	<< NrItems[ NrFi ] << "} t = " << t
+	<< NrItems.back() << "} t = " << t
 	<< " ~ D*_1( z* ) = " << Master->ReadDStart( 1 )
 	<< " ~ Sigma = " << Sigma << std::endl << "           ";
 
  *f_log <<  " Fi = ";
 
- if( UpFiLmb[ NrFi ] == INFshift )
-  *f_log << " - INF";
+ if( UpFiLmb.back() == INFshift )
+  *f_log << "??";
  else
   *f_log << rs( UpFiLmb.back() ) << " ~ eU = " << EpsU;
 
@@ -3029,11 +3032,16 @@ void BundleSolver::compute_NrmZFctr( void )
  // now we sum: note that if ! f_convex one should change the sign, but
  // the norm is invariant w.r.t. the sign
  std::vector< VarValue > tg( NumVar , 0 );
- if( f_lf ) {  // the linear 0-th component is there
+ if( f_lf ) {      // the linear 0-th component is there
   auto & cf = f_lf->get_v_var();
   for( Index i = 0 ; i < NumVar ; ++i )
    tg[ i ] = cf[ i ].second;
   }
+ else              // there is no 0-th component
+  if( wf <= 1 ) {  // and we just wanted is subgradient
+   NrmZFctr = 1;   // ... which is all-0, so use 1
+   return;
+   }
 
  if( wf > 1 ) {  // also need to sum a subgradient for each component
   std::vector< VarValue > tg1( NumVar );
