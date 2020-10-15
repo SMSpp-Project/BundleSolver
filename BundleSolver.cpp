@@ -66,7 +66,7 @@
 /*--------------------------------------------------------------------------*/
 
 #ifndef NDEBUG
- #define CHECK_DS 15
+ #define CHECK_DS 0
  /* Perform long and costly checks on the data structures, coded bit-wise:
   *
   * - CHECK_DS & 1 == checks the data structures representing the bundle and
@@ -3731,6 +3731,9 @@ bool BundleSolver::IsOptimal( double eps ) const
 
 void BundleSolver::FModChg( VarValue shift , Index wFi )
 {
+ if( ( ! std::isnan( shift ) ) && ( ! f_convex ) )
+  shift = - shift;
+
  if( shift == INFshift ) {      // function changed monotonically up
   if( UpFiLmb[ wFi ] < INFshift ) {
    UpFiLmb[ wFi ] = INFshift;   // reset upper function value for component
