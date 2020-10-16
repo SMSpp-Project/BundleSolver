@@ -459,6 +459,22 @@ int BundleSolver::compute( bool changedvars )
 
  // initializations - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // if there is a 0-th component and the value had not been computed before
+ // (maybe because the 0-th component has changed), do it now
+ if( f_lf && ( Fi0Lmb == INFshift ) ) {
+  f_lf->compute( true );
+  Fi0Lmb = rs( f_lf->get_upper_estimate() );
+  if( UpFiLmbdef == NrFi ) {  // ready to compute the total upper bound
+   ++UpFiLmbdef;              // do so
+   UpFiLmb.back() = std::accumulate( UpFiLmb.begin() , --(UpFiLmb.end()) ,
+				     Fi0Lmb );
+   }
+  if( LwFiLmbdef == NrFi ) {  // ready to compute the total lower bound
+   ++LwFiLmbdef;              // do so
+   LwFiLmb.back() = std::accumulate( LwFiLmb.begin() , --(LwFiLmb.end()) ,
+				     Fi0Lmb );
+   }
+  }
 
  f_wFi = 0;           // since not all components are necessarily evaluated
                       // at all iterations, the order in which they are seen
@@ -733,7 +749,10 @@ int BundleSolver::compute( bool changedvars )
       ( UpFiBest <= LowerBound.back() *
 	            ( 1 - ( LowerBound.back() > 0 ? RelAcc : - RelAcc ) ) )
       ) {
-   BLOG( 1 , "            FiBest < conditional LB: unbounded " << std::endl );
+   BLOG( 1 , "            FiBest " );
+   BLOG2( 1 , f_convex , "< conditional LB" );
+   BLOG2( 1 , ! f_convex , "> conditional UB" );
+   BLOG( 1 , ": unbounded " << std::endl );
    if( UpFiLmb1.back() < UpFiLmb.back() )  // Lambda1 is better than Lambda
     GotoLambda1();                         // go to Lambda1
    else                                    // if not
@@ -3570,7 +3589,10 @@ void BundleSolver::ReSetAlg( unsigned char RstLvl )
    // Lambda since oldLambda == 0 by construction
    Vec_VarValue foo( NumVar , 0 );  // no change in the (unknown) f-values
    Master->ChangeCurrPoint( Lambda.data() , foo.data() );
+   Fi0Lmb = INFshift;  // the value of the linear part must be computed
    }
+  else  // Lambda was all-0 anyway
+   Fi0Lmb = 0;  // then the value of the linear part is quite obvious ...
   }
  else {                   // reset the current point to all-0 - - - - - - - -
   // note that the thusly constructed Master Problem precisely assumes
@@ -3580,15 +3602,8 @@ void BundleSolver::ReSetAlg( unsigned char RstLvl )
   // "tell" this to the ColVariable of the C05Function(s)
   for( Index i = 0 ; i < NumVar ; ++i )
    LamVcblr[ i++ ]->set_value( 0 );
+  Fi0Lmb = 0;  // then the value of the linear part is quite obvious ...
   }
-
- if( f_lf ) {
-  f_lf->compute( true );
-  Fi0Lmb = rs( f_lf->get_upper_estimate() );
-  }
- else
-  Fi0Lmb = 0;
- 
  }  // end( BundleSolver::ReSetAlg )
 
 /*--------------------------------------------------------------------------*/
@@ -3739,8 +3754,8 @@ void BundleSolver::FModChg( VarValue shift , Index wFi )
    UpFiLmb[ wFi ] = INFshift;   // reset upper function value for component
    --UpFiLmbdef;                // one less known
    }
-  if( UpFiLmb[ NrFi ] < INFshift ) {
-   UpFiLmb[ NrFi ] = INFshift;  // reset total upper function value
+  if( UpFiLmb.back() < INFshift ) {
+   UpFiLmb.back() = INFshift;   // reset total upper function value
    --UpFiLmbdef;                // one less known
    }
   UpFiBest = INFshift;          // comprised best one
@@ -3752,8 +3767,8 @@ void BundleSolver::FModChg( VarValue shift , Index wFi )
    LwFiLmb[ wFi ] = -INFshift;  // reset lower function value for component
    --LwFiLmbdef;                // one less known
    }
-  if( LwFiLmb[ NrFi ] > -INFshift ) {
-   LwFiLmb[ NrFi ] = -INFshift; // reset total lower function value
+  if( LwFiLmb.back() > -INFshift ) {
+   LwFiLmb.back() = -INFshift;  // reset total lower function value
    --LwFiLmbdef;                // one less known
    }
   f_global_LB = - INFshift;     // global LB no longer valid
@@ -3765,8 +3780,8 @@ void BundleSolver::FModChg( VarValue shift , Index wFi )
    UpFiLmb[ wFi ] = INFshift;   // reset upper function value for component
    --UpFiLmbdef;                // one less known
    }
-  if( UpFiLmb[ NrFi ] < INFshift ) {
-   UpFiLmb[ NrFi ] = INFshift;  // reset total upper function value
+  if( UpFiLmb.back() < INFshift ) {
+   UpFiLmb.back() = INFshift;   // reset total upper function value
    --UpFiLmbdef;                // one less known
    }
   UpFiBest = INFshift;          // and of course best one
@@ -3774,8 +3789,8 @@ void BundleSolver::FModChg( VarValue shift , Index wFi )
    LwFiLmb[ wFi ] = -INFshift;  // reset lower function value for component
    --LwFiLmbdef;                // one less known
    }
-  if( LwFiLmb[ NrFi ] > -INFshift ) {
-   LwFiLmb[ NrFi ] = -INFshift; // reset total lower function value
+  if( LwFiLmb.back() > -INFshift ) {
+   LwFiLmb.back() = -INFshift;  // reset total lower function value
    --LwFiLmbdef;                // one less known
    }
   f_global_LB = - INFshift;     // global LB no longer valid
@@ -3787,8 +3802,8 @@ void BundleSolver::FModChg( VarValue shift , Index wFi )
  if( UpFiLmb[ wFi ] < INFshift )
   UpFiLmb[ wFi ] += shift;
 
- if( UpFiLmb[ NrFi ] < INFshift )
-  UpFiLmb[ NrFi ] += shift;
+ if( UpFiLmb.back() < INFshift )
+  UpFiLmb.back() += shift;
 
  if( UpFiBest < INFshift )
   UpFiBest += shift;
@@ -3796,8 +3811,8 @@ void BundleSolver::FModChg( VarValue shift , Index wFi )
  if( LwFiLmb[ wFi ] > -INFshift )
   LwFiLmb[ wFi ] += shift;
 
- if( LwFiLmb[ NrFi ] > -INFshift )
-  LwFiLmb[ NrFi ] += shift;
+ if( LwFiLmb.back() > -INFshift )
+  LwFiLmb.back() += shift;
 
  f_global_LB += shift;
 
@@ -4103,6 +4118,8 @@ void BundleSolver::process_outstanding_Modification( void )
 
  std::vector< char > reset( NrFi , 0 );
 
+ bool Fi0Chgd = false;  // true if the 0-th component changes
+
  bool to_delete;  // should have been defined inside, but there is not
                   // visible by the lambda
 
@@ -4126,8 +4143,42 @@ void BundleSolver::process_outstanding_Modification( void )
   // access to the component, and any FunctionMod pertaining to an already
   // reset component can be almost immediately deleted
   if( const auto tmod = std::dynamic_pointer_cast< FunctionMod >( mod ) ) {
-   if( tmod->function() == f_lf )
-    throw( std::logic_error( "changes in 0-th component not handled yet" ) );
+   if( tmod->function() == f_lf ) {
+    const auto shift = tmod->shift();
+    // special immediate treatment of the 0-th component, which is simple
+    if( std::isnan( shift ) ) {  // is a C05FunctionModLin*
+     Fi0Chgd = true;             // changing the coefficients
+     Fi0Lmb = INFshift;          // the value is no longer known
+     if( UpFiLmbdef == NrFi + 1 ) {  // the total total upper bound was known
+      UpFiLmb.back() = INFshift;     // it is no longer so
+      UpFiLmbdef = NrFi;             // it will have to be recomputed
+      }
+     if( LwFiLmbdef == NrFi + 1 ) {  // the total total lower bound was known
+      LwFiLmb.back() = -INFshift;    // it is no longer so
+      LwFiLmbdef = NrFi;             // it will have to be recomputed
+      }
+     UpFiBest = INFshift;            // and the best value as well
+     }
+    else {                       // a FunctionMod changing the constant
+     #ifndef NDEBUG
+      if( ( shift == INFshift ) || ( shift == - INFshift ) )
+       throw( std::logic_error( "unexpected *FunctionMod* from LinearFunction"
+				) );
+     #endif
+     if( Fi0Lmb < INFshift )
+      Fi0Lmb += INFshift;
+     if( UpFiLmb.back() < INFshift )
+      UpFiLmb.back() += shift;
+     if( UpFiBest < INFshift )
+      UpFiBest += shift;
+     if( LwFiLmb.back() > -INFshift )
+      LwFiLmb.back() += shift;
+     f_global_LB += shift;
+     }
+
+    to_delete = true;
+    continue;
+    }
 
    auto wFi = get_index_of_component( tmod->function() );
 
@@ -4372,8 +4423,15 @@ void BundleSolver::process_outstanding_Modification( void )
  // have never been reset, or are the remaining ones after the (last) one
  // resetting the component
 
- if( v_mod_tmp.empty() )  // no more Modification to process
-  return;                 // all done
+ if( v_mod_tmp.empty() ) {  // no more Modification to process
+  // ordinarily, changes in the 0-th component would be dealt with at the
+  // end, but if this is the only thing that happened the end is now, so
+  // they have to be dealt with immediately
+  if( Fi0Chgd )
+   Master->ChgSubG( 0 , NumVar , 0 );
+
+  return;                   // all done
+  }
 
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // 2nd loop, again in reverse: check for "soft" reset of components, i.e.,
@@ -5185,12 +5243,17 @@ void BundleSolver::process_outstanding_Modification( void )
     ++count;
  
  if( count == NrFi - NrEasy )  // all non-easy components have been reset
-  Master->ChgSubG( 0 , NumVar , NrFi + 1 );
- else
+  // ... and if Fi0Chgd == true, then also the 0-th component has changed
+  Master->ChgSubG( 0 , NumVar , Fi0Chgd ? Inf<Index>() : NrFi + 1 );
+ else {
   if( count )                  // some non-easy components have been reset
    for( Index k = 0 ; k < NrFi ; ++k )
     if( ( ( ! NrEasy ) || ( ! IsEasy[ k ] ) ) && reset[ k ] )
      Master->ChgSubG( 0 , NumVar , k + 1 );
+
+  if( Fi0Chgd )                // ... and/or the 0-th component has changed
+   Master->ChgSubG( 0 , NumVar , 0 );
+  }
 
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // if there are constants to change entirely, do it now in one blow
