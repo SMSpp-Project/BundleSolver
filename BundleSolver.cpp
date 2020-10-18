@@ -103,6 +103,24 @@ using namespace SMSpp_di_unipi_it;
 /*--------------------------------------------------------------------------*/
 /*-------------------------------- FUNCTIONS -------------------------------*/
 /*--------------------------------------------------------------------------*/
+// set precision for long floats (10 digits)
+
+static inline std::ostream & def( std::ostream& os ) {
+ os.setf( ios::scientific, ios::floatfield );
+ os << setprecision( 10 );
+ return( os );
+ }
+
+/*--------------------------------------------------------------------------*/
+// set precision for short floats (2 digits)
+
+static inline std::ostream & shrt( std::ostream& os ) {
+ os.setf( ios::scientific, ios::floatfield );
+ os << setprecision( 2 );
+ return( os );
+ }
+
+/*--------------------------------------------------------------------------*/
 
 static void Compact( BundleSolver::Vec_VarValue & g ,
 		     BundleSolver::c_Subset & B )
@@ -600,7 +618,7 @@ int BundleSolver::compute( bool changedvars )
     }
 
    t = std::min( t * mxIncr , tMaior );
-   BLOG( 2 , " ~ NR: t increased to " << t << std::endl );
+   BLOG( 2 , " ~ NR: t increased to " << shrt << t << std::endl );
    tHasChgd = true;
    continue;
    }
@@ -782,7 +800,7 @@ int BundleSolver::compute( bool changedvars )
   // in which the real optimization takes place
 
   if( ! RifeqFi ) {       // if we are still in "phase 0"
-   BLOG( 1 , "            Fi1 < INF ==> SS " << std::endl );
+   BLOG( 1 , "            Fi1 defined ==> SS " << std::endl );
    GotoLambda1();         // go to the feasible point
    continue;              // and start the actual minimization of Fi()
    }
@@ -792,7 +810,8 @@ int BundleSolver::compute( bool changedvars )
 
   if( ! MPchgs ) {
    t = std::min( t * mxIncr , tMaior );
-   BLOG( 1 , " ~ noise reduction: t increased to " << t << std::endl );
+   BLOG( 1 , " ~ noise reduction: t increased to " << shrt << t
+	     << std::endl );
    tHasChgd = true;
    if( t >= tMaior )
     Result = kError;
@@ -819,14 +838,14 @@ int BundleSolver::compute( bool changedvars )
 
   if( SSDone ) {  // SS - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-   BLOG( 1 , std::endl << " SS[" << CSSCntr << "]: DFi = " );
+   BLOG( 1 , std::endl << " SS[" << CSSCntr << "]: DFi = " << shrt );
    if( f_convex ) {
-    BLOG( 1 , DeltaFi << " ~ Up1(" << UpFiLmb1.back() << ") <= UpTrgt("
-	      << UpTrgt << ") ~ Ht = " << tt );
+    BLOG( 1 , DeltaFi << def << " ~ Up1(" << UpFiLmb1.back()
+	  << ") <= UpTrgt(" << UpTrgt << ") ~ Ht = " << shrt << tt );
     }
    else
-    BLOG( 1 , - DeltaFi << " ~ Lw1(" << - UpFiLmb1.back() << ") >= LwTrgt("
-	      << - UpTrgt << ") ~ Ht = " << tt );
+    BLOG( 1 , - DeltaFi << def << " ~ Lw1(" << - UpFiLmb1.back()
+	      << ") >= LwTrgt(" << - UpTrgt << ") ~ Ht = " << shrt << tt );
 
    tt = std::min( std::min( tMaior , t * mxIncr ) ,
  		  std::max( t * mnIncr , tt ) );
@@ -848,16 +867,15 @@ int BundleSolver::compute( bool changedvars )
    }
   else {        // NS - - - - - - - - - - - - - - - - - - - - - - - - - - - -
    BLOG( 1 , std::endl << " NS[" << CNSCntr << "]: " );
+   BLOG2( 1 , DeltaFi < INFshift , "DFi = " << shrt << rs( DeltaFi )
+	  <<  " ~ " << def );
    if( f_convex ) {
-    BLOG2( 1 , DeltaFi < INFshift , "DFi = " << DeltaFi <<  " ~ " );
-    BLOG( 1 , "Lw1(" << LwFiLmb1.back() << ") >= LwTrgt(" << LwTrgt
-	      << ") ~ Ht = " << tt );
+    BLOG( 1 , "Lw1(" << def << LwFiLmb1.back() << ") >= LwTrgt(" << LwTrgt
+	  << ") ~ Ht = " << shrt << tt );
     }
-   else {
-    BLOG2( 1 , DeltaFi < INFshift , "DFi = " << - DeltaFi <<  " ~ " );
+   else
     BLOG( 1 , "Up1(" << - LwFiLmb1.back() << ") <= UpTrgt(" << - LwTrgt
-	      << ") ~ Ht = " << tt );
-    }
+	      << ") ~ Ht = " << shrt << tt );
 
    tt = std::max( std::max( tMinor , t * mxDecr ) ,
  		  std::min( t * mnDecr , tt ) );
@@ -905,7 +923,7 @@ int BundleSolver::compute( bool changedvars )
    // endgame t-strategy: note the "/ 10"!!
    if( DSTS < max_error() / 10 ) {
     tt = std::max( t * ( mxDecr + mnDecr ) / 2 , tMinor );
-    BLOG( 1 , " ~ endgame, t = " << tt );
+    BLOG( 1 , " ~ endgame, t = " << shrt << tt );
     }
 
   //!! the reverse should also be done: if sigma is small and D*( t* ) is
@@ -2518,15 +2536,8 @@ bool BundleSolver::FiAndGi( Index wFi )
 
  auto fwFi = v_c05f[ wFi ];
 
- if( f_convex ) {
-  fwFi->set_par( dblUpCutOff , UpCutOff );
-  fwFi->set_par( dblLwCutOff , LwCutOff );
-  }
- else {
-  fwFi->set_par( dblUpCutOff , - LwCutOff );
-  fwFi->set_par( dblLwCutOff , - UpCutOff );
-  }
-
+ fwFi->set_par( dblUpCutOff , f_convex ? UpCutOff : - LwCutOff );
+ fwFi->set_par( dblLwCutOff , f_convex ? LwCutOff : - UpCutOff );
  fwFi->set_par( dblRelAcc , EpsCurr );
 
  // also set a "time cutoff" with the remaining total time
@@ -2656,7 +2667,7 @@ bool BundleSolver::FiAndGi( Index wFi )
   Index gpp = Inf<Index>();  // position in the global pool where to put it
 
   if( f_log && ( LogVerb > 2 ) ) {
-   *f_log << std::endl << "            New ";
+   *f_log << std::endl << "            New " << shrt;
    if( diagonal ) {
     if( eps >= std::max( std::abs( UpRifFi[ wFi ] ) , double( 1 ) )
 	       * RelAcc / 10 )
@@ -2980,21 +2991,20 @@ void BundleSolver::Log1( void )
   return;
 
  *f_log << std::endl << "{" << SCalls << "-" << ParIter << "-"
-	<< NrItems.back() << "} t = " << t
+	<< NrItems.back() << "} t = " << shrt << t
 	<< " ~ D*_1( z* ) = " << Master->ReadDStart( 1 )
 	<< " ~ Sigma = " << Sigma << std::endl << "           ";
 
- *f_log <<  " Fi = ";
-
  if( UpFiLmb.back() == INFshift )
-  *f_log << "??";
+  *f_log << " Fi undefined";
  else
-  *f_log << rs( UpFiLmb.back() ) << " ~ eU = " << EpsU;
+  *f_log << " Fi = " << def << rs( UpFiLmb.back() ) << " ~ eU = "
+	 << shrt << EpsU;
 
  if( BPar6 )
   *f_log << " ~ BP3 = " << aBP3;
 
- } // end( BundleSolver::Log1 )
+ }  // end( BundleSolver::Log1 )
 
 /*--------------------------------------------------------------------------*/
 
@@ -3003,7 +3013,7 @@ void BundleSolver::Log2( void )
  if( ( ! f_log ) || ( LogVerb <= 1 ) )
   return;
 
- *f_log << std::endl << "            ";
+ *f_log << std::endl << "            " << def;
 
  if( LowerBound[ NrFi ] > - INFshift ) {
   if( f_convex )
@@ -3021,7 +3031,7 @@ void BundleSolver::Log2( void )
    if( UpFiLmb1.back() >= INFshift )
     *f_log << " - INF" << std::endl;
    else
-    *f_log << UpFiLmb1.back() << " ~ Alfa1 = " << Alfa1.back()
+    *f_log << UpFiLmb1.back() << shrt << " ~ Alfa1 = " << Alfa1.back()
 	   << " ~ Gi1xd = " << - ScPr1.back() << std::endl;
   }
  else
@@ -3031,7 +3041,7 @@ void BundleSolver::Log2( void )
    if( UpFiLmb1.back() >= INFshift )
     *f_log << " + INF" << std::endl;
    else
-    *f_log << - UpFiLmb1.back() << " ~ Alfa1 = " << Alfa1.back()
+    *f_log << - UpFiLmb1.back() << shrt << " ~ Alfa1 = " << Alfa1.back()
 	   << " ~ Gi1xd = " << - ScPr1.back() << std::endl;
   
  }  // end( BundleSolver::Log2 )
@@ -3356,7 +3366,7 @@ Index BundleSolver::BStrategy( Index wFi )
 
   std::ostream * wlog = ( ( ! f_log ) || ( LogVerb <= 1 ) ) ? & std::cerr
                                                             : f_log;
-
+  wlog << def;
   std::vector<VarValue> Z( NumVar );
   v_c05f[ wFi ]->get_linearization_coefficients( Z.data() ,
 						 Range( 0 , NumVar ) ,
@@ -4176,8 +4186,8 @@ void BundleSolver::process_outstanding_Modification( void )
      f_global_LB += shift;
      }
 
-    to_delete = true;
-    continue;
+    to_delete = true;  // in either case, all that had to be done
+    continue;          // has been done
     }
 
    auto wFi = get_index_of_component( tmod->function() );
@@ -5446,6 +5456,7 @@ void BundleSolver::CheckAlpha( void )
 {
  std::ostream * wlog = ( ( ! f_log ) || ( LogVerb <= 1 ) ) ? & std::cerr
                                                            : f_log;
+ *wlog << def;
  cHpRow tA = Master->ReadLinErr();
  std::vector< VarValue > G( NumVar );
  const double eps = 1e-8;
@@ -5480,6 +5491,7 @@ void BundleSolver::CheckLBs( void )
 {
  std::ostream * wlog = ( ( ! f_log ) || ( LogVerb <= 1 ) ) ? & std::cerr
                                                            : f_log;
+ *wlog << def;
  const double eps = 1e-8;
 
  auto LB = Master->ReadLowerBound();
@@ -5556,29 +5568,28 @@ void BundleSolver::CheckLBs( void )
 
 void BundleSolver::PrintBundle( void )
 {
- if( ! f_log )
-  return;
-
- *f_log << std::endl << "Lambda = [ ";
+ std::ostream * wlog = ( ( ! f_log ) || ( LogVerb <= 1 ) ) ? & std::cerr
+                                                           : f_log;
+ *wlog << def << std::endl << "Lambda = [ ";
  for( Index h = 0 ; h < NumVar - 1 ; ++h )
-  *f_log << Lambda[ h ] << ", ";
- *f_log << Lambda.back() << " ]";
+  *wlog << Lambda[ h ] << ", ";
+ *wlog << Lambda.back() << " ]";
 
  auto Alfa = Master->ReadLinErr();
  std::vector< VarValue > G( NumVar );
 
- *f_log << std::endl;
+ *wlog << std::endl;
  for( Index i = 0 ; i < Master->MaxName() ; ++i ) {
-  *f_log << i << "\t";
+  *wlog << i << "\t";
   if( ItemVcblr[ i ].second >= vBPar2[ ItemVcblr[ i ].first ]
 	  || ItemVcblr[ i ].second < 0 ) {
-   *f_log << "[empty]" << std::endl;
+   *wlog << "[empty]" << std::endl;
    continue;
    }
 
   auto wFi = ItemVcblr[ i ].first;
   auto j = ItemVcblr[ i ].second;
-  *f_log << wFi << "\t" << j << "\t[ ";
+  *wlog << wFi << "\t" << j << "\t[ ";
 
   v_c05f[ wFi ]->get_linearization_coefficients( G.data() ,
 						 Range( 0 , NumVar ) , j );
@@ -5586,9 +5597,9 @@ void BundleSolver::PrintBundle( void )
    chgsign( G.data() , NumVar );
 
   for( Index h = 0 ; h < NumVar - 1 ; ++h )
-   *f_log << G[ h ] << ", ";
+   *wlog << G[ h ] << ", ";
    
-  *f_log << G.back() << " ]\t"
+  *wlog << G.back() << " ]\t"
 	 << rs( v_c05f[ wFi ]->get_linearization_constant( j ) )
 	 << "\t" << Alfa[ i ] << std::endl;
   }
