@@ -786,8 +786,9 @@ int BundleSolver::compute( bool changedvars )
   // this is because the vertical linearizatio making Lambda1 unfeasible,
   // surely "change enough the master problem already"
   // yet, one possible t-strategy would be to set t to the largest value
-  // that would have produced a feasible point, i.e.,
-  // t := *Alfa1 / ( - *ScPr1 )
+  // that would have produced a feasible point: t := Alfa1 / ( - ScPr1 )
+  // (with Alfa1 and ScPr1 of that particular constraint, though, not the
+  // "global" ones)
 
   if( MPchgs > 1 )
    continue;
@@ -809,12 +810,16 @@ int BundleSolver::compute( bool changedvars )
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
   if( ! MPchgs ) {
+   if( t >= tMaior ) {
+    BLOG( 1 , "            stop: noise reduction needed but t maximum"
+	      << std::endl );
+    Result = kError;
+    break;
+    }
    t = std::min( t * mxIncr , tMaior );
-   BLOG( 1 , " ~ noise reduction: t increased to " << shrt << t
+   BLOG( 1 , "            noise reduction: t increased to " << shrt << t
 	     << std::endl );
    tHasChgd = true;
-   if( t >= tMaior )
-    Result = kError;
    continue;
    }
 
