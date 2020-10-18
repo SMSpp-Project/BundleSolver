@@ -986,27 +986,34 @@ void BundleSolver::set_Block( Block * block )
 
  const auto & sb = f_Block->get_nested_Blocks();
 
- if( sb.empty() ) {
-  // the objective function of the block must be a C05Function  - - - - - - -
-  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ if( sb.empty() ) {  // no sub-Block
+  // the objective function of the Block must be a C05Function  - - - - - - -
 
   auto obj = dynamic_cast< FRealObjective * >( f_Block->get_objective() );
   if( ! obj )
-   throw( std::logic_error( "objective is not a FRealObjective" ) );
+   throw( std::invalid_argument( "objective is not a FRealObjective" ) );
 
   auto c05f = dynamic_cast< C05Function * >( obj->get_function() );
   if( ! c05f )
-   throw( std::logic_error( "the objective is not a C05Function" ) );
+   throw( std::invalid_argument( "the objective is not a C05Function" ) );
 
+  f_convex = c05f->is_convex();
+  if( ( ! f_convex ) && ( ! c05f->is_concave() ) )
+   throw( std::invalid_argument(
+			     "only convex or concave objectives allowed " ) );
+
+  if( ( f_convex && ( obj->get_sense() == Objective::eMax ) ) ||
+      ( ( ! f_convex ) && ( obj->get_sense() == Objective::eMin ) ) )
+   throw( std::invalid_argument( "can only minimize convex / maximize concave"
+				 ) );  
   v_c05f.push_back( c05f );
   f_lf = nullptr;
   }
- else {
+ else {  // there are sub-Block
   // the objective function of the block must be a LinearFunction- - - - - - -
-  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
   if( ! f_Block->get_objective() )  // there is no Objective
-   f_lf =  nullptr;
+   f_lf = nullptr;
   else {
    auto obj = dynamic_cast< FRealObjective * >( f_Block->get_objective() );
    if( ! obj )
@@ -1027,9 +1034,7 @@ void BundleSolver::set_Block( Block * block )
   v_c05f.resize( sb.size() );
 
   for( Index i = 0 ; i < sb.size() ; ++i ) {  // for each sub-block
-
    // the objective function of each sub-block must be a C05Function - - - - -
-   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
    auto obj = dynamic_cast< FRealObjective * >( sb[ i ]->get_objective() );
    if( ! obj )
@@ -1038,30 +1043,45 @@ void BundleSolver::set_Block( Block * block )
    auto c05f = dynamic_cast<C05Function *>( obj->get_function() );
    if( ! c05f )
     throw( std::logic_error( "the objective is not a C05Function" ) );
+
+   // all have to be the same convexity - - - - - - - - - - - - - - - - - - -
    v_c05f[ i ] = c05f;
+   if( ! i )
+    f_convex = c05f->is_convex();
+   else
+    if( c05f->is_convex() != f_convex )
+     throw( std::invalid_argument(
+			  "objectives must be all convex or all concave" ) );
+
+   // all have to be be max/min in the right way- - - - - - - - - - - - - - -
+   if( ( ! f_convex ) && ( ! c05f->is_concave() ) )
+   throw( std::invalid_argument(
+			     "only convex or concave objectives allowed " ) );
+
+   if( ( f_convex && ( obj->get_sense() == Objective::eMax ) ) ||
+       ( ( ! f_convex ) && ( obj->get_sense() == Objective::eMin ) ) )
+    throw( std::invalid_argument( "can only minimize convex / maximize concave"
+				  ) );  
 
    // nephews are not allowed- - - - - - - - - - - - - - - - - - - - - - - - -
-   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
    if( sb[ i ]->get_nested_Blocks().size() )
     throw( std::logic_error( "nephew are not allowed" ) );
 
-   // Variable of sub-Block are not expected, neither are Constraint - - - - -
-   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
+   // Variable not allowed - - - - - - - - - - - - - - - - - - - - - - - - - -
    if( sb[ i ]->get_static_variables().size() )
     throw( std::logic_error( "static Variable are not allowed" ) );
 
    if( sb[ i ]->get_dynamic_variables().size() )
     throw( std::logic_error( "dynamic Variable are not allowed" ) );
 
+   // neither are Constraint - - - - - - - - - - - - - - - - - - - - - - - - -
    if( sb[ i ]->get_static_constraints().size() )
     throw( std::logic_error( "static Constraint are not allowed" ) );
 
    if( sb[ i ]->get_dynamic_constraints().size() )
     throw( std::logic_error( "dynamic Constraint are not allowed" ) );
-   }
-  }
+   }  // end( for each sub-Block )
+  }  // end( there are sub-Block )
 
  // the set of "active" Variable in all Function must be the same- - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1176,23 +1196,6 @@ void BundleSolver::set_Block( Block * block )
 
  NrFi = v_c05f.size();
 
- // check that the C05Function are either all convex or all concave- - - - - -
- //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
- f_convex = v_c05f.front()->is_convex();
- if( ( ! f_convex ) && ( ! v_c05f.front()->is_concave() ) )
-  throw( std::invalid_argument(
-			     "only convex or concave objectives allowed " ) );
- if( f_convex ) {
-  for( Index k = 0 ; ++k < NrFi ; )
-   if( ! v_c05f[ k ]->is_convex() )
-    throw( std::invalid_argument( "objectives must be all convex" ) );
-  }
- else
-  for( Index k = 0 ; ++k < NrFi ; )
-   if( ! v_c05f[ k ]->is_concave() )
-    throw( std::invalid_argument( "objectives must be all concave" ) );
-  
  // check if there are "easy" components and deal with them- - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  
@@ -1244,9 +1247,11 @@ void BundleSolver::set_Block( Block * block )
  // do not, and in fact may complain if such a tight accuracy is set, but
  // since we don't really trust the accuracy of MPSolver, we give the
  // C05Function more slack
- double eps = ( MPName & 1 ) ? 1e-7 : 1e-10;
+ const double eps = ( MPName & 1 ) ? 1e-7 : 1e-10;
 
  vBPar2.resize( NrFi + 1, 0 );
+ InvItemVcblr.resize( NrFi );
+
  for( Index k = 0 ; k < NrFi ; ++k ) {
   if( NrEasy && IsEasy[ k ] )
    continue;
@@ -1264,6 +1269,8 @@ void BundleSolver::set_Block( Block * block )
    vBPar2[ NrFi ] += BPar2;
    vBPar2[ k ] = BPar2;
    }
+
+  InvItemVcblr[ k ].resize( vBPar2[ k ] , InINF );
   }
 
  // allocate memory- - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1282,10 +1289,6 @@ void BundleSolver::set_Block( Block * block )
  // counter for eliminating outdated items: Inf<SIndex>() means empty
 
  ItemVcblr.resize( vBPar2[ NrFi ] , make_pair( InINF , InINF ) );
-
- InvItemVcblr.resize( NrFi );
- for( Index k = 0 ; k < NrFi ; ++k )
-  InvItemVcblr[ k ].resize( vBPar2[ k ] , InINF );
 
  NrItems.resize( NrFi + 1 , 0 );
  FrFItem.resize( NrFi , 0 );
@@ -3540,7 +3543,6 @@ void BundleSolver::guts_of_destructor( void )
  FrFItem.clear();
  NrItems.clear();
 
- InvItemVcblr.clear();
  ItemVcblr.clear();
 
  OOBase.clear();
@@ -3549,6 +3551,7 @@ void BundleSolver::guts_of_destructor( void )
  Lambda1.clear();
  Lambda.clear();
 
+ InvItemVcblr.clear();
  vBPar2.clear();
 
  for( auto milpp : MILP_s )
@@ -5722,9 +5725,15 @@ void BundleSolver::FakeFiOracle::GetBDesc( cIndex wFi , int * Bbeg ,
 	     MILPSlv->get_matval().end() , Bval );
   }
 
- if( cst )
+ if( cst ) {
+  // note that in the concave case all the master problem objective changes
+  // sign, so must do this part
   std::copy( MILPSlv->get_objective().begin() ,
 	     MILPSlv->get_objective().end() , cst );
+  if( ! bslv->f_convex )
+   chgsign( cst , bslv->MILP_s[ wFi - 1 ]->get_numcols() );
+  }
+
  if( lbd )
   std::copy( MILPSlv->get_var_lb().begin() ,
 	     MILPSlv->get_var_lb().end() , lbd );
@@ -5807,10 +5816,16 @@ void BundleSolver::FakeFiOracle::GetADesc( cIndex wFi , int * Abeg ,
      Aind[ count ] = it->first;
      Aval[ count++ ] = - it->second;
      }
+
    }  // end( if( the variable has a Lagrangian term ) )
   }  // end( for( all columns ) )
 
  Abeg[ nc ] = count;  // end marker
+
+ // like everything that goes in the objectve, in the concave case A must be
+ // changed sign
+ if( ! bslv->f_convex )
+  chgsign( Aval , count );
 
  }  // end( BundleSolver::FakeFiOracle::GetANZ )
 
