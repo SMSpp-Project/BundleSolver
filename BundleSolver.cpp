@@ -3374,7 +3374,7 @@ Index BundleSolver::BStrategy( Index wFi )
 
   std::ostream * wlog = ( ( ! f_log ) || ( LogVerb <= 1 ) ) ? & std::cerr
                                                             : f_log;
-  wlog << def;
+  *wlog << def;
   std::vector<VarValue> Z( NumVar );
   v_c05f[ wFi ]->get_linearization_coefficients( Z.data() ,
 						 Range( 0 , NumVar ) ,
