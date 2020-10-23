@@ -612,8 +612,8 @@ int BundleSolver::compute( bool changedvars )
   if( RifeqFi && ( Sigma < - max_error( UpRifFi.back() , RelAcc ) ) &&
       ( Sigma <= - m3 * DST ) ) {
    if( t >= tMaior ) {
-    BLOG( 1 , " ~ stop (error): NR required but t maximum" << std::endl );
-    Result = kError;
+    BLOG( 1 , " ~ stop: NR required but t maximum" << std::endl );
+    Result = kLowPrecision;
     break;
     }
 
@@ -811,14 +811,12 @@ int BundleSolver::compute( bool changedvars )
 
   if( ! MPchgs ) {
    if( t >= tMaior ) {
-    BLOG( 1 , "            stop: noise reduction needed but t maximum"
-	      << std::endl );
-    Result = kError;
+    BLOG( 1 , "            stop: BR required but t maximum" << std::endl );
+    Result = kLowPrecision;
     break;
     }
    t = std::min( t * mxIncr , tMaior );
-   BLOG( 1 , "            noise reduction: t increased to " << shrt << t
-	     << std::endl );
+   BLOG( 1 , "            NR: t increased to " << shrt << t << std::endl );
    tHasChgd = true;
    continue;
    }
@@ -4220,7 +4218,7 @@ void BundleSolver::process_outstanding_Modification( void )
    if( NrEasy && IsEasy[ wFi ] ) {  // coming from an easy component
     if( const auto ttmod =
 	std::dynamic_pointer_cast< LagBFunctionMod >( tmod ) ) {
-     if( ! ( ttmod->what() & 3 ) ) {
+     if( ! ( ttmod->what() & ~3 ) ) {
       // only changes in the objective and RHS/LHS/bounds are supported
       reset[ wFi ] |= ttmod->what();
       to_delete = true;
