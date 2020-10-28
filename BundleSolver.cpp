@@ -1216,6 +1216,13 @@ void BundleSolver::set_Block( Block * block )
      MILP_s[ k ]->set_Block( LagB->get_inner_block() );
      // the component is easy only if all variables are continuous
      if( ! MILP_s[ k ]->get_num_integer_vars() ) {
+      //!! in principle one should register the MILP_s with the inner Block,
+      //!! so that if the inner Block is modified the data structures in
+      //!! the MILP_s are updated. however, this would require mechanisms
+      //!! for deciding which data structures in MILP_s are kept, that are
+      //!! not implemented yet; hence, easy components must be fully static,
+      //!! and registering the MILP_s has no use
+      //!! LagB->get_inner_block()->register_Solver( MILP_s[ k ] );
       IsEasy[ k ] = true;
       ++NrEasy;
       }
@@ -1382,6 +1389,21 @@ void BundleSolver::set_Block( Block * block )
   }
 
  InitMP();
+
+ // cleanup MILPSolver data- - - - - - - - - - - - - - - - - - - - - - - - - -
+ // - - - -  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // now that the MPSolver has read all the information it needs out of the
+ // MILPSolver, cleanup all un-necessary daya
+ //
+ // one day MILPSolver will perhaps have a mechanism whereby one can tell it
+ // to keep a part of the data structures
+
+ /*!!
+ if( NrEasy )
+  for( Index k = 0 ; k < NrFi ; ++k )
+   if( IsEasy[ k ] )
+    MILP_s[ k ]->clear_problem();
+    !!*/
 
  // reset algorithm  - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // - - - -  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -3559,10 +3581,20 @@ void BundleSolver::guts_of_destructor( void )
  InvItemVcblr.clear();
  vBPar2.clear();
 
- for( auto milpp : MILP_s )
-  delete( milpp );
- MILP_s.clear();
- IsEasy.clear();
+ if( NrEasy ) {
+  for( Index k = 0 ; k < NrFi ; ++k )
+   if( IsEasy[ k ] ) {
+    //!! if the MILP_s were registered into the inner Block of the
+    //!! LagBFunction, they should be un-registered here before being deleted
+    //!! static_cast< LagBFunction * >( v_c05f[ k ]
+    //!!	    )->get_inner_block()->unregister_Solver( MILP_s[ k ] );
+    delete MILP_s[ k ];
+    }
+
+  MILP_s.clear();
+  IsEasy.clear();
+  NrEasy = 0;
+  }
 
  LamVcblr.clear();
 
@@ -4218,6 +4250,10 @@ void BundleSolver::process_outstanding_Modification( void )
     }
 
    if( NrEasy && IsEasy[ wFi ] ) {  // coming from an easy component
+    /*!! while it would be in principle possible to support some changes
+     * in an easy component, this would require MILPSolver to keep its
+     * data structures updated, which currently is not happening
+
     if( const auto ttmod =
 	std::dynamic_pointer_cast< LagBFunctionMod >( tmod ) ) {
      if( ! ( ttmod->what() & ~3 ) ) {
@@ -4227,6 +4263,7 @@ void BundleSolver::process_outstanding_Modification( void )
       continue;
       }
      }
+     !!*/
 
     throw( std::logic_error( "unsupported change in easy component" ) );
     }
@@ -4424,7 +4461,11 @@ void BundleSolver::process_outstanding_Modification( void )
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // if one of the few supported changes has happened in any easy component,
  // immediately act upon it
+ //!! this would make sense if MILPSolver would update its data structures
+ //!! when the Block is modified, which it currently does not, so we are
+ //!! not doing it
 
+ /*!!
  if( NrEasy )
   for( Index k = 0 ; k < NrFi ; ++k )
    if( IsEasy[ k ] && reset[ k ] ) {
@@ -4435,6 +4476,7 @@ void BundleSolver::process_outstanding_Modification( void )
      Master->ChgLUBD( k + 1 );
      }
     }
+    !!*/
 
  // After this point, all the Modification adding, deleting or modifying
  // linearizations are significant: they either pertain to components that

@@ -19,8 +19,8 @@
 #           $(BNDSLVH)   = the .h files to include for BundleSolver          #
 #           $(BNDSLVINC) = the -I$( BundleSolver directory )                 #
 #                                                                            #
-#                                VERSION 1.10                                #
-#                               18 - 06 - 2020                               #
+#                                VERSION 1.11                                #
+#                               28 - 10 - 2020                               #
 #                                                                            #
 #                              Antonio Frangioni                             #
 #                               Enrico Gorgone                               #
@@ -63,11 +63,11 @@ include $(BNDSLVSDR)/makefile
 
 # append external -I directives to MCFBkINC, MCFBkOBJ and MCFBkH as defined
 # by the makefile, thus the := assignment has to be used (use GNU make)
-BNDSLVOBJ := $(BNDSLVOBJ) $(MILPSOBJ) $(libNDOOBJ) $(SMS++OBJ)
-BNDSLVINC := $(BNDSLVINC) $(SMS++INC) $(libNDOINC) $(MILPSINC) 
+BNDSLVOBJ := $(BNDSLVOBJ) $(MILPSOBJ) $(libNDOOBJ)
+BNDSLVINC := $(BNDSLVINC) $(libNDOINC) $(MILPSINC) 
 BNDSLVH := $(BNDSLVH) $(libNDOH) 
 
 # external libreries for BundleSolver
-BNDSLVLIB = $(libNDOLIB) $(MILPSLIB) $(SMS++LIB) 
+BNDSLVLIB = $(libNDOLIB) $(MILPSLIB)
 
 ############################ End of makefile #################################
