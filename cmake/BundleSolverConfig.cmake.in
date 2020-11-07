@@ -18,14 +18,9 @@ get_filename_component(BundleSolver_CMAKE_DIR "${CMAKE_CURRENT_LIST_FILE}" PATH)
 include(CMakeFindDependencyMacro)
 
 # ----- Requirements -------------------------------------------------------- #
-# This is needed to find the custom modules we provide
-list(APPEND CMAKE_MODULE_PATH ${BundleSolver_CMAKE_DIR})
-
-find_dependency(SMSpp REQUIRED)
-find_dependency(MILPSolver REQUIRED)
-find_dependency(NDOFiOracle REQUIRED)
-
-list(REMOVE_AT CMAKE_MODULE_PATH -1)
+find_dependency(SMSpp)
+find_dependency(MILPSolver)
+find_dependency(NDOFiOracle)
 
 # ----- Import target ------------------------------------------------------- #
 if (NOT TARGET SMS++::BundleSolver)
