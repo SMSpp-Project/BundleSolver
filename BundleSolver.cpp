@@ -294,7 +294,7 @@ const std::vector< std::string > BundleSolver::int_pars_str = {
  "intMnNSC" ,
  "inttSPar1" ,
  "intMaxNrEvls" ,
- "intNoEasy" ,
+ "intDoEasy" ,
  "intWZNorm" ,
  "intMPName" ,
  "intMPlvl" ,
@@ -339,7 +339,7 @@ const std::map< std::string , BundleSolver::idx_type >
  { "intMnNSC" , BundleSolver::intMnNSC } ,
  { "inttSPar1" , BundleSolver::inttSPar1 } ,
  { "intMaxNrEvls" , BundleSolver::intMaxNrEvls } ,
- { "intNoEasy" , BundleSolver::intNoEasy } ,
+ { "intDoEasy" , BundleSolver::intDoEasy } ,
  { "intWZNorm" , BundleSolver::intWZNorm } ,
  { "intMPName" , BundleSolver::intMPName } ,
  { "intMPlvl" , BundleSolver::intMPlvl } ,
@@ -384,7 +384,7 @@ const std::vector< int > BundleSolver::dflt_int_par = {
   3 ,  // intMnNSC
  12 ,  // inttSPar1
   2 ,  // intMaxNrEvls
-  0 ,  // intNoEasy
+  1 ,  // intDoEasy
   2 ,  // intWZNorm
   0 ,  // intMPName
   0 ,  // intMPlvl
@@ -471,6 +471,12 @@ int BundleSolver::compute( bool changedvars )
   if( ( ! owned ) && ( ! f_Block->read_lock() ) )  // if not try to read_lock
    return( kBlockLocked );                         // return error on failure
 
+  // if there are "easy" components and changing them is supported, process
+  // the corresponding Modification (stored it v_FakeSolver)
+  if( NrEasy && ( DoEasy & ~17 ) )
+   process_outstanding_easy_Modification();
+
+  // process any other Modification
   process_outstanding_Modification();
 
   if( ! owned )             // if the Block was actually read_locked
@@ -964,6 +970,9 @@ int BundleSolver::compute( bool changedvars )
 
 void BundleSolver::set_Block( Block * block )
 {
+ if( f_Block == block )  // registering to the same Block
+  return;                // cowardly and silently return
+
  if( f_Block ) {  // changing from a previous oracle - - - - - - - - - - - - -
                  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
   guts_of_destructor();   // deallocate memory
@@ -1205,42 +1214,60 @@ void BundleSolver::set_Block( Block * block )
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  
  NrEasy = 0;
- if( ! NoEasy ) {
-  IsEasy.resize( NrFi , false );
-  MILP_s.resize( NrFi , nullptr );
+ if( DoEasy & 1 ) {
+  IsEasy.resize( NrFi , nullptr );
   for( Index k = 0 ; k < NrFi ; ++k ) {
    auto LagB = dynamic_cast< LagBFunction * >( v_c05f[ k ] );
    if( LagB ) {
-    MILP_s[ k ] = new MILPSolver();
+    auto MILPs = new MILPSolver();
     try {  // check if the inner Block of the LagBFunction is all-linear
-     MILP_s[ k ]->set_Block( LagB->get_inner_block() );
+     // do this by trying to register the MILPSolver to the inner Block; if
+     // the operation succeeds than the component may be easy (provided that
+     // also all variables are continuous), otherwise it surely is not,
+     // which is captured by the fact that exception is thrown; note that
+     // [MILP]Solver::set_Block() does *not* call Block::register_Solver(),
+     // which therefore may have to be done later
+     MILPs->set_Block( LagB->get_inner_block() );
      // the component is easy only if all variables are continuous
-     if( ! MILP_s[ k ]->get_num_integer_vars() ) {
-      //!! in principle one should register the MILP_s with the inner Block,
-      //!! so that if the inner Block is modified the data structures in
-      //!! the MILP_s are updated. however, this would require mechanisms
-      //!! for deciding which data structures in MILP_s are kept, that are
-      //!! not implemented yet; hence, easy components must be fully static,
-      //!! and registering the MILP_s has no use
-      //!! LagB->get_inner_block()->register_Solver( MILP_s[ k ] );
-      IsEasy[ k ] = true;
+     if( ! MILPs->get_num_integer_vars() ) {
+      IsEasy[ k ] = MILPs;
       ++NrEasy;
+
+      // if dynamic updating of the easy component is allowed for any piece
+      // of data, register the MILPSolver with the inner Block, as this is not
+      // done by [MILP]Solver::set_Block(); note that this calls set_Block()
+      // again, which is why it is important that [MILP]Solver::set_Block()
+      // check that the Block is the same and ignores it
+      if( DoEasy & ~17 )
+       LagB->get_inner_block()->register_Solver( MILPs );
       }
+     else  // everything is linear, but there are integer variables
+      delete MILPs;
      }
     catch( ... ) {  // exception means that something nonlinear is there
-     IsEasy[ k ] = false;
-     }
-
-    if( ! IsEasy[ k ] ) {
-     delete MILP_s[ k ];
-     MILP_s[ k ] = nullptr;
+     delete MILPs;
      }
     }
    }
 
-  if( ! NrEasy ) {
+  if( ! NrEasy )
    IsEasy.clear();
-   MILP_s.clear();
+  else
+   if( DoEasy & ~17 ) {
+    // if easy components can be dynamically changed, attach a FakeSolver
+    // to the inner Block of each LagBFunction so as to be able to react to
+    // the changes; meanwhile, if DoEasy dictates it also "silence" the
+    // Modification from the inner Block
+    v_FakeSolver.resize( NrEasy );
+    auto FSit = v_FakeSolver.begin();
+    for( Index k = 0 ; k < NrFi ; ++k )
+     if( IsEasy[ k ] ) {
+      auto LagB = static_cast< LagBFunction * >( v_c05f[ k ] );
+      *FSit = new FakeSolver();
+      LagB->get_inner_block()->register_Solver( *(FSit++) );
+      if( DoEasy & 16 )
+       LagB->silence_inner_Modification();
+      }
    }
   }
 
@@ -1393,17 +1420,25 @@ void BundleSolver::set_Block( Block * block )
  // cleanup MILPSolver data- - - - - - - - - - - - - - - - - - - - - - - - - -
  // - - - -  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // now that the MPSolver has read all the information it needs out of the
- // MILPSolver, cleanup all un-necessary daya
+ // MILPSolver, cleanup all un-necessary data; note that clear_problem() tells
+ // which data to delete with exactly the same bit mapping as DoEasy tells
+ // which to keep, hence an xor works; the first bit gets zeroed (hence
+ // ultimately set to 1) so that the coefficient matrix is always discarded,
+ // as changing it is not managed by the MPSolver (and neither really is by
+ // MILPSolver, currently)
  //
- // one day MILPSolver will perhaps have a mechanism whereby one can tell it
- // to keep a part of the data structures
-
- /*!!
- if( NrEasy )
+ // note that if "easy" components are fully static one may want to get rid
+ // of the MILPSolver entirely; however, if new variables are added then
+ // GetADesc() can be called, which relies on the MILPSolver. getting rid of
+ // the MILPSolver would require knowing that the variables set is also
+ // static, which would require one parameter; doable, but not now
+ 
+ if( NrEasy ) {
+  const char which = ( DoEasy & ~17 ) ^ 15;
   for( Index k = 0 ; k < NrFi ; ++k )
    if( IsEasy[ k ] )
-    MILP_s[ k ]->clear_problem();
-    !!*/
+    IsEasy[ k ]->clear_problem( which );
+  }
 
  // reset algorithm  - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // - - - -  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1516,8 +1551,8 @@ void BundleSolver::set_par( const idx_type par , const int value )
   case( intMaxNrEvls ):
    MaxNrEvls = value;
    break;
-  case( intNoEasy ):
-   NoEasy = bool( value );
+  case( intDoEasy ):
+   DoEasy = char( value & 31 );
    break;
   case( intWZNorm ):
    if( WZNorm != char( value ) ) {
@@ -1767,8 +1802,8 @@ int BundleSolver::get_int_par( const idx_type par ) const
   case( intMaxNrEvls ):
    return( MaxNrEvls );
    break;
-  case( intNoEasy ):
-   return( NoEasy );
+  case( intDoEasy ):
+   return( DoEasy );
    break;
   case( intWZNorm ):
    return( WZNorm );
@@ -3581,17 +3616,25 @@ void BundleSolver::guts_of_destructor( void )
  InvItemVcblr.clear();
  vBPar2.clear();
 
- if( NrEasy ) {
-  for( Index k = 0 ; k < NrFi ; ++k )
-   if( IsEasy[ k ] ) {
-    //!! if the MILP_s were registered into the inner Block of the
-    //!! LagBFunction, they should be un-registered here before being deleted
-    //!! static_cast< LagBFunction * >( v_c05f[ k ]
-    //!!	    )->get_inner_block()->unregister_Solver( MILP_s[ k ] );
-    delete MILP_s[ k ];
-    }
+ if( NrEasy ) {  // if there are "easy" components, delete the MILPSolver
+  if( DoEasy & ~17 ) {
+   // if easy components can be changed, before doing this unregister the
+   // MILPSolver from the inner Block (since it is registered there), and
+   // meanwhile unregister also the FakeSolver that is registered there as well
+   auto FSit = v_FakeSolver.begin();
+   for( Index k = 0 ; k < NrFi ; ++k )
+    if( IsEasy[ k ] ) {
+     auto iB = static_cast< LagBFunction * >( v_c05f[ k ] )->get_inner_block();
+     iB->unregister_Solver( *(FSit++) , true );
+     iB->unregister_Solver( IsEasy[ k ] , true );
+     }
 
-  MILP_s.clear();
+   v_FakeSolver.clear();
+   }
+  else  // "easy" components are static, just delete the MILPSolver
+   for( Index k = 0 ; k < NrFi ; ++k )
+    delete IsEasy[ k ];
+    
   IsEasy.clear();
   NrEasy = 0;
   }
@@ -4117,6 +4160,134 @@ void BundleSolver::flatten_Modification_list( Lst_sp_Mod & vmt , sp_Mod mod )
 
 /*--------------------------------------------------------------------------*/
 
+void BundleSolver::flatten_easy_Modification_list( Lst_sp_Mod & vmt ,
+						   sp_Mod mod )
+{
+ if( const auto tmod = std::dynamic_pointer_cast< GroupModification >( mod ) )
+  for( auto submod : tmod->sub_Modifications() )
+   flatten_Modification_list( vmt , submod );
+ else
+  vmt.push_back( mod );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::process_outstanding_easy_Modification( void )
+{
+ // look at all easy components; for each of these scan the Modification in
+ // the corresponding FakeSolver and divine which changes need be done to
+ // the Master Problem
+
+ auto FSit = v_FakeSolver.begin();
+ for( Index k = 0 ; k < NrFi ; ++k ) {
+  if( ! IsEasy[ k ] )
+   continue;
+
+  // construct the flattened list of Modification in the FakeSolver - - - - -
+  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+  Lst_sp_Mod v_mod_tmp;
+
+  (*FSit)->lock_Modification_list();
+
+  for( auto mod : (*FSit)->get_Modification_list() )
+   flatten_easy_Modification_list( v_mod_tmp , mod );
+
+  (*FSit)->get_Modification_list().clear();
+
+  (*(FSit++))->unlock_Modification_list();
+
+  if( v_mod_tmp.empty() )  // nothing here to see
+   continue;               // move over
+
+  // scan all the Modification in the FakeSolver- - - - - - - - - - - - - - -
+  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+  bool whch = 0;
+
+  for( ; ! v_mod_tmp.empty() ; v_mod_tmp.pop_front() ) {
+   auto mod = v_mod_tmp.front().get();
+
+   // FunctionMod- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+   if( const auto tmod = dynamic_cast< const FunctionMod * >( mod ) ) {
+    auto obs = tmod->function()->get_Observer();
+    if( dynamic_cast< const Objective * >( obs ) ) {
+     whch |= 1;
+     continue;
+     }
+
+    throw( std::logic_error( "unsupported Modification in easy component" ) );
+    }
+
+   // FunctionModVars- - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+   if( const auto tmod = dynamic_cast< const FunctionModVars * >( mod ) ) {
+    auto obs = tmod->function()->get_Observer();
+    if( dynamic_cast< const Objective * >( obs ) ) {
+     whch |= 1;
+     continue;
+     }
+
+    throw( std::logic_error( "unsupported Modification in easy component" ) );
+    }
+
+   // VariableMod- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+   if( const auto tmod = dynamic_cast< const VariableMod * >( mod ) ) {
+    const auto xj = dynamic_cast< const ColVariable * >( tmod->variable() );
+
+    if( ! xj )     // unknown variable type
+     throw( std::logic_error( "unsupported Modification in easy component" ) );
+
+    // fixing variables or changing their type is not supported; all the rest
+    // boils down to a change of bounds, and therefore is
+
+    if( ( xj->is_fixed() != xj->is_fixed( tmod->old_state() ) ) ||
+	( xj->is_integer() != xj->is_integer( tmod->old_state() ) ) )
+     throw( std::logic_error( "unsupported Modification in easy component" ) );
+
+    whch |= 4;
+    continue;
+
+    }  // end( VariableMod )
+
+   // RowConstraintMod - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+   if( const auto tmod = dynamic_cast< const RowConstraintMod * >( mod ) ) {
+
+    if( ( tmod->type() != RowConstraintMod::eChgLHS ) &&
+	( tmod->type() != RowConstraintMod::eChgRHS ) &&
+	( tmod->type() != RowConstraintMod::eChgBTS ) )
+     throw( std::logic_error( "unsupported Modification in easy component" ) );
+
+    auto cnst = tmod->constraint();
+    if( dynamic_cast< const OneVarConstraintMod * >( cnst ) )
+     whch |= 4;
+    else
+     whch |= 2;
+
+    continue;
+
+    }  // end( RowConstraintMod )
+
+   throw( std::logic_error( "unsupported Modification in easy component" ) );
+
+   }  // end( for( all Modification ) )
+
+  // finally, act upon the detected Modification- - - - - - - - - - - - - - -
+  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+  if( whch & 1 )         // changes in costs
+   Master->ChgCosts( k + 1 , Lambda.data() );
+
+  if( whch & 2 )         // changes in LHS/RHS
+   Master->ChgRLHS( k + 1 );
+
+  if( whch & 4 )         // changes in LBD/UBD
+   Master->ChgLUBD( k + 1 );
+
+  }  // end( for( k ) ) 
+ }  // end( process_outstanding_easy_Modification )
+
+/*--------------------------------------------------------------------------*/
+
 void BundleSolver::process_outstanding_Modification( void )
 {
  // multiple-loop version, where several passes are done in order to gather
@@ -4166,7 +4337,7 @@ void BundleSolver::process_outstanding_Modification( void )
  //       NrFi. this might be important if, say, NrFi is 10000 but only a
  //       smattering of the components (say, one) change
 
- std::vector< char > reset( NrFi , 0 );
+ std::vector< bool > reset( NrFi , false );
 
  bool Fi0Chgd = false;  // true if the 0-th component changes
 
@@ -4234,12 +4405,12 @@ void BundleSolver::process_outstanding_Modification( void )
 
    // adjust or reset upper/lower values as needed
    // note that the list is scanned in reverse, hence these changes are
-   // applied in reverse order. however, if the upper/lower values are
-   // reset at any point in the list they stay reset forever. indeed,
-   // even if a function has a finite shift after a reset, this says
-   // nothing because there are no known values to shift. if, rather, the
-   // values are only shifted by finite amounts, the total shift is the
-   // sum of the shift, and the order of additions do not change the result
+   // applied in reverse order. however, if the upper/lower values are reset
+   // at any point in the list they stay reset forever. indeed, even if a
+   // function has a finite shift after a reset, this says nothing because
+   // there are no known values to shift. if, rather, the values are only 
+   // shifted by finite amounts, the total shift is the sum of the shift,
+   // and the order of additions do not change the result
    if( wFi < NrFi )
     FModChg( tmod->shift() , wFi );
    else {
@@ -4250,21 +4421,15 @@ void BundleSolver::process_outstanding_Modification( void )
     }
 
    if( NrEasy && IsEasy[ wFi ] ) {  // coming from an easy component
-    /*!! while it would be in principle possible to support some changes
-     * in an easy component, this would require MILPSolver to keep its
-     * data structures updated, which currently is not happening
-
-    if( const auto ttmod =
-	std::dynamic_pointer_cast< LagBFunctionMod >( tmod ) ) {
-     if( ! ( ttmod->what() & ~3 ) ) {
-      // only changes in the objective and RHS/LHS/bounds are supported
-      reset[ wFi ] |= ttmod->what();
-      to_delete = true;
-      continue;
-      }
+    if( DoEasy & ~17 ) {
+     // some changes in easy components are separately supported; if the
+     // Modification is here the easy component has not been silenced, but
+     // ignoring the Modification is entirely possible
+     to_delete = true;
+     continue;
      }
-     !!*/
 
+    // changes in easy components not separately supported
     throw( std::logic_error( "unsupported change in easy component" ) );
     }
    else                             // coming from a non-easy component
@@ -4317,7 +4482,7 @@ void BundleSolver::process_outstanding_Modification( void )
     switch( ttmod->type() ) {
      case( C05FunctionMod::GlobalPoolRemoved ):
       if( ttmod->which().empty() ) {
-       reset[ wFi ] = 1;
+       reset[ wFi ] = true;
        to_delete = true;
        }
       continue;
@@ -4345,8 +4510,7 @@ void BundleSolver::process_outstanding_Modification( void )
    // change in the Function is not quasi-additive, and therefore a fortiori
    // not strongly quasi-additive. as a result, this is a "hard" reset
 
-   reset[ wFi ] = 1;
-   to_delete = true;
+   reset[ wFi ] = to_delete = true;
 
    }  // end( if( tmod - FunctionMod ) )
 
@@ -4378,7 +4542,7 @@ void BundleSolver::process_outstanding_Modification( void )
    // if control reaches here, this is a FunctionModVars* that is not a
    // C05FunctionModVars*, i.e., a non strongly quasi-additive variable
    // change, which implies a "hard" reset for the component
-   reset[ wFi ] = 1;
+   reset[ wFi ] = true;
    continue;
 
    }  // end( if( tmod - FunctionModVars ) )
@@ -4404,10 +4568,10 @@ void BundleSolver::process_outstanding_Modification( void )
    if( NrEasy ) {
     for( Index k = 0 ; k < NrFi ; ++k )
      if( ! IsEasy[ k ] )
-      reset[ k ] = 1;
+      reset[ k ] = true;
      }
    else
-    reset.assign( NrFi , 1 );
+    reset.assign( NrFi , true );
    continue;
 
    }  // end( if( tmod - GroupModification ) )
@@ -4458,26 +4622,6 @@ void BundleSolver::process_outstanding_Modification( void )
      }
    }
 
- //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
- // if one of the few supported changes has happened in any easy component,
- // immediately act upon it
- //!! this would make sense if MILPSolver would update its data structures
- //!! when the Block is modified, which it currently does not, so we are
- //!! not doing it
-
- /*!!
- if( NrEasy )
-  for( Index k = 0 ; k < NrFi ; ++k )
-   if( IsEasy[ k ] && reset[ k ] ) {
-    if( reset[ k ] & 1 )         // changes in costs
-     Master->ChgCosts( k + 1 , Lambda.data() );
-    if( reset[ k ] & 2 ) {       // changes in LHS/RHS, LBD/UBD
-     Master->ChgRLHS( k + 1 );
-     Master->ChgLUBD( k + 1 );
-     }
-    }
-    !!*/
-
  // After this point, all the Modification adding, deleting or modifying
  // linearizations are significant: they either pertain to components that
  // have never been reset, or are the remaining ones after the (last) one
@@ -4522,7 +4666,7 @@ void BundleSolver::process_outstanding_Modification( void )
  // for "vertical" changes (a set of specific linearizations). some steps
  // in this direction will perhaps be done in later stages of develpment
 
- reset.assign( NrFi , 0 );  // reset reset (couldn't resist)
+ reset.assign( NrFi , false );  // reset reset (couldn't resist)
  std::vector< bool > AlphaC( NrFi , false );
 
  for( auto rimod = v_mod_tmp.rbegin() ; rimod != v_mod_tmp.rend() ;
@@ -4664,9 +4808,7 @@ void BundleSolver::process_outstanding_Modification( void )
   if( const auto tmod =
       std::dynamic_pointer_cast< C05FunctionModLin >( mod ) ) {
    auto wFi = get_index_of_component( tmod->function() );
-   AlphaC[ wFi ] = true;
-   reset[ wFi ] = 1;
-   to_delete = true;
+   AlphaC[ wFi ] = reset[ wFi ] = to_delete = true;
    }  // end( if( ttmod - C05FunctionModLin ) )
   }  // end( 2nd loop, again in reverse )
 
@@ -5056,12 +5198,12 @@ void BundleSolver::process_outstanding_Modification( void )
  //
  // this is the final loop, so the list must be empty at the end
 
- for( ; ! v_mod.empty() ; v_mod.pop_front() ) {
-  auto mod = v_mod.front();  // pick (a reference to) the first Modification
+ for( ; ! v_mod_tmp.empty() ; v_mod_tmp.pop_front() ) {
+  auto mod = v_mod_tmp.front();  // pick the first Modification
 
-  Range range( NumVar , 0 );    // an empty range
-  c_Subset * subset = nullptr;  // an empty subset
-  c_Vec_p_Var * vars;           // the affected Variable
+  Range range( NumVar , 0 );     // an empty range
+  c_Subset * subset = nullptr;   // an empty subset
+  c_Vec_p_Var * vars;            // the affected Variable
 
   // patiently sift through the possible Modification types to find what mod
   // exactly is and react accordingly
@@ -5231,8 +5373,7 @@ void BundleSolver::process_outstanding_Modification( void )
     continue;                                    // move on
 
    if( Chgd[ k ].size() >= NrItems[ k ] ) {      // all items change
-    reset[ k ] = 1;                              // this is a reset
-    AlphaC[ k ] = true;
+    reset[ k ] = AlphaC[ k ] = true;             // this is a reset
     continue;
     }
 
@@ -5478,26 +5619,27 @@ void BundleSolver::CheckBundle( void )
 
    }  // end( for( i ) )
 
- // check FreList
- // copy FreList to a vector to check it (this only works since the
- // underlying container is a std::vector< Index >) and the topmost
- // element in a heap is the first element of the vector
- tmp.resize( FreList.size() );
- std::copy( &( FreList.top() ) , &( FreList.top() ) + FreList.size() ,
-	    tmp.begin() );
- std::sort( tmp.begin() , tmp.end() );
+ // check FreList (if there is anything to check)
+ if( ! FreList.empty() ) {
+  // copy FreList to a vector to check it (this only works since the
+  // underlying container is a std::vector< Index >) and the topmost
+  // element in a heap is the first element of the vector
+  tmp.resize( FreList.size() );
+  std::copy( &( FreList.top() ) , &( FreList.top() ) + FreList.size() ,
+	     tmp.begin() );
+  std::sort( tmp.begin() , tmp.end() );
 
- for( auto i : tmp )
-  if( ItemVcblr[ i ].second < vBPar2[ ItemVcblr[ i ].first ] )
+  for( auto i : tmp )
+   if( ItemVcblr[ i ].second < vBPar2[ ItemVcblr[ i ].first ] )
     *wlog << "item " << i << " in FreList is not free" << std::endl;
  
- for( Index i = 0 ; i < Master->MaxName() ; ++i )
-  if( ItemVcblr[ i ].second >= vBPar2[ ItemVcblr[ i ].first ] ) {
-   auto it = std::lower_bound( tmp.begin() , tmp.end() , i );
-   if( ( it == tmp.end() ) || ( *it != i ) )
-    *wlog << "free item " << i << " not in FreList" << std::endl;
-   }
-  
+  for( Index i = 0 ; i < Master->MaxName() ; ++i )
+   if( ItemVcblr[ i ].second >= vBPar2[ ItemVcblr[ i ].first ] ) {
+    auto it = std::lower_bound( tmp.begin() , tmp.end() , i );
+    if( ( it == tmp.end() ) || ( *it != i ) )
+     *wlog << "free item " << i << " not in FreList" << std::endl;
+    }
+  }
  }  // end( BundleSolver::CheckBundle )
  
 /*--------------------------------------------------------------------------*/
@@ -5733,7 +5875,7 @@ LMNum BundleSolver::FakeFiOracle::GetUB( cIndex i )
 Index BundleSolver::FakeFiOracle::GetBNC( cIndex wFi )
 {
  if( bslv->NrEasy && bslv->IsEasy[ wFi - 1 ] )
-  return( bslv->MILP_s[ wFi - 1 ]->get_numcols() );
+  return( bslv->IsEasy[ wFi - 1 ]->get_numcols() );
  else
   return( 0 );
  }
@@ -5742,14 +5884,14 @@ Index BundleSolver::FakeFiOracle::GetBNC( cIndex wFi )
 
 Index BundleSolver::FakeFiOracle::GetBNR( cIndex wFi )
 {
- return( bslv->MILP_s[ wFi - 1 ]->get_numrows() );
+ return( bslv->IsEasy[ wFi - 1 ]->get_numrows() );
  }
 
 /*--------------------------------------------------------------------------*/
 
 Index BundleSolver::FakeFiOracle::GetBNZ( cIndex wFi )
 {
- return( bslv->MILP_s[ wFi - 1 ]->get_nzelements() );
+ return( bslv->IsEasy[ wFi - 1 ]->get_nzelements() );
  }
 
 /*--------------------------------------------------------------------------*/
@@ -5760,7 +5902,7 @@ void BundleSolver::FakeFiOracle::GetBDesc( cIndex wFi , int * Bbeg ,
 					   double * cst ,
 					   double * lbd , double * ubd )
 {
- auto MILPSlv = bslv->MILP_s[ wFi - 1 ];
+ auto MILPSlv = bslv->IsEasy[ wFi - 1 ];
 
  if( Bbeg && Bind && Bval ) {
   // these three parameters can only be either all nullptr or all non-nullptr
@@ -5778,7 +5920,7 @@ void BundleSolver::FakeFiOracle::GetBDesc( cIndex wFi , int * Bbeg ,
   std::copy( MILPSlv->get_objective().begin() ,
 	     MILPSlv->get_objective().end() , cst );
   if( ! bslv->f_convex )
-   chgsign( cst , bslv->MILP_s[ wFi - 1 ]->get_numcols() );
+   chgsign( cst , MILPSlv->get_numcols() );
   }
 
  if( lbd )
@@ -5837,7 +5979,7 @@ void BundleSolver::FakeFiOracle::GetADesc( cIndex wFi , int * Abeg ,
 					   cIndex strt , Index stp )
 {
  auto LagB = static_cast< LagBFunction * >( bslv->v_c05f[ wFi - 1 ] );
- auto MILPSlv = bslv->MILP_s[ wFi - 1 ];
+ auto MILPSlv = bslv->IsEasy[ wFi - 1 ];
  c_Index nc = MILPSlv->get_numcols();
  Index count = 0;
  for( Index j = 0 ; j < nc ; ++j ) {

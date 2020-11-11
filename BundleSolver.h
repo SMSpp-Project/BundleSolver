@@ -135,6 +135,7 @@
 #include "FRowConstraint.h"
 
 #include "MILPSolver.h"
+#include "FakeSolver.h"
 #include "MPSolver.h"
 
 #include "NDOSlver.h"
@@ -340,7 +341,7 @@ public:
 
  intMaxNrEvls ,  ///< max number of function evaluation for each iteration
 
- intNoEasy,  ///< whether "easy" components are ignored
+ intDoEasy,  ///< whether "easy" components are considered
 
  intWZNorm,  ///< how to compute the norm of z*
 
@@ -447,7 +448,7 @@ public:
   MnNSC = dflt_int_par[ intMnNSC - intLastParCDAS ];
   tSPar1 = dflt_int_par[ inttSPar1 - intLastParCDAS ];
   MaxNrEvls = dflt_int_par[ intMaxNrEvls - intLastParCDAS ];
-  NoEasy = bool( dflt_int_par[ intNoEasy - intLastParCDAS ] );
+  DoEasy = char( dflt_int_par[ intDoEasy - intLastParCDAS ] );
   WZNorm = bool( dflt_int_par[ intWZNorm - intLastParCDAS ] );
   MPName = dflt_int_par[ intMPName - intLastParCDAS ];
   MPlvl = dflt_int_par[ intMPlvl - intLastParCDAS ];
@@ -728,8 +729,40 @@ public:
   *   is the limit on how many times this will be attempted (for each
   *   non-easy C05Function) before giving up for good
   *
-  * - intNoEasy [0]: if nonzero, instructs BundleSolver to disregard potential
-  *                  "easy" components and to treat each as a "difficult" one
+  * - intDoEasy [1]: this parameter is coded bit-wise and controls whether
+  *                  BundleSolver uses the "easy components" approach on
+  *   components that allow it (LagBFunction with linear constraints,
+  *   objective and continuous variables only), and whether it retains the
+  *   information necessary to handle dynamic changes to (a part of) the data
+  *   of each "easy component".
+  *
+  *   If the bit 0 is 0, then all components are treated as "hard" even if
+  *   they could be treated as "easy"; all the other bits are then ignored.
+  *
+  *   If the bit 0 is 1, then all "easy" components are treated as such.
+  *   Furthermore, the following three bits, if 1, instruct BundleSolver to
+  *   keep information (in the MILPSolver used to represent the "easy"
+  *   component) that allows different parts of the easy components to be
+  *   changed during the course of the optimization and the BundleSolver to
+  *   properly react to these changes, with the following encoding:
+  *
+  *      - bit 1 (+ 2): allow changes in the objective function
+  *      - bit 2 (+ 4): allow changes in the lhs/rhs of the constraints
+  *      - bit 3 (+ 8): allow changes in the lb/ub of the variables
+  *
+  *   If the corresponding bit is set to 0, then the corresponding changes in
+  *   the "easy" component will result in an exception being thrown. The
+  *   default value correspond to "static easy components", i.e., they are
+  *   considered but they cannot be changed.
+  *
+  *   Finally, the bit 4 (+ 16) has an independent meaning: if it is set to 1,
+  *   then silence_inner_Modification( true ) is called for all LagBFunction
+  *   corresponding to "easy" components (still subject to bit 1 == 1,
+  *   otherwise this bit is ignored as well. This avoids some work that is
+  *   useless  *if* BundleSolver is the unique Solver using the LagBFunction,
+  *   but easily breaks things if other Solver are there (unless they as well
+  *   can work with silence_inner_Modification( true )), hence it must be
+  *   used with due care.
   *
   * - intWZNorm [2]: Proving that some point Lambda is epsilon-optimal for a
   *                  NonDifferentiable Optimization problem involves finding
@@ -1642,7 +1675,7 @@ public:
  int tSPar1;        ///< int parameter for long-term t-strategy
  double tSPar2;     ///< double parameter for long-term t-strategy
 
- bool NoEasy;       ///< true if easy components are ignored
+ char DoEasy;       ///< if and how "easy" components are managed
 
  char WZNorm;       ///< how to compute the norm of z*
  
@@ -1675,8 +1708,13 @@ public:
  Index SCalls;      ///< number of calls to compute() (the current included)
  Index ParIter;     ///< number of iterations in this call to compute() 
 
- Vec_Bool IsEasy;   ///< tells which component of Fi is "easy"
+ std::vector< MILPSolver * > IsEasy;
+ ///< MILPSolver used to read the easy components (non-nullptr iff k is easy)
+
  Index NrEasy;      ///< number of "easy" component of Fi
+
+ std::vector< FakeSolver * > v_FakeSolver;
+ ///< FakeSolver used to handle Modification from the easy components
 
  Vec_VarValue Lambda;   ///< the current point
 
@@ -1819,9 +1857,6 @@ public:
  bool f_convex;          ///< true if all objectives are convex
  
  MPSolver * Master;      ///< (pointer to) the Master Problem Solver
-
- std::vector< MILPSolver * > MILP_s; /**< MILP solvera used to read the
-				      * easy components */
 
  std::vector< ColVariable * > LamVcblr;  ///< map Lambda -> ColVariable
 
@@ -2101,7 +2136,11 @@ class FakeFiOracle : public FiOracle
 
  void flatten_Modification_list( Lst_sp_Mod & vmt , sp_Mod mod );
 
+ void flatten_easy_Modification_list( Lst_sp_Mod & vmt , sp_Mod mod );
+
 /*--------------------------------------------------------------------------*/
+
+ void process_outstanding_easy_Modification( void );
 
  void process_outstanding_Modification( void );
 
