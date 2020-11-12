@@ -449,7 +449,7 @@ public:
   tSPar1 = dflt_int_par[ inttSPar1 - intLastParCDAS ];
   MaxNrEvls = dflt_int_par[ intMaxNrEvls - intLastParCDAS ];
   DoEasy = char( dflt_int_par[ intDoEasy - intLastParCDAS ] );
-  WZNorm = bool( dflt_int_par[ intWZNorm - intLastParCDAS ] );
+  WZNorm = char( dflt_int_par[ intWZNorm - intLastParCDAS ] );
   MPName = dflt_int_par[ intMPName - intLastParCDAS ];
   MPlvl = dflt_int_par[ intMPlvl - intLastParCDAS ];
   MxAdd = dflt_int_par[ intQPmp1 - intLastParCDAS ];
