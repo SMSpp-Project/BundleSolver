@@ -2726,8 +2726,28 @@ bool BundleSolver::FiAndGi( Index wFi )
    cp = Master->CheckSubG( UpFiLmb1[ wFi ] - UpRifFi[ wFi ] , t , Alfa1k ,
 			   ScPr1k );
    }
-  else              // it is a constraint
+  else {             // it is a constraint
+   // the definition of constraint in FiOracle (hence MPSolver) is
+   //
+   //      SubG * Lambda <= GetVal()
+   //
+   // i.e., SubG * Lambda - GetVal() <= 0, whereas in C05Function it is
+   //
+   //       ( 0 , - g ) ( v , x ) >= \alpha
+   //
+   // i.e., g x + \alpha <= 0; this means that the \alpha produced by
+   // get_linearization_constant() is the opposite than that of GetVal()
+   // in fact, the standard form of the constraints in the master problem is
+   // [v/0] >= g d - \alpha while the diagonal linearizations are
+   //
+   //       ( 1 , - g ) ( v , x ) >= \alpha
+   //
+   // and indeed Alfa1k is also "changed in sign" in the diagonal
+   // linearization (subgradient) case
+
+   Alfa1k = - Alfa1k;
    cp = Master->CheckCnst( Alfa1k , ScPr1k , Lambda.data() );
+   }
 
   Index gpp = Inf<Index>();  // position in the global pool where to put it
 
@@ -4199,6 +4219,13 @@ void BundleSolver::process_outstanding_easy_Modification( void )
   if( ! IsEasy[ k ] )
    continue;
 
+  // ensure that the MILPSolver has "digested" the Modification - - - - - - -
+  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  // MILPSolver::compute() has the only role of scanning the list of
+  // Modification and updating its internal data structures accordingly
+  
+  IsEasy[ k ]->compute( false );
+  
   // construct the flattened list of Modification in the FakeSolver - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
