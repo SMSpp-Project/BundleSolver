@@ -466,7 +466,7 @@ int BundleSolver::compute( bool changedvars )
  // but while the latter happens new Modification may come in; hence,
  // process_outstanding_Modification() may be called more than once
 
- while( ! v_mod.empty() ) {
+ while( num_outstanding_Modification() ) {
   bool owned = f_Block->is_owned_by( f_id );       // check if already locked
   if( ( ! owned ) && ( ! f_Block->read_lock() ) )  // if not try to read_lock
    return( kBlockLocked );                         // return error on failure
@@ -4083,6 +4083,22 @@ void BundleSolver::reset_bundle( void )
  Master->RmvItems();
 
  }  // end( BundleSolver::reset_bundle )
+
+/*--------------------------------------------------------------------------*/
+
+Lst_sp_Mod::size_type BundleSolver::num_outstanding_Modification( void )
+{
+ auto res = v_mod.size();
+
+ if( NrEasy && ( DoEasy & ~17 ) ) {
+  auto FSit = v_FakeSolver.begin();
+  for( Index k = 0 ; k < NrFi ; )
+   if( IsEasy[ k++ ] )
+    res += (*FSit)->get_Modification_list().size();
+  }
+
+ return( res );
+ }
 
 /*--------------------------------------------------------------------------*/
 

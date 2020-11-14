@@ -2132,13 +2132,13 @@ class FakeFiOracle : public FiOracle
 
 /*--------------------------------------------------------------------------*/
 
+ Lst_sp_Mod::size_type num_outstanding_Modification( void );
+ 
  bool is_special_GroupMod( GroupModification & gmod );
 
  void flatten_Modification_list( Lst_sp_Mod & vmt , sp_Mod mod );
 
  void flatten_easy_Modification_list( Lst_sp_Mod & vmt , sp_Mod mod );
-
-/*--------------------------------------------------------------------------*/
 
  void process_outstanding_easy_Modification( void );
 
