@@ -551,11 +551,6 @@ int BundleSolver::compute( bool changedvars )
  
   FormD();
 
-  if( Result >= kError ) {  // problems in the Master Problem solver
-   BLOG( 1 , " ~ error in the MPSolver" << std::endl );
-   break;
-   }
-
   // some log - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
   Log1();
@@ -563,6 +558,22 @@ int BundleSolver::compute( bool changedvars )
   // another iteration (master problem solution)- - - - - - - - - - - - - - -
 
   ++ParIter;
+
+  // check for "bad" termination- - - - - - - - - - - - - - - - - - - - - - -
+  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+  if( Result == kStopTime )  // time is up
+   continue;                 // return at the start and stop
+
+  if( Result == kInfeasible ) {  // the Master Problem is infeasible
+   BLOG( 1 , " ~ stop (infeasible)" << std::endl );
+   break;
+   }
+
+  if( Result >= kError ) {  // problems in the Master Problem solver
+   BLOG( 1 , " ~ error in the MPSolver" << std::endl );
+   break;
+   }
 
   // check for optimality - - - - - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
