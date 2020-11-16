@@ -86,8 +86,10 @@ to use Cmake. General instructions are:
   that are required by the "core" SMS++ library and therefore by everyone.
   Setting the
 
-    lib*INC = -I<paths to include files directories>
-    lib*LIB = -L<paths to lib files directories> -l<libs>
+```make
+lib*INC = -I<paths to include files directories>
+lib*LIB = -L<paths to lib files directories> -l<libs>
+```
 
   in each allows one to set any non-standard path if the library is not
   installed in the system (or leave them empty if they are).
@@ -95,23 +97,31 @@ to use Cmake. General instructions are:
 - The "core" SMS++ classes have a makefile for building the corresponding
   library in
 
-    SMS++/lib/makefile-lib
+```sh
+SMS++/lib/makefile-lib
+```
 
   The makefile allow to choose the compiler name and the optimization/debug.
   This builds the lib/libSMS++.a that can be linked upon. Also, the
 
-    SMS++/lib/makefile-inc
+```sh
+SMS++/lib/makefile-inc
+```
 
   file is provided for allowing external makefiles to ensure that the library
   is up-to-date (useful in case one is actually developing it). The simplest
   way to learn how to use it is to check the makefiles of the "main" file
 
-    Main/makefile
+```sh
+Main/makefile
+```
 
   Note that the "basic" makefile macros
 
-    CC = 
-    SW =
+```make
+CC =
+SW =
+```
 
   for setting the c++ compiler and its options are "automatically forwarded"
   from the makefile to these of the other SMS++ components, and therefore
