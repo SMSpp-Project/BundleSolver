@@ -3711,7 +3711,7 @@ void BundleSolver::ReSetAlg( unsigned char RstLvl )
   if( nonzero ) {
    // call ChangeCurrPoint( DLambda ) with DLambda == Lambda - oldLambda ==
    // Lambda since oldLambda == 0 by construction
-   Vec_VarValue foo( NumVar , 0 );  // no change in the (unknown) f-values
+   Vec_VarValue foo( NrFi + 1 , 0 );  // no change in the (unknown) f-values
    Master->ChangeCurrPoint( Lambda.data() , foo.data() );
    Fi0Lmb = INFshift;  // the value of the linear part must be computed
    }
