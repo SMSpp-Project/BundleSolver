@@ -41,7 +41,7 @@ These instructions will let you build MCFBlock and MCFSolver on your system.
   dependency is supposed to be removed down the line.
 
 
-### Build and install with Cmake
+### Build and install with CMake
 
 Configure and build the library with:
 ```sh
@@ -51,15 +51,18 @@ cmake ..
 make
 ```
 
+The library has the same configuration options of
+[SMS++](https://gitlab.com/smspp/smspp/wikis/custom).
+
 Optionally, install the library in the system with:
 ```sh
 sudo make install
 ```
 
 
-### Usage with Cmake
+### Usage with CMake
 
-After the library is configured and built, you can use it in your CMake project with:
+After the library is built, you can use it in your CMake project with:
 ```cmake
 find_package(BundleSolver)
 target_link_libraries(<my_target> SMS++::BundleSolver)
@@ -69,7 +72,7 @@ target_link_libraries(<my_target> SMS++::BundleSolver)
 ### Build and install with makefiles
 
 Carefully hand-crafted makefiles have also been developed for those unwilling
-to use Cmake. General instructions are:
+to use CMake. General instructions are:
 
 - The arrangements of folders must be that envisioned by the
   [Umbrella SMS++ Project](https://gitlab.com/smspp/smspp-project)
@@ -145,11 +148,11 @@ This section is not ready yet.
 - **Antonio Frangioni**  
   *Operations Research Group*  
   Dipartimento di Informatica  
-  UniversitÃ  di Pisa
+  Università di Pisa
 
 - **Enrico Gorgone**  
   Dipartimento di Matematica ed Informatica  
-  UniversitÃ  di Cagliari
+  Università di Cagliari
 
 ### Contributors
 
