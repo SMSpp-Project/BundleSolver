@@ -29,7 +29,7 @@ project(BundleSolver VERSION 0.3.0 LANGUAGES CXX)
 include(CTest)
 
 # ----- Requirements -------------------------------------------------------- #
-find_package(SMSpp REQUIRED)
+#find_package(SMSpp REQUIRED)
 find_package(MILPSolver REQUIRED)
 find_package(NDOFiOracle REQUIRED)
 
@@ -71,7 +71,7 @@ target_include_directories(
 # library, INTERFACE means they will be linked only to the targets that depend
 # on this library.
 target_link_libraries(BundleSolver PUBLIC
-                      SMS++::SMSpp
+                      # SMS++::SMSpp
                       SMS++::MILPSolver
                       NDOFiOracle::NDOFiOracle)
 
@@ -153,4 +153,4 @@ endif ()
 # ----- Subdirectories ------------------------------------------------------ #
 if (BUILD_TESTING)
     add_subdirectory(Main)
-endif()
+endif ()

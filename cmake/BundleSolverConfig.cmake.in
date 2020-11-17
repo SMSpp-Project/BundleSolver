@@ -18,7 +18,7 @@ get_filename_component(BundleSolver_CMAKE_DIR "${CMAKE_CURRENT_LIST_FILE}" PATH)
 include(CMakeFindDependencyMacro)
 
 # ----- Requirements -------------------------------------------------------- #
-find_dependency(SMSpp)
+#find_dependency(SMSpp)
 find_dependency(MILPSolver)
 find_dependency(NDOFiOracle)
 
