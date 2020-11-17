@@ -36,9 +36,6 @@
 
 #include "OSIMPSolver.h"
 
-#include "ilcplex/cplex.h"
-
-#include "OsiCpxSolverInterface.hpp"
 
 #include "OsiClpSolverInterface.hpp"
 
@@ -63,6 +60,20 @@
 
 #if USE_MPTESTER
  #include "MPTester.h"
+#endif
+
+/*--------------------------------------------------------------------------*/
+
+#define USE_CPLEX 1
+
+// if USE_CPLEX is nonzero, the OsiSolverInterface used in OSIMPSolver can be
+// a OsiCpxSolverInterface; this requires some includes that can be avoided
+// otherwise (and that someone may not have and therefore may want to avoid)
+
+#if USE_CPLEX
+ #include "ilcplex/cplex.h"
+
+ #include "OsiCpxSolverInterface.hpp"
 #endif
 
 /*--------------------------------------------------------------------------*/
@@ -1386,17 +1397,21 @@ void BundleSolver::set_Block( Block * block )
     Master = osi_mps;
 
     if( MPName & 2 ) {
-     OsiCpxSolverInterface *osicpx = new OsiCpxSolverInterface();
-     CPXENVptr env = osicpx->getEnvironmentPtr ();
-     CPXsetintparam( env , CPX_PARAM_THREADS , threads );
-     CPXsetintparam( env , CPXPARAM_ScreenOutput , CPX_OFF );
-     CPXsetintparam( env , CPXPARAM_Barrier_Display , 0 );
-     CPXsetintparam( env , CPXPARAM_Simplex_Display , 0 );
-     CPXsetintparam( env , CPXPARAM_Sifting_Display , 0 );
-     CPXsetintparam( env , CPXPARAM_Network_Display , 0 );
-     CPXsetintparam( env , CPXPARAM_ParamDisplay  , CPX_OFF );
+     #if USE_CPLEX
+      OsiCpxSolverInterface *osicpx = new OsiCpxSolverInterface();
+      CPXENVptr env = osicpx->getEnvironmentPtr ();
+      CPXsetintparam( env , CPX_PARAM_THREADS , threads );
+      CPXsetintparam( env , CPXPARAM_ScreenOutput , CPX_OFF );
+      CPXsetintparam( env , CPXPARAM_Barrier_Display , 0 );
+      CPXsetintparam( env , CPXPARAM_Simplex_Display , 0 );
+      CPXsetintparam( env , CPXPARAM_Sifting_Display , 0 );
+      CPXsetintparam( env , CPXPARAM_Network_Display , 0 );
+      CPXsetintparam( env , CPXPARAM_ParamDisplay  , CPX_OFF );
  
-     osi_mps->SetOsi( osicpx );
+      osi_mps->SetOsi( osicpx );
+     #else
+      throw( std::invalid_argument( "OsiCpxSolverInterface not supported" ) );
+     #endif
      }
     else
      osi_mps->SetOsi( new OsiClpSolverInterface() );
