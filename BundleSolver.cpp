@@ -36,7 +36,6 @@
 
 #include "OSIMPSolver.h"
 
-
 #include "OsiClpSolverInterface.hpp"
 
 #include <iomanip>
@@ -4249,8 +4248,8 @@ void BundleSolver::process_outstanding_easy_Modification( void )
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
   // MILPSolver::compute() has the only role of scanning the list of
   // Modification and updating its internal data structures accordingly
-  
-  IsEasy[ k ]->compute( false );
+
+  IsEasy[ k ]->MILPSolver::compute( false );
   
   // construct the flattened list of Modification in the FakeSolver - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -5590,7 +5589,7 @@ void BundleSolver::process_outstanding_Modification( void )
   }
 
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
- // and this, finally, is all!! (save possibly some checks)
+ // and this, finally, is all! (save possibly some checks)
 
  //!! PrintBundle();
  #if CHECK_DS & 1

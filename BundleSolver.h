@@ -371,7 +371,7 @@ public:
  /// public enum for the double algorithmic parameters
  /** Public enum describing the different types of algorithmic parameters
   * of "double" type that BundleSolver has in addition to these of CDASolver.
-  * The value intLastBndSlvPar is provided so that the list can be easily
+  * The value dblLastBndSlvPar is provided so that the list can be easily
   * further extended by derived classes. */
 
  enum dbl_par_type_BndSlv {
