@@ -1316,7 +1316,7 @@ void BundleSolver::set_Block( Block * block )
   if( NrEasy && IsEasy[ k ] )
    continue;
   v_c05f[ k ]->set_par( C05Function::dblAAccMlt , eps );
-  auto gps = v_c05f[ k ]->get_int_par( C05Function::intGPMaxSz );
+  Index gps = v_c05f[ k ]->get_int_par( C05Function::intGPMaxSz );
   if( BPar2 == 0 ) {  // use the current global pool size
    if( gps < 2 )
     throw( std::logic_error( "BPar2 == 0 but too small global pool" ) );
@@ -1325,7 +1325,7 @@ void BundleSolver::set_Block( Block * block )
    }
   else {              // force the global pool size to be *at least* BPar2
    if( gps < BPar2 )
-    v_c05f[ k ]->set_par( C05Function::intGPMaxSz , BPar2 );
+    v_c05f[ k ]->set_par( C05Function::intGPMaxSz , int( BPar2 ) );
    vBPar2[ NrFi ] += BPar2;
    vBPar2[ k ] = BPar2;
    }
@@ -1540,14 +1540,14 @@ void BundleSolver::set_par( const idx_type par , const int value )
   case( intBPar2 ):
    if( value < 2 )
     throw( std::invalid_argument( "BPar2 must be >= 2" ) );
-   if( BPar2 == value )
+   if( BPar2 == Index( value ) )
     break;
    if( f_Block )
     throw( std::invalid_argument( "changing BPar2 not supported yet" ) );
    BPar2 = value;
    break;
   case( intBPar3 ):
-   if( value < BPar4 )
+   if( Index( value ) < BPar4 )
     throw( std::invalid_argument( "BPar3 must be >= BPar4" ) );
    BPar3 = value;
    break;
@@ -3847,7 +3847,7 @@ void BundleSolver::UpdtaBP3( void )
     }
   }
 
- if( aBP3 > BPar3 )
+ if( aBP3 > Index( BPar3 ) )
   aBP3 = BPar3;
  else
   if( aBP3 < BPar4 )
@@ -4246,6 +4246,16 @@ void BundleSolver::process_outstanding_easy_Modification( void )
 
   // ensure that the MILPSolver has "digested" the Modification - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  // since some Modification in the inner Block cause LagBFunction to react
+  // by doing other changes to it, ensure that this is done before the list
+  // of Modification is scanned; however, note that if the list is empty
+  // already (in which case this method may not even be called, and therefore
+  // neither apply_obj_Modification() is) then no new Modification can be
+  // added by LagBFunction: LagBFunction does not "create Modification out
+  // of thin air", only reacts to those issued from outside
+
+  static_cast< LagBFunction * >( v_c05f[ k ] )->apply_obj_Modification();
+
   // MILPSolver::compute() has the only role of scanning the list of
   // Modification and updating its internal data structures accordingly
 
@@ -5611,7 +5621,8 @@ void BundleSolver::CheckBundle( void )
                                                            : f_log;
  // check vBPar2
  for( Index k = 0 ; k < NrFi ; ++k )
-  if( v_c05f[ k ]->get_int_par( C05Function::intGPMaxSz ) != vBPar2[ k ] )
+  if( Index( v_c05f[ k ]->get_int_par( C05Function::intGPMaxSz ) )
+      != vBPar2[ k ] )
    *wlog << "size of global pool " << k << " does not match" << std::endl;
 
  // check ItemVcblr against InvItemVcblr and Master
@@ -6002,7 +6013,7 @@ void BundleSolver::FakeFiOracle::GetBDesc( cIndex wFi , int * Bbeg ,
   // although the FiOracle interface allows setting all the parameters to
   // nullptr (save the first three) individually, OSIMPSolver never
   // requires lhs without rhs, so we don't handle the case
-  for( Index i = 0 ; i < MILPSlv->get_numrows() ; ++i )
+  for( int i = 0 ; i < MILPSlv->get_numrows() ; ++i )
    switch( MILPSlv->get_sense()[ i ] ) {
     case( 'L' ):  // <= constraint
      rhs[ i ] = MILPSlv->get_rhs()[ i ];

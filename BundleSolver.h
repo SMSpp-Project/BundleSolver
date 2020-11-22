@@ -438,10 +438,10 @@ public:
   MaxSol = CDASolver::get_dflt_int_par( intMaxSol );
   EverykIt = CDASolver::get_dflt_int_par( intEverykIt );
   LogVerb = CDASolver::get_dflt_int_par( intLogVerb );
-  BPar1 = dflt_int_par[ intBPar1 - intLastParCDAS ];
-  BPar2 = dflt_int_par[ intBPar2 - intLastParCDAS ];
-  BPar3 = dflt_int_par[ intBPar3 - intLastParCDAS ];
-  BPar4 = dflt_int_par[ intBPar4 - intLastParCDAS ];
+  BPar1 = Index( dflt_int_par[ intBPar1 - intLastParCDAS ] );
+  BPar2 = Index( dflt_int_par[ intBPar2 - intLastParCDAS ] );
+  BPar3 = Index( dflt_int_par[ intBPar3 - intLastParCDAS ] );
+  BPar4 = Index( dflt_int_par[ intBPar4 - intLastParCDAS ] );
   BPar6 = dflt_int_par[ intBPar6 - intLastParCDAS ];
   BPar7 = dflt_int_par[ intBPar7 - intLastParCDAS ];
   MnSSC = dflt_int_par[ intMnSSC - intLastParCDAS ];
@@ -559,7 +559,7 @@ public:
   *   algorithm proceeds; note that what varies in practice is the maximum
   *   number, as it is always legal for the C05Function to refuse giving
   *   other items, although the BundleSolver will complain and stop if less
-  *   than BPar4 are given. In the Bundle code, the number
+  *   than BPar4 are given. In BundleSolver, the number
   *
   *      EpsU = Sigma + D_{tStar}*( z* ) / max( | FiVal | , 1 ) ,
   *
@@ -1649,10 +1649,10 @@ public:
  int LogVerb;       ///< "verbosity" of the log
  int EverykIt;      ///< periodicity of eEverykIteration events
 
- int BPar1;         ///< parameter for removal of items (B-strategy)
- int BPar2;         ///< max Bundle size
- int BPar3;         ///< max number of items fetched from Fi() at each call
- int BPar4;         ///< min number of items fetched from Fi() at each call
+ Index BPar1;       ///< parameter for removal of items (B-strategy)
+ Index BPar2;       ///< max Bundle size
+ Index BPar3;       ///< max number of items fetched from Fi() at each call
+ Index BPar4;       ///< min number of items fetched from Fi() at each call
  double BPar5;      ///< control how the actual BPar3 changes over time
  int BPar6;         ///< control how the actual BPar3 changes over time
  int BPar7;         ///< if BundleSolver "plays nice" with other Solver
