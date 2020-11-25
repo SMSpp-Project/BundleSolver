@@ -738,6 +738,10 @@ public:
   *
   *   If the bit 0 is 0, then all components are treated as "hard" even if
   *   they could be treated as "easy"; all the other bits are then ignored.
+  *   Note, however, that in this case BundleSolver will require a functioning
+  *   Solver to be registered to the inner Block of the LagBFunction to work
+  *   (because it will compute() the LagBFunction, and the Solver is needed
+  *   for that).
   *
   *   If the bit 0 is 1, then all "easy" components are treated as such.
   *   Furthermore, the following three bits, if 1, instruct BundleSolver to

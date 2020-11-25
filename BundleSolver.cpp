@@ -1209,22 +1209,40 @@ void BundleSolver::set_Block( Block * block )
  // (with LHS == 0) or NNConstraint- - - - - - - - - - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // one day general linear constaints will be allowed
-
+ //
+ // note that un_any_thing() only serves to verify that the stuff is of the
+ // right type, and therefore it has to do nothing; this is obtained by
+ // passing it as an "empty" argument a void --> void lambda doing nothing
+ // immediately applied to nothing, which gives rise to the curios list
+ // of parentheses "[](){}()"
+ 
  for( auto & el : f_Block->get_static_constraints() ) {
-  if( un_any_thing( BoxConstraint , el , ; ) )
+  if( un_any_thing( BoxConstraint , el , [](){}() ) )
    continue;
-  if( un_any_thing( NNConstraint , el , ; ) )
+  if( un_any_thing( NNConstraint , el , [](){}() ) )
    continue;
   throw( std::logic_error( "unsupported type of static Constraint" ) );
   }
 
  for( auto & el : f_Block->get_dynamic_constraints() ) {
-  if( un_any_thing( std::list< BoxConstraint > , el , ; ) )
+  if( un_any_thing( std::list< BoxConstraint > , el , [](){}() ) )
    continue;
-  if( un_any_thing( std::list< NNConstraint > , el , ; ) )
+  if( un_any_thing( std::list< NNConstraint > , el , [](){}() ) )
    continue;
   throw( std::logic_error( "unsupported type of dynamic Constraint" ) );
   }
+
+ /*!! 
+ for( auto & el : f_Block->get_dynamic_constraints() ) {
+  if( un_any_const_dynamic( el , []( auto & f ) {} ,
+			    un_any_type< BoxConstraint >() ) )
+   continue;
+  if( un_any_const_dynamic( el , []( auto & f ) {} ,
+			    un_any_type< NNConstraint >() ) )
+   continue;
+  throw( std::logic_error( "unsupported type of dynamic Constraint" ) );
+  }
+  !!*/
 
  // read information about the C05Function - - - - - - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -4281,7 +4299,7 @@ void BundleSolver::process_outstanding_easy_Modification( void )
   // scan all the Modification in the FakeSolver- - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-  bool whch = 0;
+  char whch = 0;
 
   for( ; ! v_mod_tmp.empty() ; v_mod_tmp.pop_front() ) {
    auto mod = v_mod_tmp.front().get();
