@@ -1,5 +1,5 @@
 /** @file
- * Configuration header of the BundleSolver library.
+ * Configuration header for @modName@.
  *
  * \author Niccolò Iardella \n
  *         Operations Research Group \n
@@ -9,12 +9,12 @@
  * \copyright &copy; Niccolò Iardella
  */
 
-#ifndef __BUNDLESOLVER_CONFIG_H
-#define __BUNDLESOLVER_CONFIG_H
+#ifndef __@modName@_CONFIG_H
+#define __@modName@_CONFIG_H
 
-#define BundleSolver_VERSION       "@BundleSolver_VERSION@"
-#define BundleSolver_VERSION_MAJOR "@BundleSolver_VERSION_MAJOR@"
-#define BundleSolver_VERSION_MINOR "@BundleSolver_VERSION_MINOR@"
-#define BundleSolver_VERSION_PATCH "@BundleSolver_VERSION_PATCH@"
+#define @modName@_VERSION       "@PROJECT_VERSION@"
+#define @modName@_VERSION_MAJOR "@PROJECT_VERSION_MAJOR@"
+#define @modName@_VERSION_MINOR "@PROJECT_VERSION_MINOR@"
+#define @modName@_VERSION_PATCH "@PROJECT_VERSION_PATCH@"
 
 #endif
