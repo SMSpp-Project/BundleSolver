@@ -483,7 +483,7 @@ int BundleSolver::compute( bool changedvars )
 
   // if there are "easy" components and changing them is supported, process
   // the corresponding Modification (stored it v_FakeSolver)
-  if( NrEasy && ( DoEasy & ~17 ) )
+  if( NrEasy && ( DoEasy & ~1 ) )
    process_outstanding_easy_Modification();
 
   // process any other Modification
@@ -1277,7 +1277,7 @@ void BundleSolver::set_Block( Block * block )
       // done by [MILP]Solver::set_Block(); note that this calls set_Block()
       // again, which is why it is important that [MILP]Solver::set_Block()
       // check that the Block is the same and ignores it
-      if( DoEasy & ~17 )
+      if( DoEasy & ~1 )
        LagB->get_inner_block()->register_Solver( MILPs );
       }
      else  // everything is linear, but there are integer variables
@@ -1292,11 +1292,10 @@ void BundleSolver::set_Block( Block * block )
   if( ! NrEasy )
    IsEasy.clear();
   else
-   if( DoEasy & ~17 ) {
+   if( DoEasy & ~1 ) {
     // if easy components can be dynamically changed, attach a FakeSolver
     // to the inner Block of each LagBFunction so as to be able to react to
-    // the changes; meanwhile, if DoEasy dictates it also "silence" the
-    // Modification from the inner Block
+    // the changes
     v_FakeSolver.resize( NrEasy );
     auto FSit = v_FakeSolver.begin();
     for( Index k = 0 ; k < NrFi ; ++k )
@@ -1304,8 +1303,6 @@ void BundleSolver::set_Block( Block * block )
       auto LagB = static_cast< LagBFunction * >( v_c05f[ k ] );
       *FSit = new FakeSolver();
       LagB->get_inner_block()->register_Solver( *(FSit++) );
-      if( DoEasy & 16 )
-       LagB->silence_inner_Modification();
       }
    }
   }
@@ -1477,7 +1474,7 @@ void BundleSolver::set_Block( Block * block )
  // static, which would require one parameter; doable, but not now
  
  if( NrEasy ) {
-  const char which = ( DoEasy & ~17 ) ^ 15;
+  const char which = ( DoEasy & ~1 ) ^ 15;
   for( Index k = 0 ; k < NrFi ; ++k )
    if( IsEasy[ k ] )
     IsEasy[ k ]->clear_problem( which );
@@ -1595,7 +1592,7 @@ void BundleSolver::set_par( const idx_type par , const int value )
    MaxNrEvls = value;
    break;
   case( intDoEasy ):
-   DoEasy = char( value & 31 );
+   DoEasy = char( value & 15 );
    break;
   case( intWZNorm ):
    if( WZNorm != char( value ) ) {
@@ -3680,7 +3677,7 @@ void BundleSolver::guts_of_destructor( void )
  vBPar2.clear();
 
  if( NrEasy ) {  // if there are "easy" components, delete the MILPSolver
-  if( DoEasy & ~17 ) {
+  if( DoEasy & ~1 ) {
    // if easy components can be changed, before doing this unregister the
    // MILPSolver from the inner Block (since it is registered there), and
    // meanwhile unregister also the FakeSolver that is registered there as well
@@ -4153,7 +4150,7 @@ Lst_sp_Mod::size_type BundleSolver::num_outstanding_Modification( void )
 {
  auto res = v_mod.size();
 
- if( NrEasy && ( DoEasy & ~17 ) ) {
+ if( NrEasy && ( DoEasy & ~1 ) ) {
   auto FSit = v_FakeSolver.begin();
   for( Index k = 0 ; k < NrFi ; )
    if( IsEasy[ k++ ] )
@@ -4517,10 +4514,9 @@ void BundleSolver::process_outstanding_Modification( void )
     }
 
    if( NrEasy && IsEasy[ wFi ] ) {  // coming from an easy component
-    if( DoEasy & ~17 ) {
-     // some changes in easy components are separately supported; if the
-     // Modification is here the easy component has not been silenced, but
-     // ignoring the Modification is entirely possible
+    if( DoEasy & ~1 ) {
+     // some changes in easy components are separately supported: ignoring
+     // the Modification is entirely possible
      to_delete = true;
      continue;
      }

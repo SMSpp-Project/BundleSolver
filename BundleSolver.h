@@ -759,15 +759,6 @@ public:
   *   default value correspond to "static easy components", i.e., they are
   *   considered but they cannot be changed.
   *
-  *   Finally, the bit 4 (+ 16) has an independent meaning: if it is set to 1,
-  *   then silence_inner_Modification( true ) is called for all LagBFunction
-  *   corresponding to "easy" components (still subject to bit 1 == 1,
-  *   otherwise this bit is ignored as well. This avoids some work that is
-  *   useless  *if* BundleSolver is the unique Solver using the LagBFunction,
-  *   but easily breaks things if other Solver are there (unless they as well
-  *   can work with silence_inner_Modification( true )), hence it must be
-  *   used with due care.
-  *
   * - intWZNorm [2]: Proving that some point Lambda is epsilon-optimal for a
   *                  NonDifferentiable Optimization problem involves finding
   *   an all-0 epsilon-subgradient of the function at Lambda; see dbltStar for
