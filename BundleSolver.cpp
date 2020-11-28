@@ -672,7 +672,7 @@ int BundleSolver::compute( bool changedvars )
    if( AFL < 1 )
     AFL = 1;
 
-   if( abs( vStar[ NrFi ] ) <= tSPar2 * EpsU * AFL ) {
+   if( abs( vStar.back() ) <= tSPar2 * EpsU * AFL ) {
     BLOG( 1 , "small v => increase t" << std::endl << "           " );
 
     // collect two numbers vc and vl such that v( tNew ) >= vc + tNew * vl
@@ -4350,8 +4350,7 @@ void BundleSolver::process_outstanding_easy_Modification( void )
 	( tmod->type() != RowConstraintMod::eChgBTS ) )
      throw( std::logic_error( "unsupported Modification in easy component" ) );
 
-    auto cnst = tmod->constraint();
-    if( dynamic_cast< const OneVarConstraintMod * >( cnst ) )
+    if( dynamic_cast< const OneVarConstraintMod * >( tmod ) )
      whch |= 4;
     else
      whch |= 2;
