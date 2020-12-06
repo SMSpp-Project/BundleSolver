@@ -1219,6 +1219,8 @@ void BundleSolver::set_Block( Block * block )
  for( auto & el : f_Block->get_static_constraints() ) {
   if( un_any_thing( BoxConstraint , el , [](){}() ) )
    continue;
+  if( un_any_thing( L0Constraint , el , [](){}() ) )
+   continue;
   if( un_any_thing( NNConstraint , el , [](){}() ) )
    continue;
   throw( std::logic_error( "unsupported type of static Constraint" ) );
@@ -1226,6 +1228,8 @@ void BundleSolver::set_Block( Block * block )
 
  for( auto & el : f_Block->get_dynamic_constraints() ) {
   if( un_any_thing( std::list< BoxConstraint > , el , [](){}() ) )
+   continue;
+  if( un_any_thing( std::list< L0Constraint > , el , [](){}() ) )
    continue;
   if( un_any_thing( std::list< NNConstraint > , el , [](){}() ) )
    continue;
@@ -1251,11 +1255,25 @@ void BundleSolver::set_Block( Block * block )
 
  // check if there are "easy" components and deal with them- - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
- 
+
  NrEasy = 0;
  if( DoEasy & 1 ) {
+  // retrieve the ComputeConfig for the "easy" components, if any
+  ComputeConfig * eCC = nullptr;
+  if( ! EasyCfg.empty() ) {
+   auto cfg = Configuration::deserialize( EasyCfg );
+   if( ! ( eCC = cfg ) )
+    delete cfg;
+   }
+
   IsEasy.resize( NrFi , nullptr );
+  auto NEit = NoEasy.begin();
   for( Index k = 0 ; k < NrFi ; ++k ) {
+   if( ( NEit != NoEasy.end() ) && ( *NEit == k ) ) {
+    ++NEit;
+    continue;
+    }
+
    auto LagB = dynamic_cast< LagBFunction * >( v_c05f[ k ] );
    if( LagB ) {
     auto MILPs = new MILPSolver();
@@ -1291,11 +1309,16 @@ void BundleSolver::set_Block( Block * block )
 
   if( ! NrEasy )
    IsEasy.clear();
-  else
+  else {
+   // if an "easy" ComputeConfig is provided, set it
+   if( eCC )
+    for( Index k = 0 ; k < NrFi ; ++k )
+     if( IsEasy[ k ] )
+      v_c05f[ k ]->set_ComputeConfig( eCC->clone() );
+
+   // if easy components can be dynamically changed, attach a FakeSolver to
+   // the inner Block of each LagBFunction to record the changes
    if( DoEasy & ~1 ) {
-    // if easy components can be dynamically changed, attach a FakeSolver
-    // to the inner Block of each LagBFunction so as to be able to react to
-    // the changes
     v_FakeSolver.resize( NrEasy );
     auto FSit = v_FakeSolver.begin();
     for( Index k = 0 ; k < NrFi ; ++k )
@@ -1304,20 +1327,28 @@ void BundleSolver::set_Block( Block * block )
       *FSit = new FakeSolver();
       LagB->get_inner_block()->register_Solver( *(FSit++) );
       }
+    }
    }
-  }
 
- // set the global pool size to all non-easy functions - - - - - - - - - - - -
+  delete eCC;  // TODO: do not clone() the last time
+
+  }  // end( if( DoEasy ) )
+
+ // configure all non-easy components- - - - - - - - - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
- // with BPar2 == 0, BundleSolver just takes whatever size of the global pool
- // it finds already in the C05Function. with BPar2 > 0, BundleSolver ensures
- // that the size of the global pool is *at least* BPar2 by increasing it if
- // it is below. this means that:
+ // if the non-easy ComputeConfig is provided, apply it.
+ //
+ // in all cases, set the global pool size, *after* having configured them.
+ // this is necessary in that with BPar2 == 0, BundleSolver just takes whatever
+ // size of the global pool it finds in the C05Function (that may have been
+ // just set by the non-easy ComputeConfig). with BPar2 > 0, instead,
+ // BundleSolver ensures that the size of the global pool is *at least* BPar2
+ // by increasing it if it is below. this means that:
  // - BundleSolver never *decreases* the size of the global pool
  // - BundleSolver only uses the first BPar2 linearizations in each global
  //   pool; if there are more, the other ones are ignored
+ //
  // meanwhile, also set the accuracy of multipliers
-
  // MinQuad requires a "high" accuracy to work (1e-12) while standard solvers
  // do not, and in fact may complain if such a tight accuracy is set, but
  // since we don't really trust the accuracy of MPSolver, we give the
@@ -1327,10 +1358,27 @@ void BundleSolver::set_Block( Block * block )
  vBPar2.resize( NrFi + 1, 0 );
  InvItemVcblr.resize( NrFi );
 
+ // retrieve the ComputeConfig for the non-easy components, if any
+ ComputeConfig * hCC = nullptr;
+ if( ! HardCfg.empty() ) {
+  auto cfg = Configuration::deserialize( HardCfg );
+  if( ! ( hCC = cfg ) )
+   delete cfg;
+  }
+
  for( Index k = 0 ; k < NrFi ; ++k ) {
   if( NrEasy && IsEasy[ k ] )
    continue;
-  v_c05f[ k ]->set_par( C05Function::dblAAccMlt , eps );
+
+  // set the "easy" ComputeConfig, if any
+  if( hCC )
+   v_c05f[ k ]->set_ComputeConfig( hCC->clone() );
+
+  // ensure that the accuracy of multipliers is at least eps
+  if( v_c05f[ k ]->get_par( C05Function::dblAAccMlt ) > eps )
+   v_c05f[ k ]->set_par( C05Function::dblAAccMlt , eps );
+
+  // manage the global pool size
   Index gps = v_c05f[ k ]->get_int_par( C05Function::intGPMaxSz );
   if( BPar2 == 0 ) {  // use the current global pool size
    if( gps < 2 )
@@ -1347,6 +1395,8 @@ void BundleSolver::set_Block( Block * block )
 
   InvItemVcblr[ k ].resize( vBPar2[ k ] , InINF );
   }
+
+ delete hCC;  // TODO: do not clone() the last time
 
  // allocate memory- - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1528,7 +1578,7 @@ void BundleSolver::set_Block( Block * block )
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::set_par( const idx_type par , const int value )
+void BundleSolver::set_par( idx_type par , int value )
 {
  switch( par ) {
   case( intMaxIter ):
@@ -1636,7 +1686,7 @@ void BundleSolver::set_par( const idx_type par , const int value )
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::set_par( const idx_type par , const double value )
+void BundleSolver::set_par( idx_type par , double value )
 {
  switch( par ) {
   case( dblMaxTime ):
@@ -1739,6 +1789,32 @@ void BundleSolver::set_par( const idx_type par , const double value )
  }  // end( BundleSolver::set_par( double ) )
 
 /*--------------------------------------------------------------------------*/
+
+void BundleSolver::set_par( idx_type par , std::string && value )
+{
+ switch( par ) {
+  case( strEasyCfg ):
+   strHardCfg = std::move( value );
+   break;
+  case( strHardCfg ):
+   strHardCfg = std::move( value );
+   break;
+  default:
+   CDASolver::set_par( par , value );
+  }
+ }  // end( BundleSolver::set_par( std::string && ) )
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::set_par( idx_type par , std::vector< int > && value )
+{
+ if( par == vintNoEasy )
+  NoEasy = std::move( value );
+ else
+  CDASolver::set_par( par , std::move( value ) );
+ }
+
+/*--------------------------------------------------------------------------*/
 /*--------------------------------- METHODS --------------------------------*/
 /*--------------------------------------------------------------------------*/
 
@@ -1797,7 +1873,7 @@ void BundleSolver::get_dual_solution( Configuration * solc )
 
 /*--------------------------------------------------------------------------*/
 
-int BundleSolver::get_int_par( const idx_type par ) const
+int BundleSolver::get_int_par( idx_type par ) const
 {
  switch( par ) {
   case( intMaxIter ):
@@ -1879,7 +1955,7 @@ int BundleSolver::get_int_par( const idx_type par ) const
 
 /*--------------------------------------------------------------------------*/
 
-double BundleSolver::get_dbl_par( const idx_type par ) const
+double BundleSolver::get_dbl_par( idx_type par ) const
 {
  switch( par ) {
   case( dblMaxTime ):
@@ -1946,6 +2022,32 @@ double BundleSolver::get_dbl_par( const idx_type par ) const
    return( CDASolver::get_dflt_dbl_par( par ) );
   }
  }  // end( BundleSolver::get_dbl_par )
+
+/*--------------------------------------------------------------------------*/
+
+const std::string & BundleSolver::get_str_par( idx_type par ) const
+{
+ switch( par ) {
+  case( strEasyCfg ):
+   return( EasyCfg );
+   break;
+  case( strHardCfg ):
+   return( HardCfg );
+   break;
+  default:
+   return( CDASolver::get_dflt_dbl_par( par ) );
+  }
+ }
+
+/*--------------------------------------------------------------------------*/
+
+const std::vector< int > & BundleSolver::get_vint_par( idx_type par ) const
+{
+ if( par == vintNoEasy )
+  return( NoEasy );
+ else
+  return( CDASolver::get_vint_par( par ) );
+ }
 
 /*--------------------------------------------------------------------------*/
 /*----------------------- OTHER PROTECTED METHODS --------------------------*/

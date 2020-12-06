@@ -341,11 +341,11 @@ public:
 
  intMaxNrEvls ,  ///< max number of function evaluation for each iteration
 
- intDoEasy,  ///< whether "easy" components are considered
+ intDoEasy ,  ///< whether "easy" components are considered
 
- intWZNorm,  ///< how to compute the norm of z*
+ intWZNorm ,  ///< how to compute the norm of z*
 
- intMPName,  ///< whether the MP solver is QPPenalty or OSIMPSolver
+ intMPName ,  ///< whether the MP solver is QPPenalty or OSIMPSolver
 
  intMPlvl ,  ///< log verbosity of Master Problem
 
@@ -413,6 +413,46 @@ public:
 		    * to extend the set of double algorithmic parameters. */
 
   };  // end( dbl_par_type_BndSlv )
+
+/*--------------------------------------------------------------------------*/
+ /// public enum for the string algorithmic parameters
+ /** Public enum describing the different types of algorithmic parameters
+  * of "double" type that BundleSolver has in addition to these of CDASolver.
+  * The value dblLastBndSlvPar is provided so that the list can be easily
+  * further extended by derived classes. */
+
+ enum str_par_type_BndSlv {
+  strHEasyCfg = strLastParCDAS ,  ///< string name for "easy" Configurations
+
+  strHardCfg ,                  ///< string name for not-easy Configurations
+
+  strLastBndSlvPar ///< first allowed new string parameter for derived classes
+                   /**< Convenience value for easily allow derived classes
+		    * to extend the set of string algorithmic parameters. */
+  };  // end( str_par_type_BndSlv )
+
+/*--------------------------------------------------------------------------*/
+ /// public enum for the vector-of-int parameters
+ /** Public enum describing the different types of algorithmic parameters
+  * of vector-of-int type that BundleSolver has in addition to these of
+  * CDASolver. The value vintLastBndSlvPar is provided so that the list can
+  * be easily further extended by derived classes. */
+
+ enum vint_par_type_BndSlv {
+  vintNoEasy = vintLastParCDAS ,
+  ///< parameter for excluding certain components from being "easy"
+  /**< The vector vintNoEasy is assumed to contain the indices (numbers in
+   * 0, ..., total number of components - 1, ordered in increasing sense and
+   * therefore not repeated) of the components of the problem that must not
+   * be treated as "easy" even if they could. This clearly only applies if
+   * intDoEasy & 1 == 1, for otherwise no component is ever treated as "easy".
+   */
+
+  vintLastBndSlvPar ///< first allowed new vector-of-int parameter
+                    /**< Convenience value for easily allow derived classes
+		     * to extend the set of vector-of-int parameters. */
+
+  };  // end( vint_par_type_BndSlv )
 
 /*@} -----------------------------------------------------------------------*/
 /*----------------- CONSTRUCTING AND DESTRUCTING BundleSolver --------------*/
@@ -828,7 +868,7 @@ public:
   *                                of the Variable (otherwise reset to all-0)
   */
 
- void set_par( const idx_type par , const int value ) override;
+ void set_par( idx_type par , int value ) override;
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// set the "double" paramaters of BundleSolver
@@ -1062,7 +1102,54 @@ public:
   * - dblCtOff [1e-1]: cut-off value for pricing in QPPenaltyMP solver only
   */
 
- void set_par( const idx_type par , const double value ) override;
+ void set_par( idx_type par , double value ) override;
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ /// set the string paramaters of BundleSolver
+ /** Set the string paramaters specific of BundleSolver, together with the
+  * paramaters of CDASolver that BundleSolver actually "listens to":
+  *
+  * - strEasyCfg [empty]: filename from where the Configuration of the "easy"
+  *                       components is taken. If not empty, strEasyCfg must
+  *   be a filename (of either a text file or a netCDF one) out of which a
+  *   ComputeConfiguration is loaded via a call to Configuration::deserialize(
+  *   const std::string ); the ComputeConfig is then set to each of the "easy"
+  *   components of the problem (via a call to set_ComputeConfig) at the time
+  *   in which the BundleSolver is registered to the Block; if strEasyCfg is
+  *   empty or deserialize() returns nullptr, then set_ComputeConfig() is not 
+  *   called.
+  *
+  * - strHardCfg [empty]: filename from where the Configuration of the
+  *                       non-easy components is taken. If not empty,
+  *   strHardCfg must be a filename (of either a text file or a netCDF one)
+  *   out of which a ComputeConfiguration is loaded via a call to
+  *   Configuration::deserialize( const std::string ); the ComputeConfig is
+  *   then set to each of the non-easy components of the problem (via a call
+  *   to set_ComputeConfig) at the time in which the BundleSolver is
+  *   registered to the Block; if strHardCfg is empty or deserialize()
+  *   returns nullptr, then set_ComputeConfig() is not called. */
+  
+ void set_par( idx_type par , std::string && value )
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ /// move in the vector-of-int paramaters of BundleSolver
+ /** Move in the given vector-of-int paramaters specific of BundleSolver,
+  * together with the paramaters of CDASolver that BundleSolver actually
+  * "listens to":
+  *
+  * - vintNoEasy [empty]: the vector vintNoEasy is assumed to contain the
+  *                       indices (numbers in 0, ..., total number of
+  *   components - 1, ordered in increasing sense and therefore not repeated)
+  *   of the components of the problem that must not be treated as "easy"
+  *   even if they could. This clearly only applies if intDoEasy & 1 == 1,
+  *   for otherwise no component is ever treated as "easy". The ordering of
+  *   the components is as follows: if the Block only has a C05Function as
+  *   Objective and no sub-Block then that it is component 0, otherwise the
+  *   component i corresponds to the (the C05Functiono found in the
+  *   FReal)Objective found in the i-th sub-Block of the Block
+  *   (get_nested_Block( Index i )). */
+
+ void set_par( idx_type par , std::vector< int > && value )
 
 /*--------------------------------------------------------------------------*/
  /// set the ostream for the BundleSolver log
@@ -1147,10 +1234,15 @@ public:
 
  int compute( bool changedvars = true ) override;
 
+/*@} -----------------------------------------------------------------------*/
+/*---------------------- METHODS FOR READING RESULTS -----------------------*/
 /*--------------------------------------------------------------------------*/
- /// returns the number of calls to compute() (the current included)
+/** @name Accessing the found solutions (if any) and solution information-
+ *  @{ */
 
- Index n_calls( void ) const { return( SCalls ); }
+ /// returns the number of calls to compute() (the current one included)
+
+ long get_elapsed_calls( void ) const override { return( SCalls ); }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// returns the number of iterations in the current call to compute()
@@ -1159,7 +1251,7 @@ public:
   * solutions, as clearly the number of function evaluations may be rather
   * different. */
 
- Index n_iter( void ) const { return( ParIter ); }
+ long get_elapsed_iterations( void ) const override { return( ParIter ); }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// returns the number of evaluations of a component in the current compute()
@@ -1177,15 +1269,11 @@ public:
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// returns the elapsed CPU time since the start of the last compute()
 
- double elapsed( void ) const {
+ double get_elapsed_time( void ) const override {
   return( ( std::clock() - c_start ) / CLOCKS_PER_SEC );
   }
- 
-/*@} -----------------------------------------------------------------------*/
-/*---------------------- METHODS FOR READING RESULTS -----------------------*/
+
 /*--------------------------------------------------------------------------*/
-/** @name Accessing the found solutions (if any)
- *  @{ */
 
  VarValue get_lb( void ) override {
   if( f_convex ) {
@@ -1199,7 +1287,7 @@ public:
     return( - UpFiBest );
    else
     return( - UpFiLmb.back() );
- }
+  }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
@@ -1319,9 +1407,21 @@ public:
   return( idx_type( dblLastBndSlvPar ) );
   }
 
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+
+ idx_type get_num_str_par( void ) const override {
+  return( idx_type( strLastBndSlvPar ) );
+  }
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+
+ idx_type get_num_vint_par( void ) const override {
+  return( idx_type( vintLastBndSlvPar ) );
+  }
+
 /*--------------------------------------------------------------------------*/
  
- int get_dflt_int_par( const idx_type par ) const override {
+ int get_dflt_int_par( idx_type par ) const override {
   if( ( par >= intLastParCDAS ) && ( par < intLastBndSlvPar ) )
    return( dflt_int_par[ par - intLastParCDAS ] );
   else
@@ -1330,20 +1430,54 @@ public:
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  
- double get_dflt_dbl_par( const idx_type par ) const override {
+ double get_dflt_dbl_par( idx_type par ) const override {
   if( ( par >= dblLastParCDAS ) && ( par < dblLastBndSlvPar ) )
    return( dflt_dbl_par[ par - dblLastParCDAS ] );
   else
    return( CDASolver::get_dflt_dbl_par( par ) );
   }
 
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+/* !! not necessary so far: CDASolver and Solver do not have string
+ *    parameters and the default is empty anyway
+
+ const std::string & get_dflt_str_par( idx_type par ) const override {
+  static std::string __empty;
+  if( ( par == strEasyCfg ) || ( par == strHardCfg ) )
+   return( __empty );
+  else
+   return( CDASolver::get_dflt_vint_par( par ) );
+  }
+!!*/
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+/* !! not necessary so far: CDASolver and Solver do not have vector-of-int
+ *    parameters and the default is empty anyway
+
+ const std::vector< int > & get_dflt_dbl_par( idx_type par ) const override {
+  static std::vector< int > __empty;
+  if( par == vintNoEasy )
+   return( __empty );
+  else
+   return( CDASolver::get_dflt_vint_par( par ) );
+  }
+!!*/
+
 /*--------------------------------------------------------------------------*/
  
- int get_int_par( const idx_type par ) const override;
+ int get_int_par( idx_type par ) const override;
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  
- double get_dbl_par( const idx_type par ) const override;
+ double get_dbl_par( idx_type par ) const override;
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ 
+ const std::string & get_str_par( idx_type par ) const override;
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ 
+ const std::vector< int > & get_vint_par( idx_type par ) const override;
 
 /*--------------------------------------------------------------------------*/
 
@@ -1361,26 +1495,66 @@ public:
   const auto it = dbl_pars_map.find( name );
   if( it != dbl_pars_map.end() )
    return( it->second );
-  else
-   return( CDASolver::dbl_par_str2idx( name ) );
-  }
 
-/*--------------------------------------------------------------------------*/
-
- const std::string & int_par_idx2str( const idx_type idx ) const override {
-  if( ( idx >= intLastParCDAS ) && ( idx < intLastBndSlvPar ) )
-   return( int_pars_str[ idx - intBPar1 ] );
-  else
-   return( CDASolver::int_par_idx2str( idx ) );
+  return( CDASolver::dbl_par_str2idx( name ) );
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- const std::string & dbl_par_idx2str( const idx_type idx ) const override {
+ idx_type str_par_str2idx( const std::string & name ) const override {
+  if( name == "strEasyCfg" )
+   return( strEasyCfg );
+  if( name == "strHardCfg" )
+   return( strHardCfg );
+
+  return( CDASolver::vint_par_str2idx( name ) );
+  }
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+
+ idx_type vint_par_str2idx( const std::string & name ) const override {
+  if( name == "vintNoEasy" )
+   return( vintNoEasy );
+
+  return( CDASolver::vint_par_str2idx( name ) );
+  }
+
+/*--------------------------------------------------------------------------*/
+
+ const std::string & int_par_idx2str( idx_type idx ) const override {
+  if( ( idx >= intLastParCDAS ) && ( idx < intLastBndSlvPar ) )
+   return( int_pars_str[ idx - intBPar1 ] );
+
+  return( CDASolver::int_par_idx2str( idx ) );
+  }
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+
+ const std::string & dbl_par_idx2str( idx_type idx ) const override {
   if( ( idx >= dblLastParCDAS ) && ( idx < dblLastBndSlvPar ) )
    return( dbl_pars_str[ idx - dblLastParCDAS ] );
-  else
-   return( CDASolver::dbl_par_idx2str( idx ) );
+
+  return( CDASolver::dbl_par_idx2str( idx ) );
+  }
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+
+ const std::string & str_par_idx2str( idx_type idx ) const override {
+  if( idx == strEasyCfg )
+   return( "strEasyCfg" );
+  if( idx == strHardCfg )
+   return( "strHardCfg" );
+
+  return( CDASolver::str_par_idx2str( idx ) );
+  }
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+
+ const std::string & vint_par_idx2str( idx_type idx ) const override {
+  if( idx == vintNoEasy )
+   return( "vintNoEasy" );
+
+  return( CDASolver::vint_par_idx2str( idx ) );
   }
 
 /*@} -----------------------------------------------------------------------*/
@@ -1693,6 +1867,12 @@ public:
 
  int RstAlgPrm;     ///< reset parameter, bit-wise coded
 
+ std::string EasyCfg;  ///< filename for the Block[Solver]Config of easy
+
+ std::string HardCfg;  ///< filename for the Block[Solver]Config of non-easy
+ 
+ std::vector< int > NoEasy;  ///< which components never treat as "easy"
+ 
  // generic fields- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
  int Result;        ///< result of the latest call to Solve()
