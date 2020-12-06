@@ -1212,9 +1212,9 @@ void BundleSolver::set_Block( Block * block )
  //
  // note that un_any_thing() only serves to verify that the stuff is of the
  // right type, and therefore it has to do nothing; this is obtained by
- // passing it as an "empty" argument a void --> void lambda doing nothing
- // immediately applied to nothing, which gives rise to the curios list
- // of parentheses "[](){}()"
+ // passing it as, the "function" argument, a void --> void lambda doing
+ // nothing immediately applied to nothing, which gives rise to the curios
+ // list of parentheses "[](){}()"
  
  for( auto & el : f_Block->get_static_constraints() ) {
   if( un_any_thing( BoxConstraint , el , [](){}() ) )
@@ -1235,18 +1235,6 @@ void BundleSolver::set_Block( Block * block )
    continue;
   throw( std::logic_error( "unsupported type of dynamic Constraint" ) );
   }
-
- /*!! 
- for( auto & el : f_Block->get_dynamic_constraints() ) {
-  if( un_any_const_dynamic( el , []( auto & f ) {} ,
-			    un_any_type< BoxConstraint >() ) )
-   continue;
-  if( un_any_const_dynamic( el , []( auto & f ) {} ,
-			    un_any_type< NNConstraint >() ) )
-   continue;
-  throw( std::logic_error( "unsupported type of dynamic Constraint" ) );
-  }
-  !!*/
 
  // read information about the C05Function - - - - - - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -2608,6 +2596,22 @@ void BundleSolver::FormLambda1( HpNum Tau )
   UpTrgt = INFshift;
   LwTrgt = -INFshift;
   }
+
+ // print the new informaion - - - - - - - - - - - - - - - - - - - - - - - - -
+ //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+ if( f_log && ( LogVerb > 4 ) ) {
+  *f_log << std::endl << "    Lambda1 = [ ";
+  for( auto el : Lambda1 )
+   *f_log << el << " ";
+  *f_log << "]";
+
+  if( LogVerb > 5 )
+   for( Index k = 0 ; k < NrFi ; ++k )
+    *f_log << std::endl << "    UB[ " << k << " ] = " << def
+	   << rs( UpFiLmb1[ k ] ) << ", LB[ " << k << " ] = "
+	   << rs( LwFiLmb1[ k ] );
+  }
  }  // end( BundleSolver::FormLambda1 )
 
 /*--------------------------------------------------------------------------*/
@@ -2756,9 +2760,15 @@ bool BundleSolver::FiAndGi( Index wFi )
 
  FiStatus[ wFi ] = fwFi->compute( ( FiStatus[ wFi ] == kUnEval ) );
 
+ auto ue = fwFi->get_upper_estimate();
+ auto le = fwFi->get_lower_estimate();
+
+ if( f_log && ( LogVerb > 3 ) )
+  *f_log << std::endl << "            Component " << wFi
+	 << "evaluated: UB = "<< def << ue ", LB = " << le << std::endl;
+ 
  // update UpFiLambd1[ wFi ] (and possibly UpFiLambd1[ NrFi ])
- update_UpFiLambd1( wFi , f_convex ?   fwFi->get_upper_estimate()
-		                   : - fwFi->get_lower_estimate() );
+ update_UpFiLambd1( wFi , f_convex ? ue : - le );
 
  // compute the upper bound in Lambda provided by the upper bound in Lambda1
  // and try to update UpFiLmb[ wFi ] (and possibly UpFiLambd1[ NrFi ])
@@ -2773,8 +2783,7 @@ bool BundleSolver::FiAndGi( Index wFi )
   }
 
  // update LwFiLambd1[ wFi ] (and possibly LwFiLambd1[ NrFi ])
- update_LwFiLambd1( wFi , f_convex ?   fwFi->get_lower_estimate()
-		                   : - fwFi->get_upper_estimate() );
+ update_LwFiLambd1( wFi , f_convex ? le : - ue );
 
  // get new linearizations- - - - - - - - - - - - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -

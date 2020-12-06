@@ -570,6 +570,9 @@ public:
   *                   1 = only final state of the call and errors
   *                   2 = detailed step-by-step log
   *                   3 = as 2 + print every linearization added/removed
+  *                   4 = as 3 + print every function value computed
+  *                   5 = as 4 + print the tentative point at every iteration
+  *                   6 = as 5 + print the UB/LB on the tentative point
   *
   * - intBPar1 [10]: if an item has had a zero multiplier for the last
   *                  intBPar1 steps, it is eliminated; if intBPar1 is "too
