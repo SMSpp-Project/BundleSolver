@@ -336,6 +336,12 @@ const std::vector< std::string > BundleSolver::dbl_pars_str = {
  "dblCtOff"
  };
 
+// define and initialize here the vector of string parameters names
+const std::vector< std::string > BundleSolver::str_pars_str = {
+ "strEasyCfg" ,
+ "strEasyCfg"
+ };
+
 // define and initialize here the map for int parameters names
 const std::map< std::string , BundleSolver::idx_type >
  BundleSolver::int_pars_map = {
@@ -531,7 +537,7 @@ int BundleSolver::compute( bool changedvars )
   // check if time is over- - - - - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-  if( ( MaxTime < INFshift ) && ( elapsed() > MaxTime ) ) {
+  if( ( MaxTime < INFshift ) && ( get_elapsed_time() > MaxTime ) ) {
    BLOG( 1 , " ~ stop due to max time" << std::endl );
    Result = kStopTime;
    break;
@@ -540,14 +546,14 @@ int BundleSolver::compute( bool changedvars )
   // run time-periodic events - - - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-  if( EveryTTm && ( elapsed() >= lastETT + EveryTTm ) ) {
+  if( EveryTTm && ( get_elapsed_time() >= lastETT + EveryTTm ) ) {
    for( auto & ev : v_events[ eEveryTTime ] ) {
     auto res = ev();
     if( res == eStopOK ) { Result = kOK; break; }
     if( res == eStopError ) { Result = kError; break; }
     }
 
-   lastETT = elapsed();  // reset counter
+   lastETT = get_elapsed_time();  // reset counter
    }
 
   if( Result != kUnEval ) {
@@ -786,7 +792,7 @@ int BundleSolver::compute( bool changedvars )
    break;
    }
 
-  if( ( MaxTime < INFshift ) && ( elapsed() > MaxTime ) )
+  if( ( MaxTime < INFshift ) && ( get_elapsed_time() > MaxTime ) )
    continue;  // time has ran up: go back at the beginning to stop
 
   // check for the conditional lower bound- - - - - - - - - - - - - - - - - -
@@ -1213,13 +1219,13 @@ void BundleSolver::set_Block( Block * block )
  // note that un_any_thing() only serves to verify that the stuff is of the
  // right type, and therefore it has to do nothing; this is obtained by
  // passing it as, the "function" argument, a void --> void lambda doing
- // nothing immediately applied to nothing, which gives rise to the curios
- // list of parentheses "[](){}()"
+ // nothing immediately applied to nothing, cue the curios list of
+ // parentheses "[](){}()"
  
  for( auto & el : f_Block->get_static_constraints() ) {
   if( un_any_thing( BoxConstraint , el , [](){}() ) )
    continue;
-  if( un_any_thing( L0Constraint , el , [](){}() ) )
+  if( un_any_thing( LB0Constraint , el , [](){}() ) )
    continue;
   if( un_any_thing( NNConstraint , el , [](){}() ) )
    continue;
@@ -1229,7 +1235,7 @@ void BundleSolver::set_Block( Block * block )
  for( auto & el : f_Block->get_dynamic_constraints() ) {
   if( un_any_thing( std::list< BoxConstraint > , el , [](){}() ) )
    continue;
-  if( un_any_thing( std::list< L0Constraint > , el , [](){}() ) )
+  if( un_any_thing( std::list< LB0Constraint > , el , [](){}() ) )
    continue;
   if( un_any_thing( std::list< NNConstraint > , el , [](){}() ) )
    continue;
@@ -1250,14 +1256,14 @@ void BundleSolver::set_Block( Block * block )
   ComputeConfig * eCC = nullptr;
   if( ! EasyCfg.empty() ) {
    auto cfg = Configuration::deserialize( EasyCfg );
-   if( ! ( eCC = cfg ) )
+   if( ! ( eCC = dynamic_cast< ComputeConfig * >( cfg ) ) )
     delete cfg;
    }
 
   IsEasy.resize( NrFi , nullptr );
   auto NEit = NoEasy.begin();
   for( Index k = 0 ; k < NrFi ; ++k ) {
-   if( ( NEit != NoEasy.end() ) && ( *NEit == k ) ) {
+   if( ( NEit != NoEasy.end() ) && ( Index( *NEit ) == k ) ) {
     ++NEit;
     continue;
     }
@@ -1350,7 +1356,7 @@ void BundleSolver::set_Block( Block * block )
  ComputeConfig * hCC = nullptr;
  if( ! HardCfg.empty() ) {
   auto cfg = Configuration::deserialize( HardCfg );
-  if( ! ( hCC = cfg ) )
+  if( ! ( hCC = dynamic_cast< ComputeConfig * >( cfg ) ) )
    delete cfg;
   }
 
@@ -1363,7 +1369,7 @@ void BundleSolver::set_Block( Block * block )
    v_c05f[ k ]->set_ComputeConfig( hCC->clone() );
 
   // ensure that the accuracy of multipliers is at least eps
-  if( v_c05f[ k ]->get_par( C05Function::dblAAccMlt ) > eps )
+  if( v_c05f[ k ]->get_dbl_par( C05Function::dblAAccMlt ) > eps )
    v_c05f[ k ]->set_par( C05Function::dblAAccMlt , eps );
 
   // manage the global pool size
@@ -1782,10 +1788,10 @@ void BundleSolver::set_par( idx_type par , std::string && value )
 {
  switch( par ) {
   case( strEasyCfg ):
-   strHardCfg = std::move( value );
+   EasyCfg = std::move( value );
    break;
   case( strHardCfg ):
-   strHardCfg = std::move( value );
+   HardCfg = std::move( value );
    break;
   default:
    CDASolver::set_par( par , value );
@@ -1864,80 +1870,31 @@ void BundleSolver::get_dual_solution( Configuration * solc )
 int BundleSolver::get_int_par( idx_type par ) const
 {
  switch( par ) {
-  case( intMaxIter ):
-   return( MaxIter );
-   break;
-  case( intMaxSol ):
-   return( MaxSol );
-   break;
-  case( intEverykIt ):
-   return( EverykIt );
-   break;
-  case( intLogVerb ):
-   return( LogVerb );
-   break;
-  case( intBPar1 ):
-   return( BPar1 );
-   break;
-  case( intBPar2 ):
-   return( BPar2 );
-   break;
-  case( intBPar3 ):
-   return( BPar3 );
-   break;
-  case( intBPar4 ):
-   return( BPar4 );
-   break;
-  case( intBPar6 ):
-   return( BPar6 );
-   break;
-  case( intBPar7 ):
-   return( BPar7 );
-   break;
-  case( intMnSSC ):
-   return( MnSSC );
-   break;
-  case( intMnNSC ):
-   return( MnNSC );
-   break;
-  case( inttSPar1 ):
-   return( tSPar1 );
-   break;
-  case( intMaxNrEvls ):
-   return( MaxNrEvls );
-   break;
-  case( intDoEasy ):
-   return( DoEasy );
-   break;
-  case( intWZNorm ):
-   return( WZNorm );
-   break;
-  case( intMPName ):
-   return( MPName );
-   break;
-  case( intMPlvl ):
-   return( MPlvl );
-   break;
-  case( intQPmp1 ):
-   return( CtOff );
-   break;
-  case( intQPmp2 ):
-   return( MxRmv );
-   break;
-  case( intOSImp1 ):
-   return( algo );
-   break;
-  case( intOSImp2  ):
-   return( reduction );
-   break;
-  case( intOSImp3 ):
-   return( threads  );
-   break;
-  case( intRstAlg ):
-   return( RstAlgPrm  );
-   break;
-  default:
-   return( CDASolver::get_dflt_int_par( par ) );
+  case( intMaxIter ):   return( MaxIter );
+  case( intMaxSol ):    return( MaxSol );
+  case( intEverykIt ):  return( EverykIt );
+  case( intLogVerb ):   return( LogVerb );
+  case( intBPar1 ):     return( BPar1 );
+  case( intBPar2 ):     return( BPar2 );
+  case( intBPar3 ):     return( BPar3 );
+  case( intBPar4 ):     return( BPar4 );
+  case( intBPar6 ):     return( BPar6 );
+  case( intBPar7 ):     return( BPar7 );
+  case( intMnSSC ):     return( MnSSC );
+  case( intMnNSC ):     return( MnNSC );
+  case( inttSPar1 ):    return( tSPar1 );
+  case( intMaxNrEvls ): return( MaxNrEvls );
+  case( intDoEasy ):    return( DoEasy );
+  case( intWZNorm ):    return( WZNorm );
+  case( intMPName ):    return( MPName );
+  case( intMPlvl ):     return( MPlvl );
+  case( intQPmp1 ):     return( CtOff );
+  case( intQPmp2 ):     return( MxRmv );
+  case( intOSImp1 ):    return( algo );
+  case( intOSImp2  ):   return( reduction );
+  case( intOSImp3 ):    return( threads  );
+  case( intRstAlg ):    return( RstAlgPrm  );
+  default:              return( CDASolver::get_int_par( par ) );
   }
  }  // end( BundleSolver::get_int_par )
 
@@ -1946,68 +1903,27 @@ int BundleSolver::get_int_par( idx_type par ) const
 double BundleSolver::get_dbl_par( idx_type par ) const
 {
  switch( par ) {
-  case( dblMaxTime ):
-   return( MaxTime );
-   break;
-  case( dblRelAcc ):
-   return( RelAcc );
-   break;
-  case( dblAbsAcc ):
-   return( AbsAcc );
-   break;
-  case( dblEveryTTm ):
-   return( EveryTTm );
-   break;
-  case( dblNZEps ):
-   return( NZEps );
-   break;
-  case( dbltStar ):
-   return( tStar );
-   break;
-  case( dblMinNrEvls ):
-   return( MinNrEvls );
-   break;
-  case( dblBPar5 ):
-   return( BPar5 );
-   break;
-  case( dblm1 ):
-   return( m1 );
-   break;
-  case( dblm2 ):
-   return( m2 );
-   break;
-  case( dblm3 ):
-   return( m3 );
-   break;
-  case( dblmxIncr ):
-   return( mxIncr );
-   break;
-  case( dblmnIncr ):
-   return( mnIncr );
-   break;
-  case( dblmxDecr ):
-   return( mxDecr );
-   break;
-  case( dblmnDecr ):
-   return( mnDecr );
-   break;
-  case( dbltMaior ):
-   return( tMaior );
-   break;
-  case( dbltMinor ):
-   return( tMinor );
-   break;
-  case( dbltInit ):
-   return( tInit );
-   break;
-  case( dbltSPar2 ):
-   return( tSPar2 );
-   break;
-  case( dblCtOff ):
-   return( CtOff );
-   break;
-  default:
-   return( CDASolver::get_dflt_dbl_par( par ) );
+  case( dblMaxTime ):   return( MaxTime );
+  case( dblRelAcc ):    return( RelAcc );
+  case( dblAbsAcc ):    return( AbsAcc );
+  case( dblEveryTTm ):  return( EveryTTm );
+  case( dblNZEps ):     return( NZEps );
+  case( dbltStar ):     return( tStar );
+  case( dblMinNrEvls ): return( MinNrEvls );
+  case( dblBPar5 ):     return( BPar5 );
+  case( dblm1 ):        return( m1 );
+  case( dblm2 ):        return( m2 );
+  case( dblm3 ):        return( m3 );
+  case( dblmxIncr ):    return( mxIncr );
+  case( dblmnIncr ):    return( mnIncr );
+  case( dblmxDecr ):    return( mxDecr );
+  case( dblmnDecr ):    return( mnDecr );
+  case( dbltMaior ):    return( tMaior );
+  case( dbltMinor ):    return( tMinor );
+  case( dbltInit ):     return( tInit );
+  case( dbltSPar2 ):    return( tSPar2 );
+  case( dblCtOff ):     return( CtOff );
+  default:              return( CDASolver::get_dbl_par( par ) );
   }
  }  // end( BundleSolver::get_dbl_par )
 
@@ -2016,14 +1932,9 @@ double BundleSolver::get_dbl_par( idx_type par ) const
 const std::string & BundleSolver::get_str_par( idx_type par ) const
 {
  switch( par ) {
-  case( strEasyCfg ):
-   return( EasyCfg );
-   break;
-  case( strHardCfg ):
-   return( HardCfg );
-   break;
-  default:
-   return( CDASolver::get_dflt_dbl_par( par ) );
+  case( strEasyCfg ):   return( EasyCfg );
+  case( strHardCfg ):   return( HardCfg );
+  default:              return( CDASolver::get_str_par( par ) );
   }
  }
 
@@ -2033,8 +1944,8 @@ const std::vector< int > & BundleSolver::get_vint_par( idx_type par ) const
 {
  if( par == vintNoEasy )
   return( NoEasy );
- else
-  return( CDASolver::get_vint_par( par ) );
+
+ return( CDASolver::get_vint_par( par ) );
  }
 
 /*--------------------------------------------------------------------------*/
@@ -2179,7 +2090,7 @@ void BundleSolver::FormD( void )
   // ensure the MPSolver will not take too much time
   if( MaxTime < INFshift ) {
    Master->SetMPTime();
-   Master->SetPar( MPSolver::kMaxTme , MaxTime - elapsed() );
+   Master->SetPar( MPSolver::kMaxTme , MaxTime - get_elapsed_time() );
    }
 
   MPSolver::MPStatus mps = Master->SolveMP();  // solve the MP
@@ -2664,7 +2575,7 @@ void BundleSolver::InnerLoop( void )
   if( ! FindNext() )       // find next component
    break;                  // if none, nothing else to do but stop
 
-  if( ( MaxTime < INFshift ) && ( elapsed() > MaxTime ) )
+  if( ( MaxTime < INFshift ) && ( get_elapsed_time() > MaxTime ) )
    break;                  // time has ran up: nothing else to do but stop
 
   if( ceval < minceval )   // not evaluated enough components yet
@@ -2753,7 +2664,7 @@ bool BundleSolver::FiAndGi( Index wFi )
 
  // also set a "time cutoff" with the remaining total time
  if( MaxTime < INFshift )
-  fwFi->set_par( dblMaxTime , MaxTime - elapsed() );
+  fwFi->set_par( dblMaxTime , MaxTime - get_elapsed_time() );
  
  // now compute the C05Function and retrieve upper and lower estimates- - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -2765,7 +2676,7 @@ bool BundleSolver::FiAndGi( Index wFi )
 
  if( f_log && ( LogVerb > 3 ) )
   *f_log << std::endl << "            Component " << wFi
-	 << "evaluated: UB = "<< def << ue ", LB = " << le << std::endl;
+	 << "evaluated: UB = "<< def << ue << ", LB = " << le << std::endl;
  
  // update UpFiLambd1[ wFi ] (and possibly UpFiLambd1[ NrFi ])
  update_UpFiLambd1( wFi , f_convex ? ue : - le );

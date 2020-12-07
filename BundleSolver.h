@@ -422,9 +422,9 @@ public:
   * further extended by derived classes. */
 
  enum str_par_type_BndSlv {
-  strHEasyCfg = strLastParCDAS ,  ///< string name for "easy" Configurations
+  strEasyCfg = strLastParCDAS ,  ///< string name for "easy" Configurations
 
-  strHardCfg ,                  ///< string name for not-easy Configurations
+  strHardCfg ,                   ///< string name for not-easy Configurations
 
   strLastBndSlvPar ///< first allowed new string parameter for derived classes
                    /**< Convenience value for easily allow derived classes
@@ -1132,7 +1132,7 @@ public:
   *   registered to the Block; if strHardCfg is empty or deserialize()
   *   returns nullptr, then set_ComputeConfig() is not called. */
   
- void set_par( idx_type par , std::string && value )
+ void set_par( idx_type par , std::string && value ) override;
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// move in the vector-of-int paramaters of BundleSolver
@@ -1152,7 +1152,7 @@ public:
   *   FReal)Objective found in the i-th sub-Block of the Block
   *   (get_nested_Block( Index i )). */
 
- void set_par( idx_type par , std::vector< int > && value )
+ void set_par( idx_type par , std::vector< int > && value ) override;
 
 /*--------------------------------------------------------------------------*/
  /// set the ostream for the BundleSolver log
@@ -1543,10 +1543,8 @@ public:
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
  const std::string & str_par_idx2str( idx_type idx ) const override {
-  if( idx == strEasyCfg )
-   return( "strEasyCfg" );
-  if( idx == strHardCfg )
-   return( "strHardCfg" );
+  if( ( idx >= strLastParCDAS ) && ( idx < strLastBndSlvPar ) )
+   return( str_pars_str[ idx - strLastParCDAS ] );
 
   return( CDASolver::str_par_idx2str( idx ) );
   }
@@ -1554,8 +1552,9 @@ public:
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
  const std::string & vint_par_idx2str( idx_type idx ) const override {
+  static const std::string __psname = "vintNoEasy";
   if( idx == vintNoEasy )
-   return( "vintNoEasy" );
+   return( __psname );
 
   return( CDASolver::vint_par_idx2str( idx ) );
   }
@@ -2074,10 +2073,10 @@ public:
 
  // static fields - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- const static std::vector<int> dflt_int_par;
+ const static std::vector< int > dflt_int_par;
  ///< the (static const) vector of int parameters default values
 
- const static std::vector<double> dflt_dbl_par;
+ const static std::vector< double > dflt_dbl_par;
  ///< the (static const) vector of double parameters default values
 
  const static std::vector< std::string > int_pars_str;
@@ -2085,6 +2084,9 @@ public:
 
  const static std::vector< std::string > dbl_pars_str;
  ///< the (static const) vector of double parameters names
+
+ const static std::vector< std::string > str_pars_str;
+ ///< the (static const) vector of string parameters names
 
  const static std::map< std::string , idx_type > int_pars_map;
   ///< the (static const) map for int parameters names
