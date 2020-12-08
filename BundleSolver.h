@@ -313,10 +313,10 @@ public:
 
 /*--------------------------------------------------------------------------*/
  /// public enum for the int algorithmic parameters
- /** Public enum describing the different types of algorithmic parameters
-  * of "int" type that BundleSolver has in addition to these of CDASolver.
-  * The value intLastBndSlvPar is provided so that the list can be easily
-  * further extended by derived classes. */
+ /** Public enum describing the different algorithmic parameters of int type
+  * that BundleSolver has in addition to these of CDASolver. The value
+  * intLastBndSlvPar is provided so that the list can be easily further
+  * extended by derived classes. */
 
  enum int_par_type_BndSlv {
 
@@ -369,10 +369,10 @@ public:
 
 /*--------------------------------------------------------------------------*/
  /// public enum for the double algorithmic parameters
- /** Public enum describing the different types of algorithmic parameters
-  * of "double" type that BundleSolver has in addition to these of CDASolver.
-  * The value dblLastBndSlvPar is provided so that the list can be easily
-  * further extended by derived classes. */
+ /** Public enum describing the different algorithmic parameters of double
+  * type that BundleSolver has in addition to these of CDASolver. The value
+  * dblLastBndSlvPar is provided so that the list can be easily further
+  * extended by derived classes. */
 
  enum dbl_par_type_BndSlv {
   dblNZEps = dblLastParCDAS ,
@@ -416,10 +416,10 @@ public:
 
 /*--------------------------------------------------------------------------*/
  /// public enum for the string algorithmic parameters
- /** Public enum describing the different types of algorithmic parameters
-  * of "double" type that BundleSolver has in addition to these of CDASolver.
-  * The value dblLastBndSlvPar is provided so that the list can be easily
-  * further extended by derived classes. */
+ /** Public enum describing the different algorithmic parameters of string
+  * type that BundleSolver has in addition to these of CDASolver. The value
+  * strLastBndSlvPar is provided so that the list can be easily further
+  * extended by derived classes. */
 
  enum str_par_type_BndSlv {
   strEasyCfg = strLastParCDAS ,  ///< string name for "easy" Configurations
@@ -433,8 +433,8 @@ public:
 
 /*--------------------------------------------------------------------------*/
  /// public enum for the vector-of-int parameters
- /** Public enum describing the different types of algorithmic parameters
-  * of vector-of-int type that BundleSolver has in addition to these of
+ /** Public enum describing the different algorithmic parameters of
+  * vector-of-int type that BundleSolver has in addition to these of
   * CDASolver. The value vintLastBndSlvPar is provided so that the list can
   * be easily further extended by derived classes. */
 
@@ -453,6 +453,23 @@ public:
 		     * to extend the set of vector-of-int parameters. */
 
   };  // end( vint_par_type_BndSlv )
+
+/*--------------------------------------------------------------------------*/
+ /// public enum for the vector-of-string parameters
+ /** Public enum describing the different parameters of vector-of-string type
+  * that BundleSolver has in addition to these of CDASolver. The value
+  * vstrLastBndSlvPar is provided so that the list can be easily further
+  * extended by derived classes. */
+
+ enum vstr_par_type_BndSlv {
+  vstrCmpCfg = vstrLastParCDAS ,
+  ///< parameter for configuring (possibly) each component individually
+
+  vstrLastBndSlvPar ///< first allowed new vector-of-string parameter
+                    /**< Convenience value for easily allow derived classes
+		     * to extend the set of vector-of-string parameters. */
+
+  };  // end( vstr_par_type_BndSlv )
 
 /*@} -----------------------------------------------------------------------*/
 /*----------------- CONSTRUCTING AND DESTRUCTING BundleSolver --------------*/
@@ -548,8 +565,8 @@ public:
  void set_Block( Block * block ) override;
 
 /*--------------------------------------------------------------------------*/
- /// set the "int" paramaters of BundleSolver
- /** Set the "int" paramaters specific of BundleSolver, together with the
+ /// set the int paramaters of BundleSolver
+ /** Set the int paramaters specific of BundleSolver, together with the
   * paramaters of CDASolver that BundleSolver actually "listens to":
   *
   * - intMaxIter [Inf<int>]: maximum iterations for the next call to solve()
@@ -572,7 +589,7 @@ public:
   *                   3 = as 2 + print every linearization added/removed
   *                   4 = as 3 + print every function value computed
   *                   5 = as 4 + print the tentative point at every iteration
-  *                   6 = as 5 + print the UB/LB on the tentative point
+  *                   6 = as 5 + print all the UB/LB at the tentative point
   *
   * - intBPar1 [10]: if an item has had a zero multiplier for the last
   *                  intBPar1 steps, it is eliminated; if intBPar1 is "too
@@ -874,8 +891,8 @@ public:
  void set_par( idx_type par , int value ) override;
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
- /// set the "double" paramaters of BundleSolver
- /** Set the "double" paramaters specific of BundleSolver, together with the
+ /// set the double paramaters of BundleSolver
+ /** Set the double paramaters specific of BundleSolver, together with the
   * paramaters of CDASolver that BundleSolver actually "listens to":
   *
   * - dblMaxTime [Inf<double>()]: maximum CPU time for the next call to
@@ -1108,9 +1125,9 @@ public:
  void set_par( idx_type par , double value ) override;
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
- /// set the string paramaters of BundleSolver
- /** Set the string paramaters specific of BundleSolver, together with the
-  * paramaters of CDASolver that BundleSolver actually "listens to":
+ /// move the string paramaters of BundleSolver
+ /** Move in the string paramaters specific of BundleSolver, together with
+  * the paramaters of CDASolver that BundleSolver actually "listens to":
   *
   * - strEasyCfg [empty]: filename from where the Configuration of the "easy"
   *                       components is taken. If not empty, strEasyCfg must
@@ -1153,6 +1170,37 @@ public:
   *   (get_nested_Block( Index i )). */
 
  void set_par( idx_type par , std::vector< int > && value ) override;
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ /// move in the vector-of-string paramaters of BundleSolver
+ /** Move in the given vector-of-string paramaters specific of BundleSolver,
+  * together with the paramaters of CDASolver that BundleSolver actually
+  * "listens to":
+  *
+  * - vstrCmpCfg [empty]: the vector vstrCmpCfg is assumed to contain the
+  *                       filenames of ComputeConfig to be passed to each
+  *   of the components of the Block. The correspondence between vstrCmpCfg
+  *   is positional: if vstrCmpCfg[ i ] is not empty then it is taken as a
+  *   filename, used to load a ComputeConfig (with
+  *   Configuration::deserialize( string ), see the comments to the
+  *   method for details of the possible format of the string and of the
+  *   supported file types) and used to configure the i-th component. The
+  *   ordering of the components is as follows: if the Block only has a
+  *   C05Function as Objective and no sub-Block then that it is component 0,
+  *   otherwise the component i corresponds to the (the C05Functiono found
+  *   in the FReal)Objective found in the i-th sub-Block of the Block
+  *   (get_nested_Block( Index i )). This parameter overrides any other
+  *   Configuration-related parameter, in particular strEasyCfg and
+  *   strHardCfg: if a nonempty string is passed, then any other
+  *   Configuration is ignored. If, instead, vstrCmpCfg[ i ].empty(), then
+  *   the applicable one between strEasyCfg and strHardCfg, if nonempty,
+  *   is applied instead. If everything is empty then the component is not
+  *   configured (the existing configuration is not changed). Note that it
+  *   is still possible to completely reset a component by passing it an
+  *   "empty" ComputeConfig with f_diff == true, which is different from
+  *   no ComputeConfig at all. */
+
+ void set_par( idx_type par , std::vector< std::string > && value ) override;
 
 /*--------------------------------------------------------------------------*/
  /// set the ostream for the BundleSolver log
@@ -1422,13 +1470,19 @@ public:
   return( idx_type( vintLastBndSlvPar ) );
   }
 
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+
+ idx_type get_num_vstr_par( void ) const override {
+  return( idx_type( vstrLastBndSlvPar ) );
+  }
+
 /*--------------------------------------------------------------------------*/
  
  int get_dflt_int_par( idx_type par ) const override {
   if( ( par >= intLastParCDAS ) && ( par < intLastBndSlvPar ) )
    return( dflt_int_par[ par - intLastParCDAS ] );
-  else
-   return( CDASolver::get_dflt_int_par( par ) );
+
+  return( CDASolver::get_dflt_int_par( par ) );
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
@@ -1436,8 +1490,8 @@ public:
  double get_dflt_dbl_par( idx_type par ) const override {
   if( ( par >= dblLastParCDAS ) && ( par < dblLastBndSlvPar ) )
    return( dflt_dbl_par[ par - dblLastParCDAS ] );
-  else
-   return( CDASolver::get_dflt_dbl_par( par ) );
+
+  return( CDASolver::get_dflt_dbl_par( par ) );
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
@@ -1448,8 +1502,8 @@ public:
   static std::string __empty;
   if( ( par == strEasyCfg ) || ( par == strHardCfg ) )
    return( __empty );
-  else
-   return( CDASolver::get_dflt_vint_par( par ) );
+
+  return( CDASolver::get_dflt_vint_par( par ) );
   }
 !!*/
 
@@ -1457,12 +1511,26 @@ public:
 /* !! not necessary so far: CDASolver and Solver do not have vector-of-int
  *    parameters and the default is empty anyway
 
- const std::vector< int > & get_dflt_dbl_par( idx_type par ) const override {
+ const std::vector< int > & get_dflt_vint_par( idx_type par ) const override {
   static std::vector< int > __empty;
   if( par == vintNoEasy )
    return( __empty );
-  else
-   return( CDASolver::get_dflt_vint_par( par ) );
+
+  return( CDASolver::get_dflt_vint_par( par ) );
+  }
+!!*/
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+/* !! not necessary so far: CDASolver and Solver do not have vector-of-int
+ *    parameters and the default is empty anyway
+
+ const std::vector< std::string > & get_dflt_vstr_par( idx_type par )
+  const override {
+  static std::vector< std::string > __empty;
+  if( par == vstrCmpCfg )
+   return( __empty );
+
+  return( CDASolver::get_dflt_vint_par( par ) );
   }
 !!*/
 
@@ -1481,6 +1549,11 @@ public:
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  
  const std::vector< int > & get_vint_par( idx_type par ) const override;
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ 
+ const std::vector< std::string > & get_vstr_par( idx_type par )
+  const override;
 
 /*--------------------------------------------------------------------------*/
 
@@ -1522,6 +1595,15 @@ public:
   return( CDASolver::vint_par_str2idx( name ) );
   }
 
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+
+ idx_type vstr_par_str2idx( const std::string & name ) const override {
+  if( name == "vstrCmpCfg" )
+   return( vstrCmpCfg );
+
+  return( CDASolver::vstr_par_str2idx( name ) );
+  }
+
 /*--------------------------------------------------------------------------*/
 
  const std::string & int_par_idx2str( idx_type idx ) const override {
@@ -1557,6 +1639,16 @@ public:
    return( __psname );
 
   return( CDASolver::vint_par_idx2str( idx ) );
+  }
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+
+ const std::string & vstr_par_idx2str( idx_type idx ) const override {
+  static const std::string __psname = "vstrCmpCfg";
+  if( idx == vstrCmpCfg )
+   return( __psname );
+
+  return( CDASolver::vstr_par_idx2str( idx ) );
   }
 
 /*@} -----------------------------------------------------------------------*/
@@ -1874,7 +1966,9 @@ public:
  std::string HardCfg;  ///< filename for the Block[Solver]Config of non-easy
  
  std::vector< int > NoEasy;  ///< which components never treat as "easy"
- 
+
+ std::vector< std::string > CmpCfg;  ///< individual Configurations
+
  // generic fields- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
  int Result;        ///< result of the latest call to Solve()

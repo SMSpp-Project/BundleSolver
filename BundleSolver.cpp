@@ -1101,7 +1101,7 @@ void BundleSolver::set_Block( Block * block )
 
    if( ( f_convex && ( obj->get_sense() == Objective::eMax ) ) ||
        ( ( ! f_convex ) && ( obj->get_sense() == Objective::eMin ) ) )
-    throw( std::invalid_argument( "can only minimize convex / maximize concave"
+    throw( std::invalid_argument( "can only minimize convex/maximize concave"
 				  ) );  
 
    // nephews are not allowed- - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1212,7 +1212,7 @@ void BundleSolver::set_Block( Block * block )
  LamBVcblr.clear();
 
  // if some Constraint are present, their can only be either BoxConstraint
- // (with LHS == 0) or NNConstraint- - - - - - - - - - - - - - - - - - - - - -
+ // (with LHS == 0), LB0Constraint or NNConstraint - - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // one day general linear constaints will be allowed
  //
@@ -1304,11 +1304,25 @@ void BundleSolver::set_Block( Block * block )
   if( ! NrEasy )
    IsEasy.clear();
   else {
-   // if an "easy" ComputeConfig is provided, set it
-   if( eCC )
-    for( Index k = 0 ; k < NrFi ; ++k )
-     if( IsEasy[ k ] )
-      v_c05f[ k ]->set_ComputeConfig( eCC->clone() );
+   // ComputeConfig-ure the easy components
+   if( eCC || ( ! CmpCfg.empty() ) )
+    for( Index k = 0 ; k < NrFi ; ++k ) {
+     if( ! IsEasy[ k ] )
+      continue;
+
+     ComputeConfig * cfg = nullptr;
+     if( ( k < Index( CmpCfg.size() ) ) && ( ! CmpCfg[ k ].empty() ) ) {
+      auto tcfg = Configuration::deserialize( CmpCfg[ k ] );
+      if( ! ( cfg = dynamic_cast< ComputeConfig * >( tcfg ) ) )
+       delete tcfg;
+      }
+
+     if( ( ! cfg ) && eCC )
+      cfg = eCC->clone();
+
+     if( cfg )
+      v_c05f[ k ]->set_ComputeConfig( cfg );
+     }
 
    // if easy components can be dynamically changed, attach a FakeSolver to
    // the inner Block of each LagBFunction to record the changes
@@ -1333,11 +1347,11 @@ void BundleSolver::set_Block( Block * block )
  // if the non-easy ComputeConfig is provided, apply it.
  //
  // in all cases, set the global pool size, *after* having configured them.
- // this is necessary in that with BPar2 == 0, BundleSolver just takes whatever
- // size of the global pool it finds in the C05Function (that may have been
- // just set by the non-easy ComputeConfig). with BPar2 > 0, instead,
- // BundleSolver ensures that the size of the global pool is *at least* BPar2
- // by increasing it if it is below. this means that:
+ // this is necessary in that with BPar2 == 0, BundleSolver just takes
+ // whatever size of the global pool it finds in the C05Function (that may
+ // have been just set by the non-easy ComputeConfig). with BPar2 > 0,
+ // instead, BundleSolver ensures that the size of the global pool is *at
+ // least* BPar2 by increasing it if it is below. this means that:
  // - BundleSolver never *decreases* the size of the global pool
  // - BundleSolver only uses the first BPar2 linearizations in each global
  //   pool; if there are more, the other ones are ignored
@@ -1364,9 +1378,19 @@ void BundleSolver::set_Block( Block * block )
   if( NrEasy && IsEasy[ k ] )
    continue;
 
-  // set the "easy" ComputeConfig, if any
-  if( hCC )
-   v_c05f[ k ]->set_ComputeConfig( hCC->clone() );
+  // ComputeConfig-ure the non-easy component
+  ComputeConfig * cfg = nullptr;
+  if( ( k < Index( CmpCfg.size() ) ) && ( ! CmpCfg[ k ].empty() ) ) {
+   auto tcfg = Configuration::deserialize( CmpCfg[ k ] );
+   if( ! ( cfg = dynamic_cast< ComputeConfig * >( tcfg ) ) )
+    delete tcfg;
+   }
+
+  if( ( ! cfg ) && hCC )
+   cfg = hCC->clone();
+
+  if( cfg )
+   v_c05f[ k ]->set_ComputeConfig( cfg );
 
   // ensure that the accuracy of multipliers is at least eps
   if( v_c05f[ k ]->get_dbl_par( C05Function::dblAAccMlt ) > eps )
@@ -1809,6 +1833,17 @@ void BundleSolver::set_par( idx_type par , std::vector< int > && value )
  }
 
 /*--------------------------------------------------------------------------*/
+
+void BundleSolver::set_par( idx_type par ,
+			    std::vector< std::string > && value )
+{
+ if( par == vstrCmpCfg )
+  CmpCfg = std::move( value );
+ else
+  CDASolver::set_par( par , std::move( value ) );
+ }
+
+/*--------------------------------------------------------------------------*/
 /*--------------------------------- METHODS --------------------------------*/
 /*--------------------------------------------------------------------------*/
 
@@ -1946,6 +1981,17 @@ const std::vector< int > & BundleSolver::get_vint_par( idx_type par ) const
   return( NoEasy );
 
  return( CDASolver::get_vint_par( par ) );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+const std::vector< std::string > & BundleSolver::get_vstr_par( idx_type par )
+ const
+{
+ if( par == vstrCmpCfg )
+  return( CmpCfg );
+
+ return( CDASolver::get_vstr_par( par ) );
  }
 
 /*--------------------------------------------------------------------------*/
@@ -2676,7 +2722,7 @@ bool BundleSolver::FiAndGi( Index wFi )
 
  if( f_log && ( LogVerb > 3 ) )
   *f_log << std::endl << "            Component " << wFi
-	 << "evaluated: UB = "<< def << ue << ", LB = " << le << std::endl;
+	 << " evaluated: UB = "<< def << ue << ", LB = " << le << std::endl;
  
  // update UpFiLambd1[ wFi ] (and possibly UpFiLambd1[ NrFi ])
  update_UpFiLambd1( wFi , f_convex ? ue : - le );
@@ -3701,12 +3747,13 @@ void BundleSolver::guts_of_destructor( void )
  if( NrEasy ) {  // if there are "easy" components, delete the MILPSolver
   if( DoEasy & ~1 ) {
    // if easy components can be changed, before doing this unregister the
-   // MILPSolver from the inner Block (since it is registered there), and
-   // meanwhile unregister also the FakeSolver that is registered there as well
+   // MILPSolver from the inner Block (since it is registered there);
+   // meanwhile unregister the FakeSolver that is also registered there
    auto FSit = v_FakeSolver.begin();
    for( Index k = 0 ; k < NrFi ; ++k )
     if( IsEasy[ k ] ) {
-     auto iB = static_cast< LagBFunction * >( v_c05f[ k ] )->get_inner_block();
+     auto iB = static_cast< LagBFunction * >(
+					   v_c05f[ k ] )->get_inner_block();
      iB->unregister_Solver( *(FSit++) , true );
      iB->unregister_Solver( IsEasy[ k ] , true );
      }
