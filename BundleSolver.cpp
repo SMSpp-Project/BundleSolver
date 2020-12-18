@@ -1010,6 +1010,14 @@ void BundleSolver::set_Block( Block * block )
  if( ! f_Block )  // that was actually clearing the Block
   return;         // all done
 
+ // lock the Block - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ 
+ bool owned = f_Block->is_owned_by( f_id );
+ if( ( ! owned ) && ( ! f_Block->lock( f_id ) ) )
+  throw( std::runtime_error(
+                       "LagrangianDualSolver: unable to lock the Block" ) );
+
  /* Two types of block can be handled by the BundleSolver:
 
      1. Only one single non-smooth function
@@ -1591,7 +1599,13 @@ void BundleSolver::set_Block( Block * block )
  #if CHECK_DS & 4
   CheckAlpha();
  #endif
- 
+
+ // finally, release the Block - - - - - - - - - - - - - - - - - - - - - - - -
+ //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+ if( ! owned )
+  f_Block->unlock( f_id );
+
  }  // end( BundleSolver::set_Block )
 
 /*--------------------------------------------------------------------------*/
