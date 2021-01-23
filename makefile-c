@@ -64,8 +64,8 @@ include $(BNDSLVSDR)/makefile
 # append external stuff defined in the other makefiles to BNDSLVOBJ,
 # BNDSLVINC and BNDSLVH, thus the := assignment has to be used (use GNU make)
 BNDSLVOBJ := $(BNDSLVOBJ) $(MILPSOBJ) $(libNDOOBJ)
-BNDSLVINC := $(BNDSLVINC) $(libNDOINC) $(MILPSINC) 
-BNDSLVH := $(BNDSLVH) $(libNDOH) 
+BNDSLVINC := $(BNDSLVINC) $(MILPSINC) $(libNDOINC)
+BNDSLVH := $(BNDSLVH) $(MILPSH) $(libNDOH) 
 
 # external libreries for BundleSolver
 BNDSLVLIB = $(libNDOLIB) $(MILPSLIB)

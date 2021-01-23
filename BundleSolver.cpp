@@ -2605,6 +2605,11 @@ void BundleSolver::InnerLoop( void )
   if( FiAndGi( f_wFi ) )
    insrtd = true;
 
+  if( ( FiStatus[ f_wFi ] <= kUnEval ) || ( FiStatus[ f_wFi ] >= kError ) ) {
+   Result = kError;
+   return;
+   }
+
   if( ! CurrNrEvls[ f_wFi ] )  // not evaluated before
    ++ceval;                    // one more evaluated
   ++CurrNrEvls[ f_wFi ];       // evaluated once more
@@ -2730,7 +2735,9 @@ bool BundleSolver::FiAndGi( Index wFi )
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
  FiStatus[ wFi ] = fwFi->compute( ( FiStatus[ wFi ] == kUnEval ) );
-
+ if( ( FiStatus[ wFi ] <= kUnEval ) || ( FiStatus[ wFi ] >= kError ) )
+  return( false );
+  
  auto ue = fwFi->get_upper_estimate();
  auto le = fwFi->get_lower_estimate();
 
@@ -5375,6 +5382,7 @@ void BundleSolver::process_outstanding_Modification( void )
  for( ; ! v_mod_tmp.empty() ; v_mod_tmp.pop_front() ) {
   auto mod = v_mod_tmp.front();  // pick the first Modification
 
+  Index wFi;                     // the affected component
   Range range( NumVar , 0 );     // an empty range
   c_Subset * subset = nullptr;   // an empty subset
   c_Vec_p_Var * vars;            // the affected Variable
@@ -5388,6 +5396,7 @@ void BundleSolver::process_outstanding_Modification( void )
    if( ! tmod->which().empty() )
     throw( std::logic_error( "unexpected nonempty C05FunctionModRngd" ) );
 
+   wFi = get_index_of_component( tmod->function() );
    vars = & tmod->vars();
    range = tmod->range();
    }
@@ -5398,6 +5407,7 @@ void BundleSolver::process_outstanding_Modification( void )
    if( ! tmod->which().empty() )
     throw( std::logic_error( "unexpected nonempty C05FunctionModSbst" ) );
 
+   wFi = get_index_of_component( tmod->function() );
    vars = & tmod->vars();
    subset = & tmod->subset();
    }
@@ -5406,6 +5416,7 @@ void BundleSolver::process_outstanding_Modification( void )
   // linearizations must be changed (by adding something)
   if( const auto tmod =
       std::dynamic_pointer_cast< C05FunctionModLinRngd >( mod ) ) {
+   wFi = get_index_of_component( tmod->function() );
    vars = & tmod->vars();
    range = tmod->range();
    }
@@ -5414,6 +5425,7 @@ void BundleSolver::process_outstanding_Modification( void )
   // linearizations must be changed (by adding something)
   if( const auto tmod =
       std::dynamic_pointer_cast< C05FunctionModLinSbst >( mod ) ) {
+   wFi = get_index_of_component( tmod->function() );
    vars = & tmod->vars();
    subset = & tmod->subset();
    }
@@ -5491,7 +5503,7 @@ void BundleSolver::process_outstanding_Modification( void )
    }
 
   // now actually do it
-  Master->ChgSubG( range.first , range.second , NrFi + 1 );
+  Master->ChgSubG( range.first , range.second , wFi + 1 );
 
   }  // end( 5th loop, forward )
 
