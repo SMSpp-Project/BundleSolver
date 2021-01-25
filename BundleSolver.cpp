@@ -1864,7 +1864,8 @@ void BundleSolver::set_par( idx_type par ,
 void BundleSolver::set_log( std::ostream * log_stream )
 {
  f_log = log_stream;
- Master->SetMPLog( f_log , MPlvl );
+ if( Master )
+  Master->SetMPLog( f_log , MPlvl );
  }
 
 /*--------------------------------------------------------------------------*/
@@ -3343,6 +3344,9 @@ void BundleSolver::InitMP( void )
 
  if( MPName & 8 )
   Master->CheckIdentical();
+
+ // set the log file
+ Master->SetMPLog( f_log , MPlvl );
 
  }  // end( BundleSolver::InitMP )
 
@@ -4825,12 +4829,25 @@ void BundleSolver::process_outstanding_Modification( void )
  // (meaning it is found afterwards in the reverse order) is deleted since it
  // is useless.
  //
- // note that, due to limitations in the MPSolver interface, changing a
- // linearization implies changing its constant; therefore, reset[ k ] == true
- // means that everything is changing. when reset[ k ] == true we take
- // AlphaC[ k ] == false since in this case che change of constants is not
- // needed because it is implied by the soft reset. thus, AlphaC[ k ] == true
- // means that only the constants need be changed, but not all the rest
+ // note that the linearization error of a linearization depends on both the
+ // initial constant (\alpha), the linearization itself (g) and the current
+ // stability centre (Lambda); thus, if any of those changes, the
+ // linearization error need be recomputed. hence reset[ k ] == true
+ // implies AlphaC[ k ] == true; the reverse implication does not hold, i.e.,
+ // AlphaC[ k ] == true with reset[ k ] == false is possible and it means
+ // that only the constants need be changed, but not all the rest. in this
+ // loop we consider changes of \alpha and g, while in the 4th loop we will
+ // consider changes of Lambda due to the removal of variables; additions
+ // never create problems since new variables are always initialized to 0, and
+ // therefore they never change the existing linearization error. in fact, not
+ // all changes of g necessarily change the linearization error: if a
+ // component g_i changes such that Lambda_i == 0, this has no impact. however,
+ // in this reverse loop the map between the Lambda[] vector and the indices
+ // in the Modification is nontrivial (if additions/removals happened), which
+ // makes checking this too complicated. anyway, the issue will go away in the
+ // version of BundleSolver that does not use MPSolver since there the
+ // linearizations will (likely) be represented by means of their "naked"
+ // constant \alpha rather than by their linearization error
  //
  // note that Modification changing the linearizations happening *after* a
  // "soft" reset of the global pool (meaning it is found *before* in the
@@ -4874,17 +4891,15 @@ void BundleSolver::process_outstanding_Modification( void )
   // any such C05FunctionModRngd has been deleted already. however, if the
   // component is "soft" reset already, it can be deleted
   //
-  // the Modification can also change constants, so this has to be checked.
-  // if the Modification changes all the constants and the component is
-  // reset already, it can be deleted
+  // AllEntriesChanged and AllLinearizationChanged are equivalent, since
+  // even if only g changes, also the linearization error does (unless it
+  // only changes in places where Lambda == 0, but this cannot be checked
+  // efficiently)
   if( const auto tmod =
       std::dynamic_pointer_cast< C05FunctionModRngd >( mod ) ) {
    auto wFi = get_index_of_component( tmod->function() );
    switch( tmod->type() ) {
     case( C05FunctionMod::AllEntriesChanged ):
-     if( reset[ wFi ] )            // component reset already
-      to_delete = true;            // nothing else to do
-     continue;
     case( C05FunctionMod::AllLinearizationChanged ):
      if( tmod->which().empty() ) {  // reset of the constants
       if( reset[ wFi ] )            // component reset already
@@ -4905,14 +4920,16 @@ void BundleSolver::process_outstanding_Modification( void )
   // at detecting this. the only easy case would be NothingChanged, but
   // any such C05FunctionModSbst has been deleted already. however, if the
   // component is "soft" reset already, it can be deleted
+  //
+  // AllEntriesChanged and AllLinearizationChanged are equivalent, since
+  // even if only g changes, also the linearization error does (unless it
+  // only changes in places where Lambda == 0, but this cannot be checked
+  // efficiently)
   if( const auto tmod =
       std::dynamic_pointer_cast< C05FunctionModSbst >( mod ) ) {
    auto wFi = get_index_of_component( tmod->function() );
    switch( tmod->type() ) {
     case( C05FunctionMod::AllEntriesChanged ):
-     if( reset[ wFi ] )            // component reset already
-      to_delete = true;            // nothing else to do
-     continue;
     case( C05FunctionMod::AllLinearizationChanged ):
      if( tmod->which().empty() ) {  // reset of the constants
       if( reset[ wFi ] )            // component reset already
@@ -4927,8 +4944,8 @@ void BundleSolver::process_outstanding_Modification( void )
    }  // end( if( ttmod - C05FunctionModSbst ) )
 
   // a C05FunctionMod of type AllLinearizationChanged or AllEntriesChanged
-  // with which.empty() "soft" resets all the component, and in the former
-  // case also Alpha; AlphaChanged only changes the constants (obviously)
+  // with which.empty() "soft" resets all the component and Alpha;
+  // AlphaChanged only changes the constants (obviously)
   if( const auto tmod =
       std::dynamic_pointer_cast< C05FunctionMod >( mod ) ) {
    if( ! tmod->which().empty() )   // we only react to which().empty()
@@ -4942,7 +4959,7 @@ void BundleSolver::process_outstanding_Modification( void )
      break;
     case( C05FunctionMod::AllEntriesChanged ):
     case( C05FunctionMod::AllLinearizationChanged ):
-     reset[ wFi ] = AlphaC[ wFi ] = true;
+     reset[ wFi ] = AlphaC[ wFi ] = false;
      break;
     default:  // this must not happen, as GlobalPoolRemoved with
               // which.empty() has been dealt with and deleted before
@@ -4960,13 +4977,19 @@ void BundleSolver::process_outstanding_Modification( void )
   // (almost) all the variables, which would count as a reset, but so far
   // we don't attempt at detecting this. however, if the component is "soft"
   // reset already, it can be deleted
+  //
+  // again, on the grounds that changing the linearization (presumably)
+  // changes the linearization errors as well, this also resets all the
+  // Alpha
   if( const auto tmod =
       std::dynamic_pointer_cast< C05FunctionModLinRngd >( mod ) ) {
    auto wFi = get_index_of_component( tmod->function() );
-    if( reset[ wFi ] )
-     to_delete = true;
-    continue;
-    }  // end( if( ttmod - C05FunctionModLinRngd ) )
+   if( reset[ wFi ] )            // component reset already
+    to_delete = true;            // nothing else to do
+   else                          // component not reset
+    AlphaC[ wFi ] = true;        // reset the constants
+   continue;
+   }  // end( if( ttmod - C05FunctionModLinRngd ) )
 
   // a C05FunctionModLinSbst implies that a specific subset in all the
   // linearizations must be changed by adding; this is never considered a
@@ -4974,11 +4997,17 @@ void BundleSolver::process_outstanding_Modification( void )
   // (almost) all the variables, which would count as a reset, but so far
   // we don't attempt at detecting this. however, if the component is "soft"
   // reset already, it can be deleted
+  //
+  // again, on the grounds that changing the linearization (presumably)
+  // changes the linearization errors as well, this also resets all the
+  // Alpha
   if( const auto tmod =
       std::dynamic_pointer_cast< C05FunctionModLinSbst >( mod ) ) {
    auto wFi = get_index_of_component( tmod->function() );
-   if( reset[ wFi ] )
-    to_delete = true;
+   if( reset[ wFi ] )            // component reset already
+    to_delete = true;            // nothing else to do
+   else                          // component not reset
+    AlphaC[ wFi ] = true;        // reset the constants
    continue;
    }  // end( if( ttmod - C05FunctionModLinSbst ) )
 
@@ -5000,7 +5029,7 @@ void BundleSolver::process_outstanding_Modification( void )
 
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // 3rd loop, forward: prepare for addition/removal/changes of individual
- // linearization for each component by computing the three sets
+ // linearization for each component by computing the four sets
  // - linearizations that need be removed
  // - linearizations that need be added
  // - linearizations that need be changed
@@ -5197,7 +5226,23 @@ void BundleSolver::process_outstanding_Modification( void )
  // once (if ever) after the end of the cycle. removals of Variable that have
  // not been added yet just decreases the number of new Variable to be added
  // at the end. all corresponding Modification are removed from the list
-
+ //
+ // this loop may also force some linearization errors to be reset since they
+ // depends ot only on the initial constant (\alpha), but also from the
+ // linearization itself (g) and the current stability centre (Lambda); if
+ // any of those changes, the linearization error need be recomputed. in this
+ // loop we consider changes of Lambda due to the removal of variables, while
+ // additions never create this problem since new variables are always
+ // initialized to 0, and therefore they never change the existing
+ // linearization error per-se (recall that changes in \alpha and g were
+ // already handled by the 2nd loop). note, however, that not all changes of
+ // Lambda necessarily change the linearization error: if a Lambda_i == 0 is
+ // removed, this has no impact. because this loop (unlike the 2nd one) is
+ // forward and does deletions immediately, Lambda is always "in synch" with
+ // the indices of the Modification and therefore the check can be easily
+ // done. this is all the more important since variables are removed in
+ // parallel for all components, hence if a variable with Lambda_i != 0 is
+ // removed then all the linearization errors must be reset
  Index to_add = 0;
  bool addd_vars = false;  // if any Variable has ever been added
  bool rmvd_vars = false;  // if any Variable has ever been removed
@@ -5261,6 +5306,15 @@ void BundleSolver::process_outstanding_Modification( void )
      rmvd_vars = true;
      Range rng = ttmod->range();
 
+     // if any of the deleted Variable is nonzero, the linearization errors
+     // will have to be recomputed for all components
+     for( Index i = std::min( rng.first , NumVar ) ;
+	  i < std::min( rng.second , NumVar ) ; ++i )
+      if( std::abs( Lambda[ i ] ) > 1e-12 ) {
+       std::fill( AlphaC.begin() , AlphaC.end() , true );
+       break;
+       }
+
      if( ( rng.first == 0 ) && ( rng.second >= NumVar ) ) {
       NumVar = 0;                      // deleting *all* Variable
       Lambda.clear();
@@ -5308,6 +5362,14 @@ void BundleSolver::process_outstanding_Modification( void )
      rmvd_vars = true;
 
      if( ttmod->subset().empty() ) {  // deleting *all* Variable
+      // if any Variable is nonzero, the linearization errors
+      // will have to be recomputed for all components
+      for( auto & el : Lambda )
+       if( std::abs( el ) > 1e-12 ) {
+	std::fill( AlphaC.begin() , AlphaC.end() , true );
+	break;
+        }
+
       NumVar = 0;
       Lambda.clear();
       Lambda1.clear();
@@ -5322,6 +5384,18 @@ void BundleSolver::process_outstanding_Modification( void )
        throw( std::logic_error( "removing non-existing Variable" ) );
       to_add -= ttmod->subset().size();  // "virtually" remove them
       continue;                          // nothing else to do
+      }
+
+     // if any of the deleted Variable is nonzero, the linearization errors
+     // will have to be recomputed for all components
+     for( auto el : ttmod->subset() ) {
+      if( el >= NumVar )
+       break;
+
+      if( std::abs( Lambda[ el ] ) > 1e-12 ) {
+       std::fill( AlphaC.begin() , AlphaC.end() , true );
+       break;
+       }
       }
 
      Subset tsbst;
@@ -5399,6 +5473,7 @@ void BundleSolver::process_outstanding_Modification( void )
    wFi = get_index_of_component( tmod->function() );
    vars = & tmod->vars();
    range = tmod->range();
+   goto done;
    }
 
   // a C05FunctionModSbst, that at this point can only have which().empty()
@@ -5410,6 +5485,7 @@ void BundleSolver::process_outstanding_Modification( void )
    wFi = get_index_of_component( tmod->function() );
    vars = & tmod->vars();
    subset = & tmod->subset();
+   goto done;
    }
 
   // a C05FunctionModLinRngd implies that a specific range in all the
@@ -5419,22 +5495,25 @@ void BundleSolver::process_outstanding_Modification( void )
    wFi = get_index_of_component( tmod->function() );
    vars = & tmod->vars();
    range = tmod->range();
+   goto done;
    }
 
   // a C05FunctionModLinSbst implies that a specific subset in all the
   // linearizations must be changed (by adding something)
   if( const auto tmod =
-      std::dynamic_pointer_cast< C05FunctionModLinSbst >( mod ) ) {
+	   std::dynamic_pointer_cast< C05FunctionModLinSbst >( mod ) ) {
    wFi = get_index_of_component( tmod->function() );
    vars = & tmod->vars();
    subset = & tmod->subset();
+   goto done;
    }
 
-  if( ( range.first >= range.second ) && ( ! subset ) )
-   // it is neither of the above: this should not happen
-   throw( std::logic_error( "unexpected Modification slipped in" ) );
+  // it is neither of the above: this should not happen
+  throw( std::logic_error( "unexpected Modification slipped in" ) );
 
-  if( ! rmvd_vars ) {
+  // the range/subset (and component) have been identified: check if the
+  // need to be translated due to addition/removals, and in case do it
+  done:if( ! rmvd_vars ) {
    // Variable have never been removed, hence the names can be used directly
    if( subset ) {  // turn the subset into a range
     range.first = subset->front();
