@@ -1583,7 +1583,7 @@ public:
   if( name == "strHardCfg" )
    return( strHardCfg );
 
-  return( CDASolver::vint_par_str2idx( name ) );
+  return( CDASolver::str_par_str2idx( name ) );
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
