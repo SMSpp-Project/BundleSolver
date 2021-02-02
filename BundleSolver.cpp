@@ -2890,7 +2890,7 @@ bool BundleSolver::FiAndGi( Index wFi )
     else
      *f_log << "subgradient";
     *f_log << " for Fi[ " << wFi << " ] ~ Alfa1 = " << Alfa1k
-	   << " ~ gd = " << - ScPr1k;
+	   << " ~ gd = " << rs( ScPr1k );
     }
    else
     *f_log << "constraint " << wh << " ~ rhs = " << Alfa1k;
@@ -3247,7 +3247,7 @@ void BundleSolver::Log2( void )
     *f_log << " - INF" << std::endl;
    else
     *f_log << UpFiLmb1.back() << shrt << " ~ Alfa1 = " << Alfa1.back()
-	   << " ~ Gi1xd = " << - ScPr1.back() << std::endl;
+	   << " ~ Gi1xd = " << ScPr1.back() << std::endl;
   }
  else
   if( UpFiLmb1.back() <= - INFshift )
@@ -3687,6 +3687,15 @@ Index BundleSolver::FindAPlace( Index wFi )
  }  // end( BundleSolver::FindAPlace )
 
 /*--------------------------------------------------------------------------*/
+/* These heuristics consider what we know about the translated cutting plane
+ * model along d after the function has been computed:
+ *
+ * q[ 0 ] = 0
+ * M[ t ] = DeltaFi
+ * q'[ 0 ] = 
+
+ */
+
 
 HpNum BundleSolver::Heuristic1( void )
 {
