@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+Several major improvements:
+
+- restructured stopping conditions, with a new one on the norm (INF, 1 or 2)
+  of zStar, possibly relative to subgradient ; tStar anyway remains the driver
+  of t-strategies.
+
+- BundleSolver now detects when "zStar == 0" (see previous point) and uses
+  this to algorithmically produce globally valid lower bounds
+
+- BundleSolver now checks if the objectives are (all) convex or concave and
+  adapts accordingly (by sneakily converting the concave problem internally
+  into a convex one and adapting the results on the fly when they go out).
+
+- Box constraints are now handled, either by means of NNConstraint/BoxConstraint
+  or as NN constraints "inherent" in the ColVariable
+
+- Changes in the costs or RHS/bounds in easy components now are allowed and managed.
+
+- Changes in the 0-th component now allowed
+
+- Added hooks for perspective handling of changes in easy components
+
+- Complete rehaul of Modification in "easy" components
+
+- Better bad termination reporting
+
+- Allowing to switch away Cplex
+
+- Added ComputeConfig for hard and easy and NoEasy
+
+- Added individual Configurations
+
+### Fixed
+
+- Many fixes throughout the code, too many to list
+
 ## [0.3.0] - 2020-09-16
 
 ### Changed
