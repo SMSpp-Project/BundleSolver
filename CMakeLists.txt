@@ -39,7 +39,7 @@ get_directory_property(hasParent PARENT_DIRECTORY)
 # This creates an ENABLE_TESTING option (default: ON) and enables the testing
 # using the ctest executable.
 # See: https://cmake.org/cmake/help/latest/manual/ctest.1.html
-include(CTest)
+#include(CTest)
 
 # ----- Requirements -------------------------------------------------------- #
 find_package(MILPSolver REQUIRED)
@@ -94,7 +94,7 @@ add_library(${modNamespace}::${modName} ALIAS ${modName})
 
 # ----- Subdirectories ------------------------------------------------------ #
 if (BUILD_TESTING)
-    add_subdirectory(Main)
+#    add_subdirectory(test)
 endif ()
 
 # ----- Install instructions ------------------------------------------------ #
