@@ -15,7 +15,7 @@ cache:
 stages:
   - build
 #  - test
-#  - deploy
+  - deploy
 
 # This job is executed as first (.pre stage)
 fetch_deps:
@@ -42,6 +42,15 @@ fetch_deps:
     - if [ -d milpsolver ]; then (cd milpsolver && git checkout ${BRANCH_TO_USE} && git pull); else git clone --branch ${BRANCH_TO_USE} git@gitlab.com:smspp/milpsolver.git; fi
     - cmake -S milpsolver -B milpsolver/build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF
     - cmake --build milpsolver/build
+  only:
+    refs:
+      - master
+      - develop
+    changes:
+      - cmake/*
+      - BundleSolver.h
+      - BundleSolver.cpp
+      - CMakeLists.txt
 
 build:
   stage: build
@@ -55,6 +64,15 @@ build:
   artifacts:
     paths:
       - build
+  only:
+    refs:
+      - master
+      - develop
+    changes:
+      - cmake/*
+      - BundleSolver.h
+      - BundleSolver.cpp
+      - CMakeLists.txt
 
 #test:
 #  stage: test
@@ -65,14 +83,14 @@ build:
 #  script:
 #    - cmake --build build --target test
 
-#deploy:
-#  stage: deploy
-#  script:
-#    - cd build && cpack -G "TGZ;ZIP;TBZ2"
-#  artifacts:
-#    paths:
-#      - build/*.tar.gz
-#      - build/*.tar.bz2
-#      - build/*.zip
-#  only:
-#    - tags
+deploy:
+  stage: deploy
+  script:
+    - cd build && cpack -G "TGZ;ZIP;TBZ2"
+  artifacts:
+    paths:
+      - build/*.tar.gz
+      - build/*.tar.bz2
+      - build/*.zip
+  only:
+    - tags
