@@ -15,7 +15,7 @@ cache:
 stages:
   - build
 #  - test
-  - deploy
+#  - deploy
 
 # This job is executed as first (.pre stage)
 fetch_deps:
@@ -44,8 +44,8 @@ fetch_deps:
     - cmake --build milpsolver/build
   only:
     refs:
-      - master
       - develop
+      - tags
     changes:
       - cmake/*
       - BundleSolver.h
@@ -66,8 +66,8 @@ build:
       - build
   only:
     refs:
-      - master
       - develop
+      - tags
     changes:
       - cmake/*
       - BundleSolver.h
@@ -83,14 +83,14 @@ build:
 #  script:
 #    - cmake --build build --target test
 
-deploy:
-  stage: deploy
-  script:
-    - cd build && cpack -G "TGZ;ZIP;TBZ2"
-  artifacts:
-    paths:
-      - build/*.tar.gz
-      - build/*.tar.bz2
-      - build/*.zip
-  only:
-    - tags
+#deploy:
+#  stage: deploy
+#  script:
+#    - cd build && cpack -G "TGZ;ZIP;TBZ2"
+#  artifacts:
+#    paths:
+#      - build/*.tar.gz
+#      - build/*.tar.bz2
+#      - build/*.zip
+#  only:
+#    - tags
