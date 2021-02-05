@@ -21,7 +21,7 @@
 # --------------------------------------------------------------------------- #
 cmake_minimum_required(VERSION 3.11)
 project(BundleSolver
-        VERSION 0.3.0
+        VERSION 0.4.0
         DESCRIPTION "SMS++ BundleSolver module"
         HOMEPAGE_URL https://gitlab.com/smspp/bundlesolver
         LANGUAGES C CXX)
