@@ -10,20 +10,20 @@
 #   Note that, conversely, $(SMS++INC) is also assumed to include any        #
 #   -I directive corresponding to external libraries needed by SMS++, at     #
 #   least to the extent in which they are needed by the parts of SMS++       #
-#   used by MCFSolver.                                                       #
+#   used by BundleSolver.                                                    #
 #                                                                            #
 #   Input:  $(CC)          = compiler command                                #
 #           $(SW)          = compiler options                                #
 #           $(SMS++INC)    = the -I$( core SMS++ directory )                 #
 #           $(SMS++OBJ)    = the core SMS++ library                          #
-#           $(BNDSLVSDR)  = the directory where the source is                #
+#           $(BNDSLVSDR)   = the directory where the source is               #
 #                                                                            #
-#   Output: $(BNDSLVOBJ) = the final object(s) / library                     #
-#           $(BNDSLVH)   = the .h files to include                           #
-#           $(BNDSLVINC) = the -I$( source directory )                       #
+#   Output: $(BNDSLVOBJ)   = the final object(s) / library                   #
+#           $(BNDSLVH)     = the .h files to include                         #
+#           $(BNDSLVINC)   = the -I$( source directory )                     #
 #                                                                            #
-#                                VERSION 1.00                                #
-#                               13 - 05 - 2019                               #
+#                                VERSION 1.01                                #
+#                               30 - 12 - 2020                               #
 #                                                                            #
 #                              Antonio Frangioni                             #
 #                               Enrico Gorgone                               #
@@ -33,8 +33,7 @@
 #                                                                            #
 ##############################################################################
 
-
-# macroes to be exported- - - - - - - - - - - - - - - - - - - - - - - - - - -
+# macros to be exported - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 BNDSLVOBJ = $(BNDSLVSDR)BundleSolver.o 
 

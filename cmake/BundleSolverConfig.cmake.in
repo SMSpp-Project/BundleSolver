@@ -14,22 +14,16 @@
 #                         Dipartimento di Informatica                         #
 #                             Universita' di Pisa                             #
 # --------------------------------------------------------------------------- #
-get_filename_component(BundleSolver_CMAKE_DIR "${CMAKE_CURRENT_LIST_FILE}" PATH)
+get_filename_component(@modName@_CMAKE_DIR "${CMAKE_CURRENT_LIST_FILE}" PATH)
 include(CMakeFindDependencyMacro)
 
 # ----- Requirements -------------------------------------------------------- #
-# This is needed to find the custom modules we provide
-list(APPEND CMAKE_MODULE_PATH ${BundleSolver_CMAKE_DIR})
-
-find_dependency(SMSpp REQUIRED)
-find_dependency(MILPSolver REQUIRED)
-find_dependency(NDOFiOracle REQUIRED)
-
-list(REMOVE_AT CMAKE_MODULE_PATH -1)
+find_dependency(MILPSolver)
+find_dependency(NDOFiOracle)
 
 # ----- Import target ------------------------------------------------------- #
-if (NOT TARGET SMS++::BundleSolver)
-    include("${BundleSolver_CMAKE_DIR}/BundleSolverTargets.cmake")
-endif ()
+if (NOT TARGET @modNamespace@::@modName@)
+    include("${@modName@_CMAKE_DIR}/@modName@Targets.cmake")
+endif()
 
-set(BundleSolver_LIBRARIES SMS++::BundleSolver)
+set(@modName@_LIBRARIES @modNamespace@::@modName@)

@@ -4,9 +4,9 @@
 /** @file
  * Implementation of the BunldeSolver class.
  *
- * \version 0.31
+ * \version 0.50
  *
- * \date 20 - 08 - 2020
+ * \date 14 - 10 - 2020
  *
  * \author Antonio Frangioni \n
  *         Operations Research Group \n
@@ -36,11 +36,9 @@
 
 #include "OSIMPSolver.h"
 
-#include "ilcplex/cplex.h"
-
-#include "OsiCpxSolverInterface.hpp"
-
 #include "OsiClpSolverInterface.hpp"
+
+#include <iomanip>
 
 /*--------------------------------------------------------------------------*/
 /*-------------------------------- MACROS ----------------------------------*/
@@ -61,6 +59,20 @@
 
 #if USE_MPTESTER
  #include "MPTester.h"
+#endif
+
+/*--------------------------------------------------------------------------*/
+
+#define USE_CPLEX 1
+
+// if USE_CPLEX is nonzero, the OsiSolverInterface used in OSIMPSolver can be
+// a OsiCpxSolverInterface; this requires some includes that can be avoided
+// otherwise (and that someone may not have and therefore may want to avoid)
+
+#if USE_CPLEX
+ #include "ilcplex/cplex.h"
+
+ #include "OsiCpxSolverInterface.hpp"
 #endif
 
 /*--------------------------------------------------------------------------*/
@@ -102,6 +114,24 @@ using namespace SMSpp_di_unipi_it;
 
 /*--------------------------------------------------------------------------*/
 /*-------------------------------- FUNCTIONS -------------------------------*/
+/*--------------------------------------------------------------------------*/
+// set precision for long floats (10 digits)
+
+static inline std::ostream & def( std::ostream& os ) {
+ os.setf( ios::scientific, ios::floatfield );
+ os << setprecision( 10 );
+ return( os );
+ }
+
+/*--------------------------------------------------------------------------*/
+// set precision for short floats (2 digits)
+
+static inline std::ostream & shrt( std::ostream& os ) {
+ os.setf( ios::scientific, ios::floatfield );
+ os << setprecision( 2 );
+ return( os );
+ }
+
 /*--------------------------------------------------------------------------*/
 
 static void Compact( BundleSolver::Vec_VarValue & g ,
@@ -223,6 +253,38 @@ static void set_union_in_place( BundleSolver::Subset & S1 ,
  }  // end( set_union_in_place )
 
 /*--------------------------------------------------------------------------*/
+
+static double norm( std::vector< double > & v , char t )
+{
+ double res = 0;
+ if( t == 0 ) {    // INF-norm
+  for( auto el : v )
+   if( std::abs( el ) > res )
+    res = std::abs( el );
+  }
+ else
+  if( t == 1 )    // 1-norm
+   for( auto el : v )
+    res += std::abs( el );
+  else {          // 2-norm
+   for( auto el : v )
+    res += el * el;
+
+   res = sqrt(  res );
+   }
+
+ return( res );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+static void chgsign( double * v , Index n )
+{
+ for( const auto ev = v + n ; v < ev ; ++v )
+  *v = - *v;
+ }
+
+/*--------------------------------------------------------------------------*/
 /*----------------------------- STATIC MEMBERS -----------------------------*/
 /*--------------------------------------------------------------------------*/
 
@@ -242,7 +304,8 @@ const std::vector< std::string > BundleSolver::int_pars_str = {
  "intMnNSC" ,
  "inttSPar1" ,
  "intMaxNrEvls" ,
- "intNoEasy" ,
+ "intDoEasy" ,
+ "intWZNorm" ,
  "intMPName" ,
  "intMPlvl" ,
  "intQPmp1" ,
@@ -255,10 +318,9 @@ const std::vector< std::string > BundleSolver::int_pars_str = {
 
 // define and initialize here the vector of double parameters names
 const std::vector< std::string > BundleSolver::dbl_pars_str = {
+ "dblNZEps" ,
  "dbltStar" ,
  "dblMinNrEvls" ,
- "dblRelMPAcc" ,
- "dblRMPAccSol" ,
  "dblBPar5" ,
  "dblm1" ,
  "dblm2" ,
@@ -274,6 +336,12 @@ const std::vector< std::string > BundleSolver::dbl_pars_str = {
  "dblCtOff"
  };
 
+// define and initialize here the vector of string parameters names
+const std::vector< std::string > BundleSolver::str_pars_str = {
+ "strEasyCfg" ,
+ "strEasyCfg"
+ };
+
 // define and initialize here the map for int parameters names
 const std::map< std::string , BundleSolver::idx_type >
  BundleSolver::int_pars_map = {
@@ -287,7 +355,8 @@ const std::map< std::string , BundleSolver::idx_type >
  { "intMnNSC" , BundleSolver::intMnNSC } ,
  { "inttSPar1" , BundleSolver::inttSPar1 } ,
  { "intMaxNrEvls" , BundleSolver::intMaxNrEvls } ,
- { "intNoEasy" , BundleSolver::intNoEasy } ,
+ { "intDoEasy" , BundleSolver::intDoEasy } ,
+ { "intWZNorm" , BundleSolver::intWZNorm } ,
  { "intMPName" , BundleSolver::intMPName } ,
  { "intMPlvl" , BundleSolver::intMPlvl } ,
  { "intQPmp1" , BundleSolver::intQPmp1 } ,
@@ -301,10 +370,9 @@ const std::map< std::string , BundleSolver::idx_type >
 // define and initialize here the map for double parameters names
 const std::map< std::string , BundleSolver::idx_type >
  BundleSolver::dbl_pars_map = {
+ { "dblNZEps" , BundleSolver::dblNZEps } ,
  { "dbltStar" , BundleSolver::dbltStar } ,
  { "dblMinNrEvls" , BundleSolver::dblMinNrEvls } ,
- { "dblRelMPAcc" , BundleSolver::dblRelMPAcc } ,
- { "dblRMPAccSol" , BundleSolver::dblRMPAccSol } ,
  { "dblBPar5" , BundleSolver::dblBPar5 } ,
  { "dblm1" , BundleSolver::dblm1 } ,
  { "dblm2" , BundleSolver::dblm2 } ,
@@ -332,7 +400,8 @@ const std::vector< int > BundleSolver::dflt_int_par = {
   3 ,  // intMnNSC
  12 ,  // inttSPar1
   2 ,  // intMaxNrEvls
-  0 ,  // intNoEasy
+  1 ,  // intDoEasy
+  2 ,  // intWZNorm
   0 ,  // intMPName
   0 ,  // intMPlvl
   0 ,  // intQPmp1
@@ -347,10 +416,9 @@ const std::vector< int > BundleSolver::dflt_int_par = {
 
 // define and initialize here the default double parameters
 const std::vector<double> BundleSolver::dflt_dbl_par = {
+ 0 ,      // dblNZEps
  1e+2 ,   // dbltStar
  0 ,      // dblMinNrEvls
- 1e-8 ,   // dblRelMPAcc
- 1e-8 ,   // dblRMPAccSol
  30 ,     // dblBPar5
  0.01 ,   // dblm1
  0.99 ,   // dblm2
@@ -401,10 +469,12 @@ int BundleSolver::compute( bool changedvars )
  if( ! f_Block )
   return( kBlockLocked );
 
- // start timer (so that processing Modification is included) - - - - - - - -
+ // start timer now (so that processing Modification is included) - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // ... but only if the timer is used somewhere
 
- c_start = std::clock();
+ if( EveryTTm || ( MaxTime < INFshift ) )
+  c_start = std::clock();
 
  // first, process any outstanding Modification - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -412,11 +482,17 @@ int BundleSolver::compute( bool changedvars )
  // but while the latter happens new Modification may come in; hence,
  // process_outstanding_Modification() may be called more than once
 
- while( ! v_mod.empty() ) {
+ while( num_outstanding_Modification() ) {
   bool owned = f_Block->is_owned_by( f_id );       // check if already locked
   if( ( ! owned ) && ( ! f_Block->read_lock() ) )  // if not try to read_lock
    return( kBlockLocked );                         // return error on failure
 
+  // if there are "easy" components and changing them is supported, process
+  // the corresponding Modification (stored it v_FakeSolver)
+  if( NrEasy && ( DoEasy & ~1 ) )
+   process_outstanding_easy_Modification();
+
+  // process any other Modification
   process_outstanding_Modification();
 
   if( ! owned )             // if the Block was actually read_locked
@@ -425,27 +501,43 @@ int BundleSolver::compute( bool changedvars )
 
  // initializations - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // if there is a 0-th component and the value had not been computed before
+ // (maybe because the 0-th component has changed), do it now
+ if( f_lf && ( Fi0Lmb == INFshift ) ) {
+  f_lf->compute( true );
+  Fi0Lmb = rs( f_lf->get_upper_estimate() );
+  if( UpFiLmbdef == NrFi ) {  // ready to compute the total upper bound
+   ++UpFiLmbdef;              // do so
+   UpFiLmb.back() = std::accumulate( UpFiLmb.begin() , --(UpFiLmb.end()) ,
+				     Fi0Lmb );
+   }
+  if( LwFiLmbdef == NrFi ) {  // ready to compute the total lower bound
+   ++LwFiLmbdef;              // do so
+   LwFiLmb.back() = std::accumulate( LwFiLmb.begin() , --(LwFiLmb.end()) ,
+				     Fi0Lmb );
+   }
+  }
 
+ f_wFi = 0;           // since not all components are necessarily evaluated
+                      // at all iterations, the order in which they are seen
+                      // may be important; keep track of the last evaluated
+                      // component so as to proceed round-robin-like across
+                      // multiple iterations
  double lastETT = 0;  // last "time" eEveryTTime events have been called
- ParIter = 0;
- Result = kUnEval;
- SCalls++;
- RifeqFi = ( UpRifFi == UpFiLmb );
+ ParIter = 0;         // number of iterations in this call
+ Result = kUnEval;    // still working
+ ++SCalls;            // one more call
+ RifeqFi = ( UpRifFi == UpFiLmb );  // true if the reference values are right
 
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // main cycle starts here- - - - - - - - - - - - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
- // since not all components are necessarily evaluated at all iterations, the
- // order in which they are seen may be important; keep track of the last
- // evaluated component so as to proceed round-robin-like across multiple
- // iterations
- Index wFi = 0;
 
  for(;;) {
-  // check if time is elapsed - - - - - - - - - - - - - - - - - - - - - - - -
+  // check if time is over- - - - - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-  if( elapsed() > MaxTime ) {
+  if( ( MaxTime < INFshift ) && ( get_elapsed_time() > MaxTime ) ) {
    BLOG( 1 , " ~ stop due to max time" << std::endl );
    Result = kStopTime;
    break;
@@ -454,14 +546,14 @@ int BundleSolver::compute( bool changedvars )
   // run time-periodic events - - - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-  if( EveryTTm && ( elapsed() >= lastETT + EveryTTm ) ) {
+  if( EveryTTm && ( get_elapsed_time() >= lastETT + EveryTTm ) ) {
    for( auto & ev : v_events[ eEveryTTime ] ) {
     auto res = ev();
     if( res == eStopOK ) { Result = kOK; break; }
     if( res == eStopError ) { Result = kError; break; }
     }
 
-   lastETT = elapsed();  // reset counter
+   lastETT = get_elapsed_time();  // reset counter
    }
 
   if( Result != kUnEval ) {
@@ -471,30 +563,39 @@ int BundleSolver::compute( bool changedvars )
 
   // construct the direction d- - - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
   //!! PrintBundle();
  
   FormD();
+
+  // some log - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+  Log1();
+
+  // another iteration (master problem solution)- - - - - - - - - - - - - - -
+
+  ++ParIter;
+
+  // check for "bad" termination- - - - - - - - - - - - - - - - - - - - - - -
+  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+  if( Result == kStopTime )  // time is up
+   continue;                 // return at the start and stop
+
+  if( Result == kInfeasible ) {  // the Master Problem is infeasible
+   BLOG( 1 , " ~ stop (infeasible)" << std::endl );
+   break;
+   }
 
   if( Result >= kError ) {  // problems in the Master Problem solver
    BLOG( 1 , " ~ error in the MPSolver" << std::endl );
    break;
    }
 
-  // some log - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
-  Log1();
-
-  // a real iteration (iterations where Fi() is not evaluated do not count) -
-  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
-  ParIter++;
-
   // check for optimality - - - - - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-  if( IsOptimal() ) {
-   // run optimality events
+  if( IsOptimal() ) {  // if optimality is detected
+   // run optimality events - - - - - - - - - - - - - - - - - - - - - - - - -
    int res = eContinue;
    for( auto & ev : v_events[ eBeforeTermination ] )
     if( ( res = ev() ) != eContinue )
@@ -531,32 +632,28 @@ int BundleSolver::compute( bool changedvars )
    break;
    }
 
-
   // check if "ex-ante" Noise Reduction is needed - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-  // ensure that the \sigma* is "not too negative", if it is increase t (if
+  // ensure that the Sigma* is "not too negative", if it is increase t (if
   // possible) and re-solve the MP; note that this kind of NR only happens if
   // the oracle is "unfaithful", i.e., it pretends to provide information with
   // the required accuracy but in fact it does not
-  //
-  // do the check only if Sigma is "negative enough to matter", otherwise do
-  // not even call ReadDStart()
   //
   // however, avoid doing any of this if the linearization errors are not
   // computed w.r.t. the "true" value of UpFiLmb but w.r.t. a "random"
   // reference value, since then the fact that linearization errors are
   // negative is not meaningful
 
-  if( RifeqFi && ( Sigma < - max_error( UpRifFi[ NrFi ] , RelAcc ) ) &&
-      ( Sigma <= - m3 * Master->ReadDStart( t ) ) ) {
+  if( RifeqFi && ( Sigma < - max_error( UpRifFi.back() , RelAcc ) ) &&
+      ( Sigma <= - m3 * DST ) ) {
    if( t >= tMaior ) {
-    BLOG( 1 , " ~ NR required but t maximum" << std::endl );
-    Result = kError;
+    BLOG( 1 , " ~ stop: NR required but t maximum" << std::endl );
+    Result = kLowPrecision;
     break;
     }
 
    t = std::min( t * mxIncr , tMaior );
-   BLOG( 2 , " ~ NR: t increased to " << t << std::endl );
+   BLOG( 2 , " ~ NR: t increased to " << shrt << t << std::endl );
    tHasChgd = true;
    continue;
    }
@@ -577,11 +674,11 @@ int BundleSolver::compute( bool changedvars )
   if( ( ( ! ( MPName & 1 ) ) || ( MPName & 4 ) ) &&
       ( tStar > 0 ) && ( ( tSPar1 & tSP1Msk ) == kHLTTS ) && RifeqFi ) {
 
-   double AFL = std::abs( UpFiLmb[ NrFi ] );
+   double AFL = std::abs( UpFiLmb.back() );
    if( AFL < 1 )
     AFL = 1;
 
-   if( abs( vStar[ NrFi ] ) <= tSPar2 * EpsU * AFL ) {
+   if( abs( vStar.back() ) <= tSPar2 * EpsU * AFL ) {
     BLOG( 1 , "small v => increase t" << std::endl << "           " );
 
     // collect two numbers vc and vl such that v( tNew ) >= vc + tNew * vl
@@ -606,7 +703,7 @@ int BundleSolver::compute( bool changedvars )
    }  // end if( Hard t-strategy )  - - - - - - - - - - - - - - - - - - - - -
       //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-  // calculate Lambda1- - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  // compute Lambda1- - - - - - - - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
   FormLambda1( t );
@@ -628,67 +725,13 @@ int BundleSolver::compute( bool changedvars )
 
   SimpleBStrat();
 
-  // calculate Fi( Lambda1 )- - - - - - - - - - - - - - - - - - - - - - - - -
+  // run the inner loop - - - - - - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
   // here one might change the value of wFi, corresponding to the first
   // component to be evaluated, if a non-strictly-round-robin order is
   // sought for
 
-  CurrNrEvls.assign( NrFi , Index( 0 ) );
-  MPchgs = false;  // true if the MP is guaranteed to change enugh after the
-                   // insertion of new information to ensure that the
-                   // algorithm will converge
-
-  // compute the minimum number of components to evaluate
-  Index minceval = ( MinNrEvls >= 0 ? Index( MinNrEvls )
-		                    : ( NrFi - NrEasy ) * ( - MinNrEvls ) );
-  Index ceval = 0;  // how many components have been evaluated so far
-
-  for( bool insrtd = false ; ; ) {
-   // round-robin-like loop between the different components
-
-   if( FiAndGi( wFi ) )
-    insrtd = true;
-
-   if( ! CurrNrEvls[ wFi ] )  // not evaluated before
-    ++ceval;                  // one more evaluated
-   ++CurrNrEvls[ wFi ];       // evaluated once more
-
-   // a SS can be performed: note the "<" instead of the "<=" to be found in
-   // the actual SS condition below (which means this is ever so slightly
-   // stronger than it should), which is there to avoid the condition to
-   // work when UpFiLmb1[ NrFi ] == INF == UpTrgt
-   if( ( ! MPchgs ) && ( UpFiLmb1.back() < UpTrgt ) )
-    MPchgs = true;
-
-   if( ( ! MPchgs ) && insrtd && RifeqFi && ( LwFiLmb1.back() >= LwTrgt ) )
-    // doing a NS without possibly evaluating all the components is inhibited
-    // if the linearization errors are not computed w.r.t. the "true" value
-    // of (every component of); this corresponds to the assumption in the
-    // theory that a finite upper bound is known for every component. this
-    // implies that eventually all components will be evaluated, which will
-    // yield a SS
-    //
-    // also, for a NS to guarantee no cycling, at least something must have
-    // been inserted (on top of LwFiLmb1 being >= than the lower target)
-    MPchgs = true;
-
-   if( ! FindNext( wFi ) )  // find next component
-    break;                  // if none, nothing else to do but stop
-
-   if( elapsed() > MaxTime )  // time has ran up
-    break;                    // nothing else to do but stop
-
-   if( ceval < minceval )   // not evaluated enough components yet
-    continue;               // do not stop regardless of MPchgs
-    
-   if( MPchgs )             // the MP is guaranteed to change
-    break;                  // happily stop
-
-   }  // end( for( functions evaluation loop ) )
-
-  if( elapsed() > MaxTime )  // time has ran up
-   continue;                 // go back at the beginning to stop
+  InnerLoop();
 
   // compute DeltaFi- - - - - - - - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -738,16 +781,19 @@ int BundleSolver::compute( bool changedvars )
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
   if( UpFiLmb1.back() == - INFshift ) {
-   BLOG( 1 , " ~ stop (unbounded)" << std::endl );
+   BLOG2( 1 , f_convex , " ~ stop (Fi = -INF)" << std::endl );
+   BLOG2( 1 , ! f_convex , " ~ stop (Fi = INF)" << std::endl );
    Result = kUnbounded;
    break;
    }
 
-  if( ( Result == kError ) || ( Result == kStopTime ) ) {
-   BLOG2( 1 , ( Result == kError ) , " ~ stop (error)" << std::endl );
-   BLOG2( 1 , ( Result == kStopTime ) , " ~ stop (time)" << std::endl );
+  if( Result == kError ) {
+   BLOG( 1 , " ~ stop (error)" << std::endl );
    break;
    }
+
+  if( ( MaxTime < INFshift ) && ( get_elapsed_time() > MaxTime ) )
+   continue;  // time has ran up: go back at the beginning to stop
 
   // check for the conditional lower bound- - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -756,7 +802,10 @@ int BundleSolver::compute( bool changedvars )
       ( UpFiBest <= LowerBound.back() *
 	            ( 1 - ( LowerBound.back() > 0 ? RelAcc : - RelAcc ) ) )
       ) {
-   BLOG( 1 , "            FiBest < conditional LB: unbounded " << std::endl );
+   BLOG( 1 , "            FiBest " );
+   BLOG2( 1 , f_convex , "< conditional LB" );
+   BLOG2( 1 , ! f_convex , "> conditional UB" );
+   BLOG( 1 , ": unbounded " << std::endl );
    if( UpFiLmb1.back() < UpFiLmb.back() )  // Lambda1 is better than Lambda
     GotoLambda1();                         // go to Lambda1
    else                                    // if not
@@ -767,15 +816,16 @@ int BundleSolver::compute( bool changedvars )
    break;
    }
 
-  // avoid the t-changing phase if Lambda1 is unfeasible- - - - - - - - - - -
+  // avoid the t-changing phase if a vertical linearization has been found- -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-  // this is because the new cuts, making Lambda1 unfeasible, surely "change
-  // enough the master problem already"
-  // note: one possible alternative t-strategy would be to set t to the
-  // largest value that would have produced a feasible point, i.e.
-  // t := *Alfa1 / ( - *ScPr1 )
+  // this is because the vertical linearizatio making Lambda1 unfeasible,
+  // surely "change enough the master problem already"
+  // yet, one possible t-strategy would be to set t to the largest value
+  // that would have produced a feasible point: t := Alfa1 / ( - ScPr1 )
+  // (with Alfa1 and ScPr1 of that particular constraint, though, not the
+  // "global" ones)
 
-  if( UpFiLmb1.back() == INFshift )
+  if( MPchgs > 1 )
    continue;
 
   // avoid the t-changing phase if the linearization errors are not reliable-
@@ -783,9 +833,10 @@ int BundleSolver::compute( bool changedvars )
   // this is because we have firmly established one feasible (finite) upper
   // estimate in Lambda1, which ends the "phase 0" in which the linearization
   // errors were computed against an arbitrary value and starts the "phase 1"
+  // in which the real optimization takes place
 
   if( ! RifeqFi ) {       // if we are still in "phase 0"
-   BLOG( 1 , "            Fi1 < INF ==> SS " << std::endl );
+   BLOG( 1 , "            Fi1 defined ==> SS " << std::endl );
    GotoLambda1();         // go to the feasible point
    continue;              // and start the actual minimization of Fi()
    }
@@ -794,17 +845,24 @@ int BundleSolver::compute( bool changedvars )
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
   if( ! MPchgs ) {
+   if( t >= tMaior ) {
+    BLOG( 1 , "            stop: BR required but t maximum" << std::endl );
+    Result = kLowPrecision;
+    break;
+    }
    t = std::min( t * mxIncr , tMaior );
-   BLOG( 1 , " ~ noise reduction: t increased to " << t << std::endl );
+   BLOG( 1 , "            NR: t increased to " << shrt << t << std::endl );
    tHasChgd = true;
-   if( t >= tMaior )
-    Result = kError;
+   continue;
    }
 
   // the NS / SS decision - - - - - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  // note again the "<" in the SS condition below (which means this is ever
+  // so slightly stronger than it should), which is there to avoid the
+  // condition to fire when UpFiLmb1.back() == INF == UpTrgt
 
-  SSDone = ( UpFiLmb1[ NrFi ] <= UpTrgt ) ? true : false;
+  SSDone = ( UpFiLmb1.back() < UpTrgt ) ? true : false;
 
   // compute the heuristic t- - - - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -818,9 +876,14 @@ int BundleSolver::compute( bool changedvars )
 
   if( SSDone ) {  // SS - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-   BLOG( 1 , std::endl << " SS[" << CSSCntr << "]: DFi = " << DeltaFi
-	     <<  " ~ Up1(" << UpFiLmb1[ NrFi ] << ") <= UpTrgt(" << UpTrgt
-	     << ") ~ Ht = " << tt );
+   BLOG( 1 , std::endl << " SS[" << CSSCntr << "]: DFi = " << shrt );
+   if( f_convex ) {
+    BLOG( 1 , DeltaFi << def << " ~ Up1(" << UpFiLmb1.back()
+	  << ") <= UpTrgt(" << UpTrgt << ") ~ Ht = " << shrt << tt );
+    }
+   else
+    BLOG( 1 , - DeltaFi << def << " ~ Lw1(" << - UpFiLmb1.back()
+	      << ") >= LwTrgt(" << - UpTrgt << ") ~ Ht = " << shrt << tt );
 
    tt = std::min( std::min( tMaior , t * mxIncr ) ,
  		  std::max( t * mnIncr , tt ) );
@@ -841,9 +904,16 @@ int BundleSolver::compute( bool changedvars )
    CNSCntr = 0;
    }
   else {        // NS - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-   BLOG( 1 , std::endl << " NS[" << CNSCntr << "]: DFi = " << DeltaFi
-	     <<  " ~ Lw1(" << LwFiLmb1[ NrFi ] << ") >= LwTrgt(" << LwTrgt
-	     << ") ~ Ht = " << tt );
+   BLOG( 1 , std::endl << " NS[" << CNSCntr << "]: " );
+   BLOG2( 1 , DeltaFi < INFshift , "DFi = " << shrt << rs( DeltaFi )
+	  <<  " ~ " << def );
+   if( f_convex ) {
+    BLOG( 1 , "Lw1(" << def << LwFiLmb1.back() << ") >= LwTrgt(" << LwTrgt
+	  << ") ~ Ht = " << shrt << tt );
+    }
+   else
+    BLOG( 1 , "Up1(" << - LwFiLmb1.back() << ") <= UpTrgt(" << - LwTrgt
+	      << ") ~ Ht = " << shrt << tt );
 
    tt = std::max( std::max( tMinor , t * mxDecr ) ,
  		  std::min( t * mnDecr , tt ) );
@@ -851,7 +921,7 @@ int BundleSolver::compute( bool changedvars )
    if( CNSCntr < MnNSC )  // decreasing t is inhibited
     tt = t;
    else
-    if( Alfa1[ NrFi ] <= m1 * Sigma ) {
+    if( Alfa1.back() <= m1 * Sigma ) {
      BLOG( 1 , " ~ small Alfa1" );
      tt = t;
      }
@@ -859,7 +929,7 @@ int BundleSolver::compute( bool changedvars )
      switch( tSPar1 & tSP1Msk ) {
       case( kSLTTS ):
       case( kHLTTS ):
-       if( abs( vStar[ NrFi ] ) <= tSPar2 * EpsU * max_error() ) {
+       if( abs( vStar.back() ) <= tSPar2 * EpsU * max_error() ) {
         BLOG( 1 , " small v" );
 	tt = t;
         }
@@ -887,11 +957,11 @@ int BundleSolver::compute( bool changedvars )
   // actually update t- - - - - - - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-  if( ( tSPar1 & kEGTTS ) && ( UpFiLmb[ NrFi ] < INFshift ) )
+  if( ( tSPar1 & kEGTTS ) && ( UpFiLmb.back() < INFshift ) )
    // endgame t-strategy: note the "/ 10"!!
    if( DSTS < max_error() / 10 ) {
     tt = std::max( t * ( mxDecr + mnDecr ) / 2 , tMinor );
-    BLOG( 1 , " ~ endgame, t = " << tt );
+    BLOG( 1 , " ~ endgame, t = " << shrt << tt );
     }
 
   //!! the reverse should also be done: if sigma is small and D*( t* ) is
@@ -927,6 +997,9 @@ int BundleSolver::compute( bool changedvars )
 
 void BundleSolver::set_Block( Block * block )
 {
+ if( f_Block == block )  // registering to the same Block
+  return;                // cowardly and silently return
+
  if( f_Block ) {  // changing from a previous oracle - - - - - - - - - - - - -
                  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
   guts_of_destructor();   // deallocate memory
@@ -936,6 +1009,14 @@ void BundleSolver::set_Block( Block * block )
 
  if( ! f_Block )  // that was actually clearing the Block
   return;         // all done
+
+ // lock the Block - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ 
+ bool owned = f_Block->is_owned_by( f_id );
+ if( ( ! owned ) && ( ! f_Block->lock( f_id ) ) )
+  throw( std::runtime_error(
+                       "LagrangianDualSolver: unable to lock the Block" ) );
 
  /* Two types of block can be handled by the BundleSolver:
 
@@ -954,27 +1035,34 @@ void BundleSolver::set_Block( Block * block )
 
  const auto & sb = f_Block->get_nested_Blocks();
 
- if( sb.empty() ) {
-  // the objective function of the block must be a C05Function  - - - - - - -
-  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ if( sb.empty() ) {  // no sub-Block
+  // the objective function of the Block must be a C05Function  - - - - - - -
 
   auto obj = dynamic_cast< FRealObjective * >( f_Block->get_objective() );
   if( ! obj )
-   throw( std::logic_error( "objective is not a FRealObjective" ) );
+   throw( std::invalid_argument( "objective is not a FRealObjective" ) );
 
-  auto c05f = dynamic_cast< C05Function * >( (obj)->get_function() );
+  auto c05f = dynamic_cast< C05Function * >( obj->get_function() );
   if( ! c05f )
-   throw( std::logic_error( "the objective is not a C05Function" ) );
+   throw( std::invalid_argument( "the objective is not a C05Function" ) );
 
+  f_convex = c05f->is_convex();
+  if( ( ! f_convex ) && ( ! c05f->is_concave() ) )
+   throw( std::invalid_argument(
+			     "only convex or concave objectives allowed " ) );
+
+  if( ( f_convex && ( obj->get_sense() == Objective::eMax ) ) ||
+      ( ( ! f_convex ) && ( obj->get_sense() == Objective::eMin ) ) )
+   throw( std::invalid_argument( "can only minimize convex / maximize concave"
+				 ) );  
   v_c05f.push_back( c05f );
   f_lf = nullptr;
   }
- else {
+ else {  // there are sub-Block
   // the objective function of the block must be a LinearFunction- - - - - - -
-  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
   if( ! f_Block->get_objective() )  // there is no Objective
-   f_lf =  nullptr;
+   f_lf = nullptr;
   else {
    auto obj = dynamic_cast< FRealObjective * >( f_Block->get_objective() );
    if( ! obj )
@@ -995,41 +1083,54 @@ void BundleSolver::set_Block( Block * block )
   v_c05f.resize( sb.size() );
 
   for( Index i = 0 ; i < sb.size() ; ++i ) {  // for each sub-block
-
    // the objective function of each sub-block must be a C05Function - - - - -
-   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
    auto obj = dynamic_cast< FRealObjective * >( sb[ i ]->get_objective() );
    if( ! obj )
     throw( std::logic_error( "the objective is not a real function" ) );
 
-   auto c05f = dynamic_cast<C05Function *>( (obj)->get_function() );
+   auto c05f = dynamic_cast<C05Function *>( obj->get_function() );
    if( ! c05f )
     throw( std::logic_error( "the objective is not a C05Function" ) );
+
+   // all have to be the same convexity - - - - - - - - - - - - - - - - - - -
    v_c05f[ i ] = c05f;
+   if( ! i )
+    f_convex = c05f->is_convex();
+   else
+    if( c05f->is_convex() != f_convex )
+     throw( std::invalid_argument(
+			  "objectives must be all convex or all concave" ) );
+
+   // all have to be be max/min in the right way- - - - - - - - - - - - - - -
+   if( ( ! f_convex ) && ( ! c05f->is_concave() ) )
+   throw( std::invalid_argument(
+			     "only convex or concave objectives allowed " ) );
+
+   if( ( f_convex && ( obj->get_sense() == Objective::eMax ) ) ||
+       ( ( ! f_convex ) && ( obj->get_sense() == Objective::eMin ) ) )
+    throw( std::invalid_argument( "can only minimize convex/maximize concave"
+				  ) );  
 
    // nephews are not allowed- - - - - - - - - - - - - - - - - - - - - - - - -
-   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
    if( sb[ i ]->get_nested_Blocks().size() )
     throw( std::logic_error( "nephew are not allowed" ) );
 
-   // Variable of sub-Block are not expected, neither are Constraint - - - - -
-   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
+   // Variable not allowed - - - - - - - - - - - - - - - - - - - - - - - - - -
    if( sb[ i ]->get_static_variables().size() )
     throw( std::logic_error( "static Variable are not allowed" ) );
 
    if( sb[ i ]->get_dynamic_variables().size() )
     throw( std::logic_error( "dynamic Variable are not allowed" ) );
 
+   // neither are Constraint - - - - - - - - - - - - - - - - - - - - - - - - -
    if( sb[ i ]->get_static_constraints().size() )
     throw( std::logic_error( "static Constraint are not allowed" ) );
 
    if( sb[ i ]->get_dynamic_constraints().size() )
     throw( std::logic_error( "dynamic Constraint are not allowed" ) );
-   }
-  }
+   }  // end( for each sub-Block )
+  }  // end( there are sub-Block )
 
  // the set of "active" Variable in all Function must be the same- - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1075,22 +1176,39 @@ void BundleSolver::set_Block( Block * block )
   throw( std::logic_error( "some static Variable is not a ColVariable" ) );
   }
 
+ auto v_d_Variable = f_Block->get_dynamic_variables();
+ for( auto & el : v_d_Variable ) {
+  if( un_any_thing_0( std::list< ColVariable > , el , ++NumBVar ) )
+   continue;
+  if( un_any_thing_1( std::list< ColVariable > , el ,
+		      NumBVar += var.size() ) )
+   continue;
+  if( un_any_thing_K( std::list< ColVariable > , el ,
+		      NumBVar += var.num_elements() ) )
+   continue;
+  throw( std::logic_error( "some dynamic Variable is not a ColVariable" ) );
+  }
+
  if( NumBVar < NumVar )
   throw( std::logic_error( "too few ColVariable in the Block" ) );
 
  // check that the Variable in the Block agree with that in the C05Function- -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- std::vector<ColVariable *> LamBVcblr( NumBVar );
+ std::vector< ColVariable * > LamBVcblr( NumBVar );
 
  Index cnt = 0;
  for( auto & el : v_s_Variable )
   un_any_static( el , [ & ]( ColVariable & sv ) { LamBVcblr[ cnt++ ] = & sv;
                   } , un_any_type<ColVariable>() );
 
+ for( auto & el : v_d_Variable )
+  un_any_dynamic( el , [ & ]( ColVariable & sv ) { LamBVcblr[ cnt++ ] = & sv;
+                  } , un_any_type<ColVariable>() );
+
  std::sort( LamBVcblr.begin() , LamBVcblr.end() );
 
- std::vector<ColVariable *> LamVcblrO( LamVcblr );
+ std::vector< ColVariable * > LamVcblrO( LamVcblr );
  std::sort( LamVcblrO.begin() , LamVcblrO.end() );
 
  if( ! std::includes( LamBVcblr.begin() , LamBVcblr.end() ,
@@ -1101,81 +1219,193 @@ void BundleSolver::set_Block( Block * block )
  LamVcblrO.clear();
  LamBVcblr.clear();
 
- // no dynaimic variables are allowed  - - - - - - - - - - - - - - - - - - - -
+ // if some Constraint are present, their can only be either BoxConstraint
+ // (with LHS == 0), LB0Constraint or NNConstraint - - - - - - - - - - - - - -
+ //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // one day general linear constaints will be allowed
+ //
+ // note that un_any_thing() only serves to verify that the stuff is of the
+ // right type, and therefore it has to do nothing; this is obtained by
+ // passing it as, the "function" argument, a void --> void lambda doing
+ // nothing immediately applied to nothing, cue the curios list of
+ // parentheses "[](){}()"
+ 
+ for( auto & el : f_Block->get_static_constraints() ) {
+  if( un_any_thing( BoxConstraint , el , [](){}() ) )
+   continue;
+  if( un_any_thing( LB0Constraint , el , [](){}() ) )
+   continue;
+  if( un_any_thing( NNConstraint , el , [](){}() ) )
+   continue;
+  throw( std::logic_error( "unsupported type of static Constraint" ) );
+  }
+
+ for( auto & el : f_Block->get_dynamic_constraints() ) {
+  if( un_any_thing( std::list< BoxConstraint > , el , [](){}() ) )
+   continue;
+  if( un_any_thing( std::list< LB0Constraint > , el , [](){}() ) )
+   continue;
+  if( un_any_thing( std::list< NNConstraint > , el , [](){}() ) )
+   continue;
+  throw( std::logic_error( "unsupported type of dynamic Constraint" ) );
+  }
+
+ // read information about the C05Function - - - - - - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- if( f_Block->get_dynamic_variables().size() )
-  throw( std::logic_error( "dynamic Variable are not allowed" ) );
+ NrFi = v_c05f.size();
 
- // if some Constraint are present, their functions must be linear
- //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
- if( f_Block->get_static_constraints().size() )
-  throw( std::logic_error( "static Constraint are not allowed" ) );
-
- if( f_Block->get_dynamic_constraints().size() )
-  throw( std::logic_error( "dynamic Constraint are not allowed" ) );
-
- // read information about the function  - - - - - - - - - - - - - - - - - - -
+ // check if there are "easy" components and deal with them- - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
  NrEasy = 0;
- NrFi = v_c05f.size();
+ if( DoEasy & 1 ) {
+  // retrieve the ComputeConfig for the "easy" components, if any
+  ComputeConfig * eCC = nullptr;
+  if( ! EasyCfg.empty() ) {
+   auto cfg = Configuration::deserialize( EasyCfg );
+   if( ! ( eCC = dynamic_cast< ComputeConfig * >( cfg ) ) )
+    delete cfg;
+   }
 
- if( ( NrFi > 1 ) && ( ! NoEasy ) ) {
-  IsEasy.resize( NrFi , false );
-  MILP_s.resize( NrFi , nullptr );
+  IsEasy.resize( NrFi , nullptr );
+  auto NEit = NoEasy.begin();
   for( Index k = 0 ; k < NrFi ; ++k ) {
+   if( ( NEit != NoEasy.end() ) && ( Index( *NEit ) == k ) ) {
+    ++NEit;
+    continue;
+    }
+
    auto LagB = dynamic_cast< LagBFunction * >( v_c05f[ k ] );
    if( LagB ) {
-    MILP_s[ k ] = new MILPSolver();
-    try {  // check if the inner Block of the LagBFunction is an LP
-     MILP_s[ k ]->set_Block( LagB->get_inner_block() );
-     /*!!
+    auto MILPs = new MILPSolver();
+    try {  // check if the inner Block of the LagBFunction is all-linear
+     // do this by trying to register the MILPSolver to the inner Block; if
+     // the operation succeeds than the component may be easy (provided that
+     // also all variables are continuous), otherwise it surely is not,
+     // which is captured by the fact that exception is thrown; note that
+     // [MILP]Solver::set_Block() does *not* call Block::register_Solver(),
+     // which therefore may have to be done later
+     MILPs->set_Block( LagB->get_inner_block() );
      // the component is easy only if all variables are continuous
-     if( ! MILP_s[ k ]->get_num_integer_vars() )
-     !!*/
-     {
-      IsEasy[ k ] = true;
+     if( ! MILPs->get_num_integer_vars() ) {
+      IsEasy[ k ] = MILPs;
       ++NrEasy;
+
+      // if dynamic updating of the easy component is allowed for any piece
+      // of data, register the MILPSolver with the inner Block, as this is not
+      // done by [MILP]Solver::set_Block(); note that this calls set_Block()
+      // again, which is why it is important that [MILP]Solver::set_Block()
+      // check that the Block is the same and ignores it
+      if( DoEasy & ~1 )
+       LagB->get_inner_block()->register_Solver( MILPs );
       }
+     else  // everything is linear, but there are integer variables
+      delete MILPs;
      }
     catch( ... ) {  // exception means that something nonlinear is there
-     IsEasy[ k ] = false;
-     }
-
-    if( ! IsEasy[ k ] ) {
-     delete MILP_s[ k ];
-     MILP_s[ k ] = nullptr;
+     delete MILPs;
      }
     }
    }
 
-  if( ! NrEasy ) {
+  if( ! NrEasy )
    IsEasy.clear();
-   MILP_s.clear();
-   }
-  }
+  else {
+   // ComputeConfig-ure the easy components
+   if( eCC || ( ! CmpCfg.empty() ) )
+    for( Index k = 0 ; k < NrFi ; ++k ) {
+     if( ! IsEasy[ k ] )
+      continue;
 
- // set the global pool size to all non-easy functions - - - - - - - - - - - -
+     ComputeConfig * cfg = nullptr;
+     if( ( k < Index( CmpCfg.size() ) ) && ( ! CmpCfg[ k ].empty() ) ) {
+      auto tcfg = Configuration::deserialize( CmpCfg[ k ] );
+      if( ! ( cfg = dynamic_cast< ComputeConfig * >( tcfg ) ) )
+       delete tcfg;
+      }
+
+     if( ( ! cfg ) && eCC )
+      cfg = eCC->clone();
+
+     if( cfg )
+      v_c05f[ k ]->set_ComputeConfig( cfg );
+     }
+
+   // if easy components can be dynamically changed, attach a FakeSolver to
+   // the inner Block of each LagBFunction to record the changes
+   if( DoEasy & ~1 ) {
+    v_FakeSolver.resize( NrEasy );
+    auto FSit = v_FakeSolver.begin();
+    for( Index k = 0 ; k < NrFi ; ++k )
+     if( IsEasy[ k ] ) {
+      auto LagB = static_cast< LagBFunction * >( v_c05f[ k ] );
+      *FSit = new FakeSolver();
+      LagB->get_inner_block()->register_Solver( *(FSit++) );
+      }
+    }
+   }
+
+  delete eCC;  // TODO: do not clone() the last time
+
+  }  // end( if( DoEasy ) )
+
+ // configure all non-easy components- - - - - - - - - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
- // with BPar2 == 0, BundleSolver just takes whatever size of the global pool
- // it finds already in the C05Function. with BPar2 > 0, BundleSolver ensures
- // that the size of the global pool is *at least* BPar2 by increasing it if
- // it is below. this means that:
+ // if the non-easy ComputeConfig is provided, apply it.
+ //
+ // in all cases, set the global pool size, *after* having configured them.
+ // this is necessary in that with BPar2 == 0, BundleSolver just takes
+ // whatever size of the global pool it finds in the C05Function (that may
+ // have been just set by the non-easy ComputeConfig). with BPar2 > 0,
+ // instead, BundleSolver ensures that the size of the global pool is *at
+ // least* BPar2 by increasing it if it is below. this means that:
  // - BundleSolver never *decreases* the size of the global pool
  // - BundleSolver only uses the first BPar2 linearizations in each global
  //   pool; if there are more, the other ones are ignored
- // meanwhile, also set the accuracy of multipliers to RMPAccSol
+ //
+ // meanwhile, also set the accuracy of multipliers
+ // MinQuad requires a "high" accuracy to work (1e-12) while standard solvers
+ // do not, and in fact may complain if such a tight accuracy is set, but
+ // since we don't really trust the accuracy of MPSolver, we give the
+ // C05Function more slack
+ const double eps = ( MPName & 1 ) ? 1e-7 : 1e-10;
 
  vBPar2.resize( NrFi + 1, 0 );
+ InvItemVcblr.resize( NrFi );
+
+ // retrieve the ComputeConfig for the non-easy components, if any
+ ComputeConfig * hCC = nullptr;
+ if( ! HardCfg.empty() ) {
+  auto cfg = Configuration::deserialize( HardCfg );
+  if( ! ( hCC = dynamic_cast< ComputeConfig * >( cfg ) ) )
+   delete cfg;
+  }
+
  for( Index k = 0 ; k < NrFi ; ++k ) {
   if( NrEasy && IsEasy[ k ] )
    continue;
-  // note: we don't really trust the accuracy of MPSolver, so we give the
-  // C05Function more slack
-  v_c05f[ k ]->set_par( C05Function::dblAAccMlt , 100 * RMPAccSol );
-  auto gps = v_c05f[ k ]->get_int_par( C05Function::intGPMaxSz );
+
+  // ComputeConfig-ure the non-easy component
+  ComputeConfig * cfg = nullptr;
+  if( ( k < Index( CmpCfg.size() ) ) && ( ! CmpCfg[ k ].empty() ) ) {
+   auto tcfg = Configuration::deserialize( CmpCfg[ k ] );
+   if( ! ( cfg = dynamic_cast< ComputeConfig * >( tcfg ) ) )
+    delete tcfg;
+   }
+
+  if( ( ! cfg ) && hCC )
+   cfg = hCC->clone();
+
+  if( cfg )
+   v_c05f[ k ]->set_ComputeConfig( cfg );
+
+  // ensure that the accuracy of multipliers is at least eps
+  if( v_c05f[ k ]->get_dbl_par( C05Function::dblAAccMlt ) > eps )
+   v_c05f[ k ]->set_par( C05Function::dblAAccMlt , eps );
+
+  // manage the global pool size
+  Index gps = v_c05f[ k ]->get_int_par( C05Function::intGPMaxSz );
   if( BPar2 == 0 ) {  // use the current global pool size
    if( gps < 2 )
     throw( std::logic_error( "BPar2 == 0 but too small global pool" ) );
@@ -1184,11 +1414,15 @@ void BundleSolver::set_Block( Block * block )
    }
   else {              // force the global pool size to be *at least* BPar2
    if( gps < BPar2 )
-    v_c05f[ k ]->set_par( C05Function::intGPMaxSz , BPar2 );
+    v_c05f[ k ]->set_par( C05Function::intGPMaxSz , int( BPar2 ) );
    vBPar2[ NrFi ] += BPar2;
    vBPar2[ k ] = BPar2;
    }
+
+  InvItemVcblr[ k ].resize( vBPar2[ k ] , InINF );
   }
+
+ delete hCC;  // TODO: do not clone() the last time
 
  // allocate memory- - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1206,10 +1440,6 @@ void BundleSolver::set_Block( Block * block )
  // counter for eliminating outdated items: Inf<SIndex>() means empty
 
  ItemVcblr.resize( vBPar2[ NrFi ] , make_pair( InINF , InINF ) );
-
- InvItemVcblr.resize( NrFi );
- for( Index k = 0 ; k < NrFi ; ++k )
-  InvItemVcblr[ k ].resize( vBPar2[ k ] , InINF );
 
  NrItems.resize( NrFi + 1 , 0 );
  FrFItem.resize( NrFi , 0 );
@@ -1233,6 +1463,7 @@ void BundleSolver::set_Block( Block * block )
  LwFiLmb.resize( NrFi + 1 , -INFshift );  // ... and lower Fi-value
  UpFiLmbdef = LwFiLmbdef = 0;             // ... at the current point
  LowerBound.resize( NrFi + 1 , -INFshift );  // global lower bounds
+ f_global_LB = -INFshift;         // algorithmic global LB
 
  vStar.resize( NrFi + 1 , 0 );
  whisG1.resize( NrFi , InINF );  // no representative yet
@@ -1256,22 +1487,21 @@ void BundleSolver::set_Block( Block * block )
     Master = osi_mps;
 
     if( MPName & 2 ) {
-     OsiCpxSolverInterface *osicpx = new OsiCpxSolverInterface();
-     CPXENVptr env = osicpx->getEnvironmentPtr ();
-     CPXsetintparam( env , CPX_PARAM_THREADS , threads );
-     // 12.8
-     // CPXsetlogfile( env , NULL );
-     // 12.9
-     // CPXsetlogfilename( env, "/dev/null" , "w" ) ;
-
-     CPXsetintparam( env , CPXPARAM_ScreenOutput , CPX_OFF );
-     CPXsetintparam( env , CPXPARAM_Barrier_Display , 0 );
-     CPXsetintparam( env , CPXPARAM_Simplex_Display , 0 );
-     CPXsetintparam( env , CPXPARAM_Sifting_Display , 0 );
-     CPXsetintparam( env , CPXPARAM_Network_Display , 0 );
-     CPXsetintparam( env , CPXPARAM_ParamDisplay  , CPX_OFF );
+     #if USE_CPLEX
+      OsiCpxSolverInterface *osicpx = new OsiCpxSolverInterface();
+      CPXENVptr env = osicpx->getEnvironmentPtr ();
+      CPXsetintparam( env , CPX_PARAM_THREADS , threads );
+      CPXsetintparam( env , CPXPARAM_ScreenOutput , CPX_OFF );
+      CPXsetintparam( env , CPXPARAM_Barrier_Display , 0 );
+      CPXsetintparam( env , CPXPARAM_Simplex_Display , 0 );
+      CPXsetintparam( env , CPXPARAM_Sifting_Display , 0 );
+      CPXsetintparam( env , CPXPARAM_Network_Display , 0 );
+      CPXsetintparam( env , CPXPARAM_ParamDisplay  , CPX_OFF );
  
-     osi_mps->SetOsi( osicpx );
+      osi_mps->SetOsi( osicpx );
+     #else
+      throw( std::invalid_argument( "OsiCpxSolverInterface not supported" ) );
+     #endif
      }
     else
      osi_mps->SetOsi( new OsiClpSolverInterface() );
@@ -1302,6 +1532,29 @@ void BundleSolver::set_Block( Block * block )
   }
 
  InitMP();
+
+ // cleanup MILPSolver data- - - - - - - - - - - - - - - - - - - - - - - - - -
+ // - - - -  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // now that the MPSolver has read all the information it needs out of the
+ // MILPSolver, cleanup all un-necessary data; note that clear_problem() tells
+ // which data to delete with exactly the same bit mapping as DoEasy tells
+ // which to keep, hence an xor works; the first bit gets zeroed (hence
+ // ultimately set to 1) so that the coefficient matrix is always discarded,
+ // as changing it is not managed by the MPSolver (and neither really is by
+ // MILPSolver, currently)
+ //
+ // note that if "easy" components are fully static one may want to get rid
+ // of the MILPSolver entirely; however, if new variables are added then
+ // GetADesc() can be called, which relies on the MILPSolver. getting rid of
+ // the MILPSolver would require knowing that the variables set is also
+ // static, which would require one parameter; doable, but not now
+ 
+ if( NrEasy ) {
+  const char which = ( DoEasy & ~1 ) ^ 15;
+  for( Index k = 0 ; k < NrFi ; ++k )
+   if( IsEasy[ k ] )
+    IsEasy[ k ]->clear_problem( which );
+  }
 
  // reset algorithm  - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // - - - -  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1346,12 +1599,18 @@ void BundleSolver::set_Block( Block * block )
  #if CHECK_DS & 4
   CheckAlpha();
  #endif
- 
+
+ // finally, release the Block - - - - - - - - - - - - - - - - - - - - - - - -
+ //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+ if( ! owned )
+  f_Block->unlock( f_id );
+
  }  // end( BundleSolver::set_Block )
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::set_par( const idx_type par , const int value )
+void BundleSolver::set_par( idx_type par , int value )
 {
  switch( par ) {
   case( intMaxIter ):
@@ -1378,14 +1637,14 @@ void BundleSolver::set_par( const idx_type par , const int value )
   case( intBPar2 ):
    if( value < 2 )
     throw( std::invalid_argument( "BPar2 must be >= 2" ) );
-   if( BPar2 == value )
+   if( BPar2 == Index( value ) )
     break;
    if( f_Block )
     throw( std::invalid_argument( "changing BPar2 not supported yet" ) );
    BPar2 = value;
    break;
   case( intBPar3 ):
-   if( value < BPar4 )
+   if( Index( value ) < BPar4 )
     throw( std::invalid_argument( "BPar3 must be >= BPar4" ) );
    BPar3 = value;
    break;
@@ -1414,8 +1673,17 @@ void BundleSolver::set_par( const idx_type par , const int value )
   case( intMaxNrEvls ):
    MaxNrEvls = value;
    break;
-  case( intNoEasy ):
-   NoEasy = bool( value );
+  case( intDoEasy ):
+   DoEasy = char( value & 15 );
+   break;
+  case( intWZNorm ):
+   if( WZNorm != char( value ) ) {
+    WZNorm = char( value );
+    if( ! ( WZNorm & ~3 ) )  // the easy case, constant
+     NrmZFctr = 1;           // factor is known
+    else
+     NrmZFctr = INFshift;    // factor to be computed
+    }
    break;
   case( intMPName ):
    if( ( value < 0 ) || ( value > 15 ) )
@@ -1450,7 +1718,7 @@ void BundleSolver::set_par( const idx_type par , const int value )
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::set_par( const idx_type par , const double value )
+void BundleSolver::set_par( idx_type par , double value )
 {
  switch( par ) {
   case( dblMaxTime ):
@@ -1468,36 +1736,21 @@ void BundleSolver::set_par( const idx_type par , const double value )
     throw( std::invalid_argument( "AbsAcc must be > 0" ) );
    AbsAcc = value;
    break;
-  case( dblRAccSol ):
-   if( value <= 0 )
-    throw( std::invalid_argument( "RAccSol must be > 0" ) );
-   RAccSol = value;
-   break;
-  case( dblAAccSol ):
-   if( value <= 0 )
-    throw( std::invalid_argument( "AAccSol must be > 0" ) );
-   AAccSol = value;
-   break;
   case( dblEveryTTm ):
    if( value < 0 )
     throw( std::invalid_argument( "EveryTTm must be >= 0" ) );
    EveryTTm = value;
+   break;
+  case( dblNZEps ):
+   if( value < 0 )
+    throw( std::invalid_argument( "NZEps must be >= 0" ) );
+   NZEps = value;
    break;
   case( dbltStar ):
    tStar = value;
    break;
   case( dblMinNrEvls ):
    MinNrEvls = std::max( double( -1 ) , std::min( double( 0 ) , value ) );
-   break;
-  case( dblRelMPAcc ):
-   if( value <= 0 )
-    throw( std::invalid_argument( "RelMPAcc must be > 0" ) );
-   RelMPAcc = value;
-   break;
-  case( dblRMPAccSol ):
-   if( value <= 0 )
-    throw( std::invalid_argument( "RMPAccSol must be > 0" ) );
-   RMPAccSol = value;
    break;
   case( dblBPar5 ):
    BPar5 = value;
@@ -1568,20 +1821,58 @@ void BundleSolver::set_par( const idx_type par , const double value )
  }  // end( BundleSolver::set_par( double ) )
 
 /*--------------------------------------------------------------------------*/
+
+void BundleSolver::set_par( idx_type par , std::string && value )
+{
+ switch( par ) {
+  case( strEasyCfg ):
+   EasyCfg = std::move( value );
+   break;
+  case( strHardCfg ):
+   HardCfg = std::move( value );
+   break;
+  default:
+   CDASolver::set_par( par , value );
+  }
+ }  // end( BundleSolver::set_par( std::string && ) )
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::set_par( idx_type par , std::vector< int > && value )
+{
+ if( par == vintNoEasy )
+  NoEasy = std::move( value );
+ else
+  CDASolver::set_par( par , std::move( value ) );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::set_par( idx_type par ,
+			    std::vector< std::string > && value )
+{
+ if( par == vstrCmpCfg )
+  CmpCfg = std::move( value );
+ else
+  CDASolver::set_par( par , std::move( value ) );
+ }
+
+/*--------------------------------------------------------------------------*/
 /*--------------------------------- METHODS --------------------------------*/
 /*--------------------------------------------------------------------------*/
 
 void BundleSolver::set_log( std::ostream * log_stream )
 {
  f_log = log_stream;
- Master->SetMPLog( f_log , MPlvl );
+ if( Master )
+  Master->SetMPLog( f_log , MPlvl );
  }
 
 /*--------------------------------------------------------------------------*/
 /*---------------------- METHODS FOR READING RESULTS -----------------------*/
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::get_dual_solution( Configuration *solc )
+void BundleSolver::get_dual_solution( Configuration * solc )
 {
  // construct the important linerization for each component (unless it is
  // already there, and signal to the C05Functions which one it is
@@ -1626,161 +1917,97 @@ void BundleSolver::get_dual_solution( Configuration *solc )
 
 /*--------------------------------------------------------------------------*/
 
-int BundleSolver::get_int_par( const idx_type par ) const
+int BundleSolver::get_int_par( idx_type par ) const
 {
  switch( par ) {
-  case( intMaxIter ):
-   return( MaxIter );
-   break;
-  case( intMaxSol ):
-   return( MaxSol );
-   break;
-  case( intEverykIt ):
-   return( EverykIt );
-   break;
-  case( intLogVerb ):
-   return( LogVerb );
-   break;
-  case( intBPar1 ):
-   return( BPar1 );
-   break;
-  case( intBPar2 ):
-   return( BPar2 );
-   break;
-  case( intBPar3 ):
-   return( BPar3 );
-   break;
-  case( intBPar4 ):
-   return( BPar4 );
-   break;
-  case( intBPar6 ):
-   return( BPar6 );
-   break;
-  case( intBPar7 ):
-   return( BPar7 );
-   break;
-  case( intMnSSC ):
-   return( MnSSC );
-   break;
-  case( intMnNSC ):
-   return( MnNSC );
-   break;
-  case( inttSPar1 ):
-   return( tSPar1 );
-   break;
-  case( intMaxNrEvls ):
-   return( MaxNrEvls );
-   break;
-  case( intNoEasy ):
-   return( NoEasy );
-   break;
-  case( intMPName ):
-   return( MPName );
-   break;
-  case( intMPlvl ):
-   return( MPlvl );
-   break;
-  case( intQPmp1 ):
-   return( CtOff );
-   break;
-  case( intQPmp2 ):
-   return( MxRmv );
-   break;
-  case( intOSImp1 ):
-   return( algo );
-   break;
-  case( intOSImp2  ):
-   return( reduction );
-   break;
-  case( intOSImp3 ):
-   return( threads  );
-   break;
-  case( intRstAlg ):
-   return( RstAlgPrm  );
-   break;
-  default:
-   return( CDASolver::get_dflt_int_par( par ) );
+  case( intMaxIter ):   return( MaxIter );
+  case( intMaxSol ):    return( MaxSol );
+  case( intEverykIt ):  return( EverykIt );
+  case( intLogVerb ):   return( LogVerb );
+  case( intBPar1 ):     return( BPar1 );
+  case( intBPar2 ):     return( BPar2 );
+  case( intBPar3 ):     return( BPar3 );
+  case( intBPar4 ):     return( BPar4 );
+  case( intBPar6 ):     return( BPar6 );
+  case( intBPar7 ):     return( BPar7 );
+  case( intMnSSC ):     return( MnSSC );
+  case( intMnNSC ):     return( MnNSC );
+  case( inttSPar1 ):    return( tSPar1 );
+  case( intMaxNrEvls ): return( MaxNrEvls );
+  case( intDoEasy ):    return( DoEasy );
+  case( intWZNorm ):    return( WZNorm );
+  case( intMPName ):    return( MPName );
+  case( intMPlvl ):     return( MPlvl );
+  case( intQPmp1 ):     return( CtOff );
+  case( intQPmp2 ):     return( MxRmv );
+  case( intOSImp1 ):    return( algo );
+  case( intOSImp2  ):   return( reduction );
+  case( intOSImp3 ):    return( threads  );
+  case( intRstAlg ):    return( RstAlgPrm  );
+  default:              return( CDASolver::get_int_par( par ) );
   }
  }  // end( BundleSolver::get_int_par )
 
 /*--------------------------------------------------------------------------*/
 
-double BundleSolver::get_dbl_par( const idx_type par ) const
+double BundleSolver::get_dbl_par( idx_type par ) const
 {
  switch( par ) {
-  case( dblMaxTime ):
-   return( MaxTime );
-   break;
-  case( dblRelAcc ):
-   return( RelAcc );
-   break;
-  case( dblAbsAcc ):
-   return( AbsAcc );
-   break;
-  case( dblRAccSol ):
-   return( RAccSol );
-   break;
-  case( dblAAccSol ):
-   return( AAccSol );
-   break;
-  case( dblEveryTTm ):
-   return( EveryTTm );
-   break;
-  case( dbltStar ):
-   return( tStar );
-   break;
-  case( dblMinNrEvls ):
-   return( MinNrEvls );
-   break;
-  case( dblRelMPAcc ):
-   return( RelMPAcc );
-   break;
-  case( dblRMPAccSol ):
-   return( RMPAccSol );
-   break;
-  case( dblBPar5 ):
-   return( BPar5 );
-   break;
-  case( dblm1 ):
-   return( m1 );
-   break;
-  case( dblm2 ):
-   return( m2 );
-   break;
-  case( dblm3 ):
-   return( m3 );
-   break;
-  case( dblmxIncr ):
-   return( mxIncr );
-   break;
-  case( dblmnIncr ):
-   return( mnIncr );
-   break;
-  case( dblmxDecr ):
-   return( mxDecr );
-   break;
-  case( dblmnDecr ):
-   return( mnDecr );
-   break;
-  case( dbltMaior ):
-   return( tMaior );
-   break;
-  case( dbltMinor ):
-   return( tMinor );
-   break;
-  case( dbltInit ):
-   return( tInit );
-   break;
-  case( dbltSPar2 ):
-   return( tSPar2 );
-   break;
-  case( dblCtOff ):
-   return( CtOff );
-   break;
-  default:
-   return( CDASolver::get_dflt_dbl_par( par ) );
+  case( dblMaxTime ):   return( MaxTime );
+  case( dblRelAcc ):    return( RelAcc );
+  case( dblAbsAcc ):    return( AbsAcc );
+  case( dblEveryTTm ):  return( EveryTTm );
+  case( dblNZEps ):     return( NZEps );
+  case( dbltStar ):     return( tStar );
+  case( dblMinNrEvls ): return( MinNrEvls );
+  case( dblBPar5 ):     return( BPar5 );
+  case( dblm1 ):        return( m1 );
+  case( dblm2 ):        return( m2 );
+  case( dblm3 ):        return( m3 );
+  case( dblmxIncr ):    return( mxIncr );
+  case( dblmnIncr ):    return( mnIncr );
+  case( dblmxDecr ):    return( mxDecr );
+  case( dblmnDecr ):    return( mnDecr );
+  case( dbltMaior ):    return( tMaior );
+  case( dbltMinor ):    return( tMinor );
+  case( dbltInit ):     return( tInit );
+  case( dbltSPar2 ):    return( tSPar2 );
+  case( dblCtOff ):     return( CtOff );
+  default:              return( CDASolver::get_dbl_par( par ) );
   }
  }  // end( BundleSolver::get_dbl_par )
+
+/*--------------------------------------------------------------------------*/
+
+const std::string & BundleSolver::get_str_par( idx_type par ) const
+{
+ switch( par ) {
+  case( strEasyCfg ):   return( EasyCfg );
+  case( strHardCfg ):   return( HardCfg );
+  default:              return( CDASolver::get_str_par( par ) );
+  }
+ }
+
+/*--------------------------------------------------------------------------*/
+
+const std::vector< int > & BundleSolver::get_vint_par( idx_type par ) const
+{
+ if( par == vintNoEasy )
+  return( NoEasy );
+
+ return( CDASolver::get_vint_par( par ) );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+const std::vector< std::string > & BundleSolver::get_vstr_par( idx_type par )
+ const
+{
+ if( par == vstrCmpCfg )
+  return( CmpCfg );
+
+ return( CDASolver::get_vstr_par( par ) );
+ }
 
 /*--------------------------------------------------------------------------*/
 /*----------------------- OTHER PROTECTED METHODS --------------------------*/
@@ -1822,7 +2049,7 @@ void BundleSolver::FormD( void )
   Master->Sett( t );
   tHasChgd = false;
   }
-
+ 
  // collect and set individual and global lower bounds- - - - - - - - - - - -
  // first of all, check if a "hard" lower bound is available
  // note: this used to be done elsewhere, in particular after each function
@@ -1838,11 +2065,12 @@ void BundleSolver::FormD( void )
  //       but it is available then, and anyway it typically does not change
  //       when the function is computed, unlike the "hard" one
 
- auto LwrBnd = f_Block->get_valid_lower_bound( false );
- if( TrueLB ) {                         // a "hard LB" was available already
-  if( LwrBnd != LowerBound[ NrFi ] ) {  // but it has changed
-   if( LwrBnd > - INFshift ) {          // and it is still available
-    LowerBound.back() = LwrBnd;         // record it
+ auto LwrBnd = f_convex ?   f_Block->get_valid_lower_bound( false )
+                        : - f_Block->get_valid_upper_bound( false );
+ if( TrueLB ) {                        // a "hard LB" was available already
+  if( LwrBnd != LowerBound.back() ) {  // but it has changed
+   if( LwrBnd > - INFshift ) {         // and it is still available
+    LowerBound.back() = LwrBnd;        // record it
 
     // translate the value using the reference value of the hard components,
     // but not that of the easy ones
@@ -1850,8 +2078,8 @@ void BundleSolver::FormD( void )
      if( ( ! NrEasy ) || ( ! IsEasy[ k ] ) )
       LwrBnd -= UpRifFi[ k ];
     }
-   else                                 // it was available
-    TrueLB = false;                     // but now it is not
+   else                                // it was available
+    TrueLB = false;                    // but now it is not
 
    // note that the bound has to be set in the master problem even if it is
    // -INF, because before it was not so, hence it has to be reset
@@ -1876,7 +2104,9 @@ void BundleSolver::FormD( void )
  if( TrueLB )  // if it is a true LB, use it to improve the lower estimate
   LwFiLmb.back() = std::max( LwFiLmb.back() , LowerBound.back() );
  else          // if not, at least pick a "conditional" one (if any)
-  LowerBound.back() = f_Block->get_valid_lower_bound( true );
+  LowerBound.back() = f_convex
+                      ?   f_Block->get_valid_lower_bound( true )
+                      : - f_Block->get_valid_upper_bound( true );
 
  // now, if the MPSolver accepts them, collect and if necessary set the
  // individual lower bounds. note that if all of them are finite and the
@@ -1892,7 +2122,8 @@ void BundleSolver::FormD( void )
    continue;
 
   // get the lower bound out of the C05Function
-  auto LwrBndk = v_c05f[ k ]->get_global_lower_bound();
+  auto LwrBndk = f_convex ?   v_c05f[ k ]->get_global_lower_bound()
+                          : - v_c05f[ k ]->get_global_upper_bound();
 
   // use it to update the lower estimate in Lambda
   update_LwFiLambd( k , LwrBndk );
@@ -1914,22 +2145,13 @@ void BundleSolver::FormD( void )
    }
   }
 
- /* set termination criterion - - - - - - - - - - - - - - - - - - - - - - - -
-  * leftover code for a previous version of MPSolver having a MPSolver::kZero
-  * parameter, now removed; to be deleted
-
- if( UpFiLmb[ NrFi ] < INFshift )
-  Master->SetPar( MPSolver::kZero ,
-		  max_error() / std::max( tStar / t , HpNum( 1 ) ) );
-  */
-
  for(;;)  // error-handling loop - - - - - - - - - - - - - - - - - - - - - -
  {        // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
   // ensure the MPSolver will not take too much time
-  if( MaxTime < Inf<double>() ) {
+  if( MaxTime < INFshift ) {
    Master->SetMPTime();
-   Master->SetPar( MPSolver::kMaxTme , MaxTime - elapsed() );
+   Master->SetPar( MPSolver::kMaxTme , MaxTime - get_elapsed_time() );
    }
 
   MPSolver::MPStatus mps = Master->SolveMP();  // solve the MP
@@ -1958,13 +2180,12 @@ void BundleSolver::FormD( void )
    }
 
   if( mps == MPSolver::kStppd ) {  // stopped by time limit
-   //!! so far, the time limit in the MPSolver is only due to the
-   //!! global time limit in the NDOSolver, but one day we may want
-   //!! to set it independently; then, some checks will have to be
-   //!! done if the solution is feasible and it can still be used
-   //!! and v is sufficiently < 0: in this case we can use the
-   //!! solution as well, otherwise we have to give the MPSolver
-   //!! more time
+   //!! so far, the time limit in the MPSolver is only due to the global time
+   //!! limit in the NDOSolver, but one day we may want to set it
+   //!! independently; then, some checks will have to be done if the
+   //!! solution is feasible and it can still be used and v is sufficiently
+   //!! < 0: in this case we can use the direction as well, otherwise we
+   //!! have to give the MPSolver more time
    Result = kStopTime;
    break;
    }
@@ -1995,14 +2216,14 @@ void BundleSolver::FormD( void )
      break;
      }
 
-  if( i == InINF )  // there are no *removable* items in Base - - - -
-   for( Index j = Master->MaxName() ; j-- ; )  // pick any removable item
+  if( i == InINF )  // there are no *removable* items in Base - - - - - - - -
+  for( Index j = Master->MaxName() ; j-- ; )  // pick any removable item
     if( ( OOBase[ j ] >= 0 ) && ( OOBase[ j ] < Inf<SIndex>() ) ) {
      i = j;
      break;
      }
 
-  if( i == InINF ) {  // there are no removable items at all- - - - -
+  if( i == InINF ) {  // there are no removable items at all - - - - - - - -
    BLOG( 0 , std::endl << "Bundle::FormD: unrecoverable MP failure." );
    Result = kError;
    return;
@@ -2019,7 +2240,7 @@ void BundleSolver::FormD( void )
  // reduces accuracy and created problems. ensure that eR is properly reset
  // after every successfull call
  if( ! ( MPName & 1 ) )
-  Master->SetPar( MPSolver::kOptEps , RelMPAcc );
+  Master->SetPar( MPSolver::kOptEps , 1e-12 );
 
  Sigma = Master->ReadSigma();              // read Sigma*
  vStar.back() = Master->ReadFiBLambda();   // read the total v*
@@ -2029,62 +2250,111 @@ void BundleSolver::FormD( void )
  // added an artificial constraint to make v[ k ] bounded) and +INF is
  // returned for that component, and therefore for the total v* (the sum)
 
- if( NrEasy ) {                  // there are easy components
-  for( Index k = 0 ; k < NrFi ; ++k )
-   if( IsEasy[ k ] )                                 // for easy components
-    // the master problem produes the *exact* Fi-value (up = lw) at Lambda1
-    UpFiLmb1[ k ] = LwFiLmb1[ k ] = Master->ReadFiBLambda( k + 1 );
-   else                                              // for hard components
-    vStar[ k ] = Master->ReadFiBLambda( k + 1 );     // read model value
+ // now retrieve vStar[ k ] for each component: for easy ones, the master
+ // problem produes the *exact* Fi-value (up = lw) at Lambda1, which we
+ // store unmodified in vStar[ k ] (that is not used anyway) for it to be
+ // retrieved later by FormLambda1()
+ for( Index k = 0 ; k < NrFi ; ++k )
+  vStar[ k ] = Master->ReadFiBLambda( k + 1 );  // read model value
 
-  // adjust the contribution of the easy components to the total v*
-  // easy components are treated differently from hard ones in that
-  // their value in the model is *not* translated by their Fi-value in
-  // Lambda; however, v* has to measure the total decrease predicted by
-  // the model in Lambda1, w.r.t. the value in Lambda. the MPSolver
-  // provides the non-translated value, hence the correction is made
-  // here. note that one could expect a "-=" to be there instead of the
-  // "+=", but this seems to be the right sign for MPSolver behaviour
-  if( ( UpFiLmb.back() < INFshift ) && ( vStar.back() < INFshift ) )
-   for( Index k = 0 ; k < NrFi ; k++ )
-    if( IsEasy[ k ] )
-     vStar.back() += UpRifFi[ k ];
+ if( NrEasy ) {  // there are easy components
+  // adjust the contribution of the easy components to v* and Sigma*
+  // easy components are treated differently from hard ones in that their
+  // value in the model is *not* translated by their (reference) Fi-value in
+  // Lambda; however, v* has to measure the total decrease predicted by the
+  // model in Lambda1 w.r.t. the (reference) Fi-value in Lambda, and Sigma*
+  // the error, again, w.r.t. the (reference) Fi-value in Lambda. since the
+  // MPSolver provides non-translated Fi-values, the correction has to be
+  // made here.
+  VarValue EasyRifFi = 0;
+  for( Index k = 0 ; k < NrFi ; ++k )
+   if( IsEasy[ k ] )
+    EasyRifFi += UpRifFi[ k ];
+
+  // note that v* and Sigma* have "opposite signs" (the former is negative,
+  // the latter positive) which justifies why one finds a "-=" and a "+="
+  if( vStar.back() < INFshift )
+   vStar.back() -= EasyRifFi;
+  Sigma += EasyRifFi;
   }
- else                            // there are no easy components
-  for( Index k = 0 ; k < NrFi ; ++k )
-   vStar[ k ] = Master->ReadFiBLambda( k + 1 );  // read model value
 
- if( tStar > 0 )
-  DSTS = Master->ReadDStart( tStar );                  // D_{t*,\beta,x}
- else
-  DSTS = std::abs( tStar ) * Master->ReadDStart( 1 );  // | t* | * || z* ||
+ DSTS = Master->ReadDStart( std::abs( tStar ) );  // D_{t*}( z* )
 
  // Sigma* + D*_{t*}( -z* ) is the "maximum expected increase" used in
  // the stopping criterion, EpsU is that relative to Fi( Lambda )
-
  if( UpFiLmb.back() < INFshift )
   EpsU = ( DSTS + Sigma ) / std::max( std::abs( UpFiLmb.back() ) ,
 				      double( 1 ) );
  else
   EpsU = 1;  // ensure EpsU is initialized somehow
 
- // the z[ i ] are no longer valid
- Zvalid.assign( NrFi , false );
+ Zvalid.assign( NrFi , false );    // the z[ i ] are no longer valid
 
- // the scalar products have changed
- ScPr1.assign( NrFi , INFshift );
+ ScPr1.assign( NrFi , INFshift );  // the scalar products have changed
 
- // additional information not present in the Bundle implementation
- // for NDOSolver interface  - - - - - - - - - - - - - - - - - - - - - - - - -
+ DST = Master->ReadDStart( t );  // D_t( z* )
 
- DeltaStar = Master->ReadDStart( t ) / 2.0 + Sigma;
- cLMRow tdir = Master->Readd( true );
+ // Delta* = D_t( z* ) +Sigma* is <= - v*, and a weaker requirement about
+ // how much the (total) function must increase for a NS to be declared;
+ // however, this only holds if v* is "true", which means that all the
+ // components have some diagonal linearization in their bundle; otherwise
+ // v* is "fake" and so is Delta* (but anyway, this means that any finite
+ // lower bound is much better than what we currently have)
 
- NrmD = 0;                                    // d-norm
- for( Index i = 0 ; i < NumVar ; ++i )
-  NrmD += tdir[ i ] * tdir[ i ];
- NrmD = sqrt(  NrmD );
+ // compute (very easy if the stabilization is quadratic) || d* ||_2
+ if( ( ! ( MPName & 1 ) ) || ( MPName & 4 ) )  // quadratic stabilization
+  // ReadDStart( t ) == t || z* ||_2^2 / 2   and   d = - t z*   ==>
+  // || d* ||_2 == t || z* ||_2 == t * sqrt( 2 * DST / t )
+  NrmD = t * sqrt( 2 * DST / t );
+ else {                                        // boxstep stabilization
+  auto tdir = Master->Readd();
+  NrmD = 0;                                    // || d* ||_2 need be computed
+  for( Index i = 0 ; i < NumVar ; ++i )
+   NrmD += tdir[ i ] * tdir[ i ];
+  NrmD = sqrt(  NrmD );
+  }
 
+ // in the easy case NrmD also gives the (2-)norm of z*
+ // important note: the relationship d* = - t z* upon which the following is
+ // based is actually NOT VALID WHEN THERE ARE CONSTRAINTS, if z* is to be
+ // interpreted as the aggregate subgradient of the objective. however, it
+ // IS VALID IF z* IS TO BE INTERPRETED AS THE AGGREGATE SUBGRADIENT OF THE
+ // ESSENTIAL OBJECTIVE (f + i_X), WHICH IS EXACTLY WHAT IS NEEDED HERE.
+ // in fact, consider the case where the constraints are just Lambda >= 0;
+ // what we have is that d* = t proj_{>= 0}( - z* ); but it is exactly the
+ // condition proj_{>= 0}( - z* ) == 0 that gives the optimality condition.
+ // in the Lagrangian case, \Lambda >= 0 corresponds to having relaxed
+ // inequalities A u <= b, and z* = b - A u*; hence, it is only required that
+ // z* == 0 (that is, proj_{>= 0}( - z* ) == 0) to ensure that u* is feasible
+ // and therefore Sigma*-optimal, as opposed to requiring z* == 0
+ if( ( ( ! ( MPName & 1 ) ) || ( MPName & 4 ) ) && ( ( WZNorm & 3 ) == 2 ) )
+  NrmZ = NrmD / t;
+ else {  // otherwise it has to be computed the hard way
+  // NOTE: THIS CODE IS BOTH HORRIBLY INEFFCIENT DUE TO A CRAP IMPLEMENTATION
+  // OF OsiMPSolver::ReadZ AND INCORRECT WHEN THERE ARE CONSTRAINTS, AS THE
+  // z* COMPUTED BY ReadZ() IS THAT OF THE OBJECTIVE BUT NOT OF THE ESSENTIAL
+  // OBJECTIVE. the right vector should be easy to compute since it's basically
+  // the slack s that is explicit in the dual formulation of the master problem,
+  // adjusted with the slacks, but this is no time to dawdle with this
+  Index dim;
+  const Index * nms;
+  std::vector< double > tZ( NumVar );
+  Master->ReadZ( tZ.data() , nms , dim );
+  tZ.resize( dim );
+  NrmZ = ::norm( tZ , WZNorm & 3 );
+  }
+
+ // if still needed, compute the scaling factor for z*
+ if( NrmZFctr == INFshift )
+  compute_NrmZFctr();
+
+ // if the scaling factor could be computed one can check if z* == 0
+ // has happened and declare a globally valid LB
+ if( ( UpFiLmb.back() < INFshift ) && ( vStar.back() < INFshift ) &&
+     ( NrmZFctr < INFshift ) && ( NrmZ <= NrmZFctr * NZEps ) ) {
+  if( f_global_LB < UpFiLmb.back() + vStar.back() )
+   f_global_LB = UpFiLmb.back() + vStar.back();
+  }
  }  // end( BundleSolver::FormD )
 
 /*--------------------------------------------------------------------------*/
@@ -2108,18 +2378,21 @@ void BundleSolver::UpdtCntrs( void )
  // set to 0 the OOBase[] counter for items in base (if not < 0)- - - - - - -
  // note that chechking if the multiplier is strictly positive should be
  // redundant, if one was trusting the MPSolver
+ // MinQuad requires a "high" accuracy to work (1e-12) while standard solvers
+ // do not, and in fact may complain if such a tight accuracy is set
+ double eps = ( MPName & 1 ) ? 1e-9 : 1e-12;
 
  Index MBDim;
  const Index * MBse;
  const double * Mlt = Master->ReadMult( MBse , MBDim );
  if( MBse ) {
   for( Index i ; ( i = *(MBse++) ) < InINF ; ++Mlt )
-   if( ( *Mlt >= RMPAccSol ) && ( OOBase[ i ] > 0 ) )
+   if( ( *Mlt >= eps ) && ( OOBase[ i ] > 0 ) )
     OOBase[ i ] = 0;
   }
  else
   for( Index i = 0 ; i < MBDim ; ++i , ++Mlt )
-   if( ( *Mlt >= RMPAccSol ) && ( OOBase[ i ] > 0 ) )
+   if( ( *Mlt >= eps ) && ( OOBase[ i ] > 0 ) )
     OOBase[ i ] = 0;
 
  /*!!
@@ -2176,6 +2449,9 @@ void BundleSolver::FormLambda1( HpNum Tau )
   // ensure that the bounds on the variables will be satisfied with the
   // precision required by the FiOracle, the (upper and lower) bounds are
   // strictly enforced here
+  //
+  //!! this part either to be updated with the bounds from the
+  //   OneVarConstraint or, more likely, to be completely removed
 
   std::vector<VarValue> tL1 = Lambda1;
 
@@ -2224,9 +2500,9 @@ void BundleSolver::FormLambda1( HpNum Tau )
  UpFiLmb1def = LwFiLmb1def = 0;
  for( Index k = 0 ; k < NrFi ; ++k )
   if( NrEasy && IsEasy[ k ] ) {  // k is an easy component
-   UpFiLmb1[ k ] = LwFiLmb1[ k ] = Master->ReadFiBLambda( k );
-   ++UpFiLmb1def;
-   ++LwFiLmb1def;
+   UpFiLmb1[ k ] = LwFiLmb1[ k ] = vStar[ k ];  // we know the exact value
+   ++UpFiLmb1def;                               // thus both UpFi1 and LwFi1
+   ++LwFiLmb1def;                               // are known (and equal)
    }
   else {                         // k is a hard component
    // compute upper and lower bound for k (possibly +/- INF)
@@ -2252,7 +2528,7 @@ void BundleSolver::FormLambda1( HpNum Tau )
  // this requires the value of the linear function, so ensure it is computed
  if( f_lf ) {
   f_lf->compute( true );
-  Fi0Lmb1 = f_lf->get_upper_estimate();
+  Fi0Lmb1 = rs( f_lf->get_upper_estimate() );
   }
  else
   Fi0Lmb1 = 0;
@@ -2277,13 +2553,14 @@ void BundleSolver::FormLambda1( HpNum Tau )
  // update the upper and lower targets - - - - - - - - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // note that vStar.back() == INFshift if the bundle of any of the hard
- // components is empty
+ // components is empty, in which case there are no targets: any "finite"
+ // information about them is better than what we currently have
 
  if( vStar.back() < INFshift ) {
   UpTrgt = UpRifFi.back() + ( 1.0 - m2 ) * vStar.back();
 
   if( m1 > 0 )
-   LwTrgt = UpRifFi.back() + vStar[ NrFi ] + m1 * DeltaStar;
+   LwTrgt = UpRifFi.back() + vStar[ NrFi ] + m1 * ( DST + Sigma );
   else
    LwTrgt = UpRifFi.back() + ( 1.0 + m1 ) * vStar.back();
   }
@@ -2291,7 +2568,90 @@ void BundleSolver::FormLambda1( HpNum Tau )
   UpTrgt = INFshift;
   LwTrgt = -INFshift;
   }
+
+ // print the new informaion - - - - - - - - - - - - - - - - - - - - - - - - -
+ //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+ if( f_log && ( LogVerb > 4 ) ) {
+  *f_log << std::endl << "    Lambda1 = [ ";
+  for( auto el : Lambda1 )
+   *f_log << el << " ";
+  *f_log << "]";
+
+  if( LogVerb > 5 )
+   for( Index k = 0 ; k < NrFi ; ++k )
+    *f_log << std::endl << "    UB[ " << k << " ] = " << def
+	   << rs( UpFiLmb1[ k ] ) << ", LB[ " << k << " ] = "
+	   << rs( LwFiLmb1[ k ] );
+  }
  }  // end( BundleSolver::FormLambda1 )
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::InnerLoop( void )
+{
+ CurrNrEvls.assign( NrFi , Index( 0 ) );
+ MPchgs = 0;      // != 0 if the MP is guaranteed to change enugh after
+                  // the insertion of new information to ensure that the
+                  // algorithm will converge
+
+ // compute the minimum number of components to evaluate
+ Index minceval = ( MinNrEvls >= 0 ? Index( MinNrEvls )
+		                   : ( NrFi - NrEasy ) * ( - MinNrEvls ) );
+ Index ceval = 0;  // how many components have been evaluated so far
+
+ for( bool insrtd = false ; ; ) {
+  // round-robin-like loop between the different components
+
+  if( FiAndGi( f_wFi ) )
+   insrtd = true;
+
+  if( ( FiStatus[ f_wFi ] <= kUnEval ) || ( FiStatus[ f_wFi ] >= kError ) ) {
+   Result = kError;
+   return;
+   }
+
+  if( ! CurrNrEvls[ f_wFi ] )  // not evaluated before
+   ++ceval;                    // one more evaluated
+  ++CurrNrEvls[ f_wFi ];       // evaluated once more
+
+  // a SS can be performed: note the "<" in the SS condition below (which
+  // means it is ever so slightly stronger than it should), which is there
+  // to avoid the condition to work when UpFiLmb1.back() == INF == UpTrgt
+  if( ( ! MPchgs ) && ( UpFiLmb1.back() < UpTrgt ) )
+   MPchgs = 1;
+
+  if( ( ! MPchgs ) && insrtd && RifeqFi && ( LwFiLmb1.back() > LwTrgt ) )
+   // doing a NS without possibly evaluating all the components is inhibited
+   // if the linearization errors are not computed w.r.t. the "true" value
+   // of (every component of); this corresponds to the assumption in the
+   // theory that a finite upper bound is known for every component. this
+   // implies that eventually all components will be evaluated, which will
+   // typically yield a SS
+   //
+   // for a NS to be performed, LwFiLmb1 must be > than the lower target;
+   // again, note the ">" instead of the ">=" (which means this is ever so
+   // slightly stronger than it should), which is there to avoid the
+   // condition to work when LwFiLmb1.back() == - INF == LwTrgt
+   //
+   // however, for a NS to guarantee no cycling, at least something must
+   // have been inserted (on top of all the other conditions)
+   MPchgs = 1;
+
+  if( ! FindNext() )       // find next component
+   break;                  // if none, nothing else to do but stop
+
+  if( ( MaxTime < INFshift ) && ( get_elapsed_time() > MaxTime ) )
+   break;                  // time has ran up: nothing else to do but stop
+
+  if( ceval < minceval )   // not evaluated enough components yet
+   continue;               // do not stop regardless of MPchgs
+    
+  if( MPchgs )             // the MP is guaranteed to change
+   break;                  // happily stop
+
+  }  // end( for( functions evaluation loop ) )
+ }  // end( BundleSolver::InnerLoop )
 
 /*--------------------------------------------------------------------------*/
 
@@ -2302,61 +2662,92 @@ bool BundleSolver::FiAndGi( Index wFi )
  if( NrEasy && IsEasy[ wFi ] )
   return( false );
 
- double UpCutOff = INFshift;
- double LwCutOff = -INFshift;
+ // compute upper and lower cutoffs and the accuracy
+ double UpCutOff , LwCutOff , EpsCurr;
 
- if( vStar[ wFi ] < INFshift ) {
-  // this can only be done if there are diagonal linearizations of the
-  // component wFi in the bundle, i.e., vStar[ wFi ] is well-defined
+ if( UpTrgt < INFshift ) {
+  // finite upper and lower cutoffs can (and make sense to) be set only if the
+  // upper and lower targets are finite (they either both are or none of them
+  // are), which depends on the fact that vStar.back() (and its "cousin"
+  // Delta* = D_t( z* ) + Sigma*) is finite, which means that *all*
+  // (non-easy) components have diagonal linearizations in their bundle
+  //
+  // note that this implies that vStar[ wFi ] (for this particular component)
+  // must also be well-defined (< INF)
+ 
+  const auto LwFiK = UpRifFi[ wFi ] + vStar[ wFi ];
+  const auto bk = BetaK( wFi );
 
-  double LwFiK = UpRifFi[ wFi ] + vStar[ wFi ];
+  UpCutOff = LwFiK - m2 * bk * vStar.back();
+  LwCutOff = LwFiK + m1 * bk * ( DST + Sigma );
 
-  if( UpFiLmb[ wFi ] < INFshift ) {
-   if( ( UpTrgt < INFshift ) && ( UpFiLmb1[ NrFi ] < INFshift ) )
-    UpCutOff = std::max( UpTrgt - ( UpFiLmb1[ NrFi ] - UpFiLmb1[ wFi ] ) ,
-			 LwFiK - m2 * BetaK( wFi ) * vStar[ NrFi ] );
-   else
-    UpCutOff = LwFiK - m2 * BetaK( wFi ) * vStar[ NrFi ];
-   }
+  // the second part of the Up/LwCutOff computation, conditional to the fact
+  // that the function value is available, corresponds to the following
+  // argument: assume we want
+  //
+  //     \bar{f}_{tot}( x ) = \sum_i \bar{f}_i( x ) <= \bar{tar}
+  //
+  // this means
+  //
+  //     \bar{f}_h( x ) <= \bar{tar} - \sum_{i \neq k} i \bar{f}_i( x )
+  //
+  // but
+  //
+  //  \sum_{i \neq k} i \bar{f}_i( x ) = \bar{f}_{tot}( x ) - \bar{f}_h( x )
+  //
+  // (and of course the symmetric argument for the lower cutoff)
 
-  if( LwFiLmb[ wFi ] > -INFshift ) {
-   if( ( LwTrgt > -INFshift ) && ( LwFiLmb1[ NrFi ] > -INFshift ) )
-    LwCutOff = std::max( LwTrgt - ( LwFiLmb1[ NrFi ] - LwFiLmb1[ wFi ] ) ,
-			 LwFiK + m1 * BetaK( wFi ) * DeltaStar );
-   else
-    LwCutOff = LwFiK + m1 * BetaK( wFi ) * DeltaStar;
-   }
-  }
+  // note that UpFiLmb1.back() < INFshift ==> UpFiLmb1[ wFi ] < INFshift
+  if( UpFiLmb1.back() < INFshift )
+   UpCutOff = std::min( UpTrgt - ( UpFiLmb1.back() - UpFiLmb1[ wFi ] ) ,
+			UpCutOff );
 
- double EpsCurr;
- if( ( LwCutOff > -INFshift ) && ( UpCutOff < INFshift ) )
+  // note that LwFiLmb1.back() > -INFshift ==> LwFiLmb1[ wFi ] > -INFshift
+  if( LwFiLmb1.back() > -INFshift )
+   LwCutOff = std::max( LwTrgt - ( LwFiLmb1.back() - LwFiLmb1[ wFi ] ) ,
+			LwCutOff );
+
   EpsCurr = ( UpCutOff - LwCutOff ) / std::max( 1.0 ,
 						std::abs( UpRifFi[ wFi ] ) );
- else
+  }
+ else {
+  // if some component does not have any linearization yet, any "finite"
+  // information about them is better than what we currently have, and hence
+  // the cutoffs are "as weak as they can be"
+  UpCutOff = INFshift;
+  LwCutOff = -INFshift;
   EpsCurr = RelAcc / Nearly;
+  }
 
  // assign the cutoff values to the C05Function - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
  auto fwFi = v_c05f[ wFi ];
 
- fwFi->set_par( dblUpCutOff , UpCutOff );
-
- fwFi->set_par( dblLwCutOff , LwCutOff );
-
+ fwFi->set_par( dblUpCutOff , f_convex ? UpCutOff : - LwCutOff );
+ fwFi->set_par( dblLwCutOff , f_convex ? LwCutOff : - UpCutOff );
  fwFi->set_par( dblRelAcc , EpsCurr );
 
  // also set a "time cutoff" with the remaining total time
- if( MaxTime < Inf<double>() )
-  fwFi->set_par( dblMaxTime , MaxTime - elapsed() );
+ if( MaxTime < INFshift )
+  fwFi->set_par( dblMaxTime , MaxTime - get_elapsed_time() );
  
  // now compute the C05Function and retrieve upper and lower estimates- - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
  FiStatus[ wFi ] = fwFi->compute( ( FiStatus[ wFi ] == kUnEval ) );
+ if( ( FiStatus[ wFi ] <= kUnEval ) || ( FiStatus[ wFi ] >= kError ) )
+  return( false );
+  
+ auto ue = fwFi->get_upper_estimate();
+ auto le = fwFi->get_lower_estimate();
 
+ if( f_log && ( LogVerb > 3 ) )
+  *f_log << std::endl << "            Component " << wFi
+	 << " evaluated: UB = "<< def << ue << ", LB = " << le << std::endl;
+ 
  // update UpFiLambd1[ wFi ] (and possibly UpFiLambd1[ NrFi ])
- update_UpFiLambd1( wFi , fwFi->get_upper_estimate() );
+ update_UpFiLambd1( wFi , f_convex ? ue : - le );
 
  // compute the upper bound in Lambda provided by the upper bound in Lambda1
  // and try to update UpFiLmb[ wFi ] (and possibly UpFiLambd1[ NrFi ])
@@ -2371,19 +2762,17 @@ bool BundleSolver::FiAndGi( Index wFi )
   }
 
  // update LwFiLambd1[ wFi ] (and possibly LwFiLambd1[ NrFi ])
- update_LwFiLambd1( wFi , fwFi->get_lower_estimate() );
+ update_LwFiLambd1( wFi , f_convex ? le : - ue );
 
  // get new linearizations- - - - - - - - - - - - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ bool insrtd = false;  // keep track if anything new at all was inserted
 
- Index Ftchd = 0;
- for( ; Ftchd < aBP3 ; ++Ftchd ) {
+ for( Index Ftchd = 0 ; Ftchd < aBP3 ; ++Ftchd ) {
   bool diagonal = true;
   bool HasLinearization;
 
-  if( Ftchd == 0 ) {
-   // first look for a constraint then for a sub-gradient
-
+  if( ! Ftchd ) {  // first look for a constraint then for a sub-gradient
    if( UpFiLmb1[ wFi ] == INFshift ) {
     HasLinearization = fwFi->has_linearization( diagonal = false );
     if( ! HasLinearization )
@@ -2406,7 +2795,7 @@ bool BundleSolver::FiAndGi( Index wFi )
    break;                   // nothing else to do
 
   if( ! diagonal )          // a vertical linearization changes the MP
-   MPchgs = true;           // no matter what else happens
+   MPchgs = 2;              // no matter what else happens
 
   // check if aggregation has to be performed - - - - - - - - - - - - - - - -
   // doing this now could occasionally result in useless aggregations, but it
@@ -2423,7 +2812,10 @@ bool BundleSolver::FiAndGi( Index wFi )
   // fetch the item from the Oracle - - - - - - - - - - - - - - - - - - - - -
 
   fwFi->get_linearization_coefficients( G1 );
-  auto Alfa1k = fwFi->get_linearization_constant();
+  if( ! f_convex )
+   chgsign( G1 , NumVar );
+	
+  auto Alfa1k = rs( fwFi->get_linearization_constant() );
   HpNum eps;
 
   // pass the base to the MP Solver - - - - - - - - - - - - - - - - - - - - -
@@ -2441,9 +2833,9 @@ bool BundleSolver::FiAndGi( Index wFi )
    auto FikLmb = Alfa1k +
     std::inner_product( Lambda.begin() , Lambda.end() , G1 , double( 0 ) );
 
-   // try to update LwFiLmb[ wFi ] (and possibly LwFiLambd[ NrFi ])
+   // try to update LwFiLmb[ wFi ] (and possibly LwFiLambd.back())
    // note that, even if this suceeds and therefore increases LwFiLmb[ wFi ]
-   // (and possibly LwFiLambd[ NrFi ], which would be a "rather big" increase
+   // (and possibly LwFiLambd.back(), which would be a "rather big" increase
    // from -INF to something finite), as the theory requires the lower target
    // is *not* changed
    update_LwFiLambd( wFi , FikLmb );
@@ -2464,13 +2856,33 @@ bool BundleSolver::FiAndGi( Index wFi )
    cp = Master->CheckSubG( UpFiLmb1[ wFi ] - UpRifFi[ wFi ] , t , Alfa1k ,
 			   ScPr1k );
    }
-  else              // it is a constraint
+  else {             // it is a constraint
+   // the definition of constraint in FiOracle (hence MPSolver) is
+   //
+   //      SubG * Lambda <= GetVal()
+   //
+   // i.e., SubG * Lambda - GetVal() <= 0, whereas in C05Function it is
+   //
+   //       ( 0 , - g ) ( v , x ) >= \alpha
+   //
+   // i.e., g x + \alpha <= 0; this means that the \alpha produced by
+   // get_linearization_constant() is the opposite than that of GetVal()
+   // in fact, the standard form of the constraints in the master problem is
+   // [v/0] >= g d - \alpha while the diagonal linearizations are
+   //
+   //       ( 1 , - g ) ( v , x ) >= \alpha
+   //
+   // and indeed Alfa1k is also "changed in sign" in the diagonal
+   // linearization (subgradient) case
+
+   Alfa1k = - Alfa1k;
    cp = Master->CheckCnst( Alfa1k , ScPr1k , Lambda.data() );
+   }
 
   Index gpp = Inf<Index>();  // position in the global pool where to put it
 
   if( f_log && ( LogVerb > 2 ) ) {
-   *f_log << std::endl << "            New ";
+   *f_log << std::endl << "            New " << shrt;
    if( diagonal ) {
     if( eps >= std::max( std::abs( UpRifFi[ wFi ] ) , double( 1 ) )
 	       * RelAcc / 10 )
@@ -2478,7 +2890,7 @@ bool BundleSolver::FiAndGi( Index wFi )
     else
      *f_log << "subgradient";
     *f_log << " for Fi[ " << wFi << " ] ~ Alfa1 = " << Alfa1k
-	   << " ~ gd = " << - ScPr1k;
+	   << " ~ gd = " << rs( ScPr1k );
     }
    else
     *f_log << "constraint " << wh << " ~ rhs = " << Alfa1k;
@@ -2586,11 +2998,11 @@ bool BundleSolver::FiAndGi( Index wFi )
   // if something was inserted, bookkeeping is needed - - - - - - - - - - - -
 
   if( to_insert ) {
-
    inhibit_Modification( true );
    v_c05f[ wFi ]->store_linearization( gpp );
    inhibit_Modification( false );
 
+   insrtd = true;
    add_to_global_pool( wFi , gpp , wh );
 
    if( diagonal )       // it is a subgradient
@@ -2610,7 +3022,7 @@ bool BundleSolver::FiAndGi( Index wFi )
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- return( Ftchd > 0 );
+ return( insrtd );
 
  }  // end( BundleSolver::FiAndGi )
 
@@ -2705,8 +3117,9 @@ void BundleSolver::ResetAlfa( Index k )
  if( k == NrFi ) {  // all components need be reset
   for( Index i = 0 ; i < Master->MaxName() ; ++i )
    if( ItemVcblr[ i ].second < vBPar2[ ItemVcblr[ i ].first ] ) {
-    auto Ai = v_c05f[ ItemVcblr[ i ].first ]->get_linearization_constant(
-						     ItemVcblr[ i ].second );
+    auto Ai = rs( v_c05f[ ItemVcblr[ i ].first
+			  ]->get_linearization_constant(
+						   ItemVcblr[ i ].second ) );
     #ifndef NDEBUG
      if( std::isnan( Ai ) )  // linearization no longer valid
       throw( std::logic_error( "inconsistent ItemVcblr" ) );
@@ -2715,6 +3128,9 @@ void BundleSolver::ResetAlfa( Index k )
     // compute the linearization error in Lambda
     v_c05f[ ItemVcblr[ i ].first ]->get_linearization_coefficients(
 		   Gi.data() , Range( 0 , NumVar ) , ItemVcblr[ i ].second );
+    if( ! f_convex )
+     chgsign( Gi.data() , NumVar );
+
     Alfa[ i ] = UpRifFi[ ItemVcblr[ i ].first ] - Ai -
               std::inner_product( Lambda.begin() , Lambda.end() , Gi.data() ,
 				  double( 0 ) );
@@ -2723,7 +3139,7 @@ void BundleSolver::ResetAlfa( Index k )
  else {             // only that specific component need be reset
   for( Index i = 0 ; i < MaxItem[ k ] ; ++i )
    if( InvItemVcblr[ k ][ i ] < vBPar2[ NrFi ] ) {
-    auto Ai = v_c05f[ k ]->get_linearization_constant( i );
+    auto Ai = rs( v_c05f[ k ]->get_linearization_constant( i ) );
 
     #ifndef NDEBUG
      if( std::isnan( Ai ) )  // linearization no longer valid
@@ -2733,6 +3149,9 @@ void BundleSolver::ResetAlfa( Index k )
     // compute the linearization error in Lambda
     v_c05f[ k ]->get_linearization_coefficients( Gi.data() ,
 						 Range( 0 , NumVar ) , i );
+    if( ! f_convex )
+     chgsign( Gi.data() , NumVar );
+
     Alfa[ InvItemVcblr[ k ][ i ] ] = UpRifFi[ k ] - Ai -
 	       std::inner_product( Lambda.begin() , Lambda.end() , Gi.data() ,
 				   double( 0 ) );
@@ -2787,21 +3206,20 @@ void BundleSolver::Log1( void )
   return;
 
  *f_log << std::endl << "{" << SCalls << "-" << ParIter << "-"
-	<< NrItems[ NrFi ] << "} t = " << t
+	<< NrItems.back() << "} t = " << shrt << t
 	<< " ~ D*_1( z* ) = " << Master->ReadDStart( 1 )
 	<< " ~ Sigma = " << Sigma << std::endl << "           ";
 
- *f_log <<  " Fi = ";
-
- if( UpFiLmb[ NrFi ] == INFshift )
-  *f_log << " - INF";
+ if( UpFiLmb.back() == INFshift )
+  *f_log << " Fi undefined";
  else
-  *f_log << UpFiLmb[ NrFi ] << " ~ eU = " << EpsU;
+  *f_log << " Fi = " << def << rs( UpFiLmb.back() ) << " ~ eU = "
+	 << shrt << EpsU;
 
  if( BPar6 )
   *f_log << " ~ BP3 = " << aBP3;
 
- } // end( BundleSolver::Log1 )
+ }  // end( BundleSolver::Log1 )
 
 /*--------------------------------------------------------------------------*/
 
@@ -2810,23 +3228,87 @@ void BundleSolver::Log2( void )
  if( ( ! f_log ) || ( LogVerb <= 1 ) )
   return;
 
- *f_log << std::endl << "            ";
+ *f_log << std::endl << "            " << def;
 
- if( LowerBound[ NrFi ] > - INFshift )
-  *f_log << "LB = " << LowerBound[ NrFi ] << " ~ ";
+ if( LowerBound[ NrFi ] > - INFshift ) {
+  if( f_convex )
+   *f_log << "LB = " << LowerBound.back() << " ~ ";
+  else
+   *f_log << "UB = " << - LowerBound.back() << " ~ ";
+  }
 
  *f_log << "Fi1 = ";
 
- if( UpFiLmb1[ NrFi ] <= - INFshift )
-  *f_log << "+ INF => STOP." << std::endl;
- else
-  if( UpFiLmb1[ NrFi ] >= INFshift )
-   *f_log << " - INF" << std::endl;
+ if( f_convex ) {
+  if( UpFiLmb1.back() <= - INFshift )
+   *f_log << "+ INF => STOP." << std::endl;
   else
-   *f_log << UpFiLmb1[ NrFi ] << " ~ Alfa1 = " << Alfa1[ NrFi ]
-	  << " ~ Gi1xd = " << - ScPr1[ NrFi ] << std::endl;
+   if( UpFiLmb1.back() >= INFshift )
+    *f_log << " - INF" << std::endl;
+   else
+    *f_log << UpFiLmb1.back() << shrt << " ~ Alfa1 = " << Alfa1.back()
+	   << " ~ Gi1xd = " << ScPr1.back() << std::endl;
+  }
+ else
+  if( UpFiLmb1.back() <= - INFshift )
+   *f_log << "- INF => STOP." << std::endl;
+  else
+   if( UpFiLmb1.back() >= INFshift )
+    *f_log << " + INF" << std::endl;
+   else
+    *f_log << - UpFiLmb1.back() << shrt << " ~ Alfa1 = " << Alfa1.back()
+	   << " ~ Gi1xd = " << - ScPr1.back() << std::endl;
+  
+ }  // end( BundleSolver::Log2 )
 
- } // end( BundleSolver::Log2 )
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::compute_NrmZFctr( void )
+{
+ auto wf = ( WZNorm << 2 );
+ // if we need to sum but some component has no linearization, return:
+ // NrmZFctr remains undefined
+ if( wf > 1 )
+  for( Index k = 0 ; k < NrFi ; ++k )
+   if( ( ( ! NrEasy ) || ( ! IsEasy[ k ] ) ) && ( NrItems[ k ] == 0 ) )
+    return;
+
+ // now we sum: note that if ! f_convex one should change the sign, but
+ // the norm is invariant w.r.t. the sign
+ std::vector< VarValue > tg( NumVar , 0 );
+ if( f_lf ) {      // the linear 0-th component is there
+  auto & cf = f_lf->get_v_var();
+  for( Index i = 0 ; i < NumVar ; ++i )
+   tg[ i ] = cf[ i ].second;
+  }
+ else              // there is no 0-th component
+  if( wf <= 1 ) {  // and we just wanted is subgradient
+   NrmZFctr = 1;   // ... which is all-0, so use 1
+   return;
+   }
+
+ if( wf > 1 ) {  // also need to sum a subgradient for each component
+  std::vector< VarValue > tg1( NumVar );
+
+  for( Index k = 0 ; k < NrFi ; ++k ) {
+   if( NrEasy && IsEasy[ k ] )
+    continue;
+
+   Index i = 0;
+   while( InvItemVcblr[ k ][ i ] == Inf<Index>() )
+    ++i;
+
+   v_c05f[ k ]->get_linearization_coefficients( tg1.data() ,
+						Range( 0 , NumVar ) , i );
+   
+   std::transform( tg.begin() , tg.end() , tg1.begin() , tg.begin() ,
+		   std::plus< VarValue >() );
+   }
+  }
+
+ NrmZFctr = ::norm( tg , WZNorm & 3 );
+
+ }  // end( compute_NrmZFctr )
 
 /*--------------------------------------------------------------------------*/
 /*-------------------------- PRIVATE METHODS -------------------------------*/
@@ -2838,15 +3320,22 @@ void BundleSolver::InitMP( void )
 
  Master->SetDim( vBPar2[ NrFi ] , &FakeFi , false );
 
- Master->SetPar( MPSolver::kOptEps , RelMPAcc );
- Master->SetPar( MPSolver::kFsbEps , RMPAccSol );
+ // MinQuad requires a "high" accuracy to work (1e-12) while standard solvers
+ // do not, and in fact may complain if such a tight accuracy is set
+ double eps = ( MPName & 1 ) ? 1e-9 : 1e-12;
+
+ Master->SetPar( MPSolver::kOptEps , eps );
+ Master->SetPar( MPSolver::kFsbEps , eps );
 
  // insert the constant subgradient of the 0-th component - - - - - - - - - -
  // TODO: check if the 0-th component is sparse, if so pass a proper base
  //       to the MPSolver
 
  if( f_lf ) {
-  f_lf->get_linearization_coefficients( Master->GetItem( 0 ) );
+  auto G0 = Master->GetItem( 0 );
+  f_lf->get_linearization_coefficients( G0 );
+  if( ! f_convex )
+   chgsign( G0 , NumVar );
   Master->SetItemBse( nullptr , NumVar );
   Master->SetItem( InINF );
   }
@@ -2856,24 +3345,30 @@ void BundleSolver::InitMP( void )
  if( MPName & 8 )
   Master->CheckIdentical();
 
+ // set the log file
+ Master->SetMPLog( f_log , MPlvl );
+
  }  // end( BundleSolver::InitMP )
 
 /*--------------------------------------------------------------------------*/
 
-bool BundleSolver::FindNext( Index & wFi )
+bool BundleSolver::FindNext( void )
 {
- Index InitwFi = wFi;
+ Index InitwFi = f_wFi;
  do {
-  wFi = ( wFi + 1 ) % NrFi;
-  if( ( FiStatus[ wFi ] == kUnEval ) ||
-      ( ( FiStatus[ wFi ] < kError ) && ( FiStatus[ wFi ] > kOK ) &&
-	( CurrNrEvls[ wFi ] < MaxNrEvls ) ) )
+  f_wFi = ( f_wFi + 1 ) % NrFi;    // next patient, please
+  if( NrEasy && IsEasy[ f_wFi ] )  // skip easy components
+   continue;
+  if( ( FiStatus[ f_wFi ] == kUnEval ) ||
+      ( ( FiStatus[ f_wFi ] < kError ) && ( FiStatus[ f_wFi ] > kOK ) &&
+	( CurrNrEvls[ f_wFi ] < MaxNrEvls ) ) )
    return( true );
-  } while( wFi != InitwFi );
+
+  } while( f_wFi != InitwFi );
 
  return( false );
 
- } // end( BundleSolver::FindNext )
+ }  // end( BundleSolver::FindNext )
 
 /*--------------------------------------------------------------------------*/
 
@@ -3083,32 +3578,38 @@ Index BundleSolver::BStrategy( Index wFi )
  Master->ReadZ( tZ , ZBse , ZBDm , wFi + 1 );
 
  #if CHECK_DS & 2
+  // MinQuad requires a "high" accuracy to work (1e-12) while standard solvers
+  // do not, and in fact may complain if such a tight accuracy is set
+  double eps = ( MPName & 1 ) ? 1e-9 : 1e-12;
+
   std::ostream * wlog = ( ( ! f_log ) || ( LogVerb <= 1 ) ) ? & std::cerr
                                                             : f_log;
-
+  *wlog << def;
   std::vector<VarValue> Z( NumVar );
   v_c05f[ wFi ]->get_linearization_coefficients( Z.data() ,
 						 Range( 0 , NumVar ) ,
 						 ItemVcblr[ whZ ].second );
+  if( ! f_convex )
+   chgsign( Z.data() , NumVar );
   if( ZBse ) {
    Index j = 0;
    for( Index i = 0 ; i < NumVar ; ++i )
     if( ( j < ZBDm ) && ( ZBse[ j ] == i ) ) {
      if( std::abs( Z[ i ] - tZ[ j ] ) >=
-	 RMPAccSol * std::max( Z[ i ] , double( 1 ) ) )
+	 eps * std::max( Z[ i ] , double( 1 ) ) )
       *wlog << std::endl << "Z[ " << i << " ]: F = " << Z[ i ]
 	    << " ~ M = " << tZ[ j ];
      ++j;
      }
     else
-     if( std::abs( Z[ i ] ) >= RMPAccSol )
+     if( std::abs( Z[ i ] ) >= eps )
       *wlog << std::endl << "Z[ " << i << " ]: F = " << Z[ i ]
 	    << " ~ M = 0";
    }
   else
    for( Index i = 0 ; i < NumVar ; ++i )
     if( std::abs( Z[ i ] - tZ[ i ] ) >=
-	RMPAccSol * std::max( Z[ i ] , double( 1 ) ) )
+	eps * std::max( Z[ i ] , double( 1 ) ) )
      *wlog << std::endl << "Z[ " << i << " ]: F = " << Z[ i ]
 	   << " ~ M = " << tZ[ i ];
  #endif
@@ -3121,14 +3622,14 @@ Index BundleSolver::BStrategy( Index wFi )
  HpNum Ai = Master->ReadSigma( wFi + 1 );      // its alfa is Sigma[ wFi ]
 
  #if CHECK_DS & 2
-  HpNum tAi = v_c05f[ wFi ]->get_linearization_constant(
-						    ItemVcblr[ whZ ].second );
+  HpNum tAi = rs( v_c05f[ wFi ]->get_linearization_constant(
+						ItemVcblr[ whZ ].second ) );
   tAi = UpRifFi[ wFi ] - tAi -
                          std::inner_product( Lambda.begin() , Lambda.end() ,
 					     Z.begin() , double( 0 ) );
 
   if( std::abs( tAi - Ai ) >=
-      RMPAccSol * std::max( std::max( Ai , UpRifFi[ wFi ] ) , double( 1 ) ) )
+      eps * std::max( std::max( Ai , UpRifFi[ wFi ] ) , double( 1 ) ) )
    *wlog << std::endl << "Sigma: F = " << tAi << " ~ M = " << Ai;
  #endif
 
@@ -3178,34 +3679,41 @@ Index BundleSolver::FindAPlace( Index wFi )
   }
 
  // if there are no deleted items (with suitably small names)
- if( Master->MaxName() < vBPar2[ NrFi ] )  // ... but there is still space
-  wh = Master->MaxName();                  // next name
+ if( Master->MaxName() < vBPar2.back() )  // ... but there is still space
+  wh = Master->MaxName();                 // next name
 
  return( wh );
 
  }  // end( BundleSolver::FindAPlace )
 
 /*--------------------------------------------------------------------------*/
+/* These heuristics consider what we know about the translated cutting plane
+ * model along d after the function has been computed:
+ *
+ * q[ 0 ] = 0
+ * M[ t ] = DeltaFi
+ * q'[ 0 ] = 
+
+ */
+
 
 HpNum BundleSolver::Heuristic1( void )
 {
- if( Alfa1[ NrFi ] < Eps<double>() )
+ if( Alfa1.back() < Eps<double>() )
   return( DeltaFi > Eps<double>() ? tMaior : tMinor );
  else
-  return( t * ( ( DeltaFi + Alfa1[ NrFi ] ) / ( 2 * Alfa1[ NrFi ] ) ) );
-
- } // end( BundleSolver::Heuristic1 )
+  return( t * ( ( DeltaFi + Alfa1.back() ) / ( 2 * Alfa1.back() ) ) );
+ }
 
 /*--------------------------------------------------------------------------*/
 
 HpNum BundleSolver::Heuristic2( void )
 {
- if( std::abs( vStar[ NrFi ] + DeltaFi ) < Eps<double>() )
+ if( std::abs( vStar.back() + DeltaFi ) < Eps<double>() )
   return( tMaior );
  else
-  return( t * abs( vStar[ NrFi ] / ( 2 * ( vStar[ NrFi ] + DeltaFi ) ) ) );
-
- } // end( BundleSolver::Heuristic2 )
+  return( t * abs( vStar.back() / ( 2 * ( vStar.back() + DeltaFi ) ) ) );
+ }
 
 /*--------------------------------------------------------------------------*/
 
@@ -3230,7 +3738,6 @@ void BundleSolver::guts_of_destructor( void )
     o->SetOsi();
     }
   #endif
-  
   
   delete Master;
   Master = nullptr;
@@ -3260,7 +3767,6 @@ void BundleSolver::guts_of_destructor( void )
  FrFItem.clear();
  NrItems.clear();
 
- InvItemVcblr.clear();
  ItemVcblr.clear();
 
  OOBase.clear();
@@ -3269,12 +3775,32 @@ void BundleSolver::guts_of_destructor( void )
  Lambda1.clear();
  Lambda.clear();
 
+ InvItemVcblr.clear();
  vBPar2.clear();
 
- for( auto milpp : MILP_s )
-  delete( milpp );
- MILP_s.clear();
- IsEasy.clear();
+ if( NrEasy ) {  // if there are "easy" components, delete the MILPSolver
+  if( DoEasy & ~1 ) {
+   // if easy components can be changed, before doing this unregister the
+   // MILPSolver from the inner Block (since it is registered there);
+   // meanwhile unregister the FakeSolver that is also registered there
+   auto FSit = v_FakeSolver.begin();
+   for( Index k = 0 ; k < NrFi ; ++k )
+    if( IsEasy[ k ] ) {
+     auto iB = static_cast< LagBFunction * >(
+					   v_c05f[ k ] )->get_inner_block();
+     iB->unregister_Solver( *(FSit++) , true );
+     iB->unregister_Solver( IsEasy[ k ] , true );
+     }
+
+   v_FakeSolver.clear();
+   }
+  else  // "easy" components are static, just delete the MILPSolver
+   for( Index k = 0 ; k < NrFi ; ++k )
+    delete IsEasy[ k ];
+    
+  IsEasy.clear();
+  NrEasy = 0;
+  }
 
  LamVcblr.clear();
 
@@ -3302,23 +3828,38 @@ void BundleSolver::ReSetAlg( unsigned char RstLvl )
    aBP3 = BPar3;
   }
 
- if( RstLvl & RstCrr )    // get an initial point - - - - - - - - - - - - - -
+ if( RstLvl & RstCrr ) {  // get an initial point - - - - - - - - - - - - - -
+  // note that the thusly constructed Master Problem assumes the stability
+  // centre to be all-0, in particular when constructing the Lagrangian costs
+  // of the easy components, so if that's not happening the right value has
+  // to be explicitly passed
   for( Index i = 0 ; i < NumVar ; ++i )
    Lambda[ i ] = LamVcblr[ i ]->get_value();
+
+  bool nonzero = false;
+  for( Index i = 0 ; i < NumVar ; ++i )
+   if( Lambda[ i ] ) { nonzero = true; break; }
+
+  if( nonzero ) {
+   // call ChangeCurrPoint( DLambda ) with DLambda == Lambda - oldLambda ==
+   // Lambda since oldLambda == 0 by construction
+   Vec_VarValue foo( NrFi + 1 , 0 );  // no change in the (unknown) f-values
+   Master->ChangeCurrPoint( Lambda.data() , foo.data() );
+   Fi0Lmb = INFshift;  // the value of the linear part must be computed
+   }
+  else  // Lambda was all-0 anyway
+   Fi0Lmb = 0;  // then the value of the linear part is quite obvious ...
+  }
  else {                   // reset the current point to all-0 - - - - - - - -
+  // note that the thusly constructed Master Problem precisely assumes
+  // the stability centre to be all-0, in particular when constructing the
+  // Lagrangian costs of the easy components, so that's fine as it is
   Lambda.assign( NumVar , 0 );
   // "tell" this to the ColVariable of the C05Function(s)
   for( Index i = 0 ; i < NumVar ; ++i )
    LamVcblr[ i++ ]->set_value( 0 );
+  Fi0Lmb = 0;  // then the value of the linear part is quite obvious ...
   }
-
- if( f_lf ) {
-  f_lf->compute( true );
-  Fi0Lmb = f_lf->get_upper_estimate();
-  }
- else
-  Fi0Lmb = 0;
- 
  }  // end( BundleSolver::ReSetAlg )
 
 /*--------------------------------------------------------------------------*/
@@ -3424,7 +3965,7 @@ void BundleSolver::UpdtaBP3( void )
     }
   }
 
- if( aBP3 > BPar3 )
+ if( aBP3 > Index( BPar3 ) )
   aBP3 = BPar3;
  else
   if( aBP3 < BPar4 )
@@ -3449,25 +3990,28 @@ bool BundleSolver::IsOptimal( double eps ) const
  if( err >= INFshift )
   return( false );
 
- if( tStar > 0 )
-  return( DSTS + Sigma <= err );
- else
-  return( ( Sigma <= err ) &&
-	  ( DSTS <= std::min( AAccSol , RAccSol * std::abs( tStar ) ) ) );
+ if( ( tStar > 0 ) && ( DSTS + Sigma <= err ) )
+  return( true );
 
- } // end( BundleSolver::IsOptimal )
+ return( ( Sigma <= err ) &&
+	 ( NrmZFctr < INFshift ) && ( NrmZ <= NrmZFctr * NZEps ) );
+
+ }  // end( BundleSolver::IsOptimal )
 
 /*--------------------------------------------------------------------------*/
 
 void BundleSolver::FModChg( VarValue shift , Index wFi )
 {
+ if( ( ! std::isnan( shift ) ) && ( ! f_convex ) )
+  shift = - shift;
+
  if( shift == INFshift ) {      // function changed monotonically up
   if( UpFiLmb[ wFi ] < INFshift ) {
    UpFiLmb[ wFi ] = INFshift;   // reset upper function value for component
    --UpFiLmbdef;                // one less known
    }
-  if( UpFiLmb[ NrFi ] < INFshift ) {
-   UpFiLmb[ NrFi ] = INFshift;  // reset total upper function value
+  if( UpFiLmb.back() < INFshift ) {
+   UpFiLmb.back() = INFshift;   // reset total upper function value
    --UpFiLmbdef;                // one less known
    }
   UpFiBest = INFshift;          // comprised best one
@@ -3479,10 +4023,11 @@ void BundleSolver::FModChg( VarValue shift , Index wFi )
    LwFiLmb[ wFi ] = -INFshift;  // reset lower function value for component
    --LwFiLmbdef;                // one less known
    }
-  if( LwFiLmb[ NrFi ] > -INFshift ) {
-   LwFiLmb[ NrFi ] = -INFshift; // reset total lower function value
+  if( LwFiLmb.back() > -INFshift ) {
+   LwFiLmb.back() = -INFshift;  // reset total lower function value
    --LwFiLmbdef;                // one less known
    }
+  f_global_LB = - INFshift;     // global LB no longer valid
   return;
   }
 
@@ -3491,8 +4036,8 @@ void BundleSolver::FModChg( VarValue shift , Index wFi )
    UpFiLmb[ wFi ] = INFshift;   // reset upper function value for component
    --UpFiLmbdef;                // one less known
    }
-  if( UpFiLmb[ NrFi ] < INFshift ) {
-   UpFiLmb[ NrFi ] = INFshift;  // reset total upper function value
+  if( UpFiLmb.back() < INFshift ) {
+   UpFiLmb.back() = INFshift;   // reset total upper function value
    --UpFiLmbdef;                // one less known
    }
   UpFiBest = INFshift;          // and of course best one
@@ -3500,10 +4045,11 @@ void BundleSolver::FModChg( VarValue shift , Index wFi )
    LwFiLmb[ wFi ] = -INFshift;  // reset lower function value for component
    --LwFiLmbdef;                // one less known
    }
-  if( LwFiLmb[ NrFi ] > -INFshift ) {
-   LwFiLmb[ NrFi ] = -INFshift; // reset total lower function value
+  if( LwFiLmb.back() > -INFshift ) {
+   LwFiLmb.back() = -INFshift;  // reset total lower function value
    --LwFiLmbdef;                // one less known
    }
+  f_global_LB = - INFshift;     // global LB no longer valid
   return;
   }
 
@@ -3512,8 +4058,8 @@ void BundleSolver::FModChg( VarValue shift , Index wFi )
  if( UpFiLmb[ wFi ] < INFshift )
   UpFiLmb[ wFi ] += shift;
 
- if( UpFiLmb[ NrFi ] < INFshift )
-  UpFiLmb[ NrFi ] += shift;
+ if( UpFiLmb.back() < INFshift )
+  UpFiLmb.back() += shift;
 
  if( UpFiBest < INFshift )
   UpFiBest += shift;
@@ -3521,14 +4067,10 @@ void BundleSolver::FModChg( VarValue shift , Index wFi )
  if( LwFiLmb[ wFi ] > -INFshift )
   LwFiLmb[ wFi ] += shift;
 
- if( LwFiLmb[ NrFi ] > -INFshift )
-  LwFiLmb[ NrFi ] += shift;
+ if( LwFiLmb.back() > -INFshift )
+  LwFiLmb.back() += shift;
 
- //!! the changes below are wrong: UpRifFi[] is the value with which the
- //!! linearization errors have been computed, and these change only when
- //!! the linearization errors change
- //!! UpRifFi[ wFi ] += shift;
- //!! UpRifFi[ NrFi ] += shift;
+ f_global_LB += shift;
 
  }  // end( BundleSolver::FModChg )
 
@@ -3608,11 +4150,7 @@ void BundleSolver::add_to_global_pool( Index k , Index i , Index wh )
 
  if( i >= MaxItem[ k ] )
   MaxItem[ k ] = i + 1;
- /*!!
- while( ( MaxItem[ k ] < vBPar2[ k ] ) &&
-	( InvItemVcblr[ k ][ MaxItem[ k ] ] < Inf<Index>() ) )
-  ++MaxItem[ k ];
-  !!*/
+
  while( ( FrFItem[ k ] < MaxItem[ k ] ) &&
 	( InvItemVcblr[ k ][ FrFItem[ k ] ] <
 	  ( ( BPar7 & 3 ) ? vBPar2[ NrFi ] : Inf<Index>() ) ) )
@@ -3653,9 +4191,11 @@ void BundleSolver::add_to_bundle( Index k , Index i )
 
  // recover the linearization from the C05Function
  v_c05f[ k ]->get_linearization_coefficients( G1 , Range( 0 , NumVar ) , i );
+ if( ! f_convex )
+  chgsign( G1 , NumVar );
 
  // recover the constant and "translate" it w.r.t. Lambda
- auto Ai = v_c05f[ k ]->get_linearization_constant( i );
+ auto Ai = rs( v_c05f[ k ]->get_linearization_constant( i ) );
 
  Master->SetItemBse( nullptr , NumVar );
 
@@ -3709,6 +4249,22 @@ void BundleSolver::reset_bundle( void )
 
 /*--------------------------------------------------------------------------*/
 
+Lst_sp_Mod::size_type BundleSolver::num_outstanding_Modification( void )
+{
+ auto res = v_mod.size();
+
+ if( NrEasy && ( DoEasy & ~1 ) ) {
+  auto FSit = v_FakeSolver.begin();
+  for( Index k = 0 ; k < NrFi ; )
+   if( IsEasy[ k++ ] )
+    res += (*FSit)->get_Modification_list().size();
+  }
+
+ return( res );
+ }
+
+/*--------------------------------------------------------------------------*/
+
 bool BundleSolver::is_special_GroupMod( GroupModification & gmod )
 {
  // recognise "special" GroupModification for changing the set of "active"
@@ -3729,46 +4285,40 @@ bool BundleSolver::is_special_GroupMod( GroupModification & gmod )
  ++smi;
 
  // check FunctionModVarsAddd
- {
-  const auto mod0 = std::dynamic_pointer_cast< FunctionModVarsAddd >( sm0 );
-  if( mod0 ) {
-   for( ; smi != gmod.sub_Modifications().end() ; ++smi ) {
-    auto modi = std::static_pointer_cast< FunctionModVarsAddd >( *smi );
-    if( ( mod0->first() != modi->first() ) ||
-	( mod0->vars() != modi->vars() ) )
-     throw( std::logic_error( "different Variable change in components" ) );
-    }
-
-   return( true );
+ if( const auto mod0 =
+     std::dynamic_pointer_cast< FunctionModVarsAddd >( sm0 ) ) {
+  for( ; smi != gmod.sub_Modifications().end() ; ++smi ) {
+   auto modi = std::static_pointer_cast< FunctionModVarsAddd >( *smi );
+   if( ( mod0->first() != modi->first() ) ||
+       ( mod0->vars() != modi->vars() ) )
+    throw( std::logic_error( "different Variable change in components" ) );
    }
+
+  return( true );
   }
 
  // check FunctionModVarsRngd
- {
-  const auto mod0 = std::dynamic_pointer_cast< FunctionModVarsRngd >( sm0 );
-  if( mod0 ) {
-   for( ; smi != gmod.sub_Modifications().end() ; ++smi ) {
-    auto modi = std::static_pointer_cast< FunctionModVarsRngd >( *smi );
-    if( mod0->range() != modi->range() )
-     throw( std::logic_error( "different Variable change in components" ) );
-    }
-
-   return( true );
+ if( const auto mod0 =
+     std::dynamic_pointer_cast< FunctionModVarsRngd >( sm0 ) ) {
+  for( ; smi != gmod.sub_Modifications().end() ; ++smi ) {
+   auto modi = std::static_pointer_cast< FunctionModVarsRngd >( *smi );
+   if( mod0->range() != modi->range() )
+    throw( std::logic_error( "different Variable change in components" ) );
    }
+
+  return( true );
   }
 
  // check FunctionModVarsSbst
- {
-  const auto mod0 = std::dynamic_pointer_cast< FunctionModVarsSbst >( sm0 );
-  if( mod0 ) {
-   for( ; smi != gmod.sub_Modifications().end() ; ++smi ) {
-    auto modi = std::static_pointer_cast<FunctionModVarsSbst>( *smi );
-    if( mod0->subset() != modi->subset() )
-     throw( std::logic_error( "different Variable change in components" ) );
-    }
-
-   return( true );
+ if( const auto mod0 =
+     std::dynamic_pointer_cast< FunctionModVarsSbst >( sm0 ) ) {
+  for( ; smi != gmod.sub_Modifications().end() ; ++smi ) {
+   auto modi = std::static_pointer_cast<FunctionModVarsSbst>( *smi );
+   if( mod0->subset() != modi->subset() )
+    throw( std::logic_error( "different Variable change in components" ) );
    }
+
+  return( true );
   }
 
  return( false );
@@ -3786,6 +4336,150 @@ void BundleSolver::flatten_Modification_list( Lst_sp_Mod & vmt , sp_Mod mod )
  else
   vmt.push_back( mod );
  }
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::flatten_easy_Modification_list( Lst_sp_Mod & vmt ,
+						   sp_Mod mod )
+{
+ if( const auto tmod = std::dynamic_pointer_cast< GroupModification >( mod ) )
+  for( auto submod : tmod->sub_Modifications() )
+   flatten_Modification_list( vmt , submod );
+ else
+  vmt.push_back( mod );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::process_outstanding_easy_Modification( void )
+{
+ // look at all easy components; for each of these scan the Modification in
+ // the corresponding FakeSolver and divine which changes need be done to
+ // the Master Problem
+
+ auto FSit = v_FakeSolver.begin();
+ for( Index k = 0 ; k < NrFi ; ++k ) {
+  if( ! IsEasy[ k ] )
+   continue;
+
+  // ensure that the MILPSolver has "digested" the Modification - - - - - - -
+  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  // since some Modification in the inner Block cause LagBFunction to react
+  // by doing other changes to it, ensure that this is done before the list
+  // of Modification is scanned; however, note that if the list is empty
+  // already (in which case this method may not even be called, and therefore
+  // neither apply_obj_Modification() is) then no new Modification can be
+  // added by LagBFunction: LagBFunction does not "create Modification out
+  // of thin air", only reacts to those issued from outside
+
+  static_cast< LagBFunction * >( v_c05f[ k ] )->apply_obj_Modification();
+
+  // MILPSolver::compute() has the only role of scanning the list of
+  // Modification and updating its internal data structures accordingly
+
+  IsEasy[ k ]->MILPSolver::compute( false );
+  
+  // construct the flattened list of Modification in the FakeSolver - - - - -
+  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+  Lst_sp_Mod v_mod_tmp;
+
+  (*FSit)->lock_Modification_list();
+
+  for( auto mod : (*FSit)->get_Modification_list() )
+   flatten_easy_Modification_list( v_mod_tmp , mod );
+
+  (*FSit)->get_Modification_list().clear();
+
+  (*(FSit++))->unlock_Modification_list();
+
+  if( v_mod_tmp.empty() )  // nothing here to see
+   continue;               // move over
+
+  // scan all the Modification in the FakeSolver- - - - - - - - - - - - - - -
+  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+  char whch = 0;
+
+  for( ; ! v_mod_tmp.empty() ; v_mod_tmp.pop_front() ) {
+   auto mod = v_mod_tmp.front().get();
+
+   // FunctionMod- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+   if( const auto tmod = dynamic_cast< const FunctionMod * >( mod ) ) {
+    auto obs = tmod->function()->get_Observer();
+    if( dynamic_cast< const Objective * >( obs ) ) {
+     whch |= 1;
+     continue;
+     }
+
+    throw( std::logic_error( "unsupported Modification in easy component" ) );
+    }
+
+   // FunctionModVars- - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+   if( const auto tmod = dynamic_cast< const FunctionModVars * >( mod ) ) {
+    auto obs = tmod->function()->get_Observer();
+    if( dynamic_cast< const Objective * >( obs ) ) {
+     whch |= 1;
+     continue;
+     }
+
+    throw( std::logic_error( "unsupported Modification in easy component" ) );
+    }
+
+   // VariableMod- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+   if( const auto tmod = dynamic_cast< const VariableMod * >( mod ) ) {
+    const auto xj = dynamic_cast< const ColVariable * >( tmod->variable() );
+
+    if( ! xj )     // unknown variable type
+     throw( std::logic_error( "unsupported Modification in easy component" ) );
+
+    // fixing variables or changing their type is not supported; all the rest
+    // boils down to a change of bounds, and therefore is
+
+    if( ( xj->is_fixed() != xj->is_fixed( tmod->old_state() ) ) ||
+	( xj->is_integer() != xj->is_integer( tmod->old_state() ) ) )
+     throw( std::logic_error( "unsupported Modification in easy component" ) );
+
+    whch |= 4;
+    continue;
+
+    }  // end( VariableMod )
+
+   // RowConstraintMod - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+   if( const auto tmod = dynamic_cast< const RowConstraintMod * >( mod ) ) {
+
+    if( ( tmod->type() != RowConstraintMod::eChgLHS ) &&
+	( tmod->type() != RowConstraintMod::eChgRHS ) &&
+	( tmod->type() != RowConstraintMod::eChgBTS ) )
+     throw( std::logic_error( "unsupported Modification in easy component" ) );
+
+    if( dynamic_cast< const OneVarConstraintMod * >( tmod ) )
+     whch |= 4;
+    else
+     whch |= 2;
+
+    continue;
+
+    }  // end( RowConstraintMod )
+
+   throw( std::logic_error( "unsupported Modification in easy component" ) );
+
+   }  // end( for( all Modification ) )
+
+  // finally, act upon the detected Modification- - - - - - - - - - - - - - -
+  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+  if( whch & 1 )         // changes in costs
+   Master->ChgCosts( k + 1 , Lambda.data() );
+
+  if( whch & 2 )         // changes in LHS/RHS
+   Master->ChgRLHS( k + 1 );
+
+  if( whch & 4 )         // changes in LBD/UBD
+   Master->ChgLUBD( k + 1 );
+
+  }  // end( for( k ) ) 
+ }  // end( process_outstanding_easy_Modification )
 
 /*--------------------------------------------------------------------------*/
 
@@ -3821,6 +4515,8 @@ void BundleSolver::process_outstanding_Modification( void )
  //   a C05FunctionMod with type() == GlobalPoolRemoved and which().empty()
  //   or by any FunctionMod that does *not* imply strong quasi-additivity
  //   (i.e., that it is not a *C05*FunctionMod*)
+ // - check the LagBFunctionMod coming out the easy components and store in
+ //   reset[] the or of their what(), so that this can be acted upon later
  // - if a *FunctionMod* changing linearizations happens before a reset of the
  //   global pool (meaning it is found afterwards in the reverse order) it
  //   is deleted since it is useless (after having checked if it also impacts
@@ -3832,11 +4528,13 @@ void BundleSolver::process_outstanding_Modification( void )
  //
  // TODO: during the 1st loop we could compute the set of components that have
  //       been modified anyhow and use this information to avoid constructing
- //       the numerous data structures like reset[] that are indexed over NrFi.
- //       this might be important if, say, NrFi is 10000 but only a smattering
- //       of the components (say, one) change
+ //       the numerous data structures like reset[] that are indexed over
+ //       NrFi. this might be important if, say, NrFi is 10000 but only a
+ //       smattering of the components (say, one) change
 
- std::vector<bool> reset( NrFi , false );
+ std::vector< bool > reset( NrFi , false );
+
+ bool Fi0Chgd = false;  // true if the 0-th component changes
 
  bool to_delete;  // should have been defined inside, but there is not
                   // visible by the lambda
@@ -3857,34 +4555,78 @@ void BundleSolver::process_outstanding_Modification( void )
   // patiently sift through the possible Modification types to find what mod
   // exactly is and react accordingly
 
-  // first check if it is any kinf of FunctionMod, since this gives immediate
+  // first check if it is any kind of FunctionMod, since this gives immediate
   // access to the component, and any FunctionMod pertaining to an already
   // reset component can be almost immediately deleted
-  {
-   const auto tmod = std::dynamic_pointer_cast<FunctionMod>( mod );
-   if( tmod ) {
-    if( tmod->function() == f_lf )
-     throw( std::logic_error( "changes in 0-th component not handled yet" ) );
+  if( const auto tmod = std::dynamic_pointer_cast< FunctionMod >( mod ) ) {
+   if( tmod->function() == f_lf ) {
+    const auto shift = tmod->shift();
+    // special immediate treatment of the 0-th component, which is simple
+    if( std::isnan( shift ) ) {  // is a C05FunctionModLin*
+     Fi0Chgd = true;             // changing the coefficients
+     Fi0Lmb = INFshift;          // the value is no longer known
+     if( UpFiLmbdef == NrFi + 1 ) {  // the total total upper bound was known
+      UpFiLmb.back() = INFshift;     // it is no longer so
+      UpFiLmbdef = NrFi;             // it will have to be recomputed
+      }
+     if( LwFiLmbdef == NrFi + 1 ) {  // the total total lower bound was known
+      LwFiLmb.back() = -INFshift;    // it is no longer so
+      LwFiLmbdef = NrFi;             // it will have to be recomputed
+      }
+     UpFiBest = INFshift;            // and the best value as well
+     }
+    else {                       // a FunctionMod changing the constant
+     #ifndef NDEBUG
+      if( ( shift == INFshift ) || ( shift == - INFshift ) )
+       throw( std::logic_error( "unexpected *FunctionMod* from LinearFunction"
+				) );
+     #endif
+     if( Fi0Lmb < INFshift )
+      Fi0Lmb += INFshift;
+     if( UpFiLmb.back() < INFshift )
+      UpFiLmb.back() += shift;
+     if( UpFiBest < INFshift )
+      UpFiBest += shift;
+     if( LwFiLmb.back() > -INFshift )
+      LwFiLmb.back() += shift;
+     f_global_LB += shift;
+     }
 
-    auto wFi = get_index_of_component( tmod->function() );
+    to_delete = true;  // in either case, all that had to be done
+    continue;          // has been done
+    }
 
-    // adjust or reset upper/lower values as needed
-    // note that the list is scanned in reverse, hence these changes are
-    // applied in reverse order. however, if the upper/lower values are
-    // reset at any point in the list they stay reset forever. indeed,
-    // even if a function has a finite shift after a reset, this says
-    // nothing because there are no known values to shift. if, rather, the
-    // values are only shifted by finite amounts, the total shift is the
-    // sum of the shift, and the order of additions do not change the result
-    if( wFi < NrFi )
-     FModChg( tmod->shift() , wFi );
-    else {
-     // this is a FunctionMod coming from some unknown Function, not any
-     // business of BundleSolver
+   auto wFi = get_index_of_component( tmod->function() );
+
+   // adjust or reset upper/lower values as needed
+   // note that the list is scanned in reverse, hence these changes are
+   // applied in reverse order. however, if the upper/lower values are reset
+   // at any point in the list they stay reset forever. indeed, even if a
+   // function has a finite shift after a reset, this says nothing because
+   // there are no known values to shift. if, rather, the values are only 
+   // shifted by finite amounts, the total shift is the sum of the shift,
+   // and the order of additions do not change the result
+   if( wFi < NrFi )
+    FModChg( tmod->shift() , wFi );
+   else {
+    // this is a FunctionMod coming from some unknown Function, not any
+    // business of BundleSolver
+    to_delete = true;
+    continue;
+    }
+
+   if( NrEasy && IsEasy[ wFi ] ) {  // coming from an easy component
+    if( DoEasy & ~1 ) {
+     // some changes in easy components are separately supported: ignoring
+     // the Modification is entirely possible
      to_delete = true;
      continue;
      }
 
+    // changes in easy components not separately supported
+    throw( std::logic_error( "unsupported change in easy component" ) );
+    }
+   else                             // coming from a non-easy component
     if( reset[ wFi ] ) {
      // any kind of FunctionMod after (before) one that completely reset the
      // component is useless, delete it and move forward (backward)
@@ -3892,201 +4634,153 @@ void BundleSolver::process_outstanding_Modification( void )
      continue;
      }
 
-    // if the component is not reset (yet), one must look in details what
-    // exact type the *FunctionMod* is and react accordingly
+   // if the component is not reset (yet), one must look in details what
+   // exact type the *FunctionMod* is and react accordingly
 
-    {
-     // a C05FunctionModRngd only changes existing linearizations, and
-     // therefore is never a "hard" reset; the only easy case is
-     // NothingChanged, which by definition does nothing save for the
-     // shift(), that has been dealt with already
-     const auto ttmod = std::dynamic_pointer_cast<C05FunctionModRngd>( tmod );
-     if( ttmod ) {
-      switch( ttmod->type() ) {
-       case( C05FunctionMod::NothingChanged ):
-	to_delete = true;
-       case( C05FunctionMod::AllLinearizationChanged ):
-       case( C05FunctionMod::AllEntriesChanged ):
-        continue;
-       default:
-	throw( std::invalid_argument( "wrong type in C05FunctionModRngd" ) );
-       }  // end( switch( ttmod->f_type ) )
-      }  // end( if( ttmod ) )
-     }  // end C05FunctionModRngd
-
-    {
-     // a C05FunctionModSbst only changes existing linearizations, and
-     // therefore is never a "hard" reset; the only easy case is
-     // NothingChanged, which by definition does nothing save for the
-     // shift(), that has been dealt with already
-     const auto ttmod = std::dynamic_pointer_cast<C05FunctionModSbst>( tmod );
-     if( ttmod ) {
-      switch( ttmod->type() ) {
-       case( C05FunctionMod::NothingChanged ):
-	to_delete = true;
-       case( C05FunctionMod::AllLinearizationChanged ):
-       case( C05FunctionMod::AllEntriesChanged ):
-        continue;
-       default:
-	throw( std::invalid_argument( "wrong type in C05FunctionModSbst" ) );
-       }  // end( switch( ttmod->f_type ) )
-      }  // end( if( ttmod ) )
-     }  // end C05FunctionModSbst
-
-    {
-     // a C05FunctionMod of type GlobalPoolRemoved with which.empty() resets
-     // all the component. NothingChanged by definition does nothing (save
-     // for the shift(), that has been dealt with already). all other cases
-     // will have to be dealt with later
-     const auto ttmod = std::dynamic_pointer_cast<C05FunctionMod>( tmod );
-     if( ttmod ) {
-      switch( ttmod->type() ) {
-       case( C05FunctionMod::GlobalPoolRemoved ):
-	if( ttmod->which().empty() ) {
-	 reset[ wFi ] = true;
-	 to_delete = true;
-	 }
-	continue;
-       case( C05FunctionMod::NothingChanged ):
-	to_delete = true;
-       case( C05FunctionMod::AllLinearizationChanged ):
-       case( C05FunctionMod::AllEntriesChanged ):
-       case( C05FunctionMod::AlphaChanged ):
-       case( C05FunctionMod::GlobalPoolAdded ):
-	continue;
-       default:
-	throw( std::invalid_argument( "wrong type in C05FunctionMod" ) );
-       }  // end( switch( ttmod->f_type ) )
-      }  // end( if( ttmod ) )
-     }  // end C05FunctionMod
-
-    {
-     // a C05FunctionModLin* only changes existing linearizations, and
-     // therefore is never a "hard" reset
-     const auto ttmod = std::dynamic_pointer_cast<C05FunctionModLinRngd>(
-								       tmod );
-     if( ttmod )
+   // a C05FunctionModRngd only changes existing linearizations, and
+   // therefore is never a "hard" reset
+   if( const auto ttmod =
+       std::dynamic_pointer_cast< C05FunctionModRngd >( tmod ) ) {
+    switch( ttmod->type() ) {
+     case( C05FunctionMod::AllLinearizationChanged ):
+     case( C05FunctionMod::AllEntriesChanged ):
       continue;
-     }
+     default:
+      throw( std::invalid_argument( "wrong type in C05FunctionModRngd" ) );
+     }  // end( switch( ttmod->f_type ) )
+    }  // end( if( ttmod - C05FunctionModRngd ) )
 
-    // if control reaches this point, mod is (indistinguishable from) a base
-    // FunctionMod, and in particular it is not a C05FunctionMod*. hence the
-    // change in the Function is not quasi-additive, and therefore a fortiori
-    // not strongly quasi-additive. as a result, this is a "hard" reset
-
-    reset[ wFi ] = true;
-    to_delete = true;
-
-    }  // end( if( tmod ) )
-   }  // end FunctionMod
-
-  {
-   // a "naked" FunctionModVars is only allowed if there is only one
-   // component (comprised the linear one). if it is allowed, it is
-   // of no consequence here, except for the possible effect on the
-   // function values, if it is a C05FunctionModVars*, meaning that it
-   // represents a strongly quasi-additive variable change. if not, the
-   // variable change also implies a reset
-   // in no case, however, the Modification is removed from the list
-
-   const auto tmod = std::dynamic_pointer_cast<FunctionModVars>( mod );
-   if( tmod ) {
-    if( ( NrFi > 1 ) || f_lf )
-     throw( std::invalid_argument( "naked FunctionModVars not allowed" ) );
-
-    auto wFi = get_index_of_component( tmod->function() );
-
-    FModChg( tmod->shift() , wFi );  // change/reset upper/lower values
-
-    {
-     const auto ttmod =
-                    std::dynamic_pointer_cast<C05FunctionModVarsAddd>( tmod );
-     if( ttmod )
+   // a C05FunctionModSbst only changes existing linearizations, and
+   // therefore is never a "hard" reset; the only easy case is
+   // NothingChanged, which by definition does nothing save for the
+   // shift(), that has been dealt with already
+   if( const auto ttmod =
+       std::dynamic_pointer_cast< C05FunctionModSbst >( tmod ) ) {
+    switch( ttmod->type() ) {
+     case( C05FunctionMod::AllLinearizationChanged ):
+     case( C05FunctionMod::AllEntriesChanged ):
       continue;
-     }
+     default:
+      throw( std::invalid_argument( "wrong type in C05FunctionModSbst" ) );
+     }  // end( switch( ttmod->f_type ) )
+    }  // end( if( ttmod - C05FunctionModSbst ) )
 
-    {
-     const auto ttmod =
-                    std::dynamic_pointer_cast<C05FunctionModVarsRngd>( tmod );
-     if( ttmod )
+   // a C05FunctionMod of type GlobalPoolRemoved with which.empty() resets
+   // all the component. NothingChanged by definition does nothing (save
+   // for the shift(), that has been dealt with already) ... except
+   // possibly doing a lot, i.e., signalling the switch from convex to
+   // concave, or vice-versa, which is not allowed; all other cases
+   // will have to be dealt with later
+   if( const auto ttmod =
+       std::dynamic_pointer_cast< C05FunctionMod >( tmod ) ) {
+    switch( ttmod->type() ) {
+     case( C05FunctionMod::GlobalPoolRemoved ):
+      if( ttmod->which().empty() ) {
+       reset[ wFi ] = true;
+       to_delete = true;
+       }
       continue;
-     }
-
-    {
-     const auto ttmod =
-                    std::dynamic_pointer_cast<C05FunctionModVarsSbst>( tmod );
-     if( ttmod )
+     case( C05FunctionMod::NothingChanged ):
+      if( v_c05f[ wFi ]->is_convex() != f_convex )
+       throw( std::logic_error( "convex/concave switch not allowed" ) );
+      to_delete = true;
+     case( C05FunctionMod::AllLinearizationChanged ):
+     case( C05FunctionMod::AllEntriesChanged ):
+     case( C05FunctionMod::AlphaChanged ):
+     case( C05FunctionMod::GlobalPoolAdded ):
       continue;
-     }
+     default:
+      throw( std::invalid_argument( "wrong type in C05FunctionMod" ) );
+     }  // end( switch( ttmod->f_type ) )
+    }  // end( if( ttmod - C05FunctionMod ) )
 
-    // if control reaches here, this is a FunctionModVars* that is not a
-    // C05FunctionModVars*, i.e., a non strongly quasi-additive variable
-    // change, which implies a "hard" reset for the component
-    reset[ wFi ] = true;
+   // a C05FunctionModLin* only changes existing linearizations, and
+   // therefore is never a "hard" reset
+   if( std::dynamic_pointer_cast< C05FunctionModLinRngd >( tmod ) )
     continue;
 
-    }  // end( if( tmod ) )
-   }  // end FunctionModVars
+   // if control reaches this point, mod is (indistinguishable from) a base
+   // FunctionMod, and in particular it is not a C05FunctionMod*. hence the
+   // change in the Function is not quasi-additive, and therefore a fortiori
+   // not strongly quasi-additive. as a result, this is a "hard" reset
 
-  {
-   // a GroupModification here can only be a bunch of identical
-   // *FunctionModVar*: pick the first one and act on it
-   const auto tmod = std::dynamic_pointer_cast<GroupModification>( mod );
-   if( tmod ) {
-    auto fmod = tmod->sub_Modifications().front();
+   reset[ wFi ] = to_delete = true;
 
-    {
-     const auto ttmod =
-                  std::dynamic_pointer_cast< C05FunctionModVarsAddd >( fmod );
-     if( ttmod )
-      continue;
+   }  // end( if( tmod - FunctionMod ) )
+
+  // a "naked" FunctionModVars is only allowed if there is only one
+  // component (comprised the linear one). if it is allowed, it is
+  // of no consequence here, except for the possible effect on the
+  // function values, if it is a C05FunctionModVars*, meaning that it
+  // represents a strongly quasi-additive variable change. if not, the
+  // variable change also implies a reset
+  // in no case, however, the Modification is removed from the list
+  if( const auto tmod = std::dynamic_pointer_cast< FunctionModVars >( mod )
+      ) {
+   if( ( NrFi > 1 ) || f_lf )
+    throw( std::invalid_argument( "naked FunctionModVars not allowed" ) );
+
+   auto wFi = get_index_of_component( tmod->function() );
+
+   FModChg( tmod->shift() , wFi );  // change/reset upper/lower values
+
+   if( std::dynamic_pointer_cast< C05FunctionModVarsAddd >( tmod ) )
+    continue;
+
+   if( std::dynamic_pointer_cast< C05FunctionModVarsRngd >( tmod ) )
+    continue;
+
+   if( std::dynamic_pointer_cast< C05FunctionModVarsSbst >( tmod ) )
+    continue;
+
+   // if control reaches here, this is a FunctionModVars* that is not a
+   // C05FunctionModVars*, i.e., a non strongly quasi-additive variable
+   // change, which implies a "hard" reset for the component
+   reset[ wFi ] = true;
+   continue;
+
+   }  // end( if( tmod - FunctionModVars ) )
+
+  // a GroupModification here can only be a bunch of identical
+  // *FunctionModVar*: pick the first one and act on it
+  if( const auto tmod =
+      std::dynamic_pointer_cast< GroupModification >( mod ) ) {
+   auto fmod = tmod->sub_Modifications().front();
+
+   if( std::dynamic_pointer_cast< C05FunctionModVarsAddd >( fmod ) )
+    continue;
+
+   if( std::dynamic_pointer_cast< C05FunctionModVarsRngd >( fmod ) )
+    continue;
+
+   if( std::dynamic_pointer_cast< C05FunctionModVarsSbst >( fmod ) )
+    continue;
+
+   // if control reaches here, this is a FunctionModVars* that is not a
+   // C05FunctionModVars*, i.e., a non strongly quasi-additive variable
+   // change, which implies a "hard" reset for *all* components
+   if( NrEasy ) {
+    for( Index k = 0 ; k < NrFi ; ++k )
+     if( ! IsEasy[ k ] )
+      reset[ k ] = true;
      }
-
-    {
-     const auto ttmod =
-                  std::dynamic_pointer_cast< C05FunctionModVarsRngd >( fmod );
-     if( ttmod )
-      continue;
-     }
-
-    {
-     const auto ttmod =
-                 std::dynamic_pointer_cast< C05FunctionModVarsSbst >( fmod );
-     if( ttmod )
-      continue;
-     }
-
-    // if control reaches here, this is a FunctionModVars* that is not a
-    // C05FunctionModVars*, i.e., a non strongly quasi-additive variable
-    // change, which implies a "hard" reset for *all* components
+   else
     reset.assign( NrFi , true );
-    continue;
-    }
-   }
+   continue;
 
-  {
-   const auto tmod = std::dynamic_pointer_cast< ConstraintMod >( mod );
-   if( tmod )
-    throw( std::invalid_argument( "ConstraintMod not handled (yet)" ) );
-   }
+   }  // end( if( tmod - GroupModification ) )
 
-  {
-   const auto tmod = std::dynamic_pointer_cast< VariableMod >( mod );
-   if( tmod )
-    throw( std::invalid_argument( "VariableMod not handled (yet)" ) );
-   }
+  if( std::dynamic_pointer_cast< ConstraintMod >( mod ) )
+   throw( std::invalid_argument( "ConstraintMod not handled (yet)" ) );
 
-  {
-   const auto tmod = std::dynamic_pointer_cast< BlockMod >( mod );
-   if( tmod )
-    throw( std::invalid_argument( "BlockMod not handled (yet)" ) );
-   }
+  if( std::dynamic_pointer_cast< VariableMod >( mod ) )
+   throw( std::invalid_argument( "VariableMod not handled (yet)" ) );
 
-  {
-   const auto tmod = std::dynamic_pointer_cast< BlockModAD >( mod );
-   if( tmod )
-    throw( std::invalid_argument( "BlockModAD not handled (yet)" ) );
-   }
+  if( std::dynamic_pointer_cast< BlockMod >( mod ) )
+   throw( std::invalid_argument( "BlockMod not handled (yet)" ) );
+
+  if( std::dynamic_pointer_cast< BlockModAD >( mod ) )
+   throw( std::invalid_argument( "BlockModAD not handled (yet)" ) );
 
   // if control reaches here, the Modification is "unknown", probably a
   // "physical" Modification that BundleSolver does not care about
@@ -4096,17 +4790,26 @@ void BundleSolver::process_outstanding_Modification( void )
   }  // end( 1st loop, in reverse )
 
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
- // if any global pool has been reset (or, even better, *all* of them have
- // reset) then delete all corresponding items in the bundle (all the bundle)
+ // if any global pool has been reset/all of them have reset, then delete all
+ // items in the corresponding bundle/reset all the bundle
 
- if( std::find( reset.begin() , reset.end() , false ) == reset.end() )
-  reset_bundle();  // all components have been reset
+ Index count = 0;
+ if( NrEasy ) {
+  for( Index k = 0 ; k < NrFi ; ++k )
+   if( ( ! IsEasy[ k ] ) && reset[ k ] )
+    ++count;
+  }
  else
-  if( std::find( reset.begin() , reset.end() , true ) != reset.end() ) {
-   // at least a component has been reset
+  for( Index k = 0 ; k < NrFi ; ++k )
+   if( reset[ k ] )
+    ++count;
 
+ if( count == NrFi - NrEasy )  // all non-easy components have been reset
+  reset_bundle();
+ else
+  if( count ) {                // at least a non-easy component has been reset
    for( Index k = 0 ; k < NrFi ; ++k )
-    if( reset[ k ] ) {
+    if( ( ( ! NrEasy ) || ( ! IsEasy[ k ] ) ) && reset[ k ] ) {
      for( Index i = 0 ; i < MaxItem[ k ] ; ++i )
       if( InvItemVcblr[ k ][ i ] < vBPar2[ NrFi ] )
        Delete( InvItemVcblr[ k ][ i ] , true );
@@ -4118,8 +4821,15 @@ void BundleSolver::process_outstanding_Modification( void )
  // have never been reset, or are the remaining ones after the (last) one
  // resetting the component
 
- if( v_mod_tmp.empty() )  // no more Modification to process
-  return;                 // all done
+ if( v_mod_tmp.empty() ) {  // no more Modification to process
+  // ordinarily, changes in the 0-th component would be dealt with at the
+  // end, but if this is the only thing that happened the end is now, so
+  // they have to be dealt with immediately
+  if( Fi0Chgd )
+   Master->ChgSubG( 0 , NumVar , 0 );
+
+  return;                   // all done
+  }
 
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // 2nd loop, again in reverse: check for "soft" reset of components, i.e.,
@@ -4128,12 +4838,25 @@ void BundleSolver::process_outstanding_Modification( void )
  // (meaning it is found afterwards in the reverse order) is deleted since it
  // is useless.
  //
- // note that, due to limitations in the MPSolver interface, changing a
- // linearization implies changing its constant; therefore, reset[ k ] == true
- // means that everything is changing. when reset[ k ] == true we take
- // AlphaC[ k ] == false since in this case che change of constants is not
- // needed because it is implied by the soft reset. thus, AlphaC[ k ] == true
- // means that only the constants need be changed, but not all the rest
+ // note that the linearization error of a linearization depends on both the
+ // initial constant (\alpha), the linearization itself (g) and the current
+ // stability centre (Lambda); thus, if any of those changes, the
+ // linearization error need be recomputed. hence reset[ k ] == true
+ // implies AlphaC[ k ] == true; the reverse implication does not hold, i.e.,
+ // AlphaC[ k ] == true with reset[ k ] == false is possible and it means
+ // that only the constants need be changed, but not all the rest. in this
+ // loop we consider changes of \alpha and g, while in the 4th loop we will
+ // consider changes of Lambda due to the removal of variables; additions
+ // never create problems since new variables are always initialized to 0, and
+ // therefore they never change the existing linearization error. in fact, not
+ // all changes of g necessarily change the linearization error: if a
+ // component g_i changes such that Lambda_i == 0, this has no impact. however,
+ // in this reverse loop the map between the Lambda[] vector and the indices
+ // in the Modification is nontrivial (if additions/removals happened), which
+ // makes checking this too complicated. anyway, the issue will go away in the
+ // version of BundleSolver that does not use MPSolver since there the
+ // linearizations will (likely) be represented by means of their "naked"
+ // constant \alpha rather than by their linearization error
  //
  // note that Modification changing the linearizations happening *after* a
  // "soft" reset of the global pool (meaning it is found *before* in the
@@ -4151,7 +4874,7 @@ void BundleSolver::process_outstanding_Modification( void )
  // in this direction will perhaps be done in later stages of develpment
 
  reset.assign( NrFi , false );  // reset reset (couldn't resist)
- std::vector<bool> AlphaC( NrFi , false );
+ std::vector< bool > AlphaC( NrFi , false );
 
  for( auto rimod = v_mod_tmp.rbegin() ; rimod != v_mod_tmp.rend() ;
       // note the iterator_expression of the for() obtained by defining
@@ -4169,148 +4892,143 @@ void BundleSolver::process_outstanding_Modification( void )
   // patiently sift through the possible Modification types to find what mod
   // exactly is and react accordingly
 
-  {
-   // a C05FunctionModRngd only changes a range of the linearizations,
-   // and therefore is not considered a "soft" reset even if which().empty()
-   // in fact the range could be so large as to be (almost) all the
-   // variables, which would count as a reset, but so far we don't attempt
-   // at detecting this. the only easy case would be NothingChanged, but
-   // any such C05FunctionModRngd has been deleted already. however, if the
-   // component is "soft" reset already, it can be deleted
-   //
-   // the Modification can also change constants, so this has to be checked.
-   // if the Modification changes all the constants and the component is
-   // reset already, it can be deleted
-
-   const auto tmod = std::dynamic_pointer_cast<C05FunctionModRngd>( mod );
-   if( tmod ) {
-    auto wFi = get_index_of_component( tmod->function() );
-    switch( tmod->type() ) {
-     case( C05FunctionMod::AllEntriesChanged ):
+  // a C05FunctionModRngd only changes a range of the linearizations,
+  // and therefore is not considered a "soft" reset even if which().empty()
+  // in fact the range could be so large as to be (almost) all the
+  // variables, which would count as a reset, but so far we don't attempt
+  // at detecting this. the only easy case would be NothingChanged, but
+  // any such C05FunctionModRngd has been deleted already. however, if the
+  // component is "soft" reset already, it can be deleted
+  //
+  // AllEntriesChanged and AllLinearizationChanged are equivalent, since
+  // even if only g changes, also the linearization error does (unless it
+  // only changes in places where Lambda == 0, but this cannot be checked
+  // efficiently)
+  if( const auto tmod =
+      std::dynamic_pointer_cast< C05FunctionModRngd >( mod ) ) {
+   auto wFi = get_index_of_component( tmod->function() );
+   switch( tmod->type() ) {
+    case( C05FunctionMod::AllEntriesChanged ):
+    case( C05FunctionMod::AllLinearizationChanged ):
+     if( tmod->which().empty() ) {  // reset of the constants
       if( reset[ wFi ] )            // component reset already
        to_delete = true;            // nothing else to do
-      continue;
-     case( C05FunctionMod::AllLinearizationChanged ):
-      if( tmod->which().empty() ) {  // reset of the constants
-       if( reset[ wFi ] )            // component reset already
-	to_delete = true;            // nothing else to do
-       else                          // component not reset
-	AlphaC[ wFi ] = true;        // reset the constants
-       }
-      continue;
-     default:  // this must not happen
-      throw( std::invalid_argument( "wrong type() in C05FunctionModRngd" ) );
-     }
-    }  // end( if( ttmod ) )
-   }  // end C05FunctionModRngd
-
-  {
-   // a C05FunctionModSbst only changes a subet of the linearizations,
-   // and therefore is not considered a "soft" reset even if which().empty()
-   // in fact the subet could be so large as to be (almost) all the
-   // variables, which would count as a reset, but so far we don't attempt
-   // at detecting this. the only easy case would be NothingChanged, but
-   // any such C05FunctionModSbst has been deleted already. however, if the
-   // component is "soft" reset already, it can be deleted
-
-   const auto tmod = std::dynamic_pointer_cast<C05FunctionModSbst>( mod );
-   if( tmod ) {
-    auto wFi = get_index_of_component( tmod->function() );
-    switch( tmod->type() ) {
-     case( C05FunctionMod::AllEntriesChanged ):
-      if( reset[ wFi ] )            // component reset already
-       to_delete = true;            // nothing else to do
-      continue;
-     case( C05FunctionMod::AllLinearizationChanged ):
-      if( tmod->which().empty() ) {  // reset of the constants
-       if( reset[ wFi ] )            // component reset already
-	to_delete = true;            // nothing else to do
-       else                          // component not reset
-	AlphaC[ wFi ] = true;        // reset the constants
-       }
-      continue;
-     default:  // this must not happen
-      throw( std::invalid_argument( "wrong type() in C05FunctionModSbst" ) );
-     }
-    }  // end( if( ttmod ) )
-   }  // end C05FunctionModSbst
-
-  {
-   // a C05FunctionMod of type AllLinearizationChanged or AllEntriesChanged
-   // with which.empty() "soft" resets all the component, and in the former
-   // case also Alpha; AlphaChanged only changes the constants (obviously)
-
-   const auto tmod = std::dynamic_pointer_cast<C05FunctionMod>( mod );
-   if( tmod ) {
-    // we only react to which().empty() 
-    if( ! tmod->which().empty() )
+      else                          // component not reset
+       AlphaC[ wFi ] = true;        // reset the constants
+      }
      continue;
+    default:  // this must not happen
+     throw( std::invalid_argument( "wrong type() in C05FunctionModRngd" ) );
+    }
+   }  // end( if( ttmod - C05FunctionModRngd ) )
 
-    auto wFi = get_index_of_component( tmod->function() );
+  // a C05FunctionModSbst only changes a subet of the linearizations,
+  // and therefore is not considered a "soft" reset even if which().empty()
+  // in fact the subet could be so large as to be (almost) all the
+  // variables, which would count as a reset, but so far we don't attempt
+  // at detecting this. the only easy case would be NothingChanged, but
+  // any such C05FunctionModSbst has been deleted already. however, if the
+  // component is "soft" reset already, it can be deleted
+  //
+  // AllEntriesChanged and AllLinearizationChanged are equivalent, since
+  // even if only g changes, also the linearization error does (unless it
+  // only changes in places where Lambda == 0, but this cannot be checked
+  // efficiently)
+  if( const auto tmod =
+      std::dynamic_pointer_cast< C05FunctionModSbst >( mod ) ) {
+   auto wFi = get_index_of_component( tmod->function() );
+   switch( tmod->type() ) {
+    case( C05FunctionMod::AllEntriesChanged ):
+    case( C05FunctionMod::AllLinearizationChanged ):
+     if( tmod->which().empty() ) {  // reset of the constants
+      if( reset[ wFi ] )            // component reset already
+       to_delete = true;            // nothing else to do
+      else                          // component not reset
+       AlphaC[ wFi ] = true;        // reset the constants
+      }
+     continue;
+    default:  // this must not happen
+     throw( std::invalid_argument( "wrong type() in C05FunctionModSbst" ) );
+    }
+   }  // end( if( ttmod - C05FunctionModSbst ) )
 
-    switch( tmod->type() ) {
-     case( C05FunctionMod::AlphaChanged ):
-      AlphaC[ wFi ] = true;
-      break;
-     case( C05FunctionMod::AllEntriesChanged ):
-     case( C05FunctionMod::AllLinearizationChanged ):
-      reset[ wFi ] = AlphaC[ wFi ] = true;
-      break;
-     default:  // this must not happen, as GlobalPoolRemoved with
-               // which.empty() has been dealt with and deleted before
-      throw( std::invalid_argument(
+  // a C05FunctionMod of type AllLinearizationChanged or AllEntriesChanged
+  // with which.empty() "soft" resets all the component and Alpha;
+  // AlphaChanged only changes the constants (obviously)
+  if( const auto tmod =
+      std::dynamic_pointer_cast< C05FunctionMod >( mod ) ) {
+   if( ! tmod->which().empty() )   // we only react to which().empty()
+    continue;
+
+   auto wFi = get_index_of_component( tmod->function() );
+
+   switch( tmod->type() ) {
+    case( C05FunctionMod::AlphaChanged ):
+     AlphaC[ wFi ] = true;
+     break;
+    case( C05FunctionMod::AllEntriesChanged ):
+    case( C05FunctionMod::AllLinearizationChanged ):
+     reset[ wFi ] = AlphaC[ wFi ] = false;
+     break;
+    default:  // this must not happen, as GlobalPoolRemoved with
+              // which.empty() has been dealt with and deleted before
+     throw( std::invalid_argument(
 		        "wrong type in C05FunctionMod with empty which()" ) );
-     }
+    }
 
-    to_delete = true;
-    continue;
-    }  // end( if( tmod ) )
-   }  // end C05FunctionMod
+   to_delete = true;
+   continue;
+   }  // end( if( tmod - C05FunctionMod ) )
 
-  {
-   // a C05FunctionModLinRngd implies that a specific range in all the
-   // linearizations must be changed by adding; this is never considered a
-   // "soft" reset even if in fact the range could be so large as to be
-   // (almost) all the variables, which would count as a reset, but so far
-   // we don't attempt at detecting this. however, if the component is "soft"
-   // reset already, it can be deleted
-   const auto tmod = std::dynamic_pointer_cast<C05FunctionModLinRngd>( mod );
-   if( tmod ) {
-    auto wFi = get_index_of_component( tmod->function() );
-    if( reset[ wFi ] )
-     to_delete = true;
-    continue;
-    }  // end( if( ttmod ) )
-   }  // end C05FunctionModLinRngd
+  // a C05FunctionModLinRngd implies that a specific range in all the
+  // linearizations must be changed by adding; this is never considered a
+  // "soft" reset even if in fact the range could be so large as to be
+  // (almost) all the variables, which would count as a reset, but so far
+  // we don't attempt at detecting this. however, if the component is "soft"
+  // reset already, it can be deleted
+  //
+  // again, on the grounds that changing the linearization (presumably)
+  // changes the linearization errors as well, this also resets all the
+  // Alpha
+  if( const auto tmod =
+      std::dynamic_pointer_cast< C05FunctionModLinRngd >( mod ) ) {
+   auto wFi = get_index_of_component( tmod->function() );
+   if( reset[ wFi ] )            // component reset already
+    to_delete = true;            // nothing else to do
+   else                          // component not reset
+    AlphaC[ wFi ] = true;        // reset the constants
+   continue;
+   }  // end( if( ttmod - C05FunctionModLinRngd ) )
 
-  {
-   // a C05FunctionModLinSbst implies that a specific subset in all the
-   // linearizations must be changed by adding; this is never considered a
-   // "soft" reset even if in fact the subset could be so large as to be
-   // (almost) all the variables, which would count as a reset, but so far
-   // we don't attempt at detecting this. however, if the component is "soft"
-   // reset already, it can be deleted
-   const auto tmod = std::dynamic_pointer_cast<C05FunctionModLinSbst>( mod );
-   if( tmod ) {
-    auto wFi = get_index_of_component( tmod->function() );
-    if( reset[ wFi ] )
-     to_delete = true;
-    continue;
-    }  // end( if( ttmod ) )
-   }  // end C05FunctionModLinSbst
+  // a C05FunctionModLinSbst implies that a specific subset in all the
+  // linearizations must be changed by adding; this is never considered a
+  // "soft" reset even if in fact the subset could be so large as to be
+  // (almost) all the variables, which would count as a reset, but so far
+  // we don't attempt at detecting this. however, if the component is "soft"
+  // reset already, it can be deleted
+  //
+  // again, on the grounds that changing the linearization (presumably)
+  // changes the linearization errors as well, this also resets all the
+  // Alpha
+  if( const auto tmod =
+      std::dynamic_pointer_cast< C05FunctionModLinSbst >( mod ) ) {
+   auto wFi = get_index_of_component( tmod->function() );
+   if( reset[ wFi ] )            // component reset already
+    to_delete = true;            // nothing else to do
+   else                          // component not reset
+    AlphaC[ wFi ] = true;        // reset the constants
+   continue;
+   }  // end( if( ttmod - C05FunctionModLinSbst ) )
 
-  {
-   // a C05FunctionModLin implies that *all* the linearizations must be
-   // changed by adding them \delta; this may in principle be handled in
-   // a specialised way by BundleSolver, but is currently not, and
-   // therefore it is a "full" reset
-   const auto tmod = std::dynamic_pointer_cast<C05FunctionModLin>( mod );
-   if( tmod ) {
-    auto wFi = get_index_of_component( tmod->function() );
-    reset[ wFi ] = AlphaC[ wFi ] = true;
-    to_delete = true;
-    }  // end( if( ttmod ) )
-   }  // end C05FunctionModLin
+  // a C05FunctionModLin implies that *all* the linearizations must be
+  // changed by adding them \delta; this may in principle be handled in
+  // a specialised way by BundleSolver, but is currently not, and
+  // therefore it is a "full" reset
+  if( const auto tmod =
+      std::dynamic_pointer_cast< C05FunctionModLin >( mod ) ) {
+   auto wFi = get_index_of_component( tmod->function() );
+   AlphaC[ wFi ] = reset[ wFi ] = to_delete = true;
+   }  // end( if( ttmod - C05FunctionModLin ) )
   }  // end( 2nd loop, again in reverse )
 
  // note that even if there were no more Modification to process we could not
@@ -4320,7 +5038,7 @@ void BundleSolver::process_outstanding_Modification( void )
 
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // 3rd loop, forward: prepare for addition/removal/changes of individual
- // linearization for each component by computing the three sets
+ // linearization for each component by computing the four sets
  // - linearizations that need be removed
  // - linearizations that need be added
  // - linearizations that need be changed
@@ -4382,8 +5100,7 @@ void BundleSolver::process_outstanding_Modification( void )
   // also, note that NothingChanged and AlphaChanged cannot happen, since
   // again these cases have been dealt with already
 
-  const auto tmod = std::dynamic_pointer_cast<C05FunctionMod>( mod );
-  if( tmod ) {
+  if( const auto tmod = std::dynamic_pointer_cast<C05FunctionMod>( mod ) ) {
    auto wFi = get_index_of_component( tmod->function() );
 
    switch( tmod->type() ) {
@@ -4518,7 +5235,23 @@ void BundleSolver::process_outstanding_Modification( void )
  // once (if ever) after the end of the cycle. removals of Variable that have
  // not been added yet just decreases the number of new Variable to be added
  // at the end. all corresponding Modification are removed from the list
-
+ //
+ // this loop may also force some linearization errors to be reset since they
+ // depends ot only on the initial constant (\alpha), but also from the
+ // linearization itself (g) and the current stability centre (Lambda); if
+ // any of those changes, the linearization error need be recomputed. in this
+ // loop we consider changes of Lambda due to the removal of variables, while
+ // additions never create this problem since new variables are always
+ // initialized to 0, and therefore they never change the existing
+ // linearization error per-se (recall that changes in \alpha and g were
+ // already handled by the 2nd loop). note, however, that not all changes of
+ // Lambda necessarily change the linearization error: if a Lambda_i == 0 is
+ // removed, this has no impact. because this loop (unlike the 2nd one) is
+ // forward and does deletions immediately, Lambda is always "in synch" with
+ // the indices of the Modification and therefore the check can be easily
+ // done. this is all the more important since variables are removed in
+ // parallel for all components, hence if a variable with Lambda_i != 0 is
+ // removed then all the linearization errors must be reset
  Index to_add = 0;
  bool addd_vars = false;  // if any Variable has ever been added
  bool rmvd_vars = false;  // if any Variable has ever been removed
@@ -4549,8 +5282,9 @@ void BundleSolver::process_outstanding_Modification( void )
    if( ! tmod ) {
     // if it is not a "naked" FunctionModVars, it can still be a group of
     // identical *FunctionModVars* "dressed" into a GroupModification
-    const auto gmod = std::dynamic_pointer_cast<GroupModification>( mod );
-    if( gmod )  // if so, pick the first one and act on it
+    if( const auto gmod =
+	std::dynamic_pointer_cast< GroupModification >( mod ) )
+     // if so, pick the first one and act on it
      tmod = std::static_pointer_cast< FunctionModVars >(
 					 gmod->sub_Modifications().front() );
     }
@@ -4561,120 +5295,142 @@ void BundleSolver::process_outstanding_Modification( void )
     // Modification is processed and can be deleted
     to_delete = true;
 
-    {
-     const auto ttmod =
-                    std::dynamic_pointer_cast< FunctionModVarsAddd >( tmod );
-     if( ttmod ) {
-      addd_vars = true;
-      if( ! to_add ) {
-       // the first time, check that the Modification data agrees with what
-       // we expect
-       if( ttmod->first() != NumVar )
-	throw( std::logic_error( "wrong Variable names in FunctionModVars" )
-	       );
-       }
+    if( const auto ttmod =
+	std::dynamic_pointer_cast< FunctionModVarsAddd >( tmod ) ) {
+     addd_vars = true;
+     if( ! to_add ) {
+      // the first time, check that the Modification data agrees with what
+      // we expect
+      if( ttmod->first() != NumVar )
+       throw( std::logic_error( "wrong Variable names in FunctionModVars" ) );
+      }
       
-      to_add += ttmod->vars().size();
-      continue;
-      }
-     }
+     to_add += ttmod->vars().size();
+     continue;
 
-    {
-     const auto ttmod =
-                    std::dynamic_pointer_cast< FunctionModVarsRngd >( tmod );
-     if( ttmod ) {
-      rmvd_vars = true;
-      Range rng = ttmod->range();
+     } // end( if( ttmod - FunctionModVarsAddd ) )
 
-      if( ( rng.first == 0 ) && ( rng.second >= NumVar ) ) {
-       NumVar = 0;                      // deleting *all* Variable
-       Lambda.clear();
-       Lambda1.clear();
-       LmbdBst.clear();
-       Master->RmvVars( nullptr , 0 );  // remove from MP
-       continue;                        // nothing else to do
+    if( const auto ttmod =
+	std::dynamic_pointer_cast< FunctionModVarsRngd >( tmod ) ) {
+     rmvd_vars = true;
+     Range rng = ttmod->range();
+
+     // if any of the deleted Variable is nonzero, the linearization errors
+     // will have to be recomputed for all components
+     for( Index i = std::min( rng.first , NumVar ) ;
+	  i < std::min( rng.second , NumVar ) ; ++i )
+      if( std::abs( Lambda[ i ] ) > 1e-12 ) {
+       std::fill( AlphaC.begin() , AlphaC.end() , true );
+       break;
        }
+
+     if( ( rng.first == 0 ) && ( rng.second >= NumVar ) ) {
+      NumVar = 0;                      // deleting *all* Variable
+      Lambda.clear();
+      Lambda1.clear();
+      LmbdBst.clear();
+      Master->RmvVars( nullptr , 0 );  // remove from MP
+      continue;                        // nothing else to do
+      }
       
-      if( rng.first >= NumVar ) {  // all the Variable are deleted already
-       auto nr = rng.second - rng.first;
-       if( nr > to_add )
-	throw( std::logic_error( "removing non-existing Variable" ) );
-       to_add -= nr;               // "virtually" remove them
-       continue;                   // nothing else to do
-       }
-      if( rng.second >= NumVar ) {  // some of the Variable deleted already
-       auto nr = rng.second - NumVar;
-       if( nr > to_add )
-	throw( std::logic_error( "removing non-existing Variable" ) );
-       to_add -= nr;               // "virtually" remove them
-       rng.second = NumVar;
-       }
-      if( rng.second < NumVar ) {
-       // if deleting the last range of Variable nothing has to be done,
-       // but deleting Variable "in the middle" rather requires moving
-       // down the remaining range of values in Lambda
-       std::copy( Lambda.begin() + rng.second , Lambda.end() ,
-		  Lambda.begin() + rng.first );
-       }
-      Subset tdlt( rng.second - rng.first );
-      NumVar -= tdlt.size();
-      Lambda.resize( NumVar );  // adjust Lambda
-      Lambda1.resize( NumVar );
-      if( MaxSol > 1 )
-       LmbdBst.resize( NumVar );
-      std::iota( tdlt.begin() , tdlt.end() , rng.first );
-      Master->RmvVars( tdlt.data() , tdlt.size() );  // remove from MP
-      continue;
+     if( rng.first >= NumVar ) {  // all the Variable are deleted already
+      auto nr = rng.second - rng.first;
+      if( nr > to_add )
+       throw( std::logic_error( "removing non-existing Variable" ) );
+      to_add -= nr;               // "virtually" remove them
+      continue;                   // nothing else to do
       }
-     }
-
-    {
-     const auto ttmod =
-                    std::dynamic_pointer_cast< FunctionModVarsSbst >( tmod );
-     if( ttmod ) {
-      rmvd_vars = true;
-
-      if( ttmod->subset().empty() ) {  // deleting *all* Variable
-       NumVar = 0;
-       Lambda.clear();
-       Lambda1.clear();
-       LmbdBst.clear();
-       Master->RmvVars( nullptr , 0 );  // remove from MP
-       continue;                        // nothing else to do
-       }
-
-      if( ttmod->subset().front() >= NumVar ) {
-       // all the Variable are deleted already
-       if( ttmod->subset().size() > to_add )
-	throw( std::logic_error( "removing non-existing Variable" ) );
-       to_add -= ttmod->subset().size();  // "virtually" remove them
-       continue;                          // nothing else to do
-       }
-
-      Subset tsbst;
-      c_Subset * sbst = & tsbst;
-      if( ttmod->subset().back() < NumVar )  // no Variable deleted already
-       sbst = & ttmod->subset();             // delete them all
-      else {                                 // construct the subset to delete
-       auto sbstit = ttmod->subset().end();
-       while( *(--sbstit) >= NumVar );
-       tsbst = Subset( ttmod->subset().begin() , ++sbstit );
-       auto nr = ttmod->subset().size() - tsbst.size();
-       if( nr > to_add )
-	throw( std::logic_error( "removing non-existing Variable" ) );
-       to_add -= nr;               // "virtually" remove them
-       }
-
-      Compact( Lambda , *sbst );  // adjust Lambda
-      NumVar -= sbst->size();
-      Lambda.resize( NumVar );
-      Lambda1.resize( NumVar );
-      if( MaxSol > 1 )
-       LmbdBst.resize( NumVar );
-      Master->RmvVars( sbst->data() , sbst->size() );  // remove from MP
-      continue;
+     if( rng.second >= NumVar ) {  // some of the Variable deleted already
+      auto nr = rng.second - NumVar;
+      if( nr > to_add )
+       throw( std::logic_error( "removing non-existing Variable" ) );
+      to_add -= nr;               // "virtually" remove them
+      rng.second = NumVar;
       }
-     }
+     if( rng.second < NumVar ) {
+      // if deleting the last range of Variable nothing has to be done,
+      // but deleting Variable "in the middle" rather requires moving
+      // down the remaining range of values in Lambda
+      std::copy( Lambda.begin() + rng.second , Lambda.end() ,
+		 Lambda.begin() + rng.first );
+      }
+     Subset tdlt( rng.second - rng.first );
+     NumVar -= tdlt.size();
+     Lambda.resize( NumVar );  // adjust Lambda
+     Lambda1.resize( NumVar );
+     if( MaxSol > 1 )
+      LmbdBst.resize( NumVar );
+     std::iota( tdlt.begin() , tdlt.end() , rng.first );
+     Master->RmvVars( tdlt.data() , tdlt.size() );  // remove from MP
+     continue;
+
+     }  // end( if( ttmod - FunctionModVarsRngd ) )
+
+    if( const auto ttmod =
+	std::dynamic_pointer_cast< FunctionModVarsSbst >( tmod ) ) {
+     rmvd_vars = true;
+
+     if( ttmod->subset().empty() ) {  // deleting *all* Variable
+      // if any Variable is nonzero, the linearization errors
+      // will have to be recomputed for all components
+      for( auto & el : Lambda )
+       if( std::abs( el ) > 1e-12 ) {
+	std::fill( AlphaC.begin() , AlphaC.end() , true );
+	break;
+        }
+
+      NumVar = 0;
+      Lambda.clear();
+      Lambda1.clear();
+      LmbdBst.clear();
+      Master->RmvVars( nullptr , 0 );  // remove from MP
+      continue;                        // nothing else to do
+      }
+
+     if( ttmod->subset().front() >= NumVar ) {
+      // all the Variable are deleted already
+      if( ttmod->subset().size() > to_add )
+       throw( std::logic_error( "removing non-existing Variable" ) );
+      to_add -= ttmod->subset().size();  // "virtually" remove them
+      continue;                          // nothing else to do
+      }
+
+     // if any of the deleted Variable is nonzero, the linearization errors
+     // will have to be recomputed for all components
+     for( auto el : ttmod->subset() ) {
+      if( el >= NumVar )
+       break;
+
+      if( std::abs( Lambda[ el ] ) > 1e-12 ) {
+       std::fill( AlphaC.begin() , AlphaC.end() , true );
+       break;
+       }
+      }
+
+     Subset tsbst;
+     c_Subset * sbst = & tsbst;
+     if( ttmod->subset().back() < NumVar )  // no Variable deleted already
+      sbst = & ttmod->subset();             // delete them all
+     else {                                 // construct the subset to delete
+      auto sbstit = ttmod->subset().end();
+      while( *(--sbstit) >= NumVar );
+      tsbst = Subset( ttmod->subset().begin() , ++sbstit );
+      auto nr = ttmod->subset().size() - tsbst.size();
+      if( nr > to_add )
+       throw( std::logic_error( "removing non-existing Variable" ) );
+      to_add -= nr;               // "virtually" remove them
+      }
+
+     Compact( Lambda , *sbst );  // adjust Lambda
+     NumVar -= sbst->size();
+     Lambda.resize( NumVar );
+     Lambda1.resize( NumVar );
+     if( MaxSol > 1 )
+      LmbdBst.resize( NumVar );
+     Master->RmvVars( sbst->data() , sbst->size() );  // remove from MP
+     continue;
+
+     }  // end( if( ttmod - FunctionModVarsSbst ) )
 
     // if control reaches here, this is an unknown *FunctionModVars* (??)
     throw( std::logic_error( "unknown FunctionModVars" ) );
@@ -4706,65 +5462,67 @@ void BundleSolver::process_outstanding_Modification( void )
  //
  // this is the final loop, so the list must be empty at the end
 
- for( ; ! v_mod.empty() ; v_mod.pop_front() ) {
-  auto mod = v_mod.front();  // pick (a reference to) the first Modification
+ for( ; ! v_mod_tmp.empty() ; v_mod_tmp.pop_front() ) {
+  auto mod = v_mod_tmp.front();  // pick the first Modification
 
-  Range range( NumVar , 0 );    // an empty range
-  c_Subset * subset = nullptr;  // an empty subset
-  c_Vec_p_Var * vars;           // the affected Variable
+  Index wFi;                     // the affected component
+  Range range( NumVar , 0 );     // an empty range
+  c_Subset * subset = nullptr;   // an empty subset
+  c_Vec_p_Var * vars;            // the affected Variable
 
   // patiently sift through the possible Modification types to find what mod
   // exactly is and react accordingly
 
-  {
-   // a C05FunctionModRngd, that at this point can only have which().empty()
-   const auto tmod = std::dynamic_pointer_cast< C05FunctionModRngd >( mod );
-   if( tmod ) {
-    if( ! tmod->which().empty() )
-     throw( std::logic_error( "unexpected nonempty C05FunctionModRngd" ) );
+  // a C05FunctionModRngd, that at this point can only have which().empty()
+  if( const auto tmod =
+      std::dynamic_pointer_cast< C05FunctionModRngd >( mod ) ) {
+   if( ! tmod->which().empty() )
+    throw( std::logic_error( "unexpected nonempty C05FunctionModRngd" ) );
 
-    vars = & tmod->vars();
-    range = tmod->range();
-    }
+   wFi = get_index_of_component( tmod->function() );
+   vars = & tmod->vars();
+   range = tmod->range();
+   goto done;
    }
 
-  {
-   // a C05FunctionModSbst, that at this point can only have which().empty()
-   const auto tmod = std::dynamic_pointer_cast< C05FunctionModSbst >( mod );
-   if( tmod ) {
-    if( ! tmod->which().empty() )
-     throw( std::logic_error( "unexpected nonempty C05FunctionModSbst" ) );
+  // a C05FunctionModSbst, that at this point can only have which().empty()
+  if( const auto tmod =
+      std::dynamic_pointer_cast< C05FunctionModSbst >( mod ) ) {
+   if( ! tmod->which().empty() )
+    throw( std::logic_error( "unexpected nonempty C05FunctionModSbst" ) );
 
-    vars = & tmod->vars();
-    subset = & tmod->subset();
-    }
+   wFi = get_index_of_component( tmod->function() );
+   vars = & tmod->vars();
+   subset = & tmod->subset();
+   goto done;
    }
 
-  {
-   // a C05FunctionModLinRngd implies that a specific range in all the
-   // linearizations must be changed (by adding something)
-   const auto tmod = std::dynamic_pointer_cast< C05FunctionModLinRngd >( mod );
-   if( tmod ) {
-    vars = & tmod->vars();
-    range = tmod->range();
-    }
+  // a C05FunctionModLinRngd implies that a specific range in all the
+  // linearizations must be changed (by adding something)
+  if( const auto tmod =
+      std::dynamic_pointer_cast< C05FunctionModLinRngd >( mod ) ) {
+   wFi = get_index_of_component( tmod->function() );
+   vars = & tmod->vars();
+   range = tmod->range();
+   goto done;
    }
 
-  {
-   // a C05FunctionModLinSbst implies that a specific subset in all the
-   // linearizations must be changed (by adding something)
-   const auto tmod = std::dynamic_pointer_cast< C05FunctionModLinSbst >( mod );
-   if( tmod ) {
-    vars = & tmod->vars();
-    subset = & tmod->subset();
-    }
+  // a C05FunctionModLinSbst implies that a specific subset in all the
+  // linearizations must be changed (by adding something)
+  if( const auto tmod =
+	   std::dynamic_pointer_cast< C05FunctionModLinSbst >( mod ) ) {
+   wFi = get_index_of_component( tmod->function() );
+   vars = & tmod->vars();
+   subset = & tmod->subset();
+   goto done;
    }
 
-  if( ( range.first >= range.second ) && ( ! subset ) )
-   // it is neither of the above: this should not happen
-   throw( std::logic_error( "unexpected Modification slipped in" ) );
+  // it is neither of the above: this should not happen
+  throw( std::logic_error( "unexpected Modification slipped in" ) );
 
-  if( ! rmvd_vars ) {
+  // the range/subset (and component) have been identified: check if the
+  // need to be translated due to addition/removals, and in case do it
+  done:if( ! rmvd_vars ) {
    // Variable have never been removed, hence the names can be used directly
    if( subset ) {  // turn the subset into a range
     range.first = subset->front();
@@ -4833,7 +5591,7 @@ void BundleSolver::process_outstanding_Modification( void )
    }
 
   // now actually do it
-  Master->ChgSubG( range.first , range.second , NrFi + 1 );
+  Master->ChgSubG( range.first , range.second , wFi + 1 );
 
   }  // end( 5th loop, forward )
 
@@ -4886,10 +5644,10 @@ void BundleSolver::process_outstanding_Modification( void )
 
   for( Index k = 0 ; k < NrFi ; ++k ) {
    if( Addd[ k ].empty() && Chgd[ k ].empty() )  // nothing to see here
-    continue;                                    // move off
+    continue;                                    // move on
 
-   if( Chgd[ k ].size() >= NrItems[ k ] ) {  // all items change
-    reset[ k ] = AlphaC[ k ] = true;         // this is a reset
+   if( Chgd[ k ].size() >= NrItems[ k ] ) {      // all items change
+    reset[ k ] = AlphaC[ k ] = true;             // this is a reset
     continue;
     }
 
@@ -4948,14 +5706,29 @@ void BundleSolver::process_outstanding_Modification( void )
  // if some component need be reset, reset the linearizations: since
  // reset[ k ] ==> AlphaC[ k ], later on also the constants will be reset
 
- if( std::find( reset.begin() , reset.end() , false ) == reset.end() )
-  Master->ChgSubG( 0 , NumVar , NrFi + 1 );  // all components have been reset
+ count = 0;
+ if( NrEasy ) {
+  for( Index k = 0 ; k < NrFi ; ++k )
+   if( ( ! IsEasy[ k ] ) && reset[ k ] )
+    ++count;
+  }
  else
-  if( std::find( reset.begin() , reset.end() , true ) != reset.end() )
-   // some components have been reset
+  for( Index k = 0 ; k < NrFi ; ++k )
+   if( reset[ k ] )
+    ++count;
+ 
+ if( count == NrFi - NrEasy )  // all non-easy components have been reset
+  // ... and if Fi0Chgd == true, then also the 0-th component has changed
+  Master->ChgSubG( 0 , NumVar , Fi0Chgd ? Inf<Index>() : NrFi + 1 );
+ else {
+  if( count )                  // some non-easy components have been reset
    for( Index k = 0 ; k < NrFi ; ++k )
-    if( reset[ k ] )
+    if( ( ( ! NrEasy ) || ( ! IsEasy[ k ] ) ) && reset[ k ] )
      Master->ChgSubG( 0 , NumVar , k + 1 );
+
+  if( Fi0Chgd )                // ... and/or the 0-th component has changed
+   Master->ChgSubG( 0 , NumVar , 0 );
+  }
 
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // if there are constants to change entirely, do it now in one blow
@@ -4989,7 +5762,7 @@ void BundleSolver::process_outstanding_Modification( void )
   for( Index k = 0 ; k < NrFi ; ++k )
    for( auto i : Cchg[ k ] )
     if( InvItemVcblr[ k ][ i ] < vBPar2[ NrFi ] ) {
-     auto Ai = v_c05f[ k ]->get_linearization_constant( i );
+     auto Ai = rs( v_c05f[ k ]->get_linearization_constant( i ) );
 
      #ifndef NDEBUG
       if( std::isnan( Ai ) )  // linearization no longer valid
@@ -4999,6 +5772,9 @@ void BundleSolver::process_outstanding_Modification( void )
      // compute the linearization error in Lambda
      v_c05f[ k ]->get_linearization_coefficients( Gi.data() ,
 						  Range( 0 , NumVar ) , i );
+     if( ! f_convex )
+      chgsign( Gi.data() , NumVar );
+
      Ai = UpRifFi[ k ] - Ai - std::inner_product( Lambda.begin() ,
 						  Lambda.end() ,
 						  Gi.begin() , double( 0 ) );
@@ -5019,7 +5795,7 @@ void BundleSolver::process_outstanding_Modification( void )
   }
 
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
- // and this, finally, is all!! (save possibly some checks)
+ // and this, finally, is all! (save possibly some checks)
 
  //!! PrintBundle();
  #if CHECK_DS & 1
@@ -5041,7 +5817,8 @@ void BundleSolver::CheckBundle( void )
                                                            : f_log;
  // check vBPar2
  for( Index k = 0 ; k < NrFi ; ++k )
-  if( v_c05f[ k ]->get_int_par( C05Function::intGPMaxSz ) != vBPar2[ k ] )
+  if( Index( v_c05f[ k ]->get_int_par( C05Function::intGPMaxSz ) )
+      != vBPar2[ k ] )
    *wlog << "size of global pool " << k << " does not match" << std::endl;
 
  // check ItemVcblr against InvItemVcblr and Master
@@ -5071,11 +5848,11 @@ void BundleSolver::CheckBundle( void )
 	  << Master->WComponent( i ) << std::endl;
 
  // check NrItems
- if( int diff = ( NrItems[ NrFi ] - std::accumulate( NrItems.begin() ,
-						     NrItems.begin() + NrFi ,
-						     Index( 0 ) ) ) != 0 )
-  *wlog << " NrItems[ NrFi ] = " << NrItems[ NrFi ] << " but the sum is "
-	<<  NrItems[ NrFi ] + diff  << std::endl;
+ if( int diff = ( NrItems.back() - std::accumulate( NrItems.begin() ,
+						    NrItems.begin() + NrFi ,
+						    Index( 0 ) ) ) != 0 )
+  *wlog << " NrItems[ NrFi ] = " << NrItems.back() << " but the sum is "
+	<<  NrItems.back() + diff  << std::endl;
 
  for( Index k = 0 ; k < NrFi ; ++k )
   if( tmp[ k ] != NrItems[ k ] )
@@ -5095,7 +5872,7 @@ void BundleSolver::CheckBundle( void )
     *wlog << "linearization " << i << " in pool " << k
 	  << " unaccounted for" << std::endl;
 
-   if( ( InvItemVcblr[ k ][ i ] < vBPar2[ NrFi ] ) &&
+   if( ( InvItemVcblr[ k ][ i ] < vBPar2.back() ) &&
        ( ( ItemVcblr[ InvItemVcblr[ k ][ i ] ].first != k ) ||
 	 ( ItemVcblr[ InvItemVcblr[ k ][ i ] ].second != i ) ) )
     *wlog << "linearization " << i << " in pool " << k
@@ -5104,39 +5881,40 @@ void BundleSolver::CheckBundle( void )
 	  << std::endl;
 
    if( ( InvItemVcblr[ k ][ i ] <
-	 ( ( BPar7 & 3 ) ? vBPar2[ NrFi ] : Inf<Index>() ) ) &&
+	 ( ( BPar7 & 3 ) ? vBPar2.back() : Inf<Index>() ) ) &&
        ( i >= MaxItem[ k ] ) )
     *wlog << "item in position " << i << " of pool " << k
 	  << " but MaxItem says " << MaxItem[ k ] << std::endl;
 
    if( ( InvItemVcblr[ k ][ i ] >=
-	 ( ( BPar7 & 3 ) ? vBPar2[ NrFi ] : Inf<Index>() ) ) &&
+	 ( ( BPar7 & 3 ) ? vBPar2.back() : Inf<Index>() ) ) &&
        ( i < FrFItem[ k ] ) )
      *wlog << "free item in position " << i << " of pool " << k
 	   << " but FrFItem says " << FrFItem[ k ] << std::endl;
 
    }  // end( for( i ) )
 
- // check FreList
- // copy FreList to a vector to check it (this only works since the
- // underlying container is a std::vector< Index >) and the topmost
- // element in a heap is the first element of the vector
- tmp.resize( FreList.size() );
- std::copy( &( FreList.top() ) , &( FreList.top() ) + FreList.size() ,
-	    tmp.begin() );
- std::sort( tmp.begin() , tmp.end() );
+ // check FreList (if there is anything to check)
+ if( ! FreList.empty() ) {
+  // copy FreList to a vector to check it (this only works since the
+  // underlying container is a std::vector< Index >) and the topmost
+  // element in a heap is the first element of the vector
+  tmp.resize( FreList.size() );
+  std::copy( &( FreList.top() ) , &( FreList.top() ) + FreList.size() ,
+	     tmp.begin() );
+  std::sort( tmp.begin() , tmp.end() );
 
- for( auto i : tmp )
-  if( ItemVcblr[ i ].second < vBPar2[ ItemVcblr[ i ].first ] )
+  for( auto i : tmp )
+   if( ItemVcblr[ i ].second < vBPar2[ ItemVcblr[ i ].first ] )
     *wlog << "item " << i << " in FreList is not free" << std::endl;
  
- for( Index i = 0 ; i < Master->MaxName() ; ++i )
-  if( ItemVcblr[ i ].second >= vBPar2[ ItemVcblr[ i ].first ] ) {
-   auto it = std::lower_bound( tmp.begin() , tmp.end() , i );
-   if( ( it == tmp.end() ) || ( *it != i ) )
-    *wlog << "free item " << i << " not in FreList" << std::endl;
-   }
-  
+  for( Index i = 0 ; i < Master->MaxName() ; ++i )
+   if( ItemVcblr[ i ].second >= vBPar2[ ItemVcblr[ i ].first ] ) {
+    auto it = std::lower_bound( tmp.begin() , tmp.end() , i );
+    if( ( it == tmp.end() ) || ( *it != i ) )
+     *wlog << "free item " << i << " not in FreList" << std::endl;
+    }
+  }
  }  // end( BundleSolver::CheckBundle )
  
 /*--------------------------------------------------------------------------*/
@@ -5145,9 +5923,9 @@ void BundleSolver::CheckAlpha( void )
 {
  std::ostream * wlog = ( ( ! f_log ) || ( LogVerb <= 1 ) ) ? & std::cerr
                                                            : f_log;
+ *wlog << def;
  cHpRow tA = Master->ReadLinErr();
- std::vector<VarValue> G( NumVar );
- //!! const double eps = RMPAccSol;
+ std::vector< VarValue > G( NumVar );
  const double eps = 1e-8;
 
  for( Index i = 0 ; i < Master->MaxName() ; ++i )
@@ -5155,9 +5933,11 @@ void BundleSolver::CheckAlpha( void )
    v_c05f[ ItemVcblr[ i ].first ]->get_linearization_coefficients( G.data() ,
 						        Range( 0 , NumVar ) ,
 						     ItemVcblr[ i ].second );
-
-   HpNum tAi = v_c05f[ ItemVcblr[ i ].first ]->get_linearization_constant(
-						     ItemVcblr[ i ].second );
+   if( ! f_convex )
+    chgsign( G.data() , NumVar );
+   HpNum tAi = rs( v_c05f[ ItemVcblr[ i ].first
+			   ]->get_linearization_constant(
+						   ItemVcblr[ i ].second ) );
    tAi = UpRifFi[ ItemVcblr[ i ].first ] - tAi -
                          std::inner_product( Lambda.begin() , Lambda.end() ,
 					     G.begin() , double( 0 ) );
@@ -5178,37 +5958,40 @@ void BundleSolver::CheckLBs( void )
 {
  std::ostream * wlog = ( ( ! f_log ) || ( LogVerb <= 1 ) ) ? & std::cerr
                                                            : f_log;
- //!! const double eps = RMPAccSol;
+ *wlog << def;
  const double eps = 1e-8;
 
  auto LB = Master->ReadLowerBound();
- auto GLB = f_Block->get_valid_lower_bound( false );
+ auto GLB = f_convex ?   f_Block->get_valid_lower_bound( false )
+                     : - f_Block->get_valid_upper_bound( false );
  if( TrueLB ) {  // a finite global lower bound is set
-  if( GLB != LowerBound[ NrFi ] )
-   *wlog << std::endl << "globalLB = " << GLB << " != from stored = "
-	 << LowerBound[ NrFi ];
+  if( GLB != LowerBound.back() )
+   *wlog << std::endl << "global bound = " << rs( GLB )
+	 << " != from stored = " << rs( LowerBound.back() );
  
-  if( LowerBound[ NrFi ] == -INFshift )
-   *wlog << std::endl << "TrueLB but stored LB = - INF";
+  if( LowerBound.back() == -INFshift )
+   *wlog << std::endl << "TrueLB but no stored global bound";
   else
    if( LB == -INFshift )
-    *wlog << std::endl << "LB = " << GLB << " not set in MP";
+    *wlog << std::endl << "global bound = " << rs( GLB ) << " not set in MP";
    else {
-    LB += UpRifFi[ NrFi ];
+    LB += UpRifFi.back();
     if( std::abs( LB - GLB ) >= eps *
 	std::max( std::max( std::abs( LB ) , std::abs( UpRifFi[ NrFi ] ) ) ,
 		  double( 1 ) ) )
-     *wlog << std::endl << "LB: F = " << GLB << " ~ M = " << LB;
+     *wlog << std::endl << "global bound: F = " << rs( GLB )
+	                << " ~ M = " << rs( LB );
     }
   }
  else {
-  GLB = f_Block->get_valid_lower_bound( true );
-  if( GLB != LowerBound[ NrFi ] )
-   *wlog << std::endl << "conditional LB = " << GLB
-	 << " != from stored = " << LowerBound[ NrFi ];
+  GLB =  f_convex ?   f_Block->get_valid_lower_bound( true )
+                  : - f_Block->get_valid_upper_bound( true );
+  if( GLB != LowerBound.back() )
+   *wlog << std::endl << "conditional global bound = " << rs( GLB )
+	 << " != from stored = " << rs( LowerBound.back() );
 
   if( LB > -INFshift )
-   *wlog << std::endl << "unexpected LB = " << LB << " in MP";
+   *wlog << std::endl << "unexpected global bound = " << rs( LB ) << " in MP";
   }
 
  #if( ! USE_MPTESTER )
@@ -5221,26 +6004,27 @@ void BundleSolver::CheckLBs( void )
      continue;
 
     LB = Master->ReadLowerBound( k + 1 );
-    auto C05LB = v_c05f[ k ]->get_global_lower_bound();
+    auto C05LB = f_convex ?   v_c05f[ k ]->get_global_lower_bound()
+                          : - v_c05f[ k ]->get_global_upper_bound();
     if( C05LB != LowerBound[ k ] )
-     *wlog << std::endl << "LB( " << k << " ) = " << C05LB
-	   << " != from stored = " << LowerBound[ k ];
+     *wlog << std::endl << "bound( " << k << " ) = " << rs( C05LB )
+	   << " != from stored = " << rs( LowerBound[ k ] );
 
     if( LB == -INFshift ) {
      if( C05LB > -INFshift )
-      *wlog << std::endl << "LB( " << k << " ) = " << C05LB
+      *wlog << std::endl << "bound( " << k << " ) = " << rs( C05LB )
 	    << " not set in MP";
      }
     else
      if( C05LB == -INFshift )
-      *wlog << std::endl << "unexpected LB( " << k << " ) = " << C05LB
-	    << " in MP";
+      *wlog << std::endl << "unexpected bound( " << k << " ) = "
+	    << rs( C05LB ) << " in MP";
      else {
       LB += UpRifFi[ k ];
-      if( std::abs( LB - C05LB ) >= RMPAccSol *
+      if( std::abs( LB - C05LB ) >= 1e-9 *
 	  std::max( std::max( LB , UpRifFi[ k ] ) , double( 1 ) ) )
-       *wlog << std::endl << "LB( " << k << " ): F = " << C05LB
-	     << " ~ M = " << LB;
+       *wlog << std::endl << "bound( " << k << " ): F = " << rs( C05LB )
+	     << " ~ M = " << rs( LB );
       }
     }
  #endif
@@ -5251,37 +6035,39 @@ void BundleSolver::CheckLBs( void )
 
 void BundleSolver::PrintBundle( void )
 {
- if( ! f_log )
-  return;
-
- *f_log << std::endl << "Lambda = [ ";
+ std::ostream * wlog = ( ( ! f_log ) || ( LogVerb <= 1 ) ) ? & std::cerr
+                                                           : f_log;
+ *wlog << def << std::endl << "Lambda = [ ";
  for( Index h = 0 ; h < NumVar - 1 ; ++h )
-  *f_log << Lambda[ h ] << ", ";
- *f_log << Lambda.back() << " ]";
+  *wlog << Lambda[ h ] << ", ";
+ *wlog << Lambda.back() << " ]";
 
  auto Alfa = Master->ReadLinErr();
  std::vector< VarValue > G( NumVar );
- // 
- *f_log << std::endl;
+
+ *wlog << std::endl;
  for( Index i = 0 ; i < Master->MaxName() ; ++i ) {
-  *f_log << i << "\t";
+  *wlog << i << "\t";
   if( ItemVcblr[ i ].second >= vBPar2[ ItemVcblr[ i ].first ]
 	  || ItemVcblr[ i ].second < 0 ) {
-   *f_log << "[empty]" << std::endl;
+   *wlog << "[empty]" << std::endl;
    continue;
    }
 
   auto wFi = ItemVcblr[ i ].first;
   auto j = ItemVcblr[ i ].second;
-  *f_log << wFi << "\t" << j << "\t[ ";
+  *wlog << wFi << "\t" << j << "\t[ ";
 
   v_c05f[ wFi ]->get_linearization_coefficients( G.data() ,
 						 Range( 0 , NumVar ) , j );
+  if( ! f_convex )
+   chgsign( G.data() , NumVar );
+
   for( Index h = 0 ; h < NumVar - 1 ; ++h )
-   *f_log << G[ h ] << ", ";
+   *wlog << G[ h ] << ", ";
    
-  *f_log << G.back() << " ]\t"
-	 << v_c05f[ wFi ]->get_linearization_constant( j )
+  *wlog << G.back() << " ]\t"
+	 << rs( v_c05f[ wFi ]->get_linearization_constant( j ) )
 	 << "\t" << Alfa[ i ] << std::endl;
   }
  }
@@ -5290,43 +6076,6 @@ void BundleSolver::PrintBundle( void )
 
 /*--------------------------------------------------------------------------*/
 /*--------------- METHODS OF BundleSolver::FakeFiOracle --------------------*/
-/*--------------------------------------------------------------------------*/
-
-BundleSolver::FakeFiOracle::FakeFiOracle( BundleSolver *solver ) : FiOracle()
-{
- bslv = solver;
- }
-
-/*--------------------------------------------------------------------------*/
-/*-------------------------- OTHER INITIALIZATIONS -------------------------*/
-/*--------------------------------------------------------------------------*/
-
-void BundleSolver::FakeFiOracle::SetNDOSolver( NDOSolver * NwSlvr )
-{
- throw( std::logic_error( "this method cannot be called" ) );
- }
-
-/*--------------------------------------------------------------------------*/
-
-void BundleSolver::FakeFiOracle::SetFiLog( ostream *outs , const char lvl )
-{
- throw( std::logic_error( "this method cannot be called" ) );
- }
-
-/*--------------------------------------------------------------------------*/
-
-void BundleSolver::FakeFiOracle::SetFiTime( const bool TimeIt )
-{
- throw( std::logic_error( "this method cannot be called" ) );
- }
-
-/*--------------------------------------------------------------------------*/
-
-void BundleSolver::FakeFiOracle::SetMaxName( cIndex MxNme )
-{
- throw( std::logic_error( "this method cannot be called" ) );
- }
-
 /*--------------------------------------------------------------------------*/
 /*-------------- METHODS FOR READING THE DATA OF THE PROBLEM ---------------*/
 /*--------------------------------------------------------------------------*/
@@ -5340,7 +6089,7 @@ Index BundleSolver::FakeFiOracle::GetNumVar( void ) const
 
 Index BundleSolver::FakeFiOracle::GetNrFi( void ) const
 {
- return( bslv->v_c05f.size() );
+ return( bslv->NrFi );
  }
 
 /*--------------------------------------------------------------------------*/
@@ -5352,61 +6101,48 @@ Index BundleSolver::FakeFiOracle::GetMaxName( void ) const
 
 /*--------------------------------------------------------------------------*/
 
-HpNum BundleSolver::FakeFiOracle::GetMinusInfinity( void )
-{
- throw( std::logic_error( "this method cannot be called" ) );
- }
-
-/*--------------------------------------------------------------------------*/
-
-Index BundleSolver::FakeFiOracle::GetMaxNZ( cIndex wFi ) const
-{
- if( wFi != InINF )
-  throw( std::logic_error( "GetMaxNZ can be called with wFi = Inf only" ) );
-
- return( bslv->NumVar );
- }
-
-/*--------------------------------------------------------------------------*/
-
-Index BundleSolver::FakeFiOracle::GetMaxCNZ( cIndex wFi ) const
-{
- throw( std::logic_error( "this method cannot be called" ) );
- }
-
-/*--------------------------------------------------------------------------*/
-
 bool BundleSolver::FakeFiOracle::GetUC( cIndex i )
 {
- double lb_value = bslv->LamVcblr[ i ]->get_lb();
- if( lb_value == -Inf<ColVariable::VarValue>() )
-  return( true );
+ const auto var = bslv->LamVcblr[ i ];
+ const auto lb = var->get_lb();
+ if( lb > -Inf< ColVariable::VarValue >() ) {
+  if( lb != ColVariable::VarValue( 0 ) )
+   throw( std::logic_error( "finite lhs different from zero not allowed" ) );
+  return( false );
+  }
 
- if( lb_value != ColVariable::VarValue( 0 ) )
-  throw( std::logic_error( "any value different from zero is not allowed" ) );
+ for( Index j = 0 ; j < var->get_num_active() ; ++j ) {
+  const auto cj = var->get_active( j );
+  if( dynamic_cast< NNConstraint * >( cj ) )
+   return( false );
+  if( const auto bx = dynamic_cast< BoxConstraint * >( cj ) ) {
+   const auto lhs = bx->get_lhs();
+   if( lhs == - Inf< BoxConstraint::RHSValue >() )
+    return( true );
+   if( lhs == BoxConstraint::RHSValue( 0 ) )
+    return( false );
+   throw( std::logic_error( "finite lhs different from zero not allowed" ) );
+   }
+  }
 
- return( false );
+ return( true );
  }
 
 /*--------------------------------------------------------------------------*/
 
 LMNum BundleSolver::FakeFiOracle::GetUB( cIndex i )
 {
- return( bslv->LamVcblr[ i ]->get_ub() );
- }
+ const auto var = bslv->LamVcblr[ i ];
+ const auto ub = var->get_ub();
+ if( ub < Inf< ColVariable::VarValue >() )
+  return( LMNum( ub ) );
 
-/*--------------------------------------------------------------------------*/
+ for( Index j = 0 ; j < var->get_num_active() ; ++j )
+  if( const auto bx = dynamic_cast< BoxConstraint * >( var->get_active( j )
+						       ) )
+   return( LMNum( bx->get_rhs() ) );
 
-LMNum BundleSolver::FakeFiOracle::GetBndEps( void )
-{
- throw( std::logic_error( "this method cannot be called" ) );
- }
-
-/*--------------------------------------------------------------------------*/
-
-HpNum BundleSolver::FakeFiOracle::GetGlobalLipschitz( cIndex wFi )
-{
- throw( std::logic_error( "this method cannot be called" ) );
+ return( Inf< LMNum >() );
  }
 
 /*--------------------------------------------------------------------------*/
@@ -5414,7 +6150,7 @@ HpNum BundleSolver::FakeFiOracle::GetGlobalLipschitz( cIndex wFi )
 Index BundleSolver::FakeFiOracle::GetBNC( cIndex wFi )
 {
  if( bslv->NrEasy && bslv->IsEasy[ wFi - 1 ] )
-  return( bslv->MILP_s[ wFi - 1 ]->get_numcols() );
+  return( bslv->IsEasy[ wFi - 1 ]->get_numcols() );
  else
   return( 0 );
  }
@@ -5423,56 +6159,73 @@ Index BundleSolver::FakeFiOracle::GetBNC( cIndex wFi )
 
 Index BundleSolver::FakeFiOracle::GetBNR( cIndex wFi )
 {
- return( bslv->MILP_s[ wFi - 1 ]->get_numrows() );
+ return( bslv->IsEasy[ wFi - 1 ]->get_numrows() );
  }
 
 /*--------------------------------------------------------------------------*/
 
 Index BundleSolver::FakeFiOracle::GetBNZ( cIndex wFi )
 {
- return( bslv->MILP_s[ wFi - 1 ]->get_nzelements() );
+ return( bslv->IsEasy[ wFi - 1 ]->get_nzelements() );
  }
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::FakeFiOracle::GetBDesc( cIndex wFi , int *Bbeg ,
-					   int *Bind , double *Bval ,
-					   double *lhs , double *rhs ,
-					   double *cst , double *lbd ,
-					   double *ubd )
+void BundleSolver::FakeFiOracle::GetBDesc( cIndex wFi , int * Bbeg ,
+					   int * Bind , double * Bval ,
+					   double * lhs , double * rhs ,
+					   double * cst ,
+					   double * lbd , double * ubd )
 {
- auto MILPSlv = bslv->MILP_s[ wFi - 1 ];
+ auto MILPSlv = bslv->IsEasy[ wFi - 1 ];
 
- int num_col = MILPSlv->get_numcols();
+ if( Bbeg && Bind && Bval ) {
+  // these three parameters can only be either all nullptr or all non-nullptr
+  std::copy( MILPSlv->get_matbeg().begin() ,
+	     MILPSlv->get_matbeg().end() , Bbeg );
+  std::copy( MILPSlv->get_matind().begin() ,
+	     MILPSlv->get_matind().end() , Bind );
+  std::copy( MILPSlv->get_matval().begin() ,
+	     MILPSlv->get_matval().end() , Bval );
+  }
 
- std::copy( MILPSlv->get_matbeg().begin() , MILPSlv->get_matbeg().end() ,
-	    Bbeg );
- std::copy( MILPSlv->get_matind().begin() , MILPSlv->get_matind().end() ,
-	    Bind );
- std::copy( MILPSlv->get_matval().begin() , MILPSlv->get_matval().end() ,
-	    Bval );
+ if( cst ) {
+  // note that in the concave case all the master problem objective changes
+  // sign, so must do this part
+  std::copy( MILPSlv->get_objective().begin() ,
+	     MILPSlv->get_objective().end() , cst );
+  if( ! bslv->f_convex )
+   chgsign( cst , MILPSlv->get_numcols() );
+  }
 
- std::copy( MILPSlv->get_lb().begin() , MILPSlv->get_lb().end() , lbd );
- std::copy( MILPSlv->get_ub().begin() , MILPSlv->get_ub().end() , ubd );
+ if( lbd )
+  std::copy( MILPSlv->get_var_lb().begin() ,
+	     MILPSlv->get_var_lb().end() , lbd );
+ if( ubd )
+  std::copy( MILPSlv->get_var_ub().begin() ,
+	     MILPSlv->get_var_ub().end() , ubd );
 
- for( Index i = 0 ; i < num_col ; i++ )
-  if( MILPSlv->get_sense()[ i ] == 'L' ) {
-   rhs[ i ] = MILPSlv->get_rhs()[ i ];
-   lhs[ i ] = -INFshift;
-   }
-  else
-   if( MILPSlv->get_sense()[ i ] == 'E' ) {
-    rhs[ i ] = MILPSlv->get_rhs()[ i ];
-    lhs[ i ] = MILPSlv->get_rhs()[ i ];
-    }
-   else
-    if( bslv->MILP_s[ wFi - 1 ]->get_sense()[ i ] == 'G' ) {
+ if( lhs && rhs ) {
+  // although the FiOracle interface allows setting all the parameters to
+  // nullptr (save the first three) individually, OSIMPSolver never
+  // requires lhs without rhs, so we don't handle the case
+  for( int i = 0 ; i < MILPSlv->get_numrows() ; ++i )
+   switch( MILPSlv->get_sense()[ i ] ) {
+    case( 'L' ):  // <= constraint
+     rhs[ i ] = MILPSlv->get_rhs()[ i ];
+     lhs[ i ] = -INFshift;
+     break;
+    case( 'E' ):  // == constraint
+     rhs[ i ] = MILPSlv->get_rhs()[ i ];
+     lhs[ i ] = MILPSlv->get_rhs()[ i ];
+     break;
+    case( 'G' ):  // >= constraint
      rhs[ i ] = INFshift;
      lhs[ i ] = MILPSlv->get_rhs()[ i ];
-     }
-    else {
+     break;
+    default: {    // that's a Ranged constraint
      double rngval = MILPSlv->get_rngval()[ i ];
-     if( rngval > double( 0 ) ) {
+     if( rngval > 0 ) {
       rhs[ i ] = MILPSlv->get_rhs()[ i ] + rngval;
       lhs[ i ] = MILPSlv->get_rhs()[ i ];
       }
@@ -5481,7 +6234,8 @@ void BundleSolver::FakeFiOracle::GetBDesc( cIndex wFi , int *Bbeg ,
       lhs[ i ] = MILPSlv->get_rhs()[ i ] + rngval;
       }
      }
-
+    }
+  }
  }  // end( BundleSolver::FakeFiOracle::GetBDesc )
 
 /*--------------------------------------------------------------------------*/
@@ -5489,157 +6243,82 @@ void BundleSolver::FakeFiOracle::GetBDesc( cIndex wFi , int *Bbeg ,
 Index BundleSolver::FakeFiOracle::GetANZ( cIndex wFi ,
 					  cIndex strt , Index stp )
 {
- if( ! bslv->IsEasy[ wFi - 1 ] )
-  throw( std::logic_error( "the Function is not a Lagrangian one" ) );
-
- auto LagB = static_cast<LagBFunction *>( bslv->v_c05f[ wFi - 1 ] );
- return( LagB->get_NzMat() );
-
- } // end ( BundleSolver::FakeFiOracle::GetANZ )
+ return( static_cast< LagBFunction * >( bslv->v_c05f[ wFi - 1 ]
+					)->get_A_nz() );
+ }
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::FakeFiOracle::GetADesc( cIndex wFi , int *Abeg ,
-					   int *Aind , double *Aval ,
+void BundleSolver::FakeFiOracle::GetADesc( cIndex wFi , int * Abeg ,
+					   int * Aind , double * Aval ,
 					   cIndex strt , Index stp )
 {
- if( ! bslv->IsEasy[ wFi - 1 ] )
-  throw( std::logic_error( "the Function is not a Lagrangian one" ) );
+ auto LagB = static_cast< LagBFunction * >( bslv->v_c05f[ wFi - 1 ] );
+ auto MILPSlv = bslv->IsEasy[ wFi - 1 ];
+ c_Index nc = MILPSlv->get_numcols();
+ Index count = 0;
+ for( Index j = 0 ; j < nc ; ++j ) {
+  Abeg[ j ] = count;
+  if( auto cp = LagB->get_A_by_col( MILPSlv->variable_with_index( j ) ) ) {
+   auto & mons = cp->second;
+   auto it = mons.begin();
+   if( strt )
+    it = std::lower_bound( it , mons.end() , std::make_pair( strt , 0 ) ,
+			   []( const auto & a , const auto & b )
+			     { return( a.first < b.first ); } );
 
- auto LagB = static_cast<LagBFunction *>( bslv->v_c05f[ wFi - 1 ] );
- LagB->get_MatDesc( Abeg , Aind , Aval , strt , stp );
+   if( stp < LagB->get_num_active_var() ) {
+    for( ; it != mons.end() ; ++it ) {
+     if( it->first >= stp )
+      break;
+     Aind[ count ] = it->first;
+     Aval[ count++ ] = - it->second;
+     }
+    }
+   else
+    for( ; it != mons.end() ; ++it ) {
+     Aind[ count ] = it->first;
+     Aval[ count++ ] = - it->second;
+     }
 
- } // end ( BundleSolver::FakeFiOracle::GetANZ )
+   }  // end( if( the variable has a Lagrangian term ) )
+  }  // end( for( all columns ) )
 
-/*--------------------------------------------------------------------------*/
+ Abeg[ nc ] = count;  // end marker
 
-NDOSolver * BundleSolver::FakeFiOracle::GetNDOSolver( void )
-{
- throw( std::logic_error( "this method cannot be called" ) );
- }
+ // like everything that goes in the objectve, in the concave case A must be
+ // changed sign
+ if( ! bslv->f_convex )
+  chgsign( Aval , count );
 
-/*--------------------------------------------------------------------------*/
-/*---------------------- METHODS FOR SETTING LAMBDA ------------------------*/
-/*--------------------------------------------------------------------------*/
-
-void BundleSolver::FakeFiOracle::SetLambda( cLMRow Lmbd )
-{
- throw( std::logic_error( "this method cannot be called" ) );
- }
-
-/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  */
-
-void BundleSolver::FakeFiOracle::SetLamBase( cIndex_Set LmbdB  ,
-					     cIndex LmbdBD )
-{
- throw( std::logic_error( "this method cannot be called" ) );
- }
-
-/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  */
-
-bool BundleSolver::FakeFiOracle::SetPrecision( HpNum Eps )
-{
- throw( std::logic_error( "this method cannot be called" ) );
- }
-
-/*--------------------------------------------------------------------------*/
-/*------------------------ METHODS FOR COMPUTING Fi() ----------------------*/
-/*--------------------------------------------------------------------------*/
-
-HpNum BundleSolver::FakeFiOracle::Fi( cIndex wFi )
-{
- throw( std::logic_error( "this method cannot be called" ) );
- }
+ }  // end( BundleSolver::FakeFiOracle::GetANZ )
 
 /*--------------------------------------------------------------------------*/
 /*------------- METHODS FOR READING SUBGRADIENTS / CONSTRAINTS -------------*/
 /*--------------------------------------------------------------------------*/
 
-bool BundleSolver::FakeFiOracle::NewGi( cIndex wFi )
-{
- if( wFi == 0 )
-  throw( std::invalid_argument( "asking for the 0th component" ) );
- last_c05 = wFi - 1;
- return( true );
- }
-
-/*--------------------------------------------------------------------------*/
-
-Index BundleSolver::FakeFiOracle::GetGi( SgRow SubG , cIndex_Set &SGBse ,
+Index BundleSolver::FakeFiOracle::GetGi( SgRow SubG , cIndex_Set & SGBse ,
 					 cIndex Name , cIndex strt ,
 					 Index stp )
 {
- Index NumVar = bslv->v_c05f[ 0 ]->get_num_active_var();
- if( stp > NumVar )
-  stp = NumVar;
+ if( stp > bslv->NumVar )
+  stp = bslv->NumVar;
 
  auto range = make_pair( strt , stp );
 
- if( Name == bslv->vBPar2[ bslv->NrFi ] ) // get the zero-component subgradient
+ if( Name == bslv->vBPar2[ bslv->NrFi ] )  // the 0-th component
   bslv->f_lf->get_linearization_coefficients( SubG , range );
- else
+ else                                      // a "normal" component
   bslv->v_c05f[ bslv->ItemVcblr[ Name ].first ]->
    get_linearization_coefficients( SubG , range ,
 				   bslv->ItemVcblr[ Name ].second );
+
+ // if one is maximising a concave function, change the sign
+ if( ! bslv->f_convex )
+  chgsign( SubG , stp - strt );
+
  SGBse = nullptr;
  return( stp - strt );
- }
-
-/*--------------------------------------------------------------------------*/
-
-HpNum BundleSolver::FakeFiOracle::GetVal( cIndex Name )
-{
- throw( std::logic_error( "this method cannot be called" ) );
- // the implementation below is wrong, it gives the linearization constant
- // rather than the linearization error in the point where the component is
- // computed. this would require translating the value w.r.t. Lambda1,
- // which is possible but ugly, and anyway not needed
-
- if( Name == bslv->vBPar2[ bslv->NrFi ] ) // get the 0th-component subgradient
-  return( bslv->f_lf->get_linearization_constant() );
- else
-  return( bslv->v_c05f[ bslv->ItemVcblr[ Name ].first ]->
-	       get_linearization_constant( bslv->ItemVcblr[ Name ].second ) );
- }
-
-/*--------------------------------------------------------------------------*/
-
-void BundleSolver::FakeFiOracle::SetGiName( cIndex Name )
-{
- throw( std::logic_error( "this method cannot be called" ) );
- }
-
-/*--------------------------------------------------------------------------*/
-/*-------------------- METHODS FOR READING OTHER RESULTS -------------------*/
-/*--------------------------------------------------------------------------*/
-
-HpNum BundleSolver::FakeFiOracle::GetLowerBound( cIndex wFi )
-{
- throw( std::logic_error( "this method cannot be called" ) );
- }
-
-/*--------------------------------------------------------------------------*/
-
-FiOracle::FiStatus BundleSolver::FakeFiOracle::GetFiStatus( Index wFi )
-{
- throw( std::logic_error( "this method cannot be called" ) );
- }
-
-/*--------------------------------------------------------------------------*/
-/*------------- METHODS FOR ADDING / REMOVING / CHANGING DATA --------------*/
-/*--------------------------------------------------------------------------*/
-
-void BundleSolver::FakeFiOracle::Deleted( cIndex i )
-{
- throw( std::logic_error( "this method cannot be called" ) );
- }
-
-/*--------------------------------------------------------------------------*/
-
-void BundleSolver::FakeFiOracle::Aggregate( cHpRow Mlt , cIndex_Set NmSt ,
-					    cIndex Dm , cIndex NwNm )
-{
- throw( std::logic_error( "this method cannot be called" ) );
  }
 
 /*--------------------------------------------------------------------------*/
