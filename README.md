@@ -139,6 +139,10 @@ SW =
   has a similar arrangement with its own extlib/ folder that must be
   independently edited in an analogous way.
 
+## Getting help
+
+If you need support, you want to submit bugs or propose a new feature, you can
+[open a new issue](https://gitlab.com/smspp/bundlesolver/-/issues/new).
 
 ## Contributing
 
