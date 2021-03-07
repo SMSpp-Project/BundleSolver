@@ -117,7 +117,7 @@ using namespace SMSpp_di_unipi_it;
 /*--------------------------------------------------------------------------*/
 // set precision for long floats (10 digits)
 
-static inline std::ostream & def( std::ostream& os ) {
+static inline std::ostream & def( std::ostream & os ) {
  os.setf( ios::scientific, ios::floatfield );
  os << setprecision( 10 );
  return( os );
@@ -126,10 +126,23 @@ static inline std::ostream & def( std::ostream& os ) {
 /*--------------------------------------------------------------------------*/
 // set precision for short floats (2 digits)
 
-static inline std::ostream & shrt( std::ostream& os ) {
+static inline std::ostream & shrt( std::ostream & os ) {
  os.setf( ios::scientific, ios::floatfield );
  os << setprecision( 2 );
  return( os );
+ }
+
+/*--------------------------------------------------------------------------*/
+// cleanly print +/-INF
+
+static inline void pval( std::ostream & os , double val ) {
+ if( val == BundleSolver::INFshift )
+  os << "INF";
+ else
+  if( val == -BundleSolver::INFshift )
+   os << "-INF";
+  else
+   os << val;
  }
 
 /*--------------------------------------------------------------------------*/
@@ -339,7 +352,7 @@ const std::vector< std::string > BundleSolver::dbl_pars_str = {
 // define and initialize here the vector of string parameters names
 const std::vector< std::string > BundleSolver::str_pars_str = {
  "strEasyCfg" ,
- "strEasyCfg"
+ "strHardCfg"
  };
 
 // define and initialize here the map for int parameters names
@@ -523,6 +536,13 @@ int BundleSolver::compute( bool changedvars )
                       // may be important; keep track of the last evaluated
                       // component so as to proceed round-robin-like across
                       // multiple iterations
+ if( NrEasy ) {       // ... but only the non-easy ones
+  for( ; ( f_wFi < NrFi ) && IsEasy[ f_wFi ] ; ++f_wFi );
+  if( f_wFi == NrFi ) {  // all components are easy
+   BLOG( 1 , " ~ stop due no component to evaluate" << std::endl );
+   return( kError );     // this is considered an error (arguable)
+   }
+  }
  double lastETT = 0;  // last "time" eEveryTTime events have been called
  ParIter = 0;         // number of iterations in this call
  Result = kUnEval;    // still working
@@ -739,7 +759,10 @@ int BundleSolver::compute( bool changedvars )
   if( UpFiLmb1.back() == INFshift )
    DeltaFi = INFshift;
   else
-   DeltaFi = UpFiLmb1.back() - UpRifFi.back();
+   if( UpFiLmb1.back() == -INFshift )
+    DeltaFi = -INFshift;
+   else
+    DeltaFi = UpFiLmb1.back() - UpRifFi.back();
 
   // update FiBest- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1858,8 +1881,6 @@ void BundleSolver::set_par( idx_type par ,
  }
 
 /*--------------------------------------------------------------------------*/
-/*--------------------------------- METHODS --------------------------------*/
-/*--------------------------------------------------------------------------*/
 
 void BundleSolver::set_log( std::ostream * log_stream )
 {
@@ -2579,10 +2600,12 @@ void BundleSolver::FormLambda1( HpNum Tau )
   *f_log << "]";
 
   if( LogVerb > 5 )
-   for( Index k = 0 ; k < NrFi ; ++k )
-    *f_log << std::endl << "    UB[ " << k << " ] = " << def
-	   << rs( UpFiLmb1[ k ] ) << ", LB[ " << k << " ] = "
-	   << rs( LwFiLmb1[ k ] );
+   for( Index k = 0 ; k < NrFi ; ++k ) {
+    *f_log << std::endl << "    UB[ " << k << " ] = " << def;
+    pval( *f_log , rs( UpFiLmb1[ k ] ) );
+    *f_log << ", LB[ " << k << " ] = ";
+    pval( *f_log , rs( LwFiLmb1[ k ] ) );
+    }
   }
  }  // end( BundleSolver::FormLambda1 )
 
@@ -2606,11 +2629,22 @@ void BundleSolver::InnerLoop( void )
   if( FiAndGi( f_wFi ) )
    insrtd = true;
 
+  // return if an unrecoverable error happens
   if( ( FiStatus[ f_wFi ] <= kUnEval ) || ( FiStatus[ f_wFi ] >= kError ) ) {
    Result = kError;
    return;
    }
 
+  // if any component evaluates to -INF, then the whole problem evaluates to
+  // -INF and it is therefore unbounded below; due to convexity, it is "very
+  // seriously unbounded" in that a convex function being -INF anywhere is
+  // -INF everywhere, hence if this ever happens it will do it "very soon"
+  // (the very first time the offending component is evaluated)
+  if( UpFiLmb1[ f_wFi ] == - INFshift )  {
+   UpFiLmb1.back() = - INFshift;
+   return;
+   }
+  
   if( ! CurrNrEvls[ f_wFi ] )  // not evaluated before
    ++ceval;                    // one more evaluated
   ++CurrNrEvls[ f_wFi ];       // evaluated once more
@@ -2657,11 +2691,65 @@ void BundleSolver::InnerLoop( void )
 
 bool BundleSolver::FiAndGi( Index wFi )
 {
- // returns true if at least one item was inserted
- 
- if( NrEasy && IsEasy[ wFi ] )
-  return( false );
+ // compute and set upper and lower cutoffs and the accuracy- - - - - - - - -
 
+ SetupFi( wFi );
+
+ // compute the C05Function and retrieve upper and lower estimates- - - - - -
+
+ auto fwFi = v_c05f[ wFi ];
+
+ FiStatus[ wFi ] = fwFi->compute( ( FiStatus[ wFi ] == kUnEval ) );
+ if( ( FiStatus[ wFi ] <= kUnEval ) || ( FiStatus[ wFi ] >= kError ) )
+  return( false );
+  
+ auto ue = fwFi->get_upper_estimate();
+ auto le = fwFi->get_lower_estimate();
+
+ if( f_log && ( LogVerb > 3 ) ) {
+  *f_log << std::endl << "            Component " << wFi
+	 << " evaluated: UB = "<< def;
+  pval( *f_log , ue );
+  *f_log << ", LB = ";
+  pval( *f_log , le );
+  }
+
+ if( f_convex ) {
+  if( ue == -INFshift )  // very special case: value == -INF
+   return( true );       // immediately terminate
+  }
+ else
+  if( le == INFshift )   // very special case: value == +INF
+   return( true );       // immediately terminate
+ 
+ // update UpFiLambd1[ wFi ] (and possibly UpFiLambd1[ NrFi ])
+ update_UpFiLambd1( wFi , f_convex ? ue : - le );
+
+ // compute the upper bound in Lambda provided by the upper bound in Lambda1
+ // and try to update UpFiLmb[ wFi ] (and possibly UpFiLambd1[ NrFi ])
+ // note that, even if this suceeds and therefore decreases UpFiLmb[ wFi ]
+ // (and possibly UpFiLambd[ NrFi ], which would be a "rather big" decrease
+ // from +INF to something finite), as the theory requires the upper target
+ // is *not* changed
+ if( UpFiLmb1[ wFi ] < INFshift ) {
+  c_VarValue LwFi = fwFi->get_Lipschitz_constant();
+  if( LwFi < INFshift )
+   update_UpFiLambd( wFi , UpFiLmb1[ wFi ] + LwFi * NrmD );
+  }
+
+ // update LwFiLambd1[ wFi ] (and possibly LwFiLambd1[ NrFi ])
+ update_LwFiLambd1( wFi , f_convex ? le : - ue );
+
+ // get new linearizations- - - - - - - - - - - - - - - - - - - - - - - - - -
+
+ return( GetGi( wFi ) );
+
+ }  // end( BundleSolver::FiAndGi )
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::SetupFi( Index wFi )
+{
  // compute upper and lower cutoffs and the accuracy
  double UpCutOff , LwCutOff , EpsCurr;
 
@@ -2732,41 +2820,14 @@ bool BundleSolver::FiAndGi( Index wFi )
  if( MaxTime < INFshift )
   fwFi->set_par( dblMaxTime , MaxTime - get_elapsed_time() );
  
- // now compute the C05Function and retrieve upper and lower estimates- - - -
- // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ }  // end( BundleSolver::SetupFi )
 
- FiStatus[ wFi ] = fwFi->compute( ( FiStatus[ wFi ] == kUnEval ) );
- if( ( FiStatus[ wFi ] <= kUnEval ) || ( FiStatus[ wFi ] >= kError ) )
-  return( false );
-  
- auto ue = fwFi->get_upper_estimate();
- auto le = fwFi->get_lower_estimate();
+/*--------------------------------------------------------------------------*/
 
- if( f_log && ( LogVerb > 3 ) )
-  *f_log << std::endl << "            Component " << wFi
-	 << " evaluated: UB = "<< def << ue << ", LB = " << le << std::endl;
- 
- // update UpFiLambd1[ wFi ] (and possibly UpFiLambd1[ NrFi ])
- update_UpFiLambd1( wFi , f_convex ? ue : - le );
-
- // compute the upper bound in Lambda provided by the upper bound in Lambda1
- // and try to update UpFiLmb[ wFi ] (and possibly UpFiLambd1[ NrFi ])
- // note that, even if this suceeds and therefore decreases UpFiLmb[ wFi ]
- // (and possibly UpFiLambd[ NrFi ], which would be a "rather big" decrease
- // from +INF to something finite), as the theory requires the upper target
- // is *not* changed
- if( UpFiLmb1[ wFi ] < INFshift ) {
-  c_VarValue LwFi = v_c05f[ wFi ]->get_Lipschitz_constant();
-  if( LwFi < INFshift )
-   update_UpFiLambd( wFi , UpFiLmb1[ wFi ] + LwFi * NrmD );
-  }
-
- // update LwFiLambd1[ wFi ] (and possibly LwFiLambd1[ NrFi ])
- update_LwFiLambd1( wFi , f_convex ? le : - ue );
-
- // get new linearizations- - - - - - - - - - - - - - - - - - - - - - - - - -
- // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+bool BundleSolver::GetGi( Index wFi )
+{
  bool insrtd = false;  // keep track if anything new at all was inserted
+ auto fwFi = v_c05f[ wFi ];
 
  for( Index Ftchd = 0 ; Ftchd < aBP3 ; ++Ftchd ) {
   bool diagonal = true;
@@ -3022,9 +3083,9 @@ bool BundleSolver::FiAndGi( Index wFi )
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- return( insrtd );
+ return( insrtd );  // returns true if at least one item was inserted
 
- }  // end( BundleSolver::FiAndGi )
+ }  // end( BundleSolver::GetGi )
 
 /*--------------------------------------------------------------------------*/
 
@@ -3230,7 +3291,7 @@ void BundleSolver::Log2( void )
 
  *f_log << std::endl << "            " << def;
 
- if( LowerBound[ NrFi ] > - INFshift ) {
+ if( LowerBound.back() > - INFshift ) {
   if( f_convex )
    *f_log << "LB = " << LowerBound.back() << " ~ ";
   else
@@ -3240,21 +3301,21 @@ void BundleSolver::Log2( void )
  *f_log << "Fi1 = ";
 
  if( f_convex ) {
-  if( UpFiLmb1.back() <= - INFshift )
-   *f_log << "+ INF => STOP." << std::endl;
+  if( UpFiLmb1.back() == - INFshift )
+   *f_log << "- INF => STOP." << std::endl;
   else
-   if( UpFiLmb1.back() >= INFshift )
-    *f_log << " - INF" << std::endl;
+   if( UpFiLmb1.back() == INFshift )
+    *f_log << "+ INF" << std::endl;
    else
     *f_log << UpFiLmb1.back() << shrt << " ~ Alfa1 = " << Alfa1.back()
 	   << " ~ Gi1xd = " << ScPr1.back() << std::endl;
   }
  else
-  if( UpFiLmb1.back() <= - INFshift )
-   *f_log << "- INF => STOP." << std::endl;
+  if( UpFiLmb1.back() == - INFshift )
+   *f_log << "+ INF => STOP." << std::endl;
   else
-   if( UpFiLmb1.back() >= INFshift )
-    *f_log << " + INF" << std::endl;
+   if( UpFiLmb1.back() == INFshift )
+    *f_log << "- INF" << std::endl;
    else
     *f_log << - UpFiLmb1.back() << shrt << " ~ Alfa1 = " << Alfa1.back()
 	   << " ~ Gi1xd = " << - ScPr1.back() << std::endl;
@@ -3311,6 +3372,26 @@ void BundleSolver::compute_NrmZFctr( void )
  }  // end( compute_NrmZFctr )
 
 /*--------------------------------------------------------------------------*/
+
+bool BundleSolver::FindNext( void )
+{
+ Index InitwFi = f_wFi;
+ do {
+  f_wFi = ( f_wFi + 1 ) % NrFi;    // next patient, please
+  if( NrEasy && IsEasy[ f_wFi ] )  // skip easy components
+   continue;
+  if( ( FiStatus[ f_wFi ] == kUnEval ) ||
+      ( ( FiStatus[ f_wFi ] < kError ) && ( FiStatus[ f_wFi ] > kOK ) &&
+	( CurrNrEvls[ f_wFi ] < MaxNrEvls ) ) )
+   return( true );
+
+  } while( f_wFi != InitwFi );
+
+ return( false );
+
+ }  // end( BundleSolver::FindNext )
+
+/*--------------------------------------------------------------------------*/
 /*-------------------------- PRIVATE METHODS -------------------------------*/
 /*--------------------------------------------------------------------------*/
 
@@ -3349,26 +3430,6 @@ void BundleSolver::InitMP( void )
  Master->SetMPLog( f_log , MPlvl );
 
  }  // end( BundleSolver::InitMP )
-
-/*--------------------------------------------------------------------------*/
-
-bool BundleSolver::FindNext( void )
-{
- Index InitwFi = f_wFi;
- do {
-  f_wFi = ( f_wFi + 1 ) % NrFi;    // next patient, please
-  if( NrEasy && IsEasy[ f_wFi ] )  // skip easy components
-   continue;
-  if( ( FiStatus[ f_wFi ] == kUnEval ) ||
-      ( ( FiStatus[ f_wFi ] < kError ) && ( FiStatus[ f_wFi ] > kOK ) &&
-	( CurrNrEvls[ f_wFi ] < MaxNrEvls ) ) )
-   return( true );
-
-  } while( f_wFi != InitwFi );
-
- return( false );
-
- }  // end( BundleSolver::FindNext )
 
 /*--------------------------------------------------------------------------*/
 

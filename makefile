@@ -2,7 +2,7 @@
 ################################ makefile ####################################
 ##############################################################################
 #                                                                            #
-#   makefile of BundleSolver                                                 #
+#   makefile of BundleSolver and ParallelBundleSolver                        #
 #                                                                            #
 #   The makefile takes in input the -I directives for all the external       #
 #   libraries needed by BundleSolver, i.e., core SMS++.                      #
@@ -22,8 +22,8 @@
 #           $(BNDSLVH)     = the .h files to include                         #
 #           $(BNDSLVINC)   = the -I$( source directory )                     #
 #                                                                            #
-#                                VERSION 1.01                                #
-#                               30 - 12 - 2020                               #
+#                                VERSION 2.00                                #
+#                               07 - 03 - 2021                               #
 #                                                                            #
 #                              Antonio Frangioni                             #
 #                               Enrico Gorgone                               #
@@ -35,11 +35,11 @@
 
 # macros to be exported - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-BNDSLVOBJ = $(BNDSLVSDR)BundleSolver.o 
+BNDSLVOBJ = $(BNDSLVSDR)BundleSolver.o $(BNDSLVSDR)ParallelBundleSolver.o 
 
 BNDSLVINC = -I$(BNDSLVSDR)
 
-BNDSLVH   = $(BNDSLVSDR)BundleSolver.h 
+BNDSLVH   = $(BNDSLVSDR)BundleSolver.h $(BNDSLVSDR)ParallelBundleSolver.h 
 
 # clean - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -48,8 +48,12 @@ clean::
 
 # dependencies: every .o from its .cpp + every recursively included .h- - - -
 
-$(BNDSLVSDR)BundleSolver.o: $(BNDSLVSDR)BundleSolver.cpp $(BNDSLVH) \
-	$(SMS++OBJ) $(libNDOOBJ)
+$(BNDSLVSDR)BundleSolver.o: $(BNDSLVSDR)BundleSolver.cpp \
+	$(BNDSLVSDR)BundleSolver.h $(SMS++OBJ) $(libNDOOBJ)
+	$(CC) -c $*.cpp -o $@ $(BNDSLVINC) $(SMS++INC) $(libNDOINC) $(SW)
+
+$(BNDSLVSDR)ParallelBundleSolver.o: $(BNDSLVSDR)ParallelBundleSolver.cpp \
+	$(BNDSLVH) $(SMS++OBJ) $(libNDOOBJ)
 	$(CC) -c $*.cpp -o $@ $(BNDSLVINC) $(SMS++INC) $(libNDOINC) $(SW)
 
 ########################## End of makefile ###################################

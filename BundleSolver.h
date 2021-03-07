@@ -320,7 +320,7 @@ public:
 
  enum int_par_type_BndSlv {
 
- intBPar1 = CDASolver::intLastParCDAS ,
+ intBPar1 = intLastParCDAS ,
  ///< remove linearizations unused for more than this consecutive iterations
 
  intBPar2 ,  ///< max number linearizations per component
@@ -1719,6 +1719,19 @@ public:
  bool FiAndGi( Index wFi );
 
 /*--------------------------------------------------------------------------*/
+ /* Prepares component wFi for computation by setting the thresholds and
+  * accuracy. */
+
+ void SetupFi( Index wFi );
+
+/*--------------------------------------------------------------------------*/
+ /* Gets the new linearizations out of the freshly computed component wFi,
+  * returns true <=> at least one item was inserted. It also "sneakily" sets
+  * MPchgs if appropriate. */
+
+ bool GetGi( Index wFi );
+
+/*--------------------------------------------------------------------------*/
 
  void update_UpFiLambd1( Index wFi , VarValue nval )
  {
@@ -1887,6 +1900,12 @@ public:
  VarValue rs( const VarValue fv ) {
   return( f_convex ? fv : - fv );
   }
+
+/*--------------------------------------------------------------------------*/
+ /* Finds the next component to compute in the inner loop, writes is in
+  * f_wFi; returns false if there is no other component to compute. */
+
+ bool FindNext( void );
 
 /*--------------------------------------------------------------------------*/
 /*---------------------------- PROTECTED FIELDS  ---------------------------*/
@@ -2331,8 +2350,6 @@ class FakeFiOracle : public FiOracle
 /*--------------------------------------------------------------------------*/
 
  void InitMP( void );
-
- bool FindNext( void );
 
 /*--------------------------------------------------------------------------*/
 
