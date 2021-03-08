@@ -27,15 +27,21 @@
 
 #include <iomanip>
 
-//#include <chrono>
-
 /*--------------------------------------------------------------------------*/
 /*-------------------------------- MACROS ----------------------------------*/
 /*--------------------------------------------------------------------------*/
 
-#define BLOG( l , x ) if( f_log && ( LogVerb > l ) ) *f_log << x
+#define VERBOSE_LOG 1
 
-#define BLOG2( l , c , x ) if( f_log && ( LogVerb > l ) && c ) *f_log << x
+#if VERBOSE_LOG
+ #define BLOG( l , x ) if( f_log && ( LogVerb > l ) ) *f_log << x
+
+ #define BLOG2( l , c , x ) if( f_log && ( LogVerb > l ) && c ) *f_log << x
+#else
+ #define BLOG( l , x )
+
+ #define BLOG2( l , c , x )
+#endif
 
 /*--------------------------------------------------------------------------*/
 /*------------------------- NAMESPACE AND USING ----------------------------*/
@@ -166,9 +172,8 @@ void ParallelBundleSolver::InnerLoop( void )
   if( ! FindNext() )
    throw( std::logic_error( "no component to evaluate in ramp-up phase" ) );
 
-  if( f_log && ( LogVerb > 6 ) )
-   *f_log << std::endl << "ramp-up: component " << f_wFi << " in position "
-	  << ( & el - & EvalV.front() );
+  BLOG( 6 , std::endl << "ramp-up: component " << f_wFi << " in position "
+	    << ( & el - & EvalV.front() ) );
 
   el.first = f_wFi;
   SetupFi( f_wFi );
@@ -207,15 +212,13 @@ void ParallelBundleSolver::InnerLoop( void )
 
   FiStatus[ wFi ] = it->second.get();  // get() the status of compute()
 
-  if( f_log && ( LogVerb > 6 ) )
-   *f_log << endl << "cruise: component " << wFi << " in position "
-	  << it - EvalV.begin() << " has status " << FiStatus[ wFi ];
+  BLOG( 6 , std::endl << "cruise: component " << wFi << " in position "
+	    << it - EvalV.begin() << " has status " << FiStatus[ wFi ] );
 
   // if an unrecoverable error happens, immediately start the ramp-down - - -
   if( ( FiStatus[ wFi ] <= kUnEval ) || ( FiStatus[ wFi ] >= kError ) ) {
-   if( f_log && ( LogVerb > 3 ) )
-    *f_log << std::endl << "            Component " << wFi
-	   << " evaluated: Error";
+   BLOG( 3 , std::endl << "            Component " << wFi
+	     << " evaluated: Error" );
    Result = kError;
    break;
    }
@@ -225,13 +228,15 @@ void ParallelBundleSolver::InnerLoop( void )
   auto ue = fwFi->get_upper_estimate();
   auto le = fwFi->get_lower_estimate();
 
-  if( f_log && ( LogVerb > 3 ) ) {
-   *f_log << std::endl << "            Component " << wFi
-	  << " evaluated: UB = "<< def;
-   pval( *f_log , ue );
-   *f_log << ", LB = ";
-   pval( *f_log , le );
-   }
+  #if VERBOSE_LOG
+   if( f_log && ( LogVerb > 3 ) ) {
+    *f_log << std::endl << "            Component " << wFi
+	   << " evaluated: UB = "<< def;
+    pval( *f_log , ue );
+    *f_log << ", LB = ";
+    pval( *f_log , le );
+    }
+  #endif
 
   // if any component evaluates to -INF, then the whole problem evaluates to
   // -INF and it is therefore unbounded below; due to convexity, it is "very
@@ -309,13 +314,11 @@ void ParallelBundleSolver::InnerLoop( void )
 				          ( FiStatus[ f_wFi ] == kUnEval ) );
   FiStatus[ f_wFi ] = kOK;
 
-  if( f_log && ( LogVerb > 6 ) )
-   *f_log << std::endl << "cruise: in component " << f_wFi;
+  BLOG( 6 , std::endl << "cruise: in component " << f_wFi );
 
   }  // end( for( cruise phase loop ) )
 
- if( f_log && ( LogVerb > 6 ) )
-  *f_log << std::endl << "end of cruise";
+ BLOG( 6 , std::endl << "end of cruise" );
 
  it->first = InINF;  // mark the entry as invalid
  
@@ -345,9 +348,8 @@ void ParallelBundleSolver::InnerLoop( void )
 
   FiStatus[ wFi ] = it->second.get();  // get() the status of compute()
 
-  if( f_log && ( LogVerb > 6 ) )
-   *f_log << std::endl << "ramp-down: component " << wFi << " in position "
-	  << it - EvalV.begin() << " has status " << FiStatus[ wFi ];
+  BLOG( 6 , std::endl << "ramp-down: component " << wFi << " in position "
+ 	    << it - EvalV.begin() << " has status " << FiStatus[ wFi ] );
 
   // if an unrecoverable error happens, do nothing else - - - - - - - - - - -
   if( ( FiStatus[ wFi ] <= kUnEval ) || ( FiStatus[ wFi ] >= kError ) ) {
@@ -363,13 +365,15 @@ void ParallelBundleSolver::InnerLoop( void )
   auto ue = fwFi->get_upper_estimate();
   auto le = fwFi->get_lower_estimate();
 
-  if( f_log && ( LogVerb > 3 ) ) {
-   *f_log << std::endl << "            Component " << wFi
-	  << " evaluated: UB = "<< def;
-   pval( *f_log , ue );
-   *f_log << ", LB = ";
-   pval( *f_log , le );
-   }
+  #if VERBOSE_LOG
+   if( f_log && ( LogVerb > 3 ) ) {
+    *f_log << std::endl << "            Component " << wFi
+	   << " evaluated: UB = "<< def;
+    pval( *f_log , ue );
+    *f_log << ", LB = ";
+    pval( *f_log , le );
+    }
+  #endif
 
   // if any component evaluates to -INF, then the whole problem evaluates to
   // -INF and it is therefore unbounded below; due to convexity, it is "very
