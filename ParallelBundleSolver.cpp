@@ -47,6 +47,8 @@ using namespace SMSpp_di_unipi_it;
 /*-------------------------------- CONSTANTS -------------------------------*/
 /*--------------------------------------------------------------------------*/
 
+static constexpr auto InINF = SMSpp_di_unipi_it::Inf< Block::Index >();
+
 /*--------------------------------------------------------------------------*/
 /*-------------------------------- FUNCTIONS -------------------------------*/
 /*--------------------------------------------------------------------------*/
@@ -86,16 +88,6 @@ static inline void pval( std::ostream & os , double val ) {
 
 // register ParallelBundleSolver to the Solver factory
 SMSpp_insert_in_factory_cpp_0( ParallelBundleSolver );
-
-/*--------------------------------------------------------------------------*/
-
-static const HpNum Nearly  = 1.01;
-static const HpNum Nearly2 = 1.02;
-
-static const char LogBnd = 16;        // log Bundle changes
-static const char LogVar = 32;        // log variables changes
-
-static cIndex InINF = SMSpp_di_unipi_it::Inf<Index>();
 
 /*--------------------------------------------------------------------------*/
 /*------------------ METHODS OF ParallelBundleSolver -----------------------*/
@@ -164,23 +156,41 @@ void ParallelBundleSolver::InnerLoop( void )
  // ramp-up phase - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // fill-in the vector of std::future
+ // note: each time we start the evaluation of a component we provisionally
+ // set FiStatus == kOK so that FindNext() will not produce it multiple
+ // times before its computation is actually over. when it is, its FiStatus
+ // may become, say, kStopTime or kStopIter and the component may be again
+ // eligible to be re-evaluated
 
  for( auto & el : EvalV ) {
   if( ! FindNext() )
    throw( std::logic_error( "no component to evaluate in ramp-up phase" ) );
 
-  SetupFi( el.first = f_wFi );
+  if( f_log && ( LogVerb > 6 ) )
+   *f_log << std::endl << "ramp-up: component " << f_wFi << " in position "
+	  << ( & el - & EvalV.front() );
+
+  el.first = f_wFi;
+  SetupFi( f_wFi );
   el.second = v_c05f[ f_wFi ]->compute_async(
 					  ( FiStatus[ f_wFi ] == kUnEval ) );
+  FiStatus[ f_wFi ] = kOK;
   }
 
  // cruise phase- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- for( bool insrtd = false ; ; ) {
+ // this is defined outside so that we can see what the last one was
+ std::vector< EvalEl >::iterator it;
+
+ bool insrtd = false;
+ for( ; ; ) {
   // check if any future is ready - - - - - - - - - - - - - - - - - - - - - -
-  auto it = std::find_if( EvalV.begin() , EvalV.end() ,
-			  []( auto & el ) { return( el.second.valid() ); } );
+  // note that we assume without checking that all future are valid()
+  it = std::find_if( EvalV.begin() , EvalV.end() ,
+		     []( auto & el ) { return( el.second.wait_for(
+				       std::chrono::duration< int >::zero() )
+				       == std::future_status::ready ); } );
 
   // if not, sleep over and retry later on- - - - - - - - - - - - - - - - - -
   if( it == EvalV.end() ) {
@@ -188,19 +198,18 @@ void ParallelBundleSolver::InnerLoop( void )
 							      PoolingInt ) );
    continue;
    }
-
+  
   // if one future is ready, read it- - - - - - - - - - - - - - - - - - - - -
   Index wFi = it->first;
   if( ! CurrNrEvls[ wFi ] )  // not evaluated before
    ++ceval;                  // one more evaluated
   ++CurrNrEvls[ wFi ];       // evaluated once more
-  
-  if( it->second.wait_for( std::chrono::duration< int >::zero() ) !=
-      std::future_status::ready )
-   throw( std::logic_error( "selected std::future not ready" ) );
 
-  // get() the return status of compute(); this makes valid() == false
-  FiStatus[ wFi ] = it->second.get();
+  FiStatus[ wFi ] = it->second.get();  // get() the status of compute()
+
+  if( f_log && ( LogVerb > 6 ) )
+   *f_log << endl << "cruise: component " << wFi << " in position "
+	  << it - EvalV.begin() << " has status " << FiStatus[ wFi ];
 
   // if an unrecoverable error happens, immediately start the ramp-down - - -
   if( ( FiStatus[ wFi ] <= kUnEval ) || ( FiStatus[ wFi ] >= kError ) ) {
@@ -255,11 +264,10 @@ void ParallelBundleSolver::InnerLoop( void )
   update_LwFiLambd1( wFi , f_convex ? le : - ue );
 
   // get new linearizations - - - - - - - - - - - - - - - - - - - - - - - - -
-
   if( GetGi( wFi ) )
    insrtd = true;
 
-  // check if the accrued information allows to wind down - - - - - - - - - -
+  // check if the accrued information changes the MP- - - - - - - - - - - - -
   // a SS can be performed: note the "<" in the SS condition below (which
   // means it is ever so slightly stronger than it should), which is there
   // to avoid the condition to work when UpFiLmb1.back() == INF == UpTrgt
@@ -283,29 +291,44 @@ void ParallelBundleSolver::InnerLoop( void )
    // have been inserted (on top of all the other conditions)
    MPchgs = 1;
 
+  // check if we can/must wind down - - - - - - - - - - - - - - - - - - - - -
   if( ( MaxTime < INFshift ) && ( get_elapsed_time() > MaxTime ) )
    break;                  // time has ran up: start ramp-down
 
-  if( ( ceval >= minceval ) && MPchgs )
-   // the MP is guaranteed to change and enough componentsevaluated
+  // the MP is guaranteed to change and enough components evaluated
+  if( MPchgs && ( ceval >= minceval ) )
    break;                  // start ramp-down
 
   if( ! FindNext() )       // find next component
    break;                  // if none, start ramp-down
 
   // run a new task in the same position- - - - - - - - - - - - - - - - - - -
-  SetupFi( it->first = f_wFi );
+  it->first = f_wFi;
+  SetupFi( f_wFi );
   it->second = v_c05f[ f_wFi ]->compute_async(
 				          ( FiStatus[ f_wFi ] == kUnEval ) );
+  FiStatus[ f_wFi ] = kOK;
+
+  if( f_log && ( LogVerb > 6 ) )
+   *f_log << std::endl << "cruise: in component " << f_wFi;
+
   }  // end( for( cruise phase loop ) )
 
+ if( f_log && ( LogVerb > 6 ) )
+  *f_log << std::endl << "end of cruise";
+
+ it->first = InINF;  // mark the entry as invalid
+ 
  // ramp-down phase - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
  for( Index cnt = EvalV.size() - 1 ; cnt ; ) {
-  // check if any future is ready - - - - - - - - - - - - - - - - - - - - - -
-  auto it = std::find_if( EvalV.begin() , EvalV.end() ,
-			  []( auto & el ) { return( el.second.valid() ); } );
+  // check if any future is both valid() and ready- - - - - - - - - - - - - -
+  it = std::find_if( EvalV.begin() , EvalV.end() ,
+		     []( auto & el ) { return( ( el.first != InINF ) &&
+					       el.second.wait_for(
+				       std::chrono::duration< int >::zero() )
+				       == std::future_status::ready ); } );
 
   // if not, sleep over and retry later on- - - - - - - - - - - - - - - - - -
   if( it == EvalV.end() ) {
@@ -316,15 +339,15 @@ void ParallelBundleSolver::InnerLoop( void )
 
   // if one future is ready, read it- - - - - - - - - - - - - - - - - - - - -
   Index wFi = it->first;
+  it->first = InINF;
   ++CurrNrEvls[ wFi ];       // evaluated once more
   --cnt;                     // one std::future less to wait for
 
-  if( it->second.wait_for( std::chrono::duration< int >::zero() ) !=
-      std::future_status::ready )
-   throw( std::logic_error( "selected std::future not ready" ) );
+  FiStatus[ wFi ] = it->second.get();  // get() the status of compute()
 
-  // get() the return status of compute(); this makes valid() == false
-  FiStatus[ wFi ] = it->second.get();
+  if( f_log && ( LogVerb > 6 ) )
+   *f_log << std::endl << "ramp-down: component " << wFi << " in position "
+	  << it - EvalV.begin() << " has status " << FiStatus[ wFi ];
 
   // if an unrecoverable error happens, do nothing else - - - - - - - - - - -
   if( ( FiStatus[ wFi ] <= kUnEval ) || ( FiStatus[ wFi ] >= kError ) ) {
@@ -384,11 +407,19 @@ void ParallelBundleSolver::InnerLoop( void )
    continue;
   
   // get new linearizations - - - - - - - - - - - - - - - - - - - - - - - - -
+  if( GetGi( wFi ) )
+   insrtd = true;
 
-  GetGi( wFi );
+  // check if the accrued information changes the MP- - - - - - - - - - - - -
+  // see the cruise phase for detailed comments
+
+  if( ( ! MPchgs ) && ( UpFiLmb1.back() < UpTrgt ) )
+   MPchgs = 1;
+
+  if( ( ! MPchgs ) && insrtd && RifeqFi && ( LwFiLmb1.back() > LwTrgt ) )
+   MPchgs = 1;
 
   }  // end( for( ramp-down phase loop ) )
-
  }  // end( ParallelBundleSolver::InnerLoop )
 
 /*--------------------------------------------------------------------------*/

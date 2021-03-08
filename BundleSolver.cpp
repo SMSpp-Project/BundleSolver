@@ -2602,9 +2602,15 @@ void BundleSolver::FormLambda1( HpNum Tau )
   if( LogVerb > 5 )
    for( Index k = 0 ; k < NrFi ; ++k ) {
     *f_log << std::endl << "    UB[ " << k << " ] = " << def;
-    pval( *f_log , rs( UpFiLmb1[ k ] ) );
+    if( f_convex )
+     pval( *f_log , UpFiLmb1[ k ] );
+    else
+     pval( *f_log , - LwFiLmb1[ k ] );
     *f_log << ", LB[ " << k << " ] = ";
-    pval( *f_log , rs( LwFiLmb1[ k ] ) );
+    if( f_convex )
+     pval( *f_log , LwFiLmb1[ k ] );
+    else
+     pval( *f_log , - UpFiLmb1[ k ] );
     }
   }
  }  // end( BundleSolver::FormLambda1 )
