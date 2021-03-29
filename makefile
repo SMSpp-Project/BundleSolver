@@ -15,6 +15,9 @@
 #   Input:  $(CC)          = compiler command                                #
 #           $(SW)          = compiler options                                #
 #           $(SMS++INC)    = the -I$( core SMS++ directory )                 #
+#           $(libNDOINC)   = the -I$( libNDO include directory )             #
+#           $(MILPSINC)    = the -I$( MILPSolver include directory )         #
+#           $(MILPSH)      = the .h files to include for MILPSolver          #
 #           $(SMS++OBJ)    = the core SMS++ library                          #
 #           $(BNDSLVSDR)   = the directory where the source is               #
 #                                                                            #
@@ -22,8 +25,8 @@
 #           $(BNDSLVH)     = the .h files to include                         #
 #           $(BNDSLVINC)   = the -I$( source directory )                     #
 #                                                                            #
-#                                VERSION 2.00                                #
-#                               07 - 03 - 2021                               #
+#                                VERSION 2.10                                #
+#                               29 - 03 - 2021                               #
 #                                                                            #
 #                              Antonio Frangioni                             #
 #                               Enrico Gorgone                               #
@@ -49,11 +52,13 @@ clean::
 # dependencies: every .o from its .cpp + every recursively included .h- - - -
 
 $(BNDSLVSDR)BundleSolver.o: $(BNDSLVSDR)BundleSolver.cpp \
-	$(BNDSLVSDR)BundleSolver.h $(SMS++OBJ) $(libNDOOBJ)
-	$(CC) -c $*.cpp -o $@ $(BNDSLVINC) $(SMS++INC) $(libNDOINC) $(SW)
+	$(BNDSLVSDR)BundleSolver.h $(SMS++OBJ) $(MILPSH) $(libNDOOBJ)
+	$(CC) -c $*.cpp -o $@ $(BNDSLVINC) $(SMS++INC) $(MILPSINC) \
+	$(libNDOINC) $(SW)
 
 $(BNDSLVSDR)ParallelBundleSolver.o: $(BNDSLVSDR)ParallelBundleSolver.cpp \
-	$(BNDSLVH) $(SMS++OBJ) $(libNDOOBJ)
-	$(CC) -c $*.cpp -o $@ $(BNDSLVINC) $(SMS++INC) $(libNDOINC) $(SW)
+	$(BNDSLVH) $(SMS++OBJ) $(MILPSH) $(libNDOOBJ)
+	$(CC) -c $*.cpp -o $@ $(BNDSLVINC) $(SMS++INC) $(MILPSINC) \
+	$(libNDOINC) $(SW)
 
 ########################## End of makefile ###################################
