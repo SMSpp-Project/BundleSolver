@@ -302,7 +302,14 @@ static void chgsign( double * v , Index n )
 /*--------------------------------------------------------------------------*/
 
 // register BundleSolver to the Solver factory
+
 SMSpp_insert_in_factory_cpp_0( BundleSolver );
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+
+// register BundleSolverState to the State factory
+
+SMSpp_insert_in_factory_cpp_0( BundleSolverState );
 
 /*--------------------------------------------------------------------------*/
 // define and initialize here the vector of int parameters names
@@ -473,14 +480,32 @@ static cIndex InINF = SMSpp_di_unipi_it::Inf<Index>();
 
 int BundleSolver::compute( bool changedvars )
 {
- if( MaxIter == 0 )  // no iteration must be performed
-  return( kStopIter );
+ // ensure no concurrent accesses - - - - - - - - - - - - - - - - - - - - - -
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+ f_mutex.lock();                // ... either from other threads
+
+ if( Result == kStillRunning )  // ... or from the same
+  throw( std::logic_error( "BundleSolver::compute() called within itself" )
+	 );
 
  // basic sanity checks - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- if( ! f_Block )
-  return( kBlockLocked );
+ if( ! f_Block ) {    // no Block is there to compute
+  Result = kBlockLocked;
+
+  BundleSolver_error_return:
+  f_mutex.unlock();  // unlock the mutex
+  return( Result );
+  }
+
+ if( MaxIter == 0 ) {  // no iteration must be performed
+  Result = kStopIter;
+  goto BundleSolver_error_return;
+  }
+
+ Result = kStillRunning;    // still working
 
  // start timer now (so that processing Modification is included) - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -497,8 +522,10 @@ int BundleSolver::compute( bool changedvars )
 
  while( num_outstanding_Modification() ) {
   bool owned = f_Block->is_owned_by( f_id );       // check if already locked
-  if( ( ! owned ) && ( ! f_Block->read_lock() ) )  // if not try to read_lock
-   return( kBlockLocked );                         // return error on failure
+  if( ( ! owned ) && ( ! f_Block->read_lock() ) ) {  // if not read_lock now
+   Result = kBlockLocked;                           // return error on failure
+   goto BundleSolver_error_return;
+   }
 
   // if there are "easy" components and changing them is supported, process
   // the corresponding Modification (stored it v_FakeSolver)
@@ -545,7 +572,6 @@ int BundleSolver::compute( bool changedvars )
   }
  double lastETT = 0;  // last "time" eEveryTTime events have been called
  ParIter = 0;         // number of iterations in this call
- Result = kUnEval;    // still working
  ++SCalls;            // one more call
  RifeqFi = ( UpRifFi == UpFiLmb );  // true if the reference values are right
 
@@ -576,7 +602,7 @@ int BundleSolver::compute( bool changedvars )
    lastETT = get_elapsed_time();  // reset counter
    }
 
-  if( Result != kUnEval ) {
+  if( Result != kStillRunning ) {
    BLOG( 1 , " ~ stop due to time-periodic event" << std::endl );
    break;
    }
@@ -647,7 +673,7 @@ int BundleSolver::compute( bool changedvars )
     if( res == eStopError ) { Result = kError; break; }
     }
 
-  if( Result != kUnEval ) {
+  if( Result != kStillRunning ) {
    BLOG( 1 , " ~ stop due to time-periodic event" << std::endl );
    break;
    }
@@ -1010,6 +1036,8 @@ int BundleSolver::compute( bool changedvars )
  // main cycle ends here- - - - - - - - - - - - - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
+ f_mutex.unlock();  // unlock the mutex
+ 
  return( Result );
 
  }  // end( BundleSolver::compute )
@@ -2031,7 +2059,116 @@ const std::vector< std::string > & BundleSolver::get_vstr_par( idx_type par )
  }
 
 /*--------------------------------------------------------------------------*/
+/*----------- METHODS FOR HANDLING THE State OF THE BundleSolver -----------*/
+/*--------------------------------------------------------------------------*/
+
+State * BundleSolver::get_State( void ) const {
+  return( new BundleSolverState( this ) );
+  }
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::put_State( const State & state )
+{
+ // if state is not a BundleSolverState &, exception will be thrown
+ auto s = dynamic_cast< const BundleSolverState & >( state );
+
+ guts_of_put_State( s );
+
+ Lambda = s.Lambda;
+ 
+ for( Index i = 0 ; i < NrFi ; ++i )
+  if( s.v_comp_State[ i ] )
+   v_c05f[ i ]->put_State( *(s.v_comp_State[ i ]) );
+
+ }  // end( BundleSolver::put_State( const & ) )
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::put_State( State && state )
+{
+ // if state is not a BundleSolverState &&, exception will be thrown
+ auto s = dynamic_cast< BundleSolverState && >( state );
+
+ guts_of_put_State( s );
+
+ Lambda = std::move( s.Lambda );
+ 
+ for( Index i = 0 ; i < NrFi ; ++i )
+  if( s.v_comp_State[ i ] ) {
+   v_c05f[ i ]->put_State( std::move( *(s.v_comp_State[ i ]) ) );
+   delete s.v_comp_State[ i ];
+   }
+
+ s.v_comp_State.clear();
+
+ }  // end( BundleSolver::put_State( && ) )
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::serialize_State( netCDF::NcGroup & group ,
+				    const std::string & sub_group_name ) const
+{
+ if( ! sub_group_name.empty() ) {
+  auto gr = group.addGroup( sub_group_name );
+  serialize_State( gr );
+  return;
+  }
+
+ // do it "by hand" since there is no BundleSolverState available to call
+ // State::serialize() from
+ group.putAtt( "type", "BundleSolverState" );
+
+ auto nv = group.addDim( "BundleSolver_NumVar" , NumVar );
+
+ ( group.addVar( "BundleSolver_Lambda" , netCDF::NcDouble() , nv ) ).putVar(
+			               { 0 } , {  NumVar } , Lambda.data() );
+
+ ( group.addVar( "BundleSolver_t" , netCDF::NcDouble() ) ).putVar( &t );
+
+ group.addDim( "BundleSolver_NrFi" , NrFi );
+ 
+ for( Index i = 0 ; i < NrFi ; ++i ) {
+  if( NrEasy && IsEasy[ i ] )
+   continue;
+
+  v_c05f[ i ]->serialize_State( group ,
+				"Component_State_" + std::to_string( i ) );
+  }
+ }  // end( BundleSolver::serialize_State )
+
+/*--------------------------------------------------------------------------*/
 /*----------------------- OTHER PROTECTED METHODS --------------------------*/
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::guts_of_put_State( const BundleSolverState & state )
+{
+ if( Result == kStillRunning ) 
+  throw( std::logic_error(
+	"BundleSolver::put_State() called within BundleSolver::compute()" ) );
+
+ if( ( NrFi != state.NrFi ) || ( NumVar != state.NumVar ) )
+  throw( std::invalid_argument(
+			  "BundleSolver::put_State(): inconsistent State" ) );
+
+ if( t != state.t ) {
+  t = state.t;
+  tHasChgd = true;
+  }
+
+ if( Lambda != state.Lambda ) {
+  Vec_VarValue foo( NrFi + 1 , 0 );  // no change in the (unknown) f-values
+  Master->ChangeCurrPoint( state.Lambda.data() , foo.data() );
+  Fi0Lmb = INFshift;  // the value of the linear part must be computed
+
+  // reset function values in Lambda, since they are changing
+  std::fill( UpFiLmb.begin() , UpFiLmb.end() ,  INFshift );  // upper 
+  std::fill( LwFiLmb.begin() , LwFiLmb.end() , -INFshift );  // lower
+  UpFiLmbdef = LwFiLmbdef = 0;             // ... at the current point
+  f_global_LB = -INFshift;         // algorithmic global LB
+  }
+ }  // end( BundleSolver::guts_of_put_State )
+
 /*--------------------------------------------------------------------------*/
 
 void BundleSolver::FormD( void )
@@ -3895,11 +4032,18 @@ void BundleSolver::ReSetAlg( unsigned char RstLvl )
    aBP3 = BPar3;
   }
 
+ // reset function values in Lambda, since they are changing
+ std::fill( UpFiLmb.begin() , UpFiLmb.end() ,  INFshift );  // upper 
+ std::fill( LwFiLmb.begin() , LwFiLmb.end() , -INFshift );  // lower
+ UpFiLmbdef = LwFiLmbdef = 0;             // ... at the current point
+ f_global_LB = -INFshift;         // algorithmic global LB
+
  if( RstLvl & RstCrr ) {  // get an initial point - - - - - - - - - - - - - -
   // note that the thusly constructed Master Problem assumes the stability
   // centre to be all-0, in particular when constructing the Lagrangian costs
   // of the easy components, so if that's not happening the right value has
   // to be explicitly passed
+
   for( Index i = 0 ; i < NumVar ; ++i )
    Lambda[ i ] = LamVcblr[ i ]->get_value();
 
@@ -6387,6 +6531,73 @@ Index BundleSolver::FakeFiOracle::GetGi( SgRow SubG , cIndex_Set & SGBse ,
  SGBse = nullptr;
  return( stp - strt );
  }
+
+/*--------------------------------------------------------------------------*/
+/*------------------------ CLASS BundleSolverState -------------------------*/
+/*--------------------------------------------------------------------------*/
+/*----------------------- PUBLIC PART OF THE CLASS -------------------------*/
+/*--------------------------------------------------------------------------*/
+
+void BundleSolverState::deserialize( const netCDF::NcGroup & group )
+{
+ auto nv = group.getDim( "BundleSolver_NumVar" );
+ if( nv.isNull() )
+  throw( std::logic_error(
+		      "BundleSolverState::deserialize: missing NumVar" ) );
+
+ auto l = group.getVar( "BundleSolver_Lambda" );
+ if( l.isNull() )
+  throw( std::logic_error(
+		      "BundleSolverState::deserialize: missing Lambda" ) );
+
+ Lambda.resize( nv.getSize() );
+ l.getVar( Lambda.data() );
+
+ auto tt = group.getVar( "BundleSolver_t" );
+ if( tt.isNull() )
+  throw( std::logic_error( "BundleSolverState::deserialize: missing t" ) );
+
+ tt.getVar( &t );
+
+ auto nf = group.getDim( "BundleSolver_NrFi" );
+ if( nf.isNull() )
+  throw( std::logic_error(
+		      "BundleSolverState::deserialize: missing NrFi" ) );
+
+ v_comp_State.resize( nf.getSize() , nullptr );
+
+ for( BundleSolver::Index i = 0 ; i < v_comp_State.size() ; ++i ) {
+  auto gi = group.getGroup( "Component_State_" + std::to_string( i ) );
+  if( ! gi.isNull() )
+    v_comp_State[ i ] = State::new_State( gi );
+  }
+ }  // end( BundleSolverState::deserialize )
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolverState::serialize( netCDF::NcGroup & group ) const
+{
+ // always call the method of the base class first
+ State::serialize( group );
+
+ auto nv = group.addDim( "BundleSolver_NumVar" , NumVar );
+
+ ( group.addVar( "BundleSolver_Lambda" , netCDF::NcDouble() , nv ) ).putVar(
+			               { 0 } , {  NumVar } , Lambda.data() );
+
+ ( group.addVar( "BundleSolver_t" , netCDF::NcDouble() ) ).putVar( &t );
+
+ group.addDim( "BundleSolver_NrFi" , NrFi );
+ 
+ for( Index i = 0 ; i < NrFi ; ++i ) {
+  if( ! v_comp_State[ i ] )
+   continue;
+
+  auto gi = group.addGroup( "Component_State_" + std::to_string( i ) );
+  v_comp_State[ i ]->serialize( gi );
+  }
+ }  // end( BundleSolver::serialize_State )
+
 
 /*--------------------------------------------------------------------------*/
 /*----------------------- End File BundleSolver.cpp ------------------------*/
