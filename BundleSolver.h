@@ -94,9 +94,9 @@
  *     C05FunctionModVarsRngd, OR ALL C05FunctionModVarsSbst, AND THEY MUST
  *     CHANGE THE "ACTIVE" Variable IN PRECISELY THE SAME WAY.
  *
- * \version 0.51
+ * \version 0.52
  *
- * \date 02 - 04 - 2021
+ * \date 05 - 04 - 2021
  *
  * \author Antonio Frangioni \n
  *         Operations Research Group \n
@@ -1804,21 +1804,35 @@ public:
 
  void update_UpFiLambd1( Index wFi , VarValue nval )
  {
+  // we assume the previous upper estimate to still be valid, hence if the
+  // new upper estimate is >= then the old one nothing needs be done
   if( UpFiLmb1[ wFi ] <= nval )
    return;
 
   if( UpFiLmb1[ wFi ] == INFshift )
    ++UpFiLmb1def;
 
-  if( UpFiLmb1def == NrFi ) {
+   if( UpFiLmb1def == NrFi ) {
    ++UpFiLmb1def;  // all components + the sum computed
    UpFiLmb1[ wFi ] = nval;
    UpFiLmb1.back() = std::accumulate( UpFiLmb1.begin() , --(UpFiLmb1.end()) ,
 				      Fi0Lmb1 );
+   // note that this is the point where the lower bound (if any) is
+   // "baked in" the total function value
+   if( TrueLB && ( UpFiLmb1.back() < LowerBound.back() ) )
+    UpFiLmb1.back() = LowerBound.back();
    }
   else {
-   if( UpFiLmb1def > NrFi )
-    UpFiLmb1[ NrFi ] += nval - UpFiLmb1[ wFi ];
+   if( UpFiLmb1def > NrFi ) {
+    // the total value was already known, but since the value of this
+    // component decreases, the total value decreases by the same amount
+    UpFiLmb1.back() += nval - UpFiLmb1[ wFi ];
+
+    // in fact the previous total value might have been == (or close to)
+    // the global valid lower bound, so check that it remains >= that
+    if( TrueLB && ( UpFiLmb1.back() < LowerBound.back() ) )
+     UpFiLmb1.back() = LowerBound.back();
+    }
    UpFiLmb1[ wFi ] = nval;
    }
   }
@@ -1827,21 +1841,36 @@ public:
 
  void update_LwFiLambd1( Index wFi , VarValue nval )
  {
+  // we assume the previous lower estimate to still be valid, hence if the
+  // new lower estimate is <= then the old one nothing needs be done
   if( LwFiLmb1[ wFi ] >= nval )
    return;
 
   if( LwFiLmb1[ wFi ] == -INFshift )
    ++LwFiLmb1def;
 
+  // the value of the global lower bound is in principle "baked in" the total
+  // lower estimate of the function value in Lambda1: if the contribution of
+  // this component grows it may bring the total above the lower bound while
+  // previously it was below, so ensure the total is recomputed
+  if( TrueLB && ( LwFiLmb1def > NrFi ) )
+   LwFiLmb1def = NrFi;
+
   if( LwFiLmb1def == NrFi ) {
    ++LwFiLmb1def;  // all components + the sum computed
    LwFiLmb1[ wFi ] = nval;
-   LwFiLmb1.back() = std::max( LwFiLmb1.back() ,
-			       std::accumulate( LwFiLmb1.begin() ,
-						--(LwFiLmb1.end()) ,
-						Fi0Lmb1 ) );
+   LwFiLmb1.back() = std::accumulate( LwFiLmb1.begin() , --(LwFiLmb1.end()) ,
+				      Fi0Lmb1 );
+   // note that this is the point where the lower bound (if any) is
+   // "baked in" the total function value
+   if( TrueLB && ( LwFiLmb1.back() < LowerBound.back() ) )
+    LwFiLmb1.back() = LowerBound.back();
    }
   else {
+   // the total value was already known, but since the value of this
+   // component increases, the total value increases by the same amount;
+   // note that this can only happen if TrueLB == false, which means that
+   // there can be no global lower bound "baked in" the total value
    if( LwFiLmb1def > NrFi )
     LwFiLmb1[ NrFi ] += nval - LwFiLmb1[ wFi ];
    LwFiLmb1[ wFi ] = nval;
@@ -1852,6 +1881,8 @@ public:
 
  void update_UpFiLambd( Index wFi , VarValue nval )
  {
+  // we assume the previous upper estimate to still be valid, hence if the
+  // new upper estimate is >= then the old one nothing needs be done
   if( UpFiLmb[ wFi ] <= nval )
    return;
 
@@ -1863,10 +1894,22 @@ public:
    UpFiLmb[ wFi ] = nval;
    UpFiLmb.back() = std::accumulate( UpFiLmb.begin() , --(UpFiLmb.end()) ,
 				     Fi0Lmb );
+   // note that this is the point where the lower bound (if any) is
+   // "baked in" the total function value
+   if( TrueLB && ( UpFiLmb.back() < LowerBound.back() ) )
+    UpFiLmb.back() = LowerBound.back();
    }
   else {
-   if( UpFiLmbdef > NrFi )
-    UpFiLmb[ NrFi ] += nval - UpFiLmb[ wFi ];
+   if( UpFiLmbdef > NrFi ) {
+    // the total value was already known, but since the value of this
+    // component decreases, the total value decreases by the same amount
+    UpFiLmb.back() += nval - UpFiLmb[ wFi ];
+
+    // in fact the previous total value might have been == (or close to)
+    // the global valid lower bound, so check that it remains >= that
+    if( TrueLB && ( UpFiLmb.back() < LowerBound.back() ) )
+     UpFiLmb.back() = LowerBound.back();
+    }
    UpFiLmb[ wFi ] = nval;
    }
   }
@@ -1875,21 +1918,36 @@ public:
 
  void update_LwFiLambd( Index wFi , VarValue nval )
  {
+  // we assume the previous lower estimate to still be valid, hence if the
+  // new lower estimate is <= then the old one nothing needs be done
   if( LwFiLmb[ wFi ] >= nval )
    return;
 
   if( LwFiLmb[ wFi ] == -INFshift )
    ++LwFiLmbdef;
 
+  // the value of the global lower bound is in principle "baked in" the total
+  // lower estimate of the function value in Lambda: if the contribution of
+  // this component grows it may bring the total above the lower bound while
+  // previously it was below, so ensure the total is recomputed
+  if( TrueLB && ( LwFiLmbdef > NrFi ) )
+   LwFiLmbdef = NrFi;
+
   if( LwFiLmbdef == NrFi ) {
    ++LwFiLmbdef;  // all components + the sum computed
    LwFiLmb[ wFi ] = nval;
-   LwFiLmb.back() = std::max( LwFiLmb.back() ,
-			      std::accumulate( LwFiLmb.begin() ,
-					       --(LwFiLmb.end()) ,
-					       Fi0Lmb ) );
+   LwFiLmb.back() = std::accumulate( LwFiLmb.begin() , --(LwFiLmb.end()) ,
+				     Fi0Lmb );
+   // note that this is the point where the lower bound (if any) is
+   // "baked in" the total function value
+   if( TrueLB && ( LwFiLmb.back() < LowerBound.back() ) )
+    LwFiLmb.back() = LowerBound.back();
    }
   else {
+   // the total value was already known, but since the value of this
+   // component increases, the total value increases by the same amount;
+   // note that this can only happen if TrueLB == false, which means that
+   // there can be no global lower bound "baked in" the total value
    if( LwFiLmbdef > NrFi )
     LwFiLmb[ NrFi ] += nval - LwFiLmb[ wFi ];
    LwFiLmb[ wFi ] = nval;
