@@ -62,7 +62,8 @@ target_compile_features(${modName} PUBLIC cxx_std_17)
 # but should be added to anything that links to it.
 # Note: do not GLOB files here.
 target_sources(${modName} PRIVATE
-               BundleSolver.cpp)
+               BundleSolver.cpp
+               ParallelBundleSolver.cpp)
 
 # When using target_include_directories(), PUBLIC means that any targets
 # that link to this target also need that include directory.
