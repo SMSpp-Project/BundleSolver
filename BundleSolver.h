@@ -1366,9 +1366,11 @@ public:
 
 /*--------------------------------------------------------------------------*/
 
- bool has_var_solution( void ) override { return( true ); }
+ bool has_var_solution( void ) override {
+  return( f_global_LB > - INFshift );
+  }
 
- /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
  bool has_dual_solution( void ) override { return( true ); }
 

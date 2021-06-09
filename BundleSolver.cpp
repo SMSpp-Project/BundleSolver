@@ -884,7 +884,15 @@ int BundleSolver::compute( bool changedvars )
   // errors were computed against an arbitrary value and starts the "phase 1"
   // in which the real optimization takes place
 
-  if( ! RifeqFi ) {       // if we are still in "phase 0"
+  if( ( ! RifeqFi ) && ( UpFiLmb1.back() < INFshift ) ) {
+   // if we are still in "phase 0", and we just found a point where the
+   // function value is finite, end the "phase 0" by immediately jumping
+   // there. note that one may expect the thing on the function value to be
+   // redundant since any component evaluating to +INF should generate a
+   // vertical linearization and therefore set MPchgs = 2, which is acted
+   // upon right above, but this may not happen. which is a problem if
+   // MPchgs == 0 (but this is acted upon right below) but not otherwise,
+   // since a "normal" NS will be done which is the right thing to do
    BLOG( 1 , "            Fi1 defined ==> SS " << std::endl );
    GotoLambda1();         // go to the feasible point
    continue;              // and start the actual minimization of Fi()
