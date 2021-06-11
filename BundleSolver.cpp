@@ -4740,7 +4740,9 @@ void BundleSolver::process_outstanding_easy_Modification( void )
 
     }  // end( RowConstraintMod )
 
-   throw( std::logic_error( "unsupported Modification in easy component" ) );
+   // any oher Modification is ignored; we assume it is a "physical"
+   // Modification whose corresponding "abstract" one has already been dealt
+   // with or it is still in the queue waiting to be dealt with
 
    }  // end( for( all Modification ) )
 
