@@ -115,20 +115,29 @@ using namespace SMSpp_di_unipi_it;
 /*--------------------------------------------------------------------------*/
 /*-------------------------------- FUNCTIONS -------------------------------*/
 /*--------------------------------------------------------------------------*/
-// set precision for long floats (10 digits)
+// set precision for long floats (10 digits) in scientific notation
 
 static inline std::ostream & def( std::ostream & os ) {
- os.setf( ios::scientific, ios::floatfield );
+ os.setf( ios::scientific , ios::floatfield );
  os << setprecision( 10 );
  return( os );
  }
 
 /*--------------------------------------------------------------------------*/
-// set precision for short floats (2 digits)
+// set precision for short floats (2 digits) in scientific notation
 
 static inline std::ostream & shrt( std::ostream & os ) {
- os.setf( ios::scientific, ios::floatfield );
+ os.setf( ios::scientific , ios::floatfield );
  os << setprecision( 2 );
+ return( os );
+ }
+
+/*--------------------------------------------------------------------------*/
+// set precision for short floats (4 digits) in fixed notation
+
+static inline std::ostream & fixd( std::ostream & os ) {
+ os.setf( 0 , ios::floatfield );
+ os << setprecision( 4 );
  return( os );
  }
 
@@ -509,10 +518,10 @@ int BundleSolver::compute( bool changedvars )
 
  // start timer now (so that processing Modification is included) - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
- // ... but only if the timer is used somewhere
 
- if( EveryTTm || ( MaxTime < INFshift ) )
-  c_start = std::clock();
+ c_start = std::chrono::system_clock::now();
+
+ double f_time = 0;  // independently keep function evaluation time
 
  // first, process any outstanding Modification - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -773,11 +782,15 @@ int BundleSolver::compute( bool changedvars )
 
   // run the inner loop - - - - - - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-  // here one might change the value of wFi, corresponding to the first
-  // component to be evaluated, if a non-strictly-round-robin order is
-  // sought for
+
+  auto start = std::chrono::system_clock::now();
 
   InnerLoop();
+
+  auto end = std::chrono::system_clock::now();
+  std::chrono::duration< double > elapsed = end - start;
+
+  f_time += elapsed.count();
 
   // compute DeltaFi- - - - - - - - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -824,7 +837,7 @@ int BundleSolver::compute( bool changedvars )
   // some log about the newly obtained information- - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-  Log2();
+  Log2( f_time );
 
   // check whether either any error has occurred or time has expired- - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1043,6 +1056,22 @@ int BundleSolver::compute( bool changedvars )
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // main cycle ends here- - - - - - - - - - - - - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+ if( f_log && ( LogVerb == 1 ) ) {
+  *f_log << "STOP [" << fixd << get_elapsed_time() << ", " << f_time << "]: ";
+  switch( Result ) {
+   case( kOK ):           *f_log << "optimal"; break;
+   case( kStopTime ):     *f_log << "max time"; break;
+   case( kStopIter ):     *f_log << "max iter"; break;
+   case( kInfeasible ):   *f_log << "infeasible"; break;
+   case( kUnbounded ):    *f_log << "unbounded"; break;
+   case( kLowPrecision ): *f_log << "inexact oracle"; break;
+   default:               *f_log << "error";
+   }
+  *f_log << " ~ Fi* = " << def;
+  pval( *f_log , rs( UpFiLmb1.back() ) );
+  *f_log << std::endl;
+  }
 
  f_mutex.unlock();  // unlock the mutex
  
@@ -2375,7 +2404,7 @@ void BundleSolver::FormD( void )
 
   if( mps == MPSolver::kUnfsbl ) {  // the feasible set is empty
    Result = kInfeasible;
-   break;
+   return;
    }
 
   if( mps == MPSolver::kUnbndd ) {  // the MP is unbounded: this can always
@@ -2385,7 +2414,7 @@ void BundleSolver::FormD( void )
     // the "empty" case of the initial iteration with empty bundle
     BLOG( 1 , std::endl << "Bundle::FormD: failure in MPSolver." );
     Result = kError;
-    break;
+    return;
     }
 
    BLOG( 1 , std::endl << "Bundle::FormD: MP unbounded, decreasing t" );
@@ -2438,7 +2467,7 @@ void BundleSolver::FormD( void )
      }
 
   if( i == InINF ) {  // there are no removable items at all - - - - - - - -
-   BLOG( 0 , std::endl << "Bundle::FormD: unrecoverable MP failure." );
+   BLOG( 1 , std::endl << "Bundle::FormD: unrecoverable MP failure." );
    Result = kError;
    return;
    }
@@ -2822,6 +2851,10 @@ void BundleSolver::FormLambda1( HpNum Tau )
 
 void BundleSolver::InnerLoop( void )
 {
+ // here one might change the value of wFi, corresponding to the first
+ // component to be evaluated, if a non-strictly-round-robin order is
+ // sought for
+
  CurrNrEvls.assign( NrFi , Index( 0 ) );
  MPchgs = 0;      // != 0 if the MP is guaranteed to change enugh after
                   // the insertion of new information to ensure that the
@@ -3218,7 +3251,7 @@ bool BundleSolver::GetGi( Index wFi )
 
    if( wh == InINF ) {  // no space found ...
     if( ! Ftchd ) {     // ... and this was the first item
-     BLOG( 0 , std::endl << " ERROR: No space in the bundle" << std::endl );
+     BLOG( 1 , std::endl << " ERROR: No space in the bundle" << std::endl );
      Result = kError;   // signal an error to end the outer Fi-cycle
      }
     else
@@ -3477,8 +3510,8 @@ void BundleSolver::Log1( void )
   return;
 
  *f_log << std::endl << "{" << SCalls << "-" << ParIter << "-"
-	<< NrItems.back() << "} t = " << shrt << t
-	<< " ~ D*_1( z* ) = " << Master->ReadDStart( 1 )
+	<< NrItems.back() << "-" << fixd << get_elapsed_time() << "} t = "
+	<< shrt << t << " ~ D*_1( z* ) = " << Master->ReadDStart( 1 )
 	<< " ~ Sigma = " << Sigma << std::endl << "           ";
 
  if( UpFiLmb.back() == INFshift )
@@ -3494,12 +3527,12 @@ void BundleSolver::Log1( void )
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::Log2( void )
+void BundleSolver::Log2( double ft )
 {
  if( ( ! f_log ) || ( LogVerb <= 1 ) )
   return;
 
- *f_log << std::endl << "            " << def;
+ *f_log << std::endl << "            [" << fixd << ft << "] " << def;
 
  if( LowerBound.back() > - INFshift ) {
   if( f_convex )

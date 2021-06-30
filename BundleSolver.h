@@ -496,7 +496,7 @@ public:
   UpTrgt( 0 ) , LwTrgt( 0 ) , RifeqFi( false ) , UpFiBest( INFshift ) ,
   UpFiLmb1def( 0 ) , LwFiLmb1def( 0 ) , UpFiLmbdef( 0 ) , LwFiLmbdef( 0 ) ,
   Fi0Lmb( 0 ) , Fi0Lmb1( 0 ) , DST( 0 ) , NrmD( 0 ) , NrmZ( 0 ) ,
-  NrmZFctr( 1 ) , c_start( 0 ) , aBP3( 0 ) , FakeFi( this ) 
+  NrmZFctr( 1 ) , c_start() , aBP3( 0 ) , FakeFi( this ) 
  {
   // ensure all parameters are properly given their default value
   MaxIter = CDASolver::get_dflt_int_par( intMaxIter );
@@ -1070,7 +1070,7 @@ public:
   * - dblm3 [0.99]: factor governing the Noise Reduction for "unfaithful"
   *                 oracles that pretend to provide information with the
   *   required accuracy but in fact they do not. This results in negative
-  *   linearization errors, and therefore possibly in delecting directions
+  *   linearization errors, and therefore possibly in detecting directions
   *   that are non-decreasing even for the model (hence even less so for
   *   the real functon). To avoid this, if the aggregate linearization
   *   error \sigma* is "too negative", i.e.,
@@ -1175,7 +1175,7 @@ public:
   *   Objective and no sub-Block then that it is component 0, otherwise the
   *   component i corresponds to the (the C05Functiono found in the
   *   FReal)Objective found in the i-th sub-Block of the Block
-  *   (get_nested_Block( Index i )). */
+  *   (get_nested_Block( i )). */
 
  void set_par( idx_type par , std::vector< int > && value ) override;
 
@@ -1197,12 +1197,12 @@ public:
   *   C05Function as Objective and no sub-Block then that it is component 0,
   *   otherwise the component i corresponds to the (the C05Functiono found
   *   in the FReal)Objective found in the i-th sub-Block of the Block
-  *   (get_nested_Block( Index i )). This parameter overrides any other
+  *   (get_nested_Block( i )). This parameter overrides any other
   *   Configuration-related parameter, in particular strEasyCfg and
   *   strHardCfg: if a nonempty string is passed, then any other
   *   Configuration is ignored. If, instead, vstrCmpCfg[ i ].empty(), then
   *   the applicable one between strEasyCfg and strHardCfg, if nonempty,
-  *   is applied instead. If everything is empty then the component is not
+  *   is applied. If everything is empty then the component is not
   *   configured (the existing configuration is not changed). Note that it
   *   is still possible to completely reset a component by passing it an
   *   "empty" ComputeConfig with f_diff == true, which is different from
@@ -1329,7 +1329,9 @@ public:
  /// returns the elapsed CPU time since the start of the last compute()
 
  double get_elapsed_time( void ) const override {
-  return( ( std::clock() - c_start ) / CLOCKS_PER_SEC );
+  auto end = std::chrono::system_clock::now();
+  std::chrono::duration< double > elapsed = end - c_start;
+  return( elapsed.count() );
   }
 
 /*--------------------------------------------------------------------------*/
@@ -1987,7 +1989,7 @@ public:
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- void Log2( void );
+ void Log2( double ft );
 
 /*--------------------------------------------------------------------------*/
 
@@ -2311,7 +2313,8 @@ public:
 
  // fields for events - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- std::clock_t c_start;   ///< starting instant of last call to compute()
+ std::chrono::time_point< std::chrono::system_clock > c_start;
+ ///< starting instant of last call to compute()
 
  // static fields - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
