@@ -78,7 +78,7 @@
 /*--------------------------------------------------------------------------*/
 
 #ifndef NDEBUG
- #define CHECK_DS 0
+ #define CHECK_DS 15
  /* Perform long and costly checks on the data structures, coded bit-wise:
   *
   * - CHECK_DS & 1 == checks the data structures representing the bundle and
@@ -335,6 +335,7 @@ const std::vector< std::string > BundleSolver::int_pars_str = {
  "intMaxNrEvls" ,
  "intDoEasy" ,
  "intWZNorm" ,
+ "intFrcLstSS" ,
  "intMPName" ,
  "intMPlvl" ,
  "intQPmp1" ,
@@ -386,6 +387,7 @@ const std::map< std::string , BundleSolver::idx_type >
  { "intMaxNrEvls" , BundleSolver::intMaxNrEvls } ,
  { "intDoEasy" , BundleSolver::intDoEasy } ,
  { "intWZNorm" , BundleSolver::intWZNorm } ,
+ { "intFrcLstSS" , BundleSolver::intFrcLstSS } ,
  { "intMPName" , BundleSolver::intMPName } ,
  { "intMPlvl" , BundleSolver::intMPlvl } ,
  { "intQPmp1" , BundleSolver::intQPmp1 } ,
@@ -431,6 +433,7 @@ const std::vector< int > BundleSolver::dflt_int_par = {
   2 ,  // intMaxNrEvls
   1 ,  // intDoEasy
   2 ,  // intWZNorm
+  0 ,  // intFrcLstSS
   0 ,  // intMPName
   0 ,  // intMPlvl
   0 ,  // intQPmp1
@@ -785,13 +788,14 @@ int BundleSolver::compute( bool changedvars )
 
   auto start = std::chrono::system_clock::now();
 
-  InnerLoop();
+  auto cnt = InnerLoop();
 
   auto end = std::chrono::system_clock::now();
   std::chrono::duration< double > elapsed = end - start;
 
   f_time += elapsed.count();
-
+  CmptdinL = false;
+ 
   // compute DeltaFi- - - - - - - - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -854,8 +858,8 @@ int BundleSolver::compute( bool changedvars )
    break;
    }
 
-  if( ( MaxTime < INFshift ) && ( get_elapsed_time() > MaxTime ) )
-   continue;  // time has ran up: go back at the beginning to stop
+  if( Result == kStopTime )  // time has ran up inside InnerLoop()
+   continue;                 // go back at the beginning to stop
 
   // check for the conditional lower bound- - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -972,6 +976,7 @@ int BundleSolver::compute( bool changedvars )
    GotoLambda1();
    CSSCntr++;
    CNSCntr = 0;
+   CmptdinL = ( cnt == NrFi - NrEasy );
    }
   else {        // NS - - - - - - - - - - - - - - - - - - - - - - - - - - - -
    BLOG( 1 , std::endl << " NS[" << CNSCntr << "]: " );
@@ -1057,6 +1062,42 @@ int BundleSolver::compute( bool changedvars )
  // main cycle ends here- - - - - - - - - - - - - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
+ // if necessary, force one last SS to the stability center - - - - - - - - -
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+ if( FrcLstSS && ( ! CmptdinL ) &&
+     ( ( Result == kOK ) || ( Result == kStopIter ) ||
+       ( Result == kLowPrecision ) ) ) {
+
+  BLOG( 1 , "            Recomputing the current point" << std::endl );
+
+  UpFiLmb1 = UpFiLmb;
+  LwFiLmb1 = LwFiLmb;
+  Fi0Lmb1 = Fi0Lmb;
+  UpTrgt = UpFiLmb1.back();
+  LwTrgt = LwFiLmb1.back();
+
+  FiStatus.assign( NrFi , kUnEval );
+  for( Index i = 0 ; i < NumVar ; i++ )
+   LamVcblr[ i ]->set_value( Lambda[ i ] );
+
+  auto start = std::chrono::system_clock::now();
+
+  auto cnt = InnerLoop( true );
+
+  auto end = std::chrono::system_clock::now();
+  std::chrono::duration< double > elapsed = end - start;
+
+  f_time += elapsed.count();
+
+  // not being able to compute all non-easy components is an error
+  if( ( cnt != NrFi - NrEasy ) && ( Result != kStopTime ) )
+   Result = kError;
+  }
+
+ // final printouts - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ 
  if( f_log && ( LogVerb == 1 ) ) {
   *f_log << "STOP [" << fixd << get_elapsed_time() << ", " << f_time << "]: ";
   switch( Result ) {
@@ -1773,6 +1814,9 @@ void BundleSolver::set_par( idx_type par , int value )
      NrmZFctr = INFshift;    // factor to be computed
     }
    break;
+  case( intFrcLstSS ):
+   FrcLstSS = bool( value );
+   break;
   case( intMPName ):
    if( ( value < 0 ) || ( value > 15 ) )
     throw( std::invalid_argument( "MPName must be in [0, 15]" ) );
@@ -2022,6 +2066,7 @@ int BundleSolver::get_int_par( idx_type par ) const
   case( intMaxNrEvls ): return( MaxNrEvls );
   case( intDoEasy ):    return( DoEasy );
   case( intWZNorm ):    return( WZNorm );
+  case( intFrcLstSS ):  return( FrcLstSS );
   case( intMPName ):    return( MPName );
   case( intMPlvl ):     return( MPlvl );
   case( intQPmp1 ):     return( CtOff );
@@ -2849,7 +2894,7 @@ void BundleSolver::FormLambda1( HpNum Tau )
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::InnerLoop( void )
+BundleSolver::Index BundleSolver::InnerLoop( bool extrastep )
 {
  // here one might change the value of wFi, corresponding to the first
  // component to be evaluated, if a non-strictly-round-robin order is
@@ -2868,13 +2913,13 @@ void BundleSolver::InnerLoop( void )
  for( bool insrtd = false ; ; ) {
   // round-robin-like loop between the different components
 
-  if( FiAndGi( f_wFi ) )
+  if( FiAndGi( f_wFi , ! extrastep ) )
    insrtd = true;
 
   // return if an unrecoverable error happens
   if( ( FiStatus[ f_wFi ] <= kUnEval ) || ( FiStatus[ f_wFi ] >= kError ) ) {
    Result = kError;
-   return;
+   break;
    }
 
   // if any component evaluates to -INF, then the whole problem evaluates to
@@ -2884,7 +2929,7 @@ void BundleSolver::InnerLoop( void )
   // (the very first time the offending component is evaluated)
   if( UpFiLmb1[ f_wFi ] == - INFshift )  {
    UpFiLmb1.back() = - INFshift;
-   return;
+   break;
    }
   
   if( ! CurrNrEvls[ f_wFi ] )  // not evaluated before
@@ -2917,25 +2962,33 @@ void BundleSolver::InnerLoop( void )
   if( ! FindNext() )       // find next component
    break;                  // if none, nothing else to do but stop
 
-  if( ( MaxTime < INFshift ) && ( get_elapsed_time() > MaxTime ) )
-   break;                  // time has ran up: nothing else to do but stop
+  if( ( MaxTime < INFshift ) && ( get_elapsed_time() > MaxTime ) ) {
+   Result = kStopTime;     // time has ran up
+   break;                  // nothing else to do but stop
+   }
 
-  if( ceval < minceval )   // not evaluated enough components yet
+  if( ( ceval < minceval ) || extrastep )  // too few components compute()-d
    continue;               // do not stop regardless of MPchgs
     
   if( MPchgs )             // the MP is guaranteed to change
    break;                  // happily stop
 
   }  // end( for( functions evaluation loop ) )
+
+ return( ceval );
+ 
  }  // end( BundleSolver::InnerLoop )
 
 /*--------------------------------------------------------------------------*/
 
-bool BundleSolver::FiAndGi( Index wFi )
+bool BundleSolver::FiAndGi( Index wFi , bool getgi )
 {
  // compute and set upper and lower cutoffs and the accuracy- - - - - - - - -
 
- SetupFi( wFi );
+ if( getgi )
+  SetupFiLambda1( wFi );
+ else
+  SetupFiLambda( wFi );
 
  // compute the C05Function and retrieve upper and lower estimates- - - - - -
 
@@ -2963,7 +3016,17 @@ bool BundleSolver::FiAndGi( Index wFi )
  else
   if( le == INFshift )   // very special case: value == +INF
    return( true );       // immediately terminate
- 
+
+ // if getgi == false the method is actually being called on Lambda, hence
+ // it is Lambda's estimates that need be updated, not Lambda1's
+ if( ! getgi ) {
+  update_UpFiLambd( wFi , f_convex ? ue : - le );
+  update_LwFiLambd( wFi , f_convex ? le : - ue );
+
+  // furthermore one immediately returns before getting any linearization
+  return( false );
+  }
+
  // update UpFiLambd1[ wFi ] (and possibly UpFiLambd1[ NrFi ])
  update_UpFiLambd1( wFi , f_convex ? ue : - le );
 
@@ -2990,7 +3053,7 @@ bool BundleSolver::FiAndGi( Index wFi )
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::SetupFi( Index wFi )
+void BundleSolver::SetupFiLambda1( Index wFi )
 {
  // compute upper and lower cutoffs and the accuracy
  double UpCutOff , LwCutOff , EpsCurr;
@@ -3062,7 +3125,37 @@ void BundleSolver::SetupFi( Index wFi )
  if( MaxTime < INFshift )
   fwFi->set_par( dblMaxTime , MaxTime - get_elapsed_time() );
  
- }  // end( BundleSolver::SetupFi )
+ }  // end( BundleSolver::SetupFiLambda1 )
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::SetupFiLambda( Index wFi )
+{
+ // compute upper and lower cutoffs and the accuracy- - - - - - - - - - - - -
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // this is just to recompute an already computed value, hence getting back
+ // what one already had is OK
+
+ double UpCutOff = UpFiLmb1[ wFi ];
+ double LwCutOff = LwFiLmb1[ wFi ];
+
+ double EpsCurr = ( UpCutOff - LwCutOff ) /
+                                std::max( 1.0 , std::abs( UpRifFi[ wFi ] ) );
+
+ // assign the cutoff values to the C05Function - - - - - - - - - - - - - - -
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+ auto fwFi = v_c05f[ wFi ];
+
+ fwFi->set_par( dblUpCutOff , f_convex ? UpCutOff : - LwCutOff );
+ fwFi->set_par( dblLwCutOff , f_convex ? LwCutOff : - UpCutOff );
+ fwFi->set_par( dblRelAcc , EpsCurr );
+
+ // also set a "time cutoff" with the remaining total time
+ if( MaxTime < INFshift )
+  fwFi->set_par( dblMaxTime , MaxTime - get_elapsed_time() );
+ 
+ }  // end( BundleSolver::SetupFiLambda )
 
 /*--------------------------------------------------------------------------*/
 

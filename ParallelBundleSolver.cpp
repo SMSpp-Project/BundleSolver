@@ -111,7 +111,7 @@ SMSpp_insert_in_factory_cpp_0( ParallelBundleSolver );
 /*----------------------- OTHER PROTECTED METHODS --------------------------*/
 /*--------------------------------------------------------------------------*/
 
-void ParallelBundleSolver::InnerLoop( void )
+BundleSolver::Index ParallelBundleSolver::InnerLoop( bool extrastep )
 {
  /* The inner loop is divided in three phases:
   *
@@ -136,10 +136,8 @@ void ParallelBundleSolver::InnerLoop( void )
  
  // if there is nothing to parallelize, call the base class version - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
- if( ( NrFi == 1 ) || ( MaxThread == 0 ) ) {
-  BundleSolver::InnerLoop();
-  return;
-  }
+ if( ( NrFi == 1 ) || ( MaxThread == 0 ) )
+  return( BundleSolver::InnerLoop( extrastep ) );
 
  // various initializations - - - - - - - - - - - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -176,7 +174,10 @@ void ParallelBundleSolver::InnerLoop( void )
 	    << ( & el - & EvalV.front() ) );
 
   el.first = f_wFi;
-  SetupFi( f_wFi );
+  if( extrastep )
+   SetupFiLambda( f_wFi );
+  else
+   SetupFiLambda1( f_wFi );
   el.second = v_c05f[ f_wFi ]->compute_async(
 					  ( FiStatus[ f_wFi ] == kUnEval ) );
   FiStatus[ f_wFi ] = kOK;
@@ -250,6 +251,16 @@ void ParallelBundleSolver::InnerLoop( void )
    break;
    }
 
+  if( extrastep ) {
+   // if extrastep == true the method is actually being called on Lambda,
+   // hence it is Lambda's estimates that need be updated, not Lambda1's
+   update_UpFiLambd( wFi , f_convex ? ue : - le );
+   update_LwFiLambd( wFi , f_convex ? le : - ue );
+
+   // furthermore one immediately goes to put in the new task
+   goto PutInNewTask;
+   }
+  
   // update UpFiLambd1[ wFi ] (and possibly UpFiLambd1[ NrFi ])
   update_UpFiLambd1( wFi , f_convex ? ue : - le );
 
@@ -297,19 +308,26 @@ void ParallelBundleSolver::InnerLoop( void )
    MPchgs = 1;
 
   // check if we can/must wind down - - - - - - - - - - - - - - - - - - - - -
-  if( ( MaxTime < INFshift ) && ( get_elapsed_time() > MaxTime ) )
-   break;                  // time has ran up: start ramp-down
+  if( ( MaxTime < INFshift ) && ( get_elapsed_time() > MaxTime ) ) {
+   Result = kStopTime;     // time has ran up
+   break;                  // start ramp-down
+   }
 
   // the MP is guaranteed to change and enough components evaluated
   if( MPchgs && ( ceval >= minceval ) )
    break;                  // start ramp-down
 
+  // run a new task in the same position- - - - - - - - - - - - - - - - - - -
+  PutInNewTask:
+
   if( ! FindNext() )       // find next component
    break;                  // if none, start ramp-down
 
-  // run a new task in the same position- - - - - - - - - - - - - - - - - - -
   it->first = f_wFi;
-  SetupFi( f_wFi );
+  if( extrastep )
+   SetupFiLambda( f_wFi );
+  else
+   SetupFiLambda1( f_wFi );
   it->second = v_c05f[ f_wFi ]->compute_async(
 				          ( FiStatus[ f_wFi ] == kUnEval ) );
   FiStatus[ f_wFi ] = kOK;
@@ -387,6 +405,15 @@ void ParallelBundleSolver::InnerLoop( void )
    continue;
    }
 
+  if( extrastep ) {
+   // if extrastep == true the method is actually being called on Lambda,
+   // hence it is Lambda's estimates that need be updated, not Lambda1's
+   update_UpFiLambd( wFi , f_convex ? ue : - le );
+   update_LwFiLambd( wFi , f_convex ? le : - ue );
+
+   continue;  // amd there is nothing left to do
+   }
+ 
   // update UpFiLambd1[ wFi ] (and possibly UpFiLambd1[ NrFi ])
   update_UpFiLambd1( wFi , f_convex ? ue : - le );
 
@@ -424,6 +451,9 @@ void ParallelBundleSolver::InnerLoop( void )
    MPchgs = 1;
 
   }  // end( for( ramp-down phase loop ) )
+
+ return( ceval );
+ 
  }  // end( ParallelBundleSolver::InnerLoop )
 
 /*--------------------------------------------------------------------------*/
