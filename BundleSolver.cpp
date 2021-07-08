@@ -1090,8 +1090,10 @@ int BundleSolver::compute( bool changedvars )
 
   f_time += elapsed.count();
 
+  CmptdinL = ( cnt == NrFi - NrEasy );
+
   // not being able to compute all non-easy components is an error
-  if( ( cnt != NrFi - NrEasy ) && ( Result != kStopTime ) )
+  if( ( ! CmptdinL ) && ( Result != kStopTime ) )
    Result = kError;
   }
 
