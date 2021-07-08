@@ -136,7 +136,7 @@ static inline std::ostream & shrt( std::ostream & os ) {
 // set precision for short floats (4 digits) in fixed notation
 
 static inline std::ostream & fixd( std::ostream & os ) {
- os.setf( 0 , ios::floatfield );
+ os.setf( ios::fixed , ios::floatfield );
  os << setprecision( 4 );
  return( os );
  }
