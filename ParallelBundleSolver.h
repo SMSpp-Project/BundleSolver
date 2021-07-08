@@ -308,7 +308,7 @@ public:
   * stop are satisfied or there no longer are available components to
   * evaluate. */
 
- void InnerLoop( void ) override;
+ Index InnerLoop( bool extrastep = false ) override;
 
 /*--------------------------------------------------------------------------*/
 /*---------------------------- PROTECTED FIELDS  ---------------------------*/

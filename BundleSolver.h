@@ -353,6 +353,8 @@ public:
 
  intWZNorm ,  ///< how to compute the norm of z*
 
+ intFrcLstSS ,  ///< whether to force the last step to be a SS
+
  intMPName ,  ///< whether the MP solver is QPPenalty or OSIMPSolver
 
  intMPlvl ,  ///< log verbosity of Master Problem
@@ -493,10 +495,11 @@ public:
   Prevt( 0 ) , Sigma( 0 ) , DSTS( 0 ) , DeltaFi( 0 ) , EpsU( 0 ) ,
   CSSCntr( 0 ) , CNSCntr( 0 ) , TrueLB( false ) , SSDone( true ) ,
   f_wFi( 0 ) , f_lf( nullptr ) , f_convex( true ) , Master( nullptr ) ,
-  UpTrgt( 0 ) , LwTrgt( 0 ) , RifeqFi( false ) , UpFiBest( INFshift ) ,
-  UpFiLmb1def( 0 ) , LwFiLmb1def( 0 ) , UpFiLmbdef( 0 ) , LwFiLmbdef( 0 ) ,
-  Fi0Lmb( 0 ) , Fi0Lmb1( 0 ) , DST( 0 ) , NrmD( 0 ) , NrmZ( 0 ) ,
-  NrmZFctr( 1 ) , c_start() , aBP3( 0 ) , FakeFi( this ) 
+  UpTrgt( 0 ) , LwTrgt( 0 ) , RifeqFi( false ) , CmptdinL( false ) ,
+  UpFiBest( INFshift ) , UpFiLmb1def( 0 ) , LwFiLmb1def( 0 ) ,
+  UpFiLmbdef( 0 ) , LwFiLmbdef( 0 ) , Fi0Lmb( 0 ) , Fi0Lmb1( 0 ) ,
+  DST( 0 ) , NrmD( 0 ) , NrmZ( 0 ) , NrmZFctr( 1 ) , c_start() , aBP3( 0 ) ,
+  FakeFi( this ) 
  {
   // ensure all parameters are properly given their default value
   MaxIter = CDASolver::get_dflt_int_par( intMaxIter );
@@ -515,6 +518,7 @@ public:
   MaxNrEvls = dflt_int_par[ intMaxNrEvls - intLastParCDAS ];
   DoEasy = char( dflt_int_par[ intDoEasy - intLastParCDAS ] );
   WZNorm = char( dflt_int_par[ intWZNorm - intLastParCDAS ] );
+  FrcLstSS = bool( dflt_int_par[ intFrcLstSS - intLastParCDAS ] );
   MPName = dflt_int_par[ intMPName - intLastParCDAS ];
   MPlvl = dflt_int_par[ intMPlvl - intLastParCDAS ];
   MxAdd = dflt_int_par[ intQPmp1 - intLastParCDAS ];
@@ -870,6 +874,20 @@ public:
   *   these can only be produced when z* is "0"; this is taken to mean
   *   "almost 0" in the specific sense dictated by this parameter together
   *   with dblZNEps.
+  *
+  * - intFrcLstSS [0 == false] If set to true, ensures that all the non-easy
+  *                            components have been evaluated the last time
+  *   on the point that is returned (first) by get_var_solution(). Some
+  *   approaches using BundleSolver may require this because they use some
+  *   other information provided by the compute()-tion process of the
+  *   components that need be "current" with the optimal solution. This may
+  *   happen automatically if the very last iteration that the algorithm
+  *   performs before stopping is a "serious step", but in general this is not
+  *   guaranteed, whence the need for this parameter. Note that setting it to
+  *   true may be expensive as computing all components is; in particular it
+  *   cannot work if the maximum time limit has been exceeded already, and it
+  *   may trigger a kStopTime return status where a kOK would have been
+  *   produced exactly due to the cost of the extra compute()-tions.
   *
   * - intMPName [1]: bit-wise encoding of which MPSolver is used:
   *                  bit 0: 0 = QPPenalty, 1 = OSiMPSolver
@@ -1774,28 +1792,67 @@ public:
 
 /*--------------------------------------------------------------------------*/
  /* Performs the inner loop: repeatedly compute components up until the
-  * conditions for either a SS or a NS (or both) are satisfied, or something
-  * very bad happens (errors, out of time, ...). Sets MPchgs > 0 if the SS
-  * and/or NS conditions are satisfied.
+  * conditions for either a SS or a NS (or both) are satisfied based on the
+  * current value of UpTrgt and LwTrgt, or something very bad happens
+  * (errors, out of time, ...). Sets MPchgs > 0 if the SS and/or NS
+  * conditions are satisfied.
   *
   * It is virtual because this is precisely the point where a sequential and
   * a "basic" asynchronous implementation of the approach differ, and
-  * therefore this is the obvious hook for a derived AsynchBundleSolver. */
+  * therefore this is the obvious hook for a derived AsynchBundleSolver.
+  *
+  * The parameter extrastep, if true, means that InnerLoop() is not called
+  * from within the normal main loop, but at the end to ensure that the
+  * components are "current" with the returned optimal solution. This has
+  * two effects:
+  *
+  * - it disables all fancy early termination checks and forces all (non-easy)
+  *   components to be evaluated;
+  *
+  * - it only compute function values (upper and lower estimtes), but it does
+  *   not collect any new linearization.
+  *
+  * The rationale for the latter choice is that the bundle contains enough
+  * linearizations to stop already, hence new ones are not needed, and in
+  * fact the Master Problem is no re-solved, hence even if they were
+  * collected they would not be useful. This is potentially wasteful in that
+  * one does the effort to compute() the functions but only collects "a small
+  * part" of the ensuing information. However, producing linearizations may
+  * have a cost in itself, so on the other hand it saves some time. Besides,
+  * if the C05Function are re-compute()-d right after in Lambda, then if they
+  * are "complex and costly" they will likely have checks to understand if the
+  * bulk of the computation can be skipped because it has been done already.
+  *
+  * The method returns the number of different components evaluated. It may
+  * also internally set Result == kError if an irrecoverable error happens
+  * during a component compute()-tion or Result == kStopTime if the
+  * available running time runs up. */
 
- virtual void InnerLoop( void );
+ virtual Index InnerLoop( bool extrastep = false );
 
 /*--------------------------------------------------------------------------*/
- /* Computes Fi( Lambda1 ), inserting the obtained items (subgradients or
-  * constraints) in the bundle. Returns true <=> at least one item was
-  * inserted. It also "sneakily" sets MPchgs if appropriate. */
+ /* Computes Fi[ wFi ]( Lambda1 ). In the "default mode", where getgi == true,
+  * it also inserts the obtained linearizations in the bundle. If getgi ==
+  * false instead this means that method is being called outside of the
+  * main loop, with Lambda1 == Lambda, and that no linearizations need be
+  * collected.
+  *
+  * Returns true <=> at least one item was inserted. It also "sneakily" sets
+  * MPchgs if appropriate. None of this clearly happens if getgi == false. */
 
- bool FiAndGi( Index wFi );
+ bool FiAndGi( Index wFi , bool getgi = true );
 
 /*--------------------------------------------------------------------------*/
- /* Prepares component wFi for computation by setting the thresholds and
-  * accuracy. */
+ /* Prepares component wFi for computation on Lambda1 by setting the
+  * thresholds and accuracy. */
 
- void SetupFi( Index wFi );
+ void SetupFiLambda1( Index wFi );
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ /* Prepares component wFi for computation on Lambda by setting the
+  * thresholds and accuracy. */
+
+ void SetupFiLambda( Index wFi );
 
 /*--------------------------------------------------------------------------*/
  /* Gets the new linearizations out of the freshly computed component wFi,
@@ -2091,7 +2148,9 @@ public:
  char DoEasy;       ///< if and how "easy" components are managed
 
  char WZNorm;       ///< how to compute the norm of z*
- 
+
+ bool FrcLstSS;     ///< if all components must be computed in the optimum
+
  int MPName;        /**< bit 0 = 0: MP solver == QPPenalty
 		     * bit 0 = 1: MP == OSiMPSolver
 		     * bit 1 = 1: Cplex, bit 1 = 0 CLP
@@ -2289,7 +2348,11 @@ public:
  Vec_VarValue UpRifFi;   /** The value of Fi[ k ]() where the zero of the
 			  * translated Cutting Plane models are fixed */
  bool RifeqFi;           ///< true if UpRifFi == UpFiLmb
-
+ bool CmptdinL;          ///< true if all components are "current"
+                         /**< true if the last point in which all non-easy
+			  * components have been compute()-d is the current
+			  * point Lambda. */
+ 
  Vec_VarValue UpFiLmb1;  ///< upper function values at Lambda1
  Vec_VarValue LwFiLmb1;  ///< lower function values at Lambda1
  Index UpFiLmb1def;      ///< how many entries of UpFiLmb1 are < INF
