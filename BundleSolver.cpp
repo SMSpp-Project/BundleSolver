@@ -118,7 +118,7 @@ using namespace SMSpp_di_unipi_it;
 // set precision for long floats (10 digits) in scientific notation
 
 static inline std::ostream & def( std::ostream & os ) {
- os.setf( ios::scientific , ios::floatfield );
+ os.setf( std::ios::scientific , std::ios::floatfield );
  os << setprecision( 10 );
  return( os );
  }
@@ -127,7 +127,7 @@ static inline std::ostream & def( std::ostream & os ) {
 // set precision for short floats (2 digits) in scientific notation
 
 static inline std::ostream & shrt( std::ostream & os ) {
- os.setf( ios::scientific , ios::floatfield );
+ os.setf( std::ios::scientific , std::ios::floatfield );
  os << setprecision( 2 );
  return( os );
  }
@@ -136,7 +136,7 @@ static inline std::ostream & shrt( std::ostream & os ) {
 // set precision for short floats (4 digits) in fixed notation
 
 static inline std::ostream & fixd( std::ostream & os ) {
- os.setf( ios::fixed , ios::floatfield );
+ os.setf( std::ios::fixed , std::ios::floatfield );
  os << setprecision( 4 );
  return( os );
  }

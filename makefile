@@ -14,11 +14,11 @@
 #                                                                            #
 #   Input:  $(CC)          = compiler command                                #
 #           $(SW)          = compiler options                                #
-#           $(SMS++INC)    = the -I$( core SMS++ directory )                 #
+#           $(SMS++INC)    = the -I$( core SMS++ include directory )         #
+#           $(SMS++OBJ)    = the core SMS++ library                          #
 #           $(libNDOINC)   = the -I$( libNDO include directory )             #
 #           $(MILPSINC)    = the -I$( MILPSolver include directory )         #
 #           $(MILPSH)      = the .h files to include for MILPSolver          #
-#           $(SMS++OBJ)    = the core SMS++ library                          #
 #           $(BNDSLVSDR)   = the directory where the source is               #
 #                                                                            #
 #   Output: $(BNDSLVOBJ)   = the final object(s) / library                   #
