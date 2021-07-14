@@ -78,7 +78,7 @@
 /*--------------------------------------------------------------------------*/
 
 #ifndef NDEBUG
- #define CHECK_DS 0
+ #define CHECK_DS 15
  /* Perform long and costly checks on the data structures, coded bit-wise:
   *
   * - CHECK_DS & 1 == checks the data structures representing the bundle and
@@ -111,6 +111,24 @@ using namespace SMSpp_di_unipi_it;
 /*--------------------------------------------------------------------------*/
 /*-------------------------------- CONSTANTS -------------------------------*/
 /*--------------------------------------------------------------------------*/
+
+static constexpr HpNum Nearly  = 1.01;
+static constexpr HpNum Nearly2 = 1.02;
+
+static constexpr char LogBnd = 16;        // log Bundle changes
+static constexpr char LogVar = 32;        // log variables changes
+
+static constexpr Index tSP1Msk = ~ 3;     // mask for tSPar1
+static constexpr Index kSLTTS =  4;       // "soft" long-term t-strategy
+static constexpr Index kHLTTS =  8;       // "hard" long-term t-strategy
+static constexpr Index kBLTTS = 12;       // "balancing" long-term t-strategy
+static constexpr Index kEGTTS = 16;       // "endgame" long-term t-strategy
+
+static constexpr unsigned char RstAlg = 1;  // don't reset algorithmic params
+static constexpr unsigned char RstCrr = 2;  // don't reset current point to
+                                            // all-0, use Variable value()
+
+static constexpr auto InINF = SMSpp_di_unipi_it::Inf< Index >();
 
 /*--------------------------------------------------------------------------*/
 /*-------------------------------- FUNCTIONS -------------------------------*/
@@ -465,26 +483,6 @@ const std::vector<double> BundleSolver::dflt_dbl_par = {
  1e-3 ,   // dbltSPar2
  1e-1     // dblCtOff
  };
-
-/*--------------------------------------------------------------------------*/
-
-static const HpNum Nearly  = 1.01;
-static const HpNum Nearly2 = 1.02;
-
-static const char LogBnd = 16;        // log Bundle changes
-static const char LogVar = 32;        // log variables changes
-
-static cIndex tSP1Msk = ~ 3;          // mask for tSPar1
-static cIndex kSLTTS =  4;            // "soft" long-term t-strategy
-static cIndex kHLTTS =  8;            // "hard" long-term t-strategy
-static cIndex kBLTTS = 12;            // "balancing" long-term t-strategy
-static cIndex kEGTTS = 16;            // "endgame" long-term t-strategy
-
-static const unsigned char RstAlg = 1;  // don't reset algorithmic parameters
-static const unsigned char RstCrr = 2;  // don't reset current point to all-0
-                                        // (use value from the Variable)
-
-static cIndex InINF = SMSpp_di_unipi_it::Inf<Index>();
 
 /*--------------------------------------------------------------------------*/
 /*----------------------- METHODS OF BundleSolver --------------------------*/
@@ -1540,13 +1538,13 @@ void BundleSolver::set_Block( Block * block )
   if( BPar2 == 0 ) {  // use the current global pool size
    if( gps < 2 )
     throw( std::logic_error( "BPar2 == 0 but too small global pool" ) );
-   vBPar2[ NrFi ] += gps;
+   vBPar2.back() += gps;
    vBPar2[ k ] = gps;
    }
   else {              // force the global pool size to be *at least* BPar2
    if( gps < BPar2 )
     v_c05f[ k ]->set_par( C05Function::intGPMaxSz , int( BPar2 ) );
-   vBPar2[ NrFi ] += BPar2;
+   vBPar2.back() += BPar2;
    vBPar2[ k ] = BPar2;
    }
 
@@ -1567,10 +1565,10 @@ void BundleSolver::set_Block( Block * block )
  if( MaxSol > 1 )  // best point found so far
   LmbdBst.resize( NumVar );
 
- OOBase.resize( vBPar2[ NrFi ] , Inf<SIndex>() );
+ OOBase.resize( vBPar2.back() , Inf<SIndex>() );
  // counter for eliminating outdated items: Inf<SIndex>() means empty
 
- ItemVcblr.resize( vBPar2[ NrFi ] , make_pair( InINF , InINF ) );
+ ItemVcblr.resize( vBPar2.back() , make_pair( InINF , InINF ) );
 
  NrItems.resize( NrFi + 1 , 0 );
  FrFItem.resize( NrFi , 0 );
@@ -1704,12 +1702,17 @@ void BundleSolver::set_Block( Block * block )
  // and every linearization found in their global pools
  //
  // note that if ( BPar7 & 3 ) >= 2, BundleSolver will happily delete from
- // the global pool any linearization it deletes from the bundle; yet we
- // do not immediately delete existing linearizations from the global pools
- // here. these will likely be overwritten during the optimization, and if
- // memory is a problem they can be cleaned up by the user before set_Block()
- // is called. besides, in many scenarios there will be no linearizations
- // anyway
+ // the global pool any linearization it deletes from the bundle; yet we do
+ // not immediately delete existing linearizations from the global pools here.
+ // these will likely be overwritten during the optimization, and if memory
+ // is a problem they can be cleaned up by the user before set_Block() is
+ // called. besides, in many scenarios there will be no linearizations anyway
+ // 
+ // however, if ( BPar7 & 3 ) == 3 then BundleSolver does not care at all
+ // about what linearizations are there in the global pool because it will
+ // treat any position in the global pool as available for it regardless to
+ // if there is anything there; hence, in this case we do not bther to even
+ // look
 
  if( BPar7 & 8 ) {
   for( Index k = 0 ; k < NrFi ; ++k )
@@ -1718,10 +1721,12 @@ void BundleSolver::set_Block( Block * block )
      add_to_bundle( k , i );    
   }
  else
-  for( Index k = 0 ; k < NrFi ; ++k )
-   for( Index i = 0 ; i < vBPar2[ k ] ; ++i )
-    if( v_c05f[ k ]->is_linearization_there( i ) )
-     add_to_global_pool( k , i );    
+  if( ( BPar7 & 3 ) < 3 ) {
+   for( Index k = 0 ; k < NrFi ; ++k )
+    for( Index i = 0 ; i < vBPar2[ k ] ; ++i )
+     if( v_c05f[ k ]->is_linearization_there( i ) )
+      add_to_global_pool( k , i );    
+   }
 
  //!! PrintBundle();
  #if CHECK_DS & 1
@@ -3277,7 +3282,7 @@ bool BundleSolver::GetGi( Index wFi )
    cp = Master->CheckCnst( Alfa1k , ScPr1k , Lambda.data() );
    }
 
-  Index gpp = Inf<Index>();  // position in the global pool where to put it
+  Index gpp = InINF;  // position in the global pool where to put it
 
   if( f_log && ( LogVerb > 2 ) ) {
    *f_log << std::endl << "            New " << shrt;
@@ -3321,7 +3326,7 @@ bool BundleSolver::GetGi( Index wFi )
      // but clearly if one linearization in the global pool has to be
      // sacrificed, it'll be the copy
      auto ngpp = find_place_in_global_pool( wFi );
-     if( ngpp < Inf<Index>() ) {       // a free place has been found
+     if( ngpp < InINF ) {       // a free place has been found
       // although the old linearization is kept, it is removed from the
       // bundle: the position cp is now associated with ngpp, which
       // means that position gpp is now free
@@ -3369,14 +3374,14 @@ bool BundleSolver::GetGi( Index wFi )
    // the new linearization
    gpp = find_place_in_global_pool( wFi );
 
-   if( gpp == Inf<Index>() ) {  // there is none
+   if( gpp == InINF ) {     // there is none
     // this means that not only the global pool is full, but also the bundle
     // is full: one can therefore put it in the very place of the item it
     // replaces, which must be an item of the same component because
     // BStrategy() ensures this
     assert( ItemVcblr[ wh ].first == wFi );    
     gpp = ItemVcblr[ wh ].second;
-    assert( gpp < vBPar2[ NrFi ] );  
+    assert( gpp < vBPar2.back() );  
     }
 
    BLOG( 2 , " stored in " << wh << " (" << gpp << ")"  );
@@ -3511,8 +3516,7 @@ void BundleSolver::GotoLambda( void )
 void BundleSolver::ResetAlfa( Index k )
 {
  std::vector< VarValue > Gi( NumVar );
- std::vector< VarValue > Alfa( Master->MaxName( k == NrFi ? Inf<Index>()
-						          : k + 1 ) );
+ std::vector< VarValue > Alfa( Master->MaxName( k == NrFi ? InINF : k + 1 ) );
  if( k == NrFi ) {  // all components need be reset
   for( Index i = 0 ; i < Master->MaxName() ; ++i )
    if( ItemVcblr[ i ].second < vBPar2[ ItemVcblr[ i ].first ] ) {
@@ -3537,7 +3541,7 @@ void BundleSolver::ResetAlfa( Index k )
   }
  else {             // only that specific component need be reset
   for( Index i = 0 ; i < MaxItem[ k ] ; ++i )
-   if( InvItemVcblr[ k ][ i ] < vBPar2[ NrFi ] ) {
+   if( InvItemVcblr[ k ][ i ] < vBPar2.back() ) {
     auto Ai = rs( v_c05f[ k ]->get_linearization_constant( i ) );
 
     #ifndef NDEBUG
@@ -3694,7 +3698,7 @@ void BundleSolver::compute_NrmZFctr( void )
     continue;
 
    Index i = 0;
-   while( InvItemVcblr[ k ][ i ] == Inf<Index>() )
+   while( InvItemVcblr[ k ][ i ] == InINF )
     ++i;
 
    v_c05f[ k ]->get_linearization_coefficients( tg1.data() ,
@@ -3737,7 +3741,7 @@ void BundleSolver::InitMP( void )
 {
  // set the size- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- Master->SetDim( vBPar2[ NrFi ] , &FakeFi , false );
+ Master->SetDim( vBPar2.back() , &FakeFi , false );
 
  // MinQuad requires a "high" accuracy to work (1e-12) while standard solvers
  // do not, and in fact may complain if such a tight accuracy is set
@@ -3832,7 +3836,7 @@ Index BundleSolver::BStrategy( Index wFi )
  HpNum Awh = -Inf<HpNum>();
  cHpRow tA = Master->ReadLinErr();
  for( auto i : InvItemVcblr[ wFi ] ) {
-  assert( i < vBPar2[ NrFi ] );
+  assert( i < vBPar2.back() );
   if( ( OOBase[ i ] > OOwh ) ||
       ( ( OOBase[ i ] == OOwh ) && ( tA[ i ] > Awh ) ) ) {
    wh = i;
@@ -4317,7 +4321,7 @@ void BundleSolver::Delete( cIndex i , bool ModDelete )
 
  remove_from_global_pool( k , ItemVcblr[ i ].second ,
 			  ( ( BPar7 & 3 ) == 3 ) || ModDelete );
- ItemVcblr[ i ].second = Inf<Index>();
+ ItemVcblr[ i ].second = InINF;
 
  // check if compacting FreList is appropriate- - - - - - - - - - - - - - - -
  // the issue with having indices of "free" position in the bundle stored in
@@ -4334,7 +4338,7 @@ void BundleSolver::Delete( cIndex i , bool ModDelete )
  if( FreList.size() > MxNm ) {
   FreList = {};
   for( Index h = 0 ; h < MxNm ; ++h )
-   if( ItemVcblr[ h ].second == Inf<Index>() )
+   if( ItemVcblr[ h ].second == InINF )
     FreList.push( h );
   }
  }  // end( BundleSolver::Delete )
@@ -4495,16 +4499,15 @@ void BundleSolver::remove_from_global_pool( Index k , Index i , bool hard )
  //
  // the actual removal from the global pool is not handled here
 
- InvItemVcblr[ k ][ i ] = hard ? Inf<Index>() : vBPar2[ NrFi ];
- while( MaxItem[ k ] &&
-	( InvItemVcblr[ k ][ MaxItem[ k ] - 1 ] == Inf<Index>() ) )
+ InvItemVcblr[ k ][ i ] = hard ? InINF : vBPar2.back();
+ while( MaxItem[ k ] && ( InvItemVcblr[ k ][ MaxItem[ k ] - 1 ] == InINF ) )
   --MaxItem[ k ];
  if( i < FrFItem[ k ] )   // creating a new "hole" before the FrFItem
   FrFItem[ k ] = i;       // this is the new FrFItem
  else                     // deleting something that may be FrFItem
   while( FrFItem[ k ] &&
 	 ( InvItemVcblr[ k ][ FrFItem[ k ] - 1 ] >=
-	   ( ( BPar7 & 3 ) ? vBPar2[ NrFi ] : Inf<Index>() ) ) )
+	                        ( ( BPar7 & 3 ) ? vBPar2.back() : InINF ) ) )
    --FrFItem[ k ];
 
  }  // end( BundleSolver::remove_from_global_pool )
@@ -4523,10 +4526,10 @@ Index BundleSolver::find_place_in_global_pool( Index k )
  // (for component k) than the size of the global pool, there must be a
  // some linearization in the global pool that is not in the bundle: find
  // and return the first one (smallest position)
- Index gpp = Inf<Index>();
+ Index gpp = InINF;
  if( NrItems[ k ] < vBPar2[ k ] )
   for( Index i = 0 ; i < MaxItem[ k ] ; ++i )
-   if( InvItemVcblr[ k ][ i ] >= vBPar2[ NrFi ] ) {
+   if( InvItemVcblr[ k ][ i ] >= vBPar2.back() ) {
     gpp = i;
     break;
     }
@@ -4546,20 +4549,20 @@ void BundleSolver::add_to_global_pool( Index k , Index i , Index wh )
  //
  // the actual addition to the global pool is not handled here
 
- if( wh < Inf<Index>() ) {
+ if( wh < InINF ) {
   ItemVcblr[ wh ].first = k;
   ItemVcblr[ wh ].second = i;
   InvItemVcblr[ k ][ i ] = wh;
   }
  else
-  InvItemVcblr[ k ][ i ] = vBPar2[ NrFi ];
+  InvItemVcblr[ k ][ i ] = vBPar2.back();
 
  if( i >= MaxItem[ k ] )
   MaxItem[ k ] = i + 1;
 
  while( ( FrFItem[ k ] < MaxItem[ k ] ) &&
 	( InvItemVcblr[ k ][ FrFItem[ k ] ] <
-	  ( ( BPar7 & 3 ) ? vBPar2[ NrFi ] : Inf<Index>() ) ) )
+	                        ( ( BPar7 & 3 ) ? vBPar2.back() : InINF ) ) )
   ++FrFItem[ k ];
 
  }  // end( BundleSolver::add_to_global_pool( k , i , wh ) )
@@ -4571,7 +4574,7 @@ void BundleSolver::add_to_bundle( Index k , Index i )
  // add to the bundle (master problem) the item corresponding to the
  // linearization to be found at position i in the global pool of component
  // k; this assumes that the linearization is already there in the global
- // pool. if InvItemVcblr[ k ][ i ] < vBPar2[ NrFi ], i.e., the item is
+ // pool. if InvItemVcblr[ k ][ i ] < vBPar2.back(), i.e., the item is
  // already in the bundle, then it is replaced, otherwise it is added
  //
  // note that CheckSubG() or CheckCnst() need be called, but even if the
@@ -4580,9 +4583,9 @@ void BundleSolver::add_to_bundle( Index k , Index i )
  // it is temporarily deactivated (and then re-activated)
 
  auto wh = InvItemVcblr[ k ][ i ];
- if( wh >= vBPar2[ NrFi ] ) {  // the item is not there already
-  wh = FindAPlace( k );        // find a "free" spot in the bundle
-  if( wh == InINF )            // one must be there
+ if( wh >= vBPar2.back() ) {  // the item is not there already
+  wh = FindAPlace( k );       // find a "free" spot in the bundle
+  if( wh == InINF )           // one must be there
    throw( std::logic_error( "no space found in the bundle" ) );
 
   ++NrItems[ k ];              // keep count
@@ -4632,9 +4635,9 @@ void BundleSolver::reset_bundle( void )
  // so has(ve) been received. this only affects the BundleSolver data
  // structures and the MPSolver, not the C05Function(s)
 
- OOBase.assign( vBPar2[ NrFi ] , Inf<SIndex>() );
+ OOBase.assign( vBPar2.back() , Inf<SIndex>() );
 
- ItemVcblr.assign( vBPar2[ NrFi ] , make_pair( InINF , InINF ) );
+ ItemVcblr.assign( vBPar2.back() , make_pair( InINF , InINF ) );
 
  for( Index k = 0 ; k < NrFi ; ++k )
   InvItemVcblr[ k ].assign( vBPar2[ k ] , InINF );
@@ -5218,8 +5221,20 @@ void BundleSolver::process_outstanding_Modification( void )
   if( count ) {                // at least a non-easy component has been reset
    for( Index k = 0 ; k < NrFi ; ++k )
     if( ( ( ! NrEasy ) || ( ! IsEasy[ k ] ) ) && reset[ k ] ) {
+     // if BundleSolver "plays nice" with other Solvers, it keeps track of
+     // linearizations in the global pool even if they are not in the bundle
+     // to avoid overriding them; but there is no longer anything in the
+     // global pool, so reset any such information; do this first because
+     // MaxItem[ k ] is zeroed during the next loop
+     if( ( BPar7 & 3 ) < 3 )
+      std::fill( std::next( InvItemVcblr[ k ].begin() , MaxItem[ k ] ) ,
+		 InvItemVcblr[ k ].end() , InINF );
+
+     // delete all linearizations in the bundle for this component (in
+     // the sense of updating the BundleSolver data structures, since they
+     // have been deleted already from the global pool)
      for( Index i = 0 ; i < MaxItem[ k ] ; ++i )
-      if( InvItemVcblr[ k ][ i ] < vBPar2[ NrFi ] )
+      if( InvItemVcblr[ k ][ i ] < vBPar2.back() )
        Delete( InvItemVcblr[ k ][ i ] , true );
      }
    }
@@ -5629,7 +5644,7 @@ void BundleSolver::process_outstanding_Modification( void )
   for( Index k = 0 ; k < NrFi ; ++k )
    for( auto i : Rmvd[ k ] ) {
     auto h = InvItemVcblr[ k ][ i ];
-    if( h < vBPar2[ NrFi ] )
+    if( h < vBPar2.back() )
      Delete( h , true );
     else
      remove_from_global_pool( k , i , true );
@@ -6063,7 +6078,7 @@ void BundleSolver::process_outstanding_Modification( void )
    if( ! Chgd[ k ].empty() ) {
     Subset tmp;
     for( auto i : Chgd[ k ] )
-     if( InvItemVcblr[ k ][ i ] >= vBPar2[ NrFi ] )
+     if( InvItemVcblr[ k ][ i ] >= vBPar2.back() )
       tmp.push_back( i );
 
     if( ! tmp.empty() ) {
@@ -6078,15 +6093,17 @@ void BundleSolver::process_outstanding_Modification( void )
     }
 
    // now, if ! ( BPar7 & 4 ), also cleanup Addd[ k ] from linearizations
-   // not in the bundle, but in doing so mark them into InvItemVcblr
+   // not in the bundle, but in doing so mark them into InvItemVcblr unless
+   // ( BPar7 & 3 ) == 3, in which case BundleSolver does not care if there
+   // are existing linearizations because it anyway freely overwrites them
    // note that for linearizations in the bundle, being in Addd[ k ] is the
    // same as being in Chgd[ k ]: the linearization has changed, and the
    // master problem must be changed to reflect this
    if( ( ! ( BPar7 & 4 ) ) && ( ! Addd[ k ].empty() ) ) {
     Subset tmp;
     for( auto i : Addd[ k ] )
-     if( InvItemVcblr[ k ][ i ] >= vBPar2[ NrFi ] ) {
-      InvItemVcblr[ k ][ i ] = vBPar2[ NrFi ];
+     if( InvItemVcblr[ k ][ i ] >= vBPar2.back() ) {
+      InvItemVcblr[ k ][ i ] = ( BPar7 & 3 ) == 3 ? InINF : vBPar2.back();
       tmp.push_back( i );
       }
 
@@ -6127,7 +6144,7 @@ void BundleSolver::process_outstanding_Modification( void )
  
  if( count == NrFi - NrEasy )  // all non-easy components have been reset
   // ... and if Fi0Chgd == true, then also the 0-th component has changed
-  Master->ChgSubG( 0 , NumVar , Fi0Chgd ? Inf<Index>() : NrFi + 1 );
+  Master->ChgSubG( 0 , NumVar , Fi0Chgd ? InINF : NrFi + 1 );
  else {
   if( count )                  // some non-easy components have been reset
    for( Index k = 0 ; k < NrFi ; ++k )
@@ -6169,7 +6186,7 @@ void BundleSolver::process_outstanding_Modification( void )
 
   for( Index k = 0 ; k < NrFi ; ++k )
    for( auto i : Cchg[ k ] )
-    if( InvItemVcblr[ k ][ i ] < vBPar2[ NrFi ] ) {
+    if( InvItemVcblr[ k ][ i ] < vBPar2.back() ) {
      auto Ai = rs( v_c05f[ k ]->get_linearization_constant( i ) );
 
      #ifndef NDEBUG
@@ -6237,7 +6254,7 @@ void BundleSolver::CheckBundle( void )
    if( Master->WComponent( i ) != ItemVcblr[ i ].first + 1 ) {
     *wlog << "position " << i << " in the bundle should be of component "
 	  << ItemVcblr[ i ].first << " but Master says ";
-    if( Master->WComponent( i ) == Inf<Index>() )
+    if( Master->WComponent( i ) == InINF )
      *wlog << "empty" << std::endl;
     else
      *wlog << Master->WComponent( i ) - 1 << std::endl;
@@ -6250,7 +6267,7 @@ void BundleSolver::CheckBundle( void )
 	  << std::endl;
    }
   else
-   if( Master->WComponent( i ) < Inf<Index>() )
+   if( Master->WComponent( i ) < InINF )
     *wlog << "position " << i
 	  << " in the bundle should be empty but Master says "
 	  << Master->WComponent( i ) << std::endl;
@@ -6270,12 +6287,12 @@ void BundleSolver::CheckBundle( void )
  // check InvItemVcblr against ItemVcblr and C05Function
  for( Index k = 0 ; k < NrFi ; ++k )
   for( Index i = 0 ; i < vBPar2[ k ] ; ++i ) {
-   if( ( InvItemVcblr[ k ][ i ] < Inf<Index>() ) &&
+   if( ( InvItemVcblr[ k ][ i ] < InINF ) &&
        ( ! v_c05f[ k ]->is_linearization_there( i ) ) )
     *wlog << "linearization " << i << " in pool " << k
 	  << " does not exist" << std::endl;
 
-   if( ( InvItemVcblr[ k ][ i ] == Inf<Index>() ) &&
+   if( ( InvItemVcblr[ k ][ i ] == InINF ) &&
        v_c05f[ k ]->is_linearization_there( i ) )
     *wlog << "linearization " << i << " in pool " << k
 	  << " unaccounted for" << std::endl;
@@ -6288,15 +6305,13 @@ void BundleSolver::CheckBundle( void )
 	  << InvItemVcblr[ k ][ i ] << " but ItemVcblr disagrees"
 	  << std::endl;
 
-   if( ( InvItemVcblr[ k ][ i ] <
-	 ( ( BPar7 & 3 ) ? vBPar2.back() : Inf<Index>() ) ) &&
-       ( i >= MaxItem[ k ] ) )
+   if( ( InvItemVcblr[ k ][ i ] < ( ( BPar7 & 3 ) ? vBPar2.back() : InINF ) )
+       && ( i >= MaxItem[ k ] ) )
     *wlog << "item in position " << i << " of pool " << k
 	  << " but MaxItem says " << MaxItem[ k ] << std::endl;
 
-   if( ( InvItemVcblr[ k ][ i ] >=
-	 ( ( BPar7 & 3 ) ? vBPar2.back() : Inf<Index>() ) ) &&
-       ( i < FrFItem[ k ] ) )
+   if( ( InvItemVcblr[ k ][ i ] >= ( ( BPar7 & 3 ) ? vBPar2.back() : InINF ) )
+       && ( i < FrFItem[ k ] ) )
      *wlog << "free item in position " << i << " of pool " << k
 	   << " but FrFItem says " << FrFItem[ k ] << std::endl;
 

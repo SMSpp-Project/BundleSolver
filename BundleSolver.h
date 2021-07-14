@@ -719,13 +719,13 @@ public:
   *   Modification telling that some other Solver have generated a new
   *   linearization. If the bit is 0, then BundleSolver plainly ignores it,
   *   which is likely the best strategy if producing linearizations is
-  *   "cheap". However, BundleSolver does record that a linearization is
-  *   there: if ( intBPar7 & 3 ) == 0, it will avoid to touch it unless
-  *   strictly necessary. If the bit is 1 instead, then BundleSolver will
+  *   "cheap". However, if ( intBPar7 & 3 ) < 3 BundleSolver does take note
+  *   that a linearization is there in order to avoid to touch it "unless
+  *   strictly necessary". If the bit is 1 instead, then BundleSolver will
   *   right away add the linearization to its bundle (the master problem),
   *   which is likely the best strategy if producing linearizations is
   *   "costly" and therefore it makes sense to profit from the effort that
-  *   the C05Function(s) have done on behalf of the other Solver(s).
+  *   the C05Function(s) has done on behalf of the other Solver(s).
   *
   *   The bit 3 ( intBPar7 & 8 ) has a similar role for the initialization
   *   phase: if it is == 1, then BundleSolver will also scan the global pool
