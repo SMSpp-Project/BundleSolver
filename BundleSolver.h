@@ -1387,12 +1387,14 @@ public:
 /*--------------------------------------------------------------------------*/
 
  bool has_var_solution( void ) override {
-  return( f_global_LB > - INFshift );
+  return( ( Result != kInfeasible ) && ( UpFiLmb.back() < INFshift ) );
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- bool has_dual_solution( void ) override { return( true ); }
+ bool has_dual_solution( void ) override {
+  return( f_global_LB > - INFshift );
+  }
 
 /*--------------------------------------------------------------------------*/
 /*
