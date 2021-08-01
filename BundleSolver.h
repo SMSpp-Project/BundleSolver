@@ -1049,7 +1049,7 @@ public:
   * - dblm1 [0.01]: m1 factor in the all-important NS/SS decision. This
   *                 factor sets the lower target for the objective function
   *   value at the new iterate Lambda1, with the following formula: if
-  *   mi > 0, then
+  *   m1 > 0, then
   *
   *        lower_target = UpFi + v* + m1 * Delta*
   *

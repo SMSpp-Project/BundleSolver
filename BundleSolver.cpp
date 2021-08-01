@@ -4,9 +4,9 @@
 /** @file
  * Implementation of the BunldeSolver class.
  *
- * \version 0.52
+ * \version 0.53
  *
- * \date 05 - 04 - 2021
+ * \date 01 - 08 - 2021
  *
  * \author Antonio Frangioni \n
  *         Operations Research Group \n
@@ -78,7 +78,7 @@
 /*--------------------------------------------------------------------------*/
 
 #ifndef NDEBUG
- #define CHECK_DS 15
+ #define CHECK_DS 0
  /* Perform long and costly checks on the data structures, coded bit-wise:
   *
   * - CHECK_DS & 1 == checks the data structures representing the bundle and
@@ -918,7 +918,7 @@ int BundleSolver::compute( bool changedvars )
 
   if( ! MPchgs ) {
    if( t >= tMaior ) {
-    BLOG( 1 , "            stop: BR required but t maximum" << std::endl );
+    BLOG( 1 , "            stop: NR required but t maximum" << std::endl );
     Result = kLowPrecision;
     break;
     }
@@ -994,31 +994,25 @@ int BundleSolver::compute( bool changedvars )
    if( CNSCntr < MnNSC )  // decreasing t is inhibited
     tt = t;
    else
-    if( Alfa1.back() <= m1 * Sigma ) {
-     BLOG( 1 , " ~ small Alfa1" );
-     tt = t;
+    switch( tSPar1 & tSP1Msk ) {
+     case( kSLTTS ):
+     case( kHLTTS ):
+      if( abs( vStar.back() ) <= tSPar2 * EpsU * max_error() ) {
+       BLOG( 1 , " small v" );
+       tt = t;
+       }
+      break;
+     case( kBLTTS ):
+      /*!! this version avoids problems which may occur with ill-set
+	   tStar or tSPar2, but it may give worse performances with
+	   "difficult" problems
+       if( ( tSPar2 * DSTS >= Sigma ) && ( CNSCntr < 20 ) ) {
+       !!*/
+      if( tSPar2 * DSTS >= Sigma ) {
+       BLOG( 1 , " ~ large D*_t( t* )" );
+       tt = t;
+       }
      }
-    else
-     switch( tSPar1 & tSP1Msk ) {
-      case( kSLTTS ):
-      case( kHLTTS ):
-       if( abs( vStar.back() ) <= tSPar2 * EpsU * max_error() ) {
-        BLOG( 1 , " small v" );
-	tt = t;
-        }
-       break;
-      case( kBLTTS ):
-       /*!! this version avoids problems which may occur with ill-set
- 	    tStar or tSPar2, but it may give worse performances with
- 	    "difficult" problems
-        if( ( tSPar2 * DSTS >= Sigma ) && ( CNSCntr < 20 ) ) {
-        !!*/
-
-       if( tSPar2 * DSTS >= Sigma ) {
-        BLOG( 1 , " ~ large D*_t( t* )" );
-        tt = t;
-        }
-      }
 
    BLOG( 1 , std::endl );
 
@@ -2439,7 +2433,6 @@ void BundleSolver::FormD( void )
                       ?   f_Block->get_valid_lower_bound( true )
                       : - f_Block->get_valid_upper_bound( true );
 
-
  for(;;)  // error-handling loop - - - - - - - - - - - - - - - - - - - - - -
  {        // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -3063,62 +3056,110 @@ bool BundleSolver::FiAndGi( Index wFi , bool getgi )
 void BundleSolver::SetupFiLambda1( Index wFi )
 {
  // compute upper and lower cutoffs and the accuracy
- double UpCutOff , LwCutOff , EpsCurr;
+ auto UpCutOff = INFshift;
+ auto LwCutOff = -INFshift;
 
- if( UpTrgt < INFshift ) {
+ if( ( UpFiLmb1.back() > UpTrgt ) && ( LwFiLmb1.back() < LwTrgt ) ) {
   // finite upper and lower cutoffs can (and make sense to) be set only if the
   // upper and lower targets are finite (they either both are or none of them
-  // are), which depends on the fact that vStar.back() (and its "cousin"
-  // Delta* = D_t( z* ) + Sigma*) is finite, which means that *all*
-  // (non-easy) components have diagonal linearizations in their bundle
+  // are), which depends on the fact that v* = vStar.back() (and its "cousin"
+  // Delta* = D_t( z* ) + Sigma*) is finite, which means that *all* non-easy
+  // components have diagonal linearizations in their bundle
   //
   // note that this implies that vStar[ wFi ] (for this particular component)
   // must also be well-defined (< INF)
- 
-  const auto LwFiK = UpRifFi[ wFi ] + vStar[ wFi ];
-  const auto bk = BetaK( wFi );
-
-  UpCutOff = LwFiK - m2 * bk * vStar.back();
-  LwCutOff = LwFiK + m1 * bk * ( DST + Sigma );
-
-  // the second part of the Up/LwCutOff computation, conditional to the fact
-  // that the function value is available, corresponds to the following
-  // argument: assume we want
   //
-  //     \bar{f}_{tot}( x ) = \sum_i \bar{f}_i( x ) <= \bar{tar}
+  // if some component does not have any linearization yet, any "finite"
+  // information about them is better than what we currently have, and hence
+  // the cutoffs should be "as weak as they can be"
   //
-  // this means
+  // also, the upper cutoff only makes sense to be set if the SS condition
   //
-  //     \bar{f}_h( x ) <= \bar{tar} - \sum_{i \neq k} i \bar{f}_i( x )
+  //  \bar{f}_{tot}( x ) <= \bar{tau}  \equiv  UpFiLmb1.back() <= UpTrgt
+  //
+  // it is not satisfied already, i.e., if \bar{f}_{tot}( x ) > \bar{tau}
+  // (note that this can never hold if \bar{tau} = +INF, due to the ">",
+  // which ensures that the upper target is finite when the if() is entered).
+  // indeed, the second part of the UpCutOff computation corresponds to the
+  // following argument: we want the SS condition
+  //
+  //  \bar{f}_{tot}( x ) = \sum_i \bar{f}_i( x ) <= \bar{tau}
+  //
+  // to hold, which means
+  //
+  //  \bar{f}_k( x ) <= \bar{tau} - \sum_{i \neq k} i \bar{f}_i( x )
   //
   // but
   //
-  //  \sum_{i \neq k} i \bar{f}_i( x ) = \bar{f}_{tot}( x ) - \bar{f}_h( x )
+  //  \sum_{i \neq k} i \bar{f}_i( x ) = \bar{f}_{tot}( x ) - \bar{f}_k( x )
   //
-  // (and of course the symmetric argument for the lower cutoff)
+  // and hence we will be content if
+  //
+  //  \bar{f}_k( x ) <= \bar{tau} - ( \bar{f}_{tot}( x ) - \bar{f}_k( x ) )
+  //
+  // this is of course conditional to the fact that the function value is
+  // available, i.e., \bar{f}_{tot}( x ) < INF ==> \bar{f}_k( x ) < INF, but
+  // it is also conditional to the fact that the SS condition does not hold
+  // already. in fact, in the above condition \bar{f}_k( x ) on the left means
+  // "after having computed the function value at x", whereas \bar{f}_k( x )
+  // on the right means "the current value it has". if the SS condition
+  //
+  //  \bar{f}_{tot}( x ) <= \bar{tau}
+  //
+  // holds already when the method is called, then
+  //
+  //  \bar{f}_k( x ) <= \bar{tau} - ( \bar{f}_{tot}( x ) - \bar{f}_k( x ) )
+  //
+  // also holds with \bar{f}_k( x ) meaning "the current value it has" in
+  // both places, and therefore *a fortiori* after that the function is
+  // computed. thus, if the SS condition holds already, then there is no
+  // reason to put a finite upper cutoff, since any value would do.
+  //
+  // of course the symmetric argument holds for the lower cutoff and the
+  // NS condition
+  //
+  //  \underline{f}_{tot}( x ) >= \underline{tau}
+  //
+  // and note that if either one of the two conditions holds already, then
+  // no cutoff (be it upper or lower) need be set, and neither does the
+  // accuracy, because the fate of the step is already sealed whatever the
+  // information that the oracle provides
+
+  // note: the reason why upper and lower cutoffs are not entirely separated
+  // is the computation of BetaK(), which is currently very easy but it may
+  // one day become more sophisticated and therefore costly
+  const auto bk = BetaK( wFi );
+  const auto LwFiK = UpRifFi[ wFi ] + vStar[ wFi ];
+
+  UpCutOff = LwFiK - m2 * bk * vStar.back();
+  LwCutOff = LwFiK + std::abs( m1 ) * bk * ( DST + Sigma );
+
+  if( UpCutOff < LwCutOff )  // this should never happen, but account for
+   LwCutOff = UpCutOff;      // numerical issues
+
+  // note that here UpCutOff >= LwCutOff and the next step can only increase
+  // UpCutOff and decrease LwCutOff, so the relationship will keep holding
 
   // note that UpFiLmb1.back() < INFshift ==> UpFiLmb1[ wFi ] < INFshift
   if( UpFiLmb1.back() < INFshift )
-   UpCutOff = std::min( UpTrgt - ( UpFiLmb1.back() - UpFiLmb1[ wFi ] ) ,
+   UpCutOff = std::max( UpTrgt - ( UpFiLmb1.back() - UpFiLmb1[ wFi ] ) ,
 			UpCutOff );
 
   // note that LwFiLmb1.back() > -INFshift ==> LwFiLmb1[ wFi ] > -INFshift
   if( LwFiLmb1.back() > -INFshift )
-   LwCutOff = std::max( LwTrgt - ( LwFiLmb1.back() - LwFiLmb1[ wFi ] ) ,
+   LwCutOff = std::min( LwTrgt - ( LwFiLmb1.back() - LwFiLmb1[ wFi ] ) ,
 			LwCutOff );
-
-  EpsCurr = ( UpCutOff - LwCutOff ) / std::max( 1.0 ,
-						std::abs( UpRifFi[ wFi ] ) );
-  }
- else {
-  // if some component does not have any linearization yet, any "finite"
-  // information about them is better than what we currently have, and hence
-  // the cutoffs are "as weak as they can be"
-  UpCutOff = INFshift;
-  LwCutOff = -INFshift;
-  EpsCurr = RelAcc / Nearly;
   }
 
+ // EpsCurr will never be (much) smaller than the required relative accuracy
+ // for the overall computation, but it may be (much) larger if finite upper
+ // and lower cutoffs make sense to be set, and even much much larger (INF)
+ // if there are no upper and lower cutoffs, since this means "anything goes"
+ auto EpsCurr = ( ( UpCutOff < INFshift ) && ( LwCutOff > -INFshift ) ) ?
+                std::max( RelAcc / Nearly , ( UpCutOff - LwCutOff ) /
+		         std::max( 1.0 , std::abs( UpRifFi[ wFi ] ) ) ) :
+                INFshift;
+ 
  // assign the cutoff values to the C05Function - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -4393,8 +4434,8 @@ bool BundleSolver::IsOptimal( double eps ) const
  if( eps <= 0 )
   eps = RelAcc;
 
- if( vStar[ NrFi ] >= INFshift )  // some components have no subgradients
-  return( false );                // no way one can detect optimality
+ if( vStar.back() >= INFshift )  // some components have no subgradients
+  return( false );               // no way one can detect optimality
 
  c_VarValue err = max_error( eps );
  if( err >= INFshift )
