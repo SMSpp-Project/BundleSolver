@@ -78,7 +78,7 @@
 /*--------------------------------------------------------------------------*/
 
 #ifndef NDEBUG
- #define CHECK_DS 15
+ #define CHECK_DS 0
  /* Perform long and costly checks on the data structures, coded bit-wise:
   *
   * - CHECK_DS & 1 == checks the data structures representing the bundle and
@@ -918,7 +918,7 @@ int BundleSolver::compute( bool changedvars )
 
   if( ! MPchgs ) {
    if( t >= tMaior ) {
-    BLOG( 1 , "            stop: BR required but t maximum" << std::endl );
+    BLOG( 1 , "            stop: NR required but t maximum" << std::endl );
     Result = kLowPrecision;
     break;
     }
@@ -2438,7 +2438,6 @@ void BundleSolver::FormD( void )
   LowerBound.back() = f_convex
                       ?   f_Block->get_valid_lower_bound( true )
                       : - f_Block->get_valid_upper_bound( true );
-
 
  for(;;)  // error-handling loop - - - - - - - - - - - - - - - - - - - - - -
  {        // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -4393,8 +4392,8 @@ bool BundleSolver::IsOptimal( double eps ) const
  if( eps <= 0 )
   eps = RelAcc;
 
- if( vStar[ NrFi ] >= INFshift )  // some components have no subgradients
-  return( false );                // no way one can detect optimality
+ if( vStar.back() >= INFshift )  // some components have no subgradients
+  return( false );               // no way one can detect optimality
 
  c_VarValue err = max_error( eps );
  if( err >= INFshift )
