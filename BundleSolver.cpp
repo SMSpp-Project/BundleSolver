@@ -4,9 +4,9 @@
 /** @file
  * Implementation of the BunldeSolver class.
  *
- * \version 0.52
+ * \version 0.53
  *
- * \date 05 - 04 - 2021
+ * \date 01 - 08 - 2021
  *
  * \author Antonio Frangioni \n
  *         Operations Research Group \n
@@ -994,31 +994,25 @@ int BundleSolver::compute( bool changedvars )
    if( CNSCntr < MnNSC )  // decreasing t is inhibited
     tt = t;
    else
-    if( Alfa1.back() <= m1 * Sigma ) {
-     BLOG( 1 , " ~ small Alfa1" );
-     tt = t;
+    switch( tSPar1 & tSP1Msk ) {
+     case( kSLTTS ):
+     case( kHLTTS ):
+      if( abs( vStar.back() ) <= tSPar2 * EpsU * max_error() ) {
+       BLOG( 1 , " small v" );
+       tt = t;
+       }
+      break;
+     case( kBLTTS ):
+      /*!! this version avoids problems which may occur with ill-set
+	   tStar or tSPar2, but it may give worse performances with
+	   "difficult" problems
+       if( ( tSPar2 * DSTS >= Sigma ) && ( CNSCntr < 20 ) ) {
+       !!*/
+      if( tSPar2 * DSTS >= Sigma ) {
+       BLOG( 1 , " ~ large D*_t( t* )" );
+       tt = t;
+       }
      }
-    else
-     switch( tSPar1 & tSP1Msk ) {
-      case( kSLTTS ):
-      case( kHLTTS ):
-       if( abs( vStar.back() ) <= tSPar2 * EpsU * max_error() ) {
-        BLOG( 1 , " small v" );
-	tt = t;
-        }
-       break;
-      case( kBLTTS ):
-       /*!! this version avoids problems which may occur with ill-set
- 	    tStar or tSPar2, but it may give worse performances with
- 	    "difficult" problems
-        if( ( tSPar2 * DSTS >= Sigma ) && ( CNSCntr < 20 ) ) {
-        !!*/
-
-       if( tSPar2 * DSTS >= Sigma ) {
-        BLOG( 1 , " ~ large D*_t( t* )" );
-        tt = t;
-        }
-      }
 
    BLOG( 1 , std::endl );
 
@@ -3062,62 +3056,110 @@ bool BundleSolver::FiAndGi( Index wFi , bool getgi )
 void BundleSolver::SetupFiLambda1( Index wFi )
 {
  // compute upper and lower cutoffs and the accuracy
- double UpCutOff , LwCutOff , EpsCurr;
+ auto UpCutOff = INFshift;
+ auto LwCutOff = -INFshift;
 
- if( UpTrgt < INFshift ) {
+ if( ( UpFiLmb1.back() > UpTrgt ) && ( LwFiLmb1.back() < LwTrgt ) ) {
   // finite upper and lower cutoffs can (and make sense to) be set only if the
   // upper and lower targets are finite (they either both are or none of them
-  // are), which depends on the fact that vStar.back() (and its "cousin"
-  // Delta* = D_t( z* ) + Sigma*) is finite, which means that *all*
-  // (non-easy) components have diagonal linearizations in their bundle
+  // are), which depends on the fact that v* = vStar.back() (and its "cousin"
+  // Delta* = D_t( z* ) + Sigma*) is finite, which means that *all* non-easy
+  // components have diagonal linearizations in their bundle
   //
   // note that this implies that vStar[ wFi ] (for this particular component)
   // must also be well-defined (< INF)
- 
-  const auto LwFiK = UpRifFi[ wFi ] + vStar[ wFi ];
-  const auto bk = BetaK( wFi );
-
-  UpCutOff = LwFiK - m2 * bk * vStar.back();
-  LwCutOff = LwFiK + m1 * bk * ( DST + Sigma );
-
-  // the second part of the Up/LwCutOff computation, conditional to the fact
-  // that the function value is available, corresponds to the following
-  // argument: assume we want
   //
-  //     \bar{f}_{tot}( x ) = \sum_i \bar{f}_i( x ) <= \bar{tar}
+  // if some component does not have any linearization yet, any "finite"
+  // information about them is better than what we currently have, and hence
+  // the cutoffs should be "as weak as they can be"
   //
-  // this means
+  // also, the upper cutoff only makes sense to be set if the SS condition
   //
-  //     \bar{f}_h( x ) <= \bar{tar} - \sum_{i \neq k} i \bar{f}_i( x )
+  //  \bar{f}_{tot}( x ) <= \bar{tau}  \equiv  UpFiLmb1.back() <= UpTrgt
+  //
+  // it is not satisfied already, i.e., if \bar{f}_{tot}( x ) > \bar{tau}
+  // (note that this can never hold if \bar{tau} = +INF, due to the ">",
+  // which ensures that the upper target is finite when the if() is entered).
+  // indeed, the second part of the UpCutOff computation corresponds to the
+  // following argument: we want the SS condition
+  //
+  //  \bar{f}_{tot}( x ) = \sum_i \bar{f}_i( x ) <= \bar{tau}
+  //
+  // to hold, which means
+  //
+  //  \bar{f}_k( x ) <= \bar{tau} - \sum_{i \neq k} i \bar{f}_i( x )
   //
   // but
   //
-  //  \sum_{i \neq k} i \bar{f}_i( x ) = \bar{f}_{tot}( x ) - \bar{f}_h( x )
+  //  \sum_{i \neq k} i \bar{f}_i( x ) = \bar{f}_{tot}( x ) - \bar{f}_k( x )
   //
-  // (and of course the symmetric argument for the lower cutoff)
+  // and hence we will be content if
+  //
+  //  \bar{f}_k( x ) <= \bar{tau} - ( \bar{f}_{tot}( x ) - \bar{f}_k( x ) )
+  //
+  // this is of course conditional to the fact that the function value is
+  // available, i.e., \bar{f}_{tot}( x ) < INF ==> \bar{f}_k( x ) < INF, but
+  // it is also conditional to the fact that the SS condition does not hold
+  // already. in fact, in the above condition \bar{f}_k( x ) on the left means
+  // "after having computed the function value at x", whereas \bar{f}_k( x )
+  // on the right means "the current value it has". if the SS condition
+  //
+  //  \bar{f}_{tot}( x ) <= \bar{tau}
+  //
+  // holds already when the method is called, then
+  //
+  //  \bar{f}_k( x ) <= \bar{tau} - ( \bar{f}_{tot}( x ) - \bar{f}_k( x ) )
+  //
+  // also holds with \bar{f}_k( x ) meaning "the current value it has" in
+  // both places, and therefore *a fortiori* after that the function is
+  // computed. thus, if the SS condition holds already, then there is no
+  // reason to put a finite upper cutoff, since any value would do.
+  //
+  // of course the symmetric argument holds for the lower cutoff and the
+  // NS condition
+  //
+  //  \underline{f}_{tot}( x ) >= \underline{tau}
+  //
+  // and note that if either one of the two conditions holds already, then
+  // no cutoff (be it upper or lower) need be set, and neither does the
+  // accuracy, because the fate of the step is already sealed whatever the
+  // information that the oracle provides
+
+  // note: the reason why upper and lower cutoffs are not entirely separated
+  // is the computation of BetaK(), which is currently very easy but it may
+  // one day become more sophisticated and therefore costly
+  const auto bk = BetaK( wFi );
+  const auto LwFiK = UpRifFi[ wFi ] + vStar[ wFi ];
+
+  UpCutOff = LwFiK - m2 * bk * vStar.back();
+  LwCutOff = LwFiK + std::abs( m1 ) * bk * ( DST + Sigma );
+
+  if( UpCutOff < LwCutOff )  // this should never happen, but account for
+   LwCutOff = UpCutOff;      // numerical issues
+
+  // note that here UpCutOff >= LwCutOff and the next step can only increase
+  // UpCutOff and decrease LwCutOff, so the relationship will keep holding
 
   // note that UpFiLmb1.back() < INFshift ==> UpFiLmb1[ wFi ] < INFshift
   if( UpFiLmb1.back() < INFshift )
-   UpCutOff = std::min( UpTrgt - ( UpFiLmb1.back() - UpFiLmb1[ wFi ] ) ,
+   UpCutOff = std::max( UpTrgt - ( UpFiLmb1.back() - UpFiLmb1[ wFi ] ) ,
 			UpCutOff );
 
   // note that LwFiLmb1.back() > -INFshift ==> LwFiLmb1[ wFi ] > -INFshift
   if( LwFiLmb1.back() > -INFshift )
-   LwCutOff = std::max( LwTrgt - ( LwFiLmb1.back() - LwFiLmb1[ wFi ] ) ,
+   LwCutOff = std::min( LwTrgt - ( LwFiLmb1.back() - LwFiLmb1[ wFi ] ) ,
 			LwCutOff );
-
-  EpsCurr = ( UpCutOff - LwCutOff ) / std::max( 1.0 ,
-						std::abs( UpRifFi[ wFi ] ) );
-  }
- else {
-  // if some component does not have any linearization yet, any "finite"
-  // information about them is better than what we currently have, and hence
-  // the cutoffs are "as weak as they can be"
-  UpCutOff = INFshift;
-  LwCutOff = -INFshift;
-  EpsCurr = RelAcc / Nearly;
   }
 
+ // EpsCurr will never be (much) smaller than the required relative accuracy
+ // for the overall computation, but it may be (much) larger if finite upper
+ // and lower cutoffs make sense to be set, and even much much larger (INF)
+ // if there are no upper and lower cutoffs, since this means "anything goes"
+ auto EpsCurr = ( ( UpCutOff < INFshift ) && ( LwCutOff > -INFshift ) ) ?
+                std::max( RelAcc / Nearly , ( UpCutOff - LwCutOff ) /
+		         std::max( 1.0 , std::abs( UpRifFi[ wFi ] ) ) ) :
+                INFshift;
+ 
  // assign the cutoff values to the C05Function - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -4944,6 +4986,9 @@ void BundleSolver::process_outstanding_Modification( void )
 
  std::vector< bool > reset( NrFi , false );
 
+ // how many non-easy components are reset (easy never are)
+ Index cntreset = 0;
+
  bool Fi0Chgd = false;  // true if the 0-th component changes
 
  bool to_delete;  // should have been defined inside, but there is not
@@ -5015,7 +5060,7 @@ void BundleSolver::process_outstanding_Modification( void )
    // function has a finite shift after a reset, this says nothing because
    // there are no known values to shift. if, rather, the values are only 
    // shifted by finite amounts, the total shift is the sum of the shift,
-   // and the order of additions do not change the result
+   // and the order of additions does not change the result
    if( wFi < NrFi )
     FModChg( tmod->shift() , wFi );
    else {
@@ -5038,7 +5083,7 @@ void BundleSolver::process_outstanding_Modification( void )
     }
    else                             // coming from a non-easy component
     if( reset[ wFi ] ) {
-     // any kind of FunctionMod after (before) one that completely reset the
+     // any FunctionMod after (before) one that completely resets the
      // component is useless, delete it and move forward (backward)
      to_delete = true;
      continue;
@@ -5058,7 +5103,7 @@ void BundleSolver::process_outstanding_Modification( void )
      default:
       throw( std::invalid_argument( "wrong type in C05FunctionModRngd" ) );
      }  // end( switch( ttmod->f_type ) )
-    }  // end( if( ttmod - C05FunctionModRngd ) )
+    }  // end( if( ttmod == C05FunctionModRngd ) )
 
    // a C05FunctionModSbst only changes existing linearizations, and
    // therefore is never a "hard" reset; the only easy case is
@@ -5073,7 +5118,7 @@ void BundleSolver::process_outstanding_Modification( void )
      default:
       throw( std::invalid_argument( "wrong type in C05FunctionModSbst" ) );
      }  // end( switch( ttmod->f_type ) )
-    }  // end( if( ttmod - C05FunctionModSbst ) )
+    }  // end( if( ttmod == C05FunctionModSbst ) )
 
    // a C05FunctionMod of type GlobalPoolRemoved with which.empty() resets
    // all the component. NothingChanged by definition does nothing (save
@@ -5087,6 +5132,7 @@ void BundleSolver::process_outstanding_Modification( void )
      case( C05FunctionMod::GlobalPoolRemoved ):
       if( ttmod->which().empty() ) {
        reset[ wFi ] = true;
+       ++cntreset;
        to_delete = true;
        }
       continue;
@@ -5102,7 +5148,7 @@ void BundleSolver::process_outstanding_Modification( void )
      default:
       throw( std::invalid_argument( "wrong type in C05FunctionMod" ) );
      }  // end( switch( ttmod->f_type ) )
-    }  // end( if( ttmod - C05FunctionMod ) )
+    }  // end( if( ttmod == C05FunctionMod ) )
 
    // a C05FunctionModLin* only changes existing linearizations, and
    // therefore is never a "hard" reset
@@ -5115,8 +5161,9 @@ void BundleSolver::process_outstanding_Modification( void )
    // not strongly quasi-additive. as a result, this is a "hard" reset
 
    reset[ wFi ] = to_delete = true;
+   ++cntreset;
 
-   }  // end( if( tmod - FunctionMod ) )
+   }  // end( if( tmod == FunctionMod ) )
 
   // a "naked" FunctionModVars is only allowed if there is only one
   // component (comprised the linear one). if it is allowed, it is
@@ -5147,9 +5194,10 @@ void BundleSolver::process_outstanding_Modification( void )
    // C05FunctionModVars*, i.e., a non strongly quasi-additive variable
    // change, which implies a "hard" reset for the component
    reset[ wFi ] = true;
+   ++cntreset;
    continue;
 
-   }  // end( if( tmod - FunctionModVars ) )
+   }  // end( if( tmod == FunctionModVars ) )
 
   // a GroupModification here can only be a bunch of identical
   // *FunctionModVar*: pick the first one and act on it
@@ -5176,9 +5224,10 @@ void BundleSolver::process_outstanding_Modification( void )
      }
    else
     reset.assign( NrFi , true );
+   cntreset = NrFi - NrEasy;
    continue;
 
-   }  // end( if( tmod - GroupModification ) )
+   }  // end( if( tmod == GroupModification ) )
 
   if( std::dynamic_pointer_cast< ConstraintMod >( mod ) )
    throw( std::invalid_argument( "ConstraintMod not handled (yet)" ) );
@@ -5203,23 +5252,12 @@ void BundleSolver::process_outstanding_Modification( void )
  // if any global pool has been reset/all of them have reset, then delete all
  // items in the corresponding bundle/reset all the bundle
 
- Index count = 0;
- if( NrEasy ) {
-  for( Index k = 0 ; k < NrFi ; ++k )
-   if( ( ! IsEasy[ k ] ) && reset[ k ] )
-    ++count;
-  }
- else
-  for( Index k = 0 ; k < NrFi ; ++k )
-   if( reset[ k ] )
-    ++count;
-
- if( count == NrFi - NrEasy )  // all non-easy components have been reset
+ if( cntreset == NrFi - NrEasy )  // all (non-easy) components have been reset
   reset_bundle();
  else
-  if( count ) {                // at least a non-easy component has been reset
+  if( cntreset ) {           // at least a (non-easy) component has been reset
    for( Index k = 0 ; k < NrFi ; ++k )
-    if( ( ( ! NrEasy ) || ( ! IsEasy[ k ] ) ) && reset[ k ] ) {
+    if( reset[ k ] ) {       // reset[ k ] ==> ! IsEasy[ k ]
      // if BundleSolver "plays nice" with other Solvers, it keeps track of
      // linearizations in the global pool even if they are not in the bundle
      // to avoid overriding them; but there is no longer anything in the
@@ -5295,7 +5333,11 @@ void BundleSolver::process_outstanding_Modification( void )
  // for "vertical" changes (a set of specific linearizations). some steps
  // in this direction will perhaps be done in later stages of develpment
 
- reset.assign( NrFi , false );  // reset reset (couldn't resist)
+ if( cntreset ) {                // if there was any hard reset
+  reset.assign( NrFi , false );  // reset reset (couldn't resist)
+  cntreset = 0;
+  }
+
  std::vector< bool > AlphaC( NrFi , false );
 
  for( auto rimod = v_mod_tmp.rbegin() ; rimod != v_mod_tmp.rend() ;
@@ -5342,7 +5384,7 @@ void BundleSolver::process_outstanding_Modification( void )
     default:  // this must not happen
      throw( std::invalid_argument( "wrong type() in C05FunctionModRngd" ) );
     }
-   }  // end( if( ttmod - C05FunctionModRngd ) )
+   }  // end( if( tmod == C05FunctionModRngd ) )
 
   // a C05FunctionModSbst only changes a subet of the linearizations,
   // and therefore is not considered a "soft" reset even if which().empty()
@@ -5372,7 +5414,7 @@ void BundleSolver::process_outstanding_Modification( void )
     default:  // this must not happen
      throw( std::invalid_argument( "wrong type() in C05FunctionModSbst" ) );
     }
-   }  // end( if( ttmod - C05FunctionModSbst ) )
+   }  // end( if( tmod == C05FunctionModSbst ) )
 
   // a C05FunctionMod of type AllLinearizationChanged or AllEntriesChanged
   // with which.empty() "soft" resets all the component and Alpha;
@@ -5390,7 +5432,9 @@ void BundleSolver::process_outstanding_Modification( void )
      break;
     case( C05FunctionMod::AllEntriesChanged ):
     case( C05FunctionMod::AllLinearizationChanged ):
-     reset[ wFi ] = AlphaC[ wFi ] = false;
+     if( ! reset[ wFi ] )
+      ++cntreset;
+     reset[ wFi ] = AlphaC[ wFi ] = true;
      break;
     default:  // this must not happen, as GlobalPoolRemoved with
               // which.empty() has been dealt with and deleted before
@@ -5400,7 +5444,8 @@ void BundleSolver::process_outstanding_Modification( void )
 
    to_delete = true;
    continue;
-   }  // end( if( tmod - C05FunctionMod ) )
+
+   }  // end( if( tmod == C05FunctionMod ) )
 
   // a C05FunctionModLinRngd implies that a specific range in all the
   // linearizations must be changed by adding; this is never considered a
@@ -5419,8 +5464,10 @@ void BundleSolver::process_outstanding_Modification( void )
     to_delete = true;            // nothing else to do
    else                          // component not reset
     AlphaC[ wFi ] = true;        // reset the constants
+
    continue;
-   }  // end( if( ttmod - C05FunctionModLinRngd ) )
+
+   }  // end( if( tmod == C05FunctionModLinRngd ) )
 
   // a C05FunctionModLinSbst implies that a specific subset in all the
   // linearizations must be changed by adding; this is never considered a
@@ -5439,8 +5486,10 @@ void BundleSolver::process_outstanding_Modification( void )
     to_delete = true;            // nothing else to do
    else                          // component not reset
     AlphaC[ wFi ] = true;        // reset the constants
+
    continue;
-   }  // end( if( ttmod - C05FunctionModLinSbst ) )
+
+   }  // end( if( tmod == C05FunctionModLinSbst ) )
 
   // a C05FunctionModLin implies that *all* the linearizations must be
   // changed by adding them \delta; this may in principle be handled in
@@ -5449,8 +5498,11 @@ void BundleSolver::process_outstanding_Modification( void )
   if( const auto tmod =
       std::dynamic_pointer_cast< C05FunctionModLin >( mod ) ) {
    auto wFi = get_index_of_component( tmod->function() );
+   if( ! reset[ wFi ] )
+    ++cntreset;
    AlphaC[ wFi ] = reset[ wFi ] = to_delete = true;
-   }  // end( if( ttmod - C05FunctionModLin ) )
+
+   }  // end( if( tmod == C05FunctionModLin ) )
   }  // end( 2nd loop, again in reverse )
 
  // note that even if there were no more Modification to process we could not
@@ -5627,7 +5679,7 @@ void BundleSolver::process_outstanding_Modification( void )
 
    to_delete = true;   // delete it
 
-   }  // end( if( ttmod ) )
+   }  // end( if( tmod == C05FunctionMod ) )
   }  // end( 3rd loop, forward )
 
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -5730,7 +5782,7 @@ void BundleSolver::process_outstanding_Modification( void )
      to_add += ttmod->vars().size();
      continue;
 
-     } // end( if( ttmod - FunctionModVarsAddd ) )
+     } // end( if( tmod == FunctionModVarsAddd ) )
 
     if( const auto ttmod =
 	std::dynamic_pointer_cast< FunctionModVarsRngd >( tmod ) ) {
@@ -5786,7 +5838,7 @@ void BundleSolver::process_outstanding_Modification( void )
      Master->RmvVars( tdlt.data() , tdlt.size() );  // remove from MP
      continue;
 
-     }  // end( if( ttmod - FunctionModVarsRngd ) )
+     }  // end( if( ttmod == FunctionModVarsRngd ) )
 
     if( const auto ttmod =
 	std::dynamic_pointer_cast< FunctionModVarsSbst >( tmod ) ) {
@@ -5852,12 +5904,12 @@ void BundleSolver::process_outstanding_Modification( void )
      Master->RmvVars( sbst->data() , sbst->size() );  // remove from MP
      continue;
 
-     }  // end( if( ttmod - FunctionModVarsSbst ) )
+     }  // end( if( ttmod == FunctionModVarsSbst ) )
 
     // if control reaches here, this is an unknown *FunctionModVars* (??)
     throw( std::logic_error( "unknown FunctionModVars" ) );
 
-    }  // end( if( tmod ) )
+    }  // end( if( tmod == FunctionModVars ) )
    }  // end FunctionModVars
   }  // end( 4th loop, forward )
 
@@ -6069,6 +6121,8 @@ void BundleSolver::process_outstanding_Modification( void )
     continue;                                    // move on
 
    if( Chgd[ k ].size() >= NrItems[ k ] ) {      // all items change
+    if( ! reset[ k ] )
+     ++cntreset;
     reset[ k ] = AlphaC[ k ] = true;             // this is a reset
     continue;
     }
@@ -6130,24 +6184,13 @@ void BundleSolver::process_outstanding_Modification( void )
  // if some component need be reset, reset the linearizations: since
  // reset[ k ] ==> AlphaC[ k ], later on also the constants will be reset
 
- count = 0;
- if( NrEasy ) {
-  for( Index k = 0 ; k < NrFi ; ++k )
-   if( ( ! IsEasy[ k ] ) && reset[ k ] )
-    ++count;
-  }
- else
-  for( Index k = 0 ; k < NrFi ; ++k )
-   if( reset[ k ] )
-    ++count;
- 
- if( count == NrFi - NrEasy )  // all non-easy components have been reset
+ if( cntreset == NrFi - NrEasy )  // all (non-easy) components have been reset
   // ... and if Fi0Chgd == true, then also the 0-th component has changed
   Master->ChgSubG( 0 , NumVar , Fi0Chgd ? InINF : NrFi + 1 );
  else {
-  if( count )                  // some non-easy components have been reset
+  if( cntreset )                 // some (non-easy) components have been reset
    for( Index k = 0 ; k < NrFi ; ++k )
-    if( ( ( ! NrEasy ) || ( ! IsEasy[ k ] ) ) && reset[ k ] )
+    if( reset[ k ] )             // reset[ k ] ==> ! IsEasy[ k ]
      Master->ChgSubG( 0 , NumVar , k + 1 );
 
   if( Fi0Chgd )                // ... and/or the 0-th component has changed
