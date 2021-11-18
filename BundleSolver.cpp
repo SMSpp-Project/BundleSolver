@@ -2994,7 +2994,13 @@ bool BundleSolver::FiAndGi( Index wFi , bool getgi )
 
  auto fwFi = v_c05f[ wFi ];
 
+ auto start = std::chrono::system_clock::now();
+
  FiStatus[ wFi ] = fwFi->compute( ( FiStatus[ wFi ] == kUnEval ) );
+
+ auto end = std::chrono::system_clock::now();
+ std::chrono::duration< double > elapsed = end - start;
+
  if( ( FiStatus[ wFi ] <= kUnEval ) || ( FiStatus[ wFi ] >= kError ) )
   return( false );
   
@@ -3007,6 +3013,7 @@ bool BundleSolver::FiAndGi( Index wFi , bool getgi )
   pval( *f_log , ue );
   *f_log << ", LB = ";
   pval( *f_log , le );
+  *f_log << " [" << fixd << elapsed.count() << "] " << def;
   }
 
  if( f_convex ) {
