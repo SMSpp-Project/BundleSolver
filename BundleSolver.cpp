@@ -2005,45 +2005,47 @@ void BundleSolver::set_log( std::ostream * log_stream )
 
 void BundleSolver::get_dual_solution( Configuration * solc )
 {
- // construct the important linerization for each component (unless it is
- // already there, and signal to the C05Functions which one it is
+ // construct the important linerization for each non-easy component (unless
+ // it is already there, and signal to the C05Functions which one it is
 
- for( Index k = 0 ; k < NrFi ; ++k ) {
-  C05Function::LinearCombination lc;
+ for( Index k = 0 ; k < NrFi ; ++k )  // for all components
+  if( ! IsEasy[ k ] ) {               // but skip the easy ones  
+   C05Function::LinearCombination lc;
 
-  if( Zvalid[ k ] ) {
-   // the optimal aggregated linearization for component k is in the
-   // bundle (and, therefore, global pool) already: the optimal
-   // coefficients are very simple, it's just that one
-   lc.resize( 1 );
-   lc[ 0 ].first = ItemVcblr[ whisZ[ k ] ].second;
-   lc[ 0 ].second = 1;
-   }
-  else {
-   // retrieve optimal multipliers from the Master
-   Index MBDm;
-   cIndex_Set MBse;
-   cHpRow Mlt = Master->ReadMult( MBse , MBDm , k + 1 , false );
+   if( Zvalid[ k ] ) {
+    // the optimal aggregated linearization for component k is in the
+    // bundle (and, therefore, global pool) already: the optimal
+    // coefficients are very simple, it's just that one
+    lc.resize( 1 );
+    lc[ 0 ].first = ItemVcblr[ whisZ[ k ] ].second;
+    lc[ 0 ].second = 1;
+    }
+   else {
+    // retrieve optimal multipliers from the Master
+    Index MBDm;
+    cIndex_Set MBse;
+    cHpRow Mlt = Master->ReadMult( MBse , MBDm , k + 1 , false );
 
-   // copy them in the LinearCombination
-   lc.resize( MBDm );
-   auto lcit = lc.begin();
+    // copy them in the LinearCombination
+    lc.resize( MBDm );
+    auto lcit = lc.begin();
 
-   if( MBse )
-    for( Index h ; ( h = *(MBse++) ) < InINF ; ) {
-     lcit->first = ItemVcblr[ h ].second;
-     (lcit++)->second = *(Mlt++);
-     }
-   else
-    for( Index h = 0 ; h < MBDm ; ) {
-     lcit->first = ItemVcblr[ h++ ].second;
-     (lcit++)->second = *(Mlt++);
-     }
-   }
+    if( MBse )
+     for( Index h ; ( h = *(MBse++) ) < InINF ; ) {
+      lcit->first = ItemVcblr[ h ].second;
+      (lcit++)->second = *(Mlt++);
+      }
+    else
+     for( Index h = 0 ; h < MBDm ; ) {
+      lcit->first = ItemVcblr[ h++ ].second;
+      (lcit++)->second = *(Mlt++);
+      }
+    }
 
-  v_c05f[ k ]->set_important_linearization( std::move( lc ) );
+   v_c05f[ k ]->set_important_linearization( std::move( lc ) );
 
-  }  // end( for( k ) )
+   }  // end( if( not easy ) )
+
  }  // end( BundleSolver::get_dual_solution() )
 
 /*--------------------------------------------------------------------------*/

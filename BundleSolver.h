@@ -1418,6 +1418,23 @@ public:
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// write the "current" dual solution
+ /** Write the  "current" dual optimal solution in the Block. This is the
+  * done by taking the optimal solution of the master problem for each
+  * component and writing is as the "important linearization" of that
+  * component; this is unless the optimal aggregate linearization has been
+  * inserted in the bundle for other reasons (making space in a full bundle),
+  * in which case the coefficients of the "important linearization" of that
+  * component are just < 1 , indez of the optimal aggregate linearization >.
+  *
+  *     IMPORTANT NOTE: THIS CURRENTLY ONLY WORKS FOR "HARD" COMPONENTS, AND
+  *     THERE IS NO WAY TO GET THE DUAL OPTIMAL SOLUTION FOR "EASY" ONES.
+  *
+  * Doing that is in principle possible, because the dual optimal solution is
+  * indeed computed by the master problem. But taking the solution from the
+  * OSIMPSolver and writing it back in the original Block requires some
+  * support that MILPSolver does not provide, and it's complicated, so it
+  * is not implemented. This will hopefully be cleanly solved when
+  * OSIMPSolver will be rightly consigned to the dustbin of history. */
 
  void get_dual_solution( Configuration *solc = nullptr ) override;
 
