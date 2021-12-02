@@ -147,8 +147,6 @@
 /// namespace for the Structured Modeling System++ (SMS++)
 namespace SMSpp_di_unipi_it
 {
- using namespace NDO_di_unipi_it;
-
  class BundleSolverState;  // forward declaration of BundleSolverState
 
 /*--------------------------------------------------------------------------*/
@@ -287,7 +285,8 @@ public:
 /*--------------------------------------------------------------------------*/
 /** @name Public Types
  *
- * "Import" basic types from Function and C05Function.
+ * "Import" basic types from Function, C05Function. and the
+ * NDOSolver/FiOracle package (this is going to go away one day)
  *
  *  @{ */
 
@@ -309,6 +308,16 @@ public:
  using LinearCombination = C05Function::LinearCombination;
  using c_LinearCombination = C05Function::c_LinearCombination;
 
+ // NDOSolver/FiOracle stuff
+ using cIndex = NDO_di_unipi_it::cIndex;
+ using cIndex_Set = NDO_di_unipi_it::cIndex_Set;
+ using FiOracle = NDO_di_unipi_it::FiOracle;
+ using HpNum = NDO_di_unipi_it::HpNum;
+ using LMNum = NDO_di_unipi_it::LMNum;
+ using MPSolver = NDO_di_unipi_it::MPSolver;
+ using NDOSolver = NDO_di_unipi_it::NDOSolver;
+ using SgRow = NDO_di_unipi_it::SgRow;
+     
 /*----------------------------- CONSTANTS ----------------------------------*/
 
  static constexpr VarValue NaNshift
@@ -2464,7 +2473,7 @@ class FakeFiOracle : public FiOracle
 
 /*--------------------------------------------------------------------------*/
 
- void SetFiLog( ostream *outs = 0 , const char lvl = 0 ) override {
+ void SetFiLog( std::ostream * outs = 0 , const char lvl = 0 ) override {
   throw( std::logic_error( "this method cannot be called" ) );
   }
 

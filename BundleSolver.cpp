@@ -108,6 +108,8 @@
 
 using namespace SMSpp_di_unipi_it;
 
+using namespace NDO_di_unipi_it;
+
 /*--------------------------------------------------------------------------*/
 /*-------------------------------- CONSTANTS -------------------------------*/
 /*--------------------------------------------------------------------------*/
@@ -2449,25 +2451,37 @@ void BundleSolver::FormD( void )
   if( mps == MPSolver::kOK )        // everything's alright
    break;
 
-  if( mps == MPSolver::kUnfsbl ) {  // the feasible set is empty
-   Result = kInfeasible;
-   return;
-   }
-
-  if( mps == MPSolver::kUnbndd ) {  // the MP is unbounded: this can always
-                                     // be mended by decreasing t ...
-   if( ( t <= tMinor ) || ( Master->BCSize() >= Master->BSize() ) ) {
-    // ... but t must always be >= tMinor, and it is already == tMinor in
-    // the "empty" case of the initial iteration with empty bundle
-    BLOG( 1 , std::endl << "Bundle::FormD: failure in MPSolver." );
-    Result = kError;
-    return;
+  if( mps == MPSolver::kUnfsbl ) {  // the MP is empty
+   if( ! Master->BCSize() )         // but no vertical linearizations
+    mps = MPSolver::kError;         // it must be a numerical error
+   else {                           // there are vertical linearizations
+    Result = kInfeasible;           // the MP can really be infeasible
+    return;                         // nothing else to do
     }
-
-   BLOG( 1 , std::endl << "Bundle::FormD: MP unbounded, decreasing t" );
-   Master->Sett( t = std::max( t / 2 , tMinor ) );
-   continue;
    }
+
+  if( mps == MPSolver::kUnbndd )  // the MP is unbounded
+   /* With a "loosely stabilised" MPSolver (one with, say, a 1-norm or
+    * INF-norm primal penalty), this may happen and it could be mended
+    * by decreasing t, which would lead to the following piece of code:
+    *
+    * if( ( t <= tMinor ) || ( Master->BCSize() >= Master->BSize() ) ) {
+    *  // ... but t must always be >= tMinor, and it is already == tMinor
+    *  // in the "empty" case of the initial iteration with empty bundle
+    *  BLOG( 1 , std::endl << "Bundle::FormD: failure in MPSolver." );
+    *  Result = kError;
+    *  return;
+    *  }
+    *
+    * BLOG( 1 , std::endl << "Bundle::FormD: MP unbounded, decreasing t" );
+    * Master->Sett( t = std::max( t / 2 , tMinor ) );
+    * continue;
+    *
+    * However, currently BundleSolver only admits QPPenaltyMP or OSiMPSolver
+    * with either Quadratic or BoxStep stabilisation, which can never be
+    * unbounded: hence, the MPSolver returning kUnbndd can only be a
+    * numerical error in disguise. */
+   mps = MPSolver::kError;
 
   if( mps == MPSolver::kStppd ) {  // stopped by time limit
    //!! so far, the time limit in the MPSolver is only due to the global time
