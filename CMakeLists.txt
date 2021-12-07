@@ -15,14 +15,13 @@
 #          keep it in mind when editing it.                                   #
 #                                                                             #
 #                              Niccolo' Iardella                              #
-#                          Operations Research Group                          #
 #                         Dipartimento di Informatica                         #
 #                             Universita' di Pisa                             #
 # --------------------------------------------------------------------------- #
 cmake_minimum_required(VERSION 3.12)
 cmake_policy(VERSION 3.12)
 project(BundleSolver
-        VERSION 0.4.0
+        VERSION 0.4.1
         DESCRIPTION "SMS++ BundleSolver module"
         HOMEPAGE_URL https://gitlab.com/smspp/bundlesolver
         LANGUAGES C CXX)
