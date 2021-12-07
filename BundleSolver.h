@@ -94,9 +94,9 @@
  *     C05FunctionModVarsRngd, OR ALL C05FunctionModVarsSbst, AND THEY MUST
  *     CHANGE THE "ACTIVE" Variable IN PRECISELY THE SAME WAY.
  *
- * \version 0.50
+ * \version 0.52
  *
- * \date 14 - 10 - 2020
+ * \date 05 - 04 - 2021
  *
  * \author Antonio Frangioni \n
  *         Operations Research Group \n
@@ -147,7 +147,13 @@
 /// namespace for the Structured Modeling System++ (SMS++)
 namespace SMSpp_di_unipi_it
 {
- using namespace NDO_di_unipi_it;
+ class BundleSolverState;  // forward declaration of BundleSolverState
+
+/*--------------------------------------------------------------------------*/
+/*------------------------------- CLASSES ----------------------------------*/
+/*--------------------------------------------------------------------------*/
+/** @defgroup LagBFunction_CLASSES Classes in BundleSolver.h
+ *  @{ */
 
 /*--------------------------------------------------------------------------*/
 /*-------------------------- CLASS BundleSolver ----------------------------*/
@@ -279,7 +285,8 @@ public:
 /*--------------------------------------------------------------------------*/
 /** @name Public Types
  *
- * "Import" basic types from Function and C05Function.
+ * "Import" basic types from Function, C05Function. and the
+ * NDOSolver/FiOracle package (this is going to go away one day)
  *
  *  @{ */
 
@@ -301,6 +308,16 @@ public:
  using LinearCombination = C05Function::LinearCombination;
  using c_LinearCombination = C05Function::c_LinearCombination;
 
+ // NDOSolver/FiOracle stuff
+ using cIndex = NDO_di_unipi_it::cIndex;
+ using cIndex_Set = NDO_di_unipi_it::cIndex_Set;
+ using FiOracle = NDO_di_unipi_it::FiOracle;
+ using HpNum = NDO_di_unipi_it::HpNum;
+ using LMNum = NDO_di_unipi_it::LMNum;
+ using MPSolver = NDO_di_unipi_it::MPSolver;
+ using NDOSolver = NDO_di_unipi_it::NDOSolver;
+ using SgRow = NDO_di_unipi_it::SgRow;
+     
 /*----------------------------- CONSTANTS ----------------------------------*/
 
  static constexpr VarValue NaNshift
@@ -320,7 +337,7 @@ public:
 
  enum int_par_type_BndSlv {
 
- intBPar1 = CDASolver::intLastParCDAS ,
+ intBPar1 = intLastParCDAS ,
  ///< remove linearizations unused for more than this consecutive iterations
 
  intBPar2 ,  ///< max number linearizations per component
@@ -344,6 +361,8 @@ public:
  intDoEasy ,  ///< whether "easy" components are considered
 
  intWZNorm ,  ///< how to compute the norm of z*
+
+ intFrcLstSS ,  ///< whether to force the last step to be a SS
 
  intMPName ,  ///< whether the MP solver is QPPenalty or OSIMPSolver
 
@@ -485,10 +504,11 @@ public:
   Prevt( 0 ) , Sigma( 0 ) , DSTS( 0 ) , DeltaFi( 0 ) , EpsU( 0 ) ,
   CSSCntr( 0 ) , CNSCntr( 0 ) , TrueLB( false ) , SSDone( true ) ,
   f_wFi( 0 ) , f_lf( nullptr ) , f_convex( true ) , Master( nullptr ) ,
-  UpTrgt( 0 ) , LwTrgt( 0 ) , RifeqFi( false ) , UpFiBest( INFshift ) ,
-  UpFiLmb1def( 0 ) , LwFiLmb1def( 0 ) , UpFiLmbdef( 0 ) , LwFiLmbdef( 0 ) ,
-  Fi0Lmb( 0 ) , Fi0Lmb1( 0 ) , DST( 0 ) , NrmD( 0 ) , NrmZ( 0 ) ,
-  NrmZFctr( 1 ) , c_start( 0 ) , aBP3( 0 ) , FakeFi( this ) 
+  UpTrgt( 0 ) , LwTrgt( 0 ) , RifeqFi( false ) , CmptdinL( false ) ,
+  UpFiBest( INFshift ) , UpFiLmb1def( 0 ) , LwFiLmb1def( 0 ) ,
+  UpFiLmbdef( 0 ) , LwFiLmbdef( 0 ) , Fi0Lmb( 0 ) , Fi0Lmb1( 0 ) ,
+  DST( 0 ) , NrmD( 0 ) , NrmZ( 0 ) , NrmZFctr( 1 ) , c_start() , aBP3( 0 ) ,
+  FakeFi( this ) 
  {
   // ensure all parameters are properly given their default value
   MaxIter = CDASolver::get_dflt_int_par( intMaxIter );
@@ -507,6 +527,7 @@ public:
   MaxNrEvls = dflt_int_par[ intMaxNrEvls - intLastParCDAS ];
   DoEasy = char( dflt_int_par[ intDoEasy - intLastParCDAS ] );
   WZNorm = char( dflt_int_par[ intWZNorm - intLastParCDAS ] );
+  FrcLstSS = bool( dflt_int_par[ intFrcLstSS - intLastParCDAS ] );
   MPName = dflt_int_par[ intMPName - intLastParCDAS ];
   MPlvl = dflt_int_par[ intMPlvl - intLastParCDAS ];
   MxAdd = dflt_int_par[ intQPmp1 - intLastParCDAS ];
@@ -707,13 +728,13 @@ public:
   *   Modification telling that some other Solver have generated a new
   *   linearization. If the bit is 0, then BundleSolver plainly ignores it,
   *   which is likely the best strategy if producing linearizations is
-  *   "cheap". However, BundleSolver does record that a linearization is
-  *   there: if ( intBPar7 & 3 ) == 0, it will avoid to touch it unless
-  *   strictly necessary. If the bit is 1 instead, then BundleSolver will
+  *   "cheap". However, if ( intBPar7 & 3 ) < 3 BundleSolver does take note
+  *   that a linearization is there in order to avoid to touch it "unless
+  *   strictly necessary". If the bit is 1 instead, then BundleSolver will
   *   right away add the linearization to its bundle (the master problem),
   *   which is likely the best strategy if producing linearizations is
   *   "costly" and therefore it makes sense to profit from the effort that
-  *   the C05Function(s) have done on behalf of the other Solver(s).
+  *   the C05Function(s) has done on behalf of the other Solver(s).
   *
   *   The bit 3 ( intBPar7 & 8 ) has a similar role for the initialization
   *   phase: if it is == 1, then BundleSolver will also scan the global pool
@@ -862,6 +883,20 @@ public:
   *   these can only be produced when z* is "0"; this is taken to mean
   *   "almost 0" in the specific sense dictated by this parameter together
   *   with dblZNEps.
+  *
+  * - intFrcLstSS [0 == false] If set to true, ensures that all the non-easy
+  *                            components have been evaluated the last time
+  *   on the point that is returned (first) by get_var_solution(). Some
+  *   approaches using BundleSolver may require this because they use some
+  *   other information provided by the compute()-tion process of the
+  *   components that need be "current" with the optimal solution. This may
+  *   happen automatically if the very last iteration that the algorithm
+  *   performs before stopping is a "serious step", but in general this is not
+  *   guaranteed, whence the need for this parameter. Note that setting it to
+  *   true may be expensive as computing all components is; in particular it
+  *   cannot work if the maximum time limit has been exceeded already, and it
+  *   may trigger a kStopTime return status where a kOK would have been
+  *   produced exactly due to the cost of the extra compute()-tions.
   *
   * - intMPName [1]: bit-wise encoding of which MPSolver is used:
   *                  bit 0: 0 = QPPenalty, 1 = OSiMPSolver
@@ -1023,7 +1058,7 @@ public:
   * - dblm1 [0.01]: m1 factor in the all-important NS/SS decision. This
   *                 factor sets the lower target for the objective function
   *   value at the new iterate Lambda1, with the following formula: if
-  *   mi > 0, then
+  *   m1 > 0, then
   *
   *        lower_target = UpFi + v* + m1 * Delta*
   *
@@ -1062,7 +1097,7 @@ public:
   * - dblm3 [0.99]: factor governing the Noise Reduction for "unfaithful"
   *                 oracles that pretend to provide information with the
   *   required accuracy but in fact they do not. This results in negative
-  *   linearization errors, and therefore possibly in delecting directions
+  *   linearization errors, and therefore possibly in detecting directions
   *   that are non-decreasing even for the model (hence even less so for
   *   the real functon). To avoid this, if the aggregate linearization
   *   error \sigma* is "too negative", i.e.,
@@ -1167,7 +1202,7 @@ public:
   *   Objective and no sub-Block then that it is component 0, otherwise the
   *   component i corresponds to the (the C05Functiono found in the
   *   FReal)Objective found in the i-th sub-Block of the Block
-  *   (get_nested_Block( Index i )). */
+  *   (get_nested_Block( i )). */
 
  void set_par( idx_type par , std::vector< int > && value ) override;
 
@@ -1189,12 +1224,12 @@ public:
   *   C05Function as Objective and no sub-Block then that it is component 0,
   *   otherwise the component i corresponds to the (the C05Functiono found
   *   in the FReal)Objective found in the i-th sub-Block of the Block
-  *   (get_nested_Block( Index i )). This parameter overrides any other
+  *   (get_nested_Block( i )). This parameter overrides any other
   *   Configuration-related parameter, in particular strEasyCfg and
   *   strHardCfg: if a nonempty string is passed, then any other
   *   Configuration is ignored. If, instead, vstrCmpCfg[ i ].empty(), then
   *   the applicable one between strEasyCfg and strHardCfg, if nonempty,
-  *   is applied instead. If everything is empty then the component is not
+  *   is applied. If everything is empty then the component is not
   *   configured (the existing configuration is not changed). Note that it
   *   is still possible to completely reset a component by passing it an
   *   "empty" ComputeConfig with f_diff == true, which is different from
@@ -1321,7 +1356,9 @@ public:
  /// returns the elapsed CPU time since the start of the last compute()
 
  double get_elapsed_time( void ) const override {
-  return( ( std::clock() - c_start ) / CLOCKS_PER_SEC );
+  auto end = std::chrono::system_clock::now();
+  std::chrono::duration< double > elapsed = end - c_start;
+  return( elapsed.count() );
   }
 
 /*--------------------------------------------------------------------------*/
@@ -1358,11 +1395,15 @@ public:
 
 /*--------------------------------------------------------------------------*/
 
- bool has_var_solution( void ) override { return( true ); }
+ bool has_var_solution( void ) override {
+  return( ( Result != kInfeasible ) && ( UpFiLmb.back() < INFshift ) );
+  }
 
- /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- bool has_dual_solution( void ) override { return( true ); }
+ bool has_dual_solution( void ) override {
+  return( f_global_LB > - INFshift );
+  }
 
 /*--------------------------------------------------------------------------*/
 /*
@@ -1386,6 +1427,23 @@ public:
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// write the "current" dual solution
+ /** Write the  "current" dual optimal solution in the Block. This is the
+  * done by taking the optimal solution of the master problem for each
+  * component and writing is as the "important linearization" of that
+  * component; this is unless the optimal aggregate linearization has been
+  * inserted in the bundle for other reasons (making space in a full bundle),
+  * in which case the coefficients of the "important linearization" of that
+  * component are just < 1 , indez of the optimal aggregate linearization >.
+  *
+  *     IMPORTANT NOTE: THIS CURRENTLY ONLY WORKS FOR "HARD" COMPONENTS, AND
+  *     THERE IS NO WAY TO GET THE DUAL OPTIMAL SOLUTION FOR "EASY" ONES.
+  *
+  * Doing that is in principle possible, because the dual optimal solution is
+  * indeed computed by the master problem. But taking the solution from the
+  * OSIMPSolver and writing it back in the original Block requires some
+  * support that MILPSolver does not provide, and it's complicated, so it
+  * is not implemented. This will hopefully be cleanly solved when
+  * OSIMPSolver will be rightly consigned to the dustbin of history. */
 
  void get_dual_solution( Configuration *solc = nullptr ) override;
 
@@ -1448,37 +1506,37 @@ public:
  *
  *  @{ */
 
- idx_type get_num_int_par( void ) const override {
+ [[nodiscard]] idx_type get_num_int_par( void ) const override {
   return( idx_type( intLastBndSlvPar ) );
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- idx_type get_num_dbl_par( void ) const override {
+ [[nodiscard]] idx_type get_num_dbl_par( void ) const override {
   return( idx_type( dblLastBndSlvPar ) );
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- idx_type get_num_str_par( void ) const override {
+ [[nodiscard]] idx_type get_num_str_par( void ) const override {
   return( idx_type( strLastBndSlvPar ) );
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- idx_type get_num_vint_par( void ) const override {
+ [[nodiscard]] idx_type get_num_vint_par( void ) const override {
   return( idx_type( vintLastBndSlvPar ) );
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- idx_type get_num_vstr_par( void ) const override {
+ [[nodiscard]] idx_type get_num_vstr_par( void ) const override {
   return( idx_type( vstrLastBndSlvPar ) );
   }
 
 /*--------------------------------------------------------------------------*/
  
- int get_dflt_int_par( idx_type par ) const override {
+ [[nodiscard]] int get_dflt_int_par( idx_type par ) const override {
   if( ( par >= intLastParCDAS ) && ( par < intLastBndSlvPar ) )
    return( dflt_int_par[ par - intLastParCDAS ] );
 
@@ -1487,7 +1545,7 @@ public:
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  
- double get_dflt_dbl_par( idx_type par ) const override {
+ [[nodiscard]] double get_dflt_dbl_par( idx_type par ) const override {
   if( ( par >= dblLastParCDAS ) && ( par < dblLastBndSlvPar ) )
    return( dflt_dbl_par[ par - dblLastParCDAS ] );
 
@@ -1536,28 +1594,31 @@ public:
 
 /*--------------------------------------------------------------------------*/
  
- int get_int_par( idx_type par ) const override;
+ [[nodiscard]] int get_int_par( idx_type par ) const override;
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  
- double get_dbl_par( idx_type par ) const override;
+ [[nodiscard]] double get_dbl_par( idx_type par ) const override;
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  
- const std::string & get_str_par( idx_type par ) const override;
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
- 
- const std::vector< int > & get_vint_par( idx_type par ) const override;
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
- 
- const std::vector< std::string > & get_vstr_par( idx_type par )
+ [[nodiscard]] const std::string & get_str_par( idx_type par )
   const override;
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ 
+ [[nodiscard]] const std::vector< int > & get_vint_par( idx_type par )
+  const override;
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ 
+ [[nodiscard]] const std::vector< std::string > & get_vstr_par(
+					       idx_type par ) const override;
 
 /*--------------------------------------------------------------------------*/
 
- idx_type int_par_str2idx( const std::string & name ) const override {
+ [[nodiscard]] idx_type int_par_str2idx( const std::string & name )
+  const override {
   const auto it = int_pars_map.find( name );
   if( it != int_pars_map.end() )
    return( it->second );
@@ -1567,7 +1628,8 @@ public:
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- idx_type dbl_par_str2idx( const std::string & name ) const override {
+ [[nodiscard]] idx_type dbl_par_str2idx( const std::string & name )
+  const override {
   const auto it = dbl_pars_map.find( name );
   if( it != dbl_pars_map.end() )
    return( it->second );
@@ -1577,7 +1639,8 @@ public:
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- idx_type str_par_str2idx( const std::string & name ) const override {
+ [[nodiscard]] idx_type str_par_str2idx( const std::string & name )
+  const override {
   if( name == "strEasyCfg" )
    return( strEasyCfg );
   if( name == "strHardCfg" )
@@ -1588,7 +1651,8 @@ public:
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- idx_type vint_par_str2idx( const std::string & name ) const override {
+ [[nodiscard]] idx_type vint_par_str2idx( const std::string & name )
+  const override {
   if( name == "vintNoEasy" )
    return( vintNoEasy );
 
@@ -1597,7 +1661,8 @@ public:
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- idx_type vstr_par_str2idx( const std::string & name ) const override {
+ [[nodiscard]] idx_type vstr_par_str2idx( const std::string & name )
+  const override {
   if( name == "vstrCmpCfg" )
    return( vstrCmpCfg );
 
@@ -1606,7 +1671,8 @@ public:
 
 /*--------------------------------------------------------------------------*/
 
- const std::string & int_par_idx2str( idx_type idx ) const override {
+ [[nodiscard]] const std::string & int_par_idx2str( idx_type idx )
+  const override {
   if( ( idx >= intLastParCDAS ) && ( idx < intLastBndSlvPar ) )
    return( int_pars_str[ idx - intBPar1 ] );
 
@@ -1615,7 +1681,8 @@ public:
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- const std::string & dbl_par_idx2str( idx_type idx ) const override {
+ [[nodiscard]] const std::string & dbl_par_idx2str( idx_type idx )
+  const override {
   if( ( idx >= dblLastParCDAS ) && ( idx < dblLastBndSlvPar ) )
    return( dbl_pars_str[ idx - dblLastParCDAS ] );
 
@@ -1624,7 +1691,8 @@ public:
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- const std::string & str_par_idx2str( idx_type idx ) const override {
+ [[nodiscard]] const std::string & str_par_idx2str( idx_type idx )
+  const override {
   if( ( idx >= strLastParCDAS ) && ( idx < strLastBndSlvPar ) )
    return( str_pars_str[ idx - strLastParCDAS ] );
 
@@ -1633,7 +1701,8 @@ public:
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- const std::string & vint_par_idx2str( idx_type idx ) const override {
+ [[nodiscard]] const std::string & vint_par_idx2str( idx_type idx )
+  const override {
   static const std::string __psname = "vintNoEasy";
   if( idx == vintNoEasy )
    return( __psname );
@@ -1643,7 +1712,8 @@ public:
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- const std::string & vstr_par_idx2str( idx_type idx ) const override {
+ [[nodiscard]] const std::string & vstr_par_idx2str( idx_type idx )
+  const override {
   static const std::string __psname = "vstrCmpCfg";
   if( idx == vstrCmpCfg )
    return( __psname );
@@ -1651,7 +1721,52 @@ public:
   return( CDASolver::vstr_par_idx2str( idx ) );
   }
 
+/**@} ----------------------------------------------------------------------*/
+/*----------- METHODS FOR HANDLING THE State OF THE BundleSolver -----------*/
+/*--------------------------------------------------------------------------*/
+/** @name Handling the State of the BundleSolver
+ *  @{ */
+
+ State * get_State( void ) const override;
+
+/*--------------------------------------------------------------------------*/
+ /// sets the current "internal state" of the BundleSolver
+ /** This method reads \p state, which must be a BundleSolverState (otherwise
+  * exception is thrown) and uses it to set the  "internal state" of the
+  * BundleSolver. \p state is not changed (could not, it's const) so that it
+  * can be re-used later.
+  *
+  *     IMPORTANT NOTE: IT IS NOT ALLOWED TO CALL THIS METHOD WHILE compute()
+  *                     IS RUNNING, SAY FROM WITHIN AN EVENT. */
+
+ void put_State( const State & state ) override;
+
+/*--------------------------------------------------------------------------*/
+ /// sets the current "internal state" of the BundleSolver
+ /** This method reads \p state, which must be a BundleSolverState (otherwise
+  * exception is thrown) and uses it to set the  "internal state" of the
+  * BundleSolver. \p state is "moved inside" the BundleSolver, hence at the
+  * end of the call is in a consistent state but "empty", and therefore it
+  * will probably be immediately destroyed as it has little remaining use.
+  *
+  *     IMPORTANT NOTE: IT IS NOT ALLOWED TO CALL THIS METHOD WHILE compute()
+  *                     IS RUNNING, SAY FROM WITHIN AN EVENT. */
+
+ void put_State( State && state ) override;
+
+/*--------------------------------------------------------------------------*/
+
+ void serialize_State( netCDF::NcGroup & group ,
+		       const std::string & sub_group_name = "" )
+  const override;
+
 /*@} -----------------------------------------------------------------------*/
+/*-------------------------------- FRIENDS ---------------------------------*/
+/*--------------------------------------------------------------------------*/
+
+ friend class BundleSolverState;  // make BundleSolverState friend
+
+/*--------------------------------------------------------------------------*/
 /*--------------------- PROTECTED PART OF THE CLASS ------------------------*/
 /*--------------------------------------------------------------------------*/
 
@@ -1669,6 +1784,10 @@ public:
 
 /*--------------------------------------------------------------------------*/
 /*-------------------------- PROTECTED METHODS -----------------------------*/
+/*--------------------------------------------------------------------------*/
+
+ void guts_of_put_State( const BundleSolverState & state );
+
 /*--------------------------------------------------------------------------*/
 /* When no variables generation is done (PPar2 == 0), FormD() just calls
  SolveMP() once and calculates the direction d: however, it also implements
@@ -1701,42 +1820,108 @@ public:
 
 /*--------------------------------------------------------------------------*/
  /* Performs the inner loop: repeatedly compute components up until the
-  * conditions for either a SS or a NS (or both) are satisfied, or something
-  * very bad happens (errors, out of time, ...). Sets MPchgs > 0 if the SS
-  * and/or NS conditions are satisfied.
+  * conditions for either a SS or a NS (or both) are satisfied based on the
+  * current value of UpTrgt and LwTrgt, or something very bad happens
+  * (errors, out of time, ...). Sets MPchgs > 0 if the SS and/or NS
+  * conditions are satisfied.
   *
   * It is virtual because this is precisely the point where a sequential and
   * a "basic" asynchronous implementation of the approach differ, and
-  * therefore this is the obvious hook for a derived AsynchBundleSolver. */
+  * therefore this is the obvious hook for a derived AsynchBundleSolver.
+  *
+  * The parameter extrastep, if true, means that InnerLoop() is not called
+  * from within the normal main loop, but at the end to ensure that the
+  * components are "current" with the returned optimal solution. This has
+  * two effects:
+  *
+  * - it disables all fancy early termination checks and forces all (non-easy)
+  *   components to be evaluated;
+  *
+  * - it only compute function values (upper and lower estimtes), but it does
+  *   not collect any new linearization.
+  *
+  * The rationale for the latter choice is that the bundle contains enough
+  * linearizations to stop already, hence new ones are not needed, and in
+  * fact the Master Problem is no re-solved, hence even if they were
+  * collected they would not be useful. This is potentially wasteful in that
+  * one does the effort to compute() the functions but only collects "a small
+  * part" of the ensuing information. However, producing linearizations may
+  * have a cost in itself, so on the other hand it saves some time. Besides,
+  * if the C05Function are re-compute()-d right after in Lambda, then if they
+  * are "complex and costly" they will likely have checks to understand if the
+  * bulk of the computation can be skipped because it has been done already.
+  *
+  * The method returns the number of different components evaluated. It may
+  * also internally set Result == kError if an irrecoverable error happens
+  * during a component compute()-tion or Result == kStopTime if the
+  * available running time runs up. */
 
- virtual void InnerLoop( void );
+ virtual Index InnerLoop( bool extrastep = false );
 
 /*--------------------------------------------------------------------------*/
- /* Computes Fi( Lambda1 ), inserting the obtained items (subgradients or
-  * constraints) in the bundle. Returns true <=> at least one item was
-  * inserted. It also "sneakily" sets MPchgs if appropriate. */
+ /* Computes Fi[ wFi ]( Lambda1 ). In the "default mode", where getgi == true,
+  * it also inserts the obtained linearizations in the bundle. If getgi ==
+  * false instead this means that method is being called outside of the
+  * main loop, with Lambda1 == Lambda, and that no linearizations need be
+  * collected.
+  *
+  * Returns true <=> at least one item was inserted. It also "sneakily" sets
+  * MPchgs if appropriate. None of this clearly happens if getgi == false. */
 
- bool FiAndGi( Index wFi );
+ bool FiAndGi( Index wFi , bool getgi = true );
+
+/*--------------------------------------------------------------------------*/
+ /* Prepares component wFi for computation on Lambda1 by setting the
+  * thresholds and accuracy. */
+
+ void SetupFiLambda1( Index wFi );
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ /* Prepares component wFi for computation on Lambda by setting the
+  * thresholds and accuracy. */
+
+ void SetupFiLambda( Index wFi );
+
+/*--------------------------------------------------------------------------*/
+ /* Gets the new linearizations out of the freshly computed component wFi,
+  * returns true <=> at least one item was inserted. It also "sneakily" sets
+  * MPchgs if appropriate. */
+
+ bool GetGi( Index wFi );
 
 /*--------------------------------------------------------------------------*/
 
  void update_UpFiLambd1( Index wFi , VarValue nval )
  {
+  // we assume the previous upper estimate to still be valid, hence if the
+  // new upper estimate is >= then the old one nothing needs be done
   if( UpFiLmb1[ wFi ] <= nval )
    return;
 
   if( UpFiLmb1[ wFi ] == INFshift )
    ++UpFiLmb1def;
 
-  if( UpFiLmb1def == NrFi ) {
+   if( UpFiLmb1def == NrFi ) {
    ++UpFiLmb1def;  // all components + the sum computed
    UpFiLmb1[ wFi ] = nval;
    UpFiLmb1.back() = std::accumulate( UpFiLmb1.begin() , --(UpFiLmb1.end()) ,
 				      Fi0Lmb1 );
+   // note that this is the point where the lower bound (if any) is
+   // "baked in" the total function value
+   if( TrueLB && ( UpFiLmb1.back() < LowerBound.back() ) )
+    UpFiLmb1.back() = LowerBound.back();
    }
   else {
-   if( UpFiLmb1def > NrFi )
-    UpFiLmb1[ NrFi ] += nval - UpFiLmb1[ wFi ];
+   if( UpFiLmb1def > NrFi ) {
+    // the total value was already known, but since the value of this
+    // component decreases, the total value decreases by the same amount
+    UpFiLmb1.back() += nval - UpFiLmb1[ wFi ];
+
+    // in fact the previous total value might have been == (or close to)
+    // the global valid lower bound, so check that it remains >= that
+    if( TrueLB && ( UpFiLmb1.back() < LowerBound.back() ) )
+     UpFiLmb1.back() = LowerBound.back();
+    }
    UpFiLmb1[ wFi ] = nval;
    }
   }
@@ -1745,21 +1930,36 @@ public:
 
  void update_LwFiLambd1( Index wFi , VarValue nval )
  {
+  // we assume the previous lower estimate to still be valid, hence if the
+  // new lower estimate is <= then the old one nothing needs be done
   if( LwFiLmb1[ wFi ] >= nval )
    return;
 
   if( LwFiLmb1[ wFi ] == -INFshift )
    ++LwFiLmb1def;
 
+  // the value of the global lower bound is in principle "baked in" the total
+  // lower estimate of the function value in Lambda1: if the contribution of
+  // this component grows it may bring the total above the lower bound while
+  // previously it was below, so ensure the total is recomputed
+  if( TrueLB && ( LwFiLmb1def > NrFi ) )
+   LwFiLmb1def = NrFi;
+
   if( LwFiLmb1def == NrFi ) {
    ++LwFiLmb1def;  // all components + the sum computed
    LwFiLmb1[ wFi ] = nval;
-   LwFiLmb1.back() = std::max( LwFiLmb1.back() ,
-			       std::accumulate( LwFiLmb1.begin() ,
-						--(LwFiLmb1.end()) ,
-						Fi0Lmb1 ) );
+   LwFiLmb1.back() = std::accumulate( LwFiLmb1.begin() , --(LwFiLmb1.end()) ,
+				      Fi0Lmb1 );
+   // note that this is the point where the lower bound (if any) is
+   // "baked in" the total function value
+   if( TrueLB && ( LwFiLmb1.back() < LowerBound.back() ) )
+    LwFiLmb1.back() = LowerBound.back();
    }
   else {
+   // the total value was already known, but since the value of this
+   // component increases, the total value increases by the same amount;
+   // note that this can only happen if TrueLB == false, which means that
+   // there can be no global lower bound "baked in" the total value
    if( LwFiLmb1def > NrFi )
     LwFiLmb1[ NrFi ] += nval - LwFiLmb1[ wFi ];
    LwFiLmb1[ wFi ] = nval;
@@ -1770,6 +1970,8 @@ public:
 
  void update_UpFiLambd( Index wFi , VarValue nval )
  {
+  // we assume the previous upper estimate to still be valid, hence if the
+  // new upper estimate is >= then the old one nothing needs be done
   if( UpFiLmb[ wFi ] <= nval )
    return;
 
@@ -1781,10 +1983,22 @@ public:
    UpFiLmb[ wFi ] = nval;
    UpFiLmb.back() = std::accumulate( UpFiLmb.begin() , --(UpFiLmb.end()) ,
 				     Fi0Lmb );
+   // note that this is the point where the lower bound (if any) is
+   // "baked in" the total function value
+   if( TrueLB && ( UpFiLmb.back() < LowerBound.back() ) )
+    UpFiLmb.back() = LowerBound.back();
    }
   else {
-   if( UpFiLmbdef > NrFi )
-    UpFiLmb[ NrFi ] += nval - UpFiLmb[ wFi ];
+   if( UpFiLmbdef > NrFi ) {
+    // the total value was already known, but since the value of this
+    // component decreases, the total value decreases by the same amount
+    UpFiLmb.back() += nval - UpFiLmb[ wFi ];
+
+    // in fact the previous total value might have been == (or close to)
+    // the global valid lower bound, so check that it remains >= that
+    if( TrueLB && ( UpFiLmb.back() < LowerBound.back() ) )
+     UpFiLmb.back() = LowerBound.back();
+    }
    UpFiLmb[ wFi ] = nval;
    }
   }
@@ -1793,21 +2007,36 @@ public:
 
  void update_LwFiLambd( Index wFi , VarValue nval )
  {
+  // we assume the previous lower estimate to still be valid, hence if the
+  // new lower estimate is <= then the old one nothing needs be done
   if( LwFiLmb[ wFi ] >= nval )
    return;
 
   if( LwFiLmb[ wFi ] == -INFshift )
    ++LwFiLmbdef;
 
+  // the value of the global lower bound is in principle "baked in" the total
+  // lower estimate of the function value in Lambda: if the contribution of
+  // this component grows it may bring the total above the lower bound while
+  // previously it was below, so ensure the total is recomputed
+  if( TrueLB && ( LwFiLmbdef > NrFi ) )
+   LwFiLmbdef = NrFi;
+
   if( LwFiLmbdef == NrFi ) {
    ++LwFiLmbdef;  // all components + the sum computed
    LwFiLmb[ wFi ] = nval;
-   LwFiLmb.back() = std::max( LwFiLmb.back() ,
-			      std::accumulate( LwFiLmb.begin() ,
-					       --(LwFiLmb.end()) ,
-					       Fi0Lmb ) );
+   LwFiLmb.back() = std::accumulate( LwFiLmb.begin() , --(LwFiLmb.end()) ,
+				     Fi0Lmb );
+   // note that this is the point where the lower bound (if any) is
+   // "baked in" the total function value
+   if( TrueLB && ( LwFiLmb.back() < LowerBound.back() ) )
+    LwFiLmb.back() = LowerBound.back();
    }
   else {
+   // the total value was already known, but since the value of this
+   // component increases, the total value increases by the same amount;
+   // note that this can only happen if TrueLB == false, which means that
+   // there can be no global lower bound "baked in" the total value
    if( LwFiLmbdef > NrFi )
     LwFiLmb[ NrFi ] += nval - LwFiLmb[ wFi ];
    LwFiLmb[ wFi ] = nval;
@@ -1845,7 +2074,7 @@ public:
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- void Log2( void );
+ void Log2( double ft );
 
 /*--------------------------------------------------------------------------*/
 
@@ -1887,6 +2116,12 @@ public:
  VarValue rs( const VarValue fv ) {
   return( f_convex ? fv : - fv );
   }
+
+/*--------------------------------------------------------------------------*/
+ /* Finds the next component to compute in the inner loop, writes is in
+  * f_wFi; returns false if there is no other component to compute. */
+
+ bool FindNext( void );
 
 /*--------------------------------------------------------------------------*/
 /*---------------------------- PROTECTED FIELDS  ---------------------------*/
@@ -1941,7 +2176,9 @@ public:
  char DoEasy;       ///< if and how "easy" components are managed
 
  char WZNorm;       ///< how to compute the norm of z*
- 
+
+ bool FrcLstSS;     ///< if all components must be computed in the optimum
+
  int MPName;        /**< bit 0 = 0: MP solver == QPPenalty
 		     * bit 0 = 1: MP == OSiMPSolver
 		     * bit 1 = 1: Cplex, bit 1 = 0 CLP
@@ -2139,7 +2376,11 @@ public:
  Vec_VarValue UpRifFi;   /** The value of Fi[ k ]() where the zero of the
 			  * translated Cutting Plane models are fixed */
  bool RifeqFi;           ///< true if UpRifFi == UpFiLmb
-
+ bool CmptdinL;          ///< true if all components are "current"
+                         /**< true if the last point in which all non-easy
+			  * components have been compute()-d is the current
+			  * point Lambda. */
+ 
  Vec_VarValue UpFiLmb1;  ///< upper function values at Lambda1
  Vec_VarValue LwFiLmb1;  ///< lower function values at Lambda1
  Index UpFiLmb1def;      ///< how many entries of UpFiLmb1 are < INF
@@ -2163,7 +2404,8 @@ public:
 
  // fields for events - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- std::clock_t c_start;   ///< starting instant of last call to compute()
+ std::chrono::time_point< std::chrono::system_clock > c_start;
+ ///< starting instant of last call to compute()
 
  // static fields - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -2231,7 +2473,7 @@ class FakeFiOracle : public FiOracle
 
 /*--------------------------------------------------------------------------*/
 
- void SetFiLog( ostream *outs = 0 , const char lvl = 0 ) override {
+ void SetFiLog( std::ostream * outs = 0 , const char lvl = 0 ) override {
   throw( std::logic_error( "this method cannot be called" ) );
   }
 
@@ -2331,8 +2573,6 @@ class FakeFiOracle : public FiOracle
 /*--------------------------------------------------------------------------*/
 
  void InitMP( void );
-
- bool FindNext( void );
 
 /*--------------------------------------------------------------------------*/
 
@@ -2453,6 +2693,133 @@ class FakeFiOracle : public FiOracle
  };  // end( class BundleSolver )
 
 /*--------------------------------------------------------------------------*/
+/*------------------------ CLASS BundleSolverState -------------------------*/
+/*--------------------------------------------------------------------------*/
+/// class to describe the "internal state" of a BundleSolver
+/** Derived class from State to describe the "internal state" of a
+ * BundleSolver: the current stability centre, the proximal parameters, and
+ * the global pool of all non-easy components. In a better world the State
+ * should comprise the State of the Solver used to solve the Master Problem;
+ * this will hopefully happen one day. */
+
+class BundleSolverState : public State {
+
+/*----------------------- PUBLIC PART OF THE CLASS -------------------------*/
+
+ public:
+
+/*------------ CONSTRUCTING AND DESTRUCTING BundleSolverState --------------*/
+
+ /// constructor, doing everything or nothing.
+ /** Constructor of BundleSolverState. If provided with a pointer to a
+  * BundleSolver it immediately copies its "internal state", which is the only
+  * way in which the BundleSolverState can be initialised out of an existing
+  * BundleSolverState. If nullptr is passed (as by default), then an "empty"
+  * BundleSolverState is constructed that can only be filled by calling
+  * deserialize(). */
+
+ BundleSolverState( const BundleSolver * bs = nullptr ) : State() {
+  if( ! bs ) {
+   NrFi = NumVar = 0;
+   return;
+   }
+  t = bs->t;
+  NrFi = bs->NrFi;
+  NumVar = bs->NumVar;
+  Lambda = bs->Lambda;
+  v_comp_State.resize( NrFi , nullptr );
+  for( BundleSolver::Index i = 0 ; i < NrFi ; ++i ) {
+   if( bs->NrEasy && bs->IsEasy[ i ] )
+    continue;
+   v_comp_State[ i ] = bs->v_c05f[ i ]->get_State();
+   }
+  }
+
+/*--------------------------------------------------------------------------*/
+ /// de-serialize a BundleSolverState out of netCDF::NcGroup
+ /** De-serialize a BundleSolverState out of netCDF::NcGroup; see
+  * BundleSolverState::serialize() for a description of the format. */
+
+ void deserialize( const netCDF::NcGroup & group ) override;
+
+/*--------------------------------------------------------------------------*/
+ /// destructor
+
+ virtual ~BundleSolverState() {
+  for( auto el : v_comp_State )
+   delete el;
+  }
+
+/*--------- METHODS DESCRIBING THE BEHAVIOR OF A BundleSolverState ---------*/
+
+ /// serialize a BundleSolverState into a netCDF::NcGroup
+ /** The method serializes the BundleSolverState into the provided
+  * netCDF::NcGroup, so that it can later be read back by deserialize().
+  *
+  * After the call, \p will contain:
+  *
+  * - The dimension "BundleSolver_NumVar" containing the (current) number
+  *   of variables of all the components.
+  *
+  * - The variable "BundleSolver_Lambda", of type netCDF::NcDouble and
+  *   indexed over the dimension BundleSolver_NumVar, which contains
+  *   the current stability centre.
+  *
+  * - The scalar variable "BundleSolver_t", of type netCDF::NcDouble,
+  *   which contains the current value of the (tremendous) t parameter.
+  *
+  * - The dimension "BundleSolver_NrFi" containing the total number of
+  *   components (comprised the "easy" ones).
+  *
+  * - At most BundleSolver_NrFi netCDF::NcGroup with name
+  *   "Component_State_X", with X an integer between 0 and
+  *   BundleSolver_NrFi - 1, each one containing the State af the
+  *   corresponding non-easy component. If a group is not there for some
+  *   X then no State has been saved for that component, which surely
+  *   happens for "easy" ones. */
+
+ void serialize( netCDF::NcGroup & group ) const override;
+
+/*-------------------------------- FRIENDS ---------------------------------*/
+
+ friend class BundleSolver;  // make BundleSolver friend
+
+/*-------------------- PROTECTED PART OF THE CLASS -------------------------*/
+
+ protected:
+
+/*-------------------------- PROTECTED METHODS -----------------------------*/
+
+ void print( std::ostream &output ) const override {
+  output << "BundleSolverState [" << this << "] with NrFi = " << NrFi
+	 << " and NumVar = " << NumVar;
+  }
+
+/*--------------------------- PROTECTED FIELDS -----------------------------*/
+
+ BundleSolver::Index NrFi;      ///< total number of components
+
+ BundleSolver::Index NumVar;    ///< number of variables
+
+ BundleSolver::Vec_VarValue Lambda;   ///< the current point
+
+ BundleSolver::VarValue t;            ///< the proximity parameter
+
+ std::vector< State * > v_comp_State;  ///< the States of each component
+
+/*---------------------- PRIVATE PART OF THE CLASS -------------------------*/
+
+ private:
+
+/*---------------------------- PRIVATE FIELDS ------------------------------*/
+
+ SMSpp_insert_in_factory_h;
+
+/*--------------------------------------------------------------------------*/
+
+ };  // end( class( BundleSolverState ) )
+
+/** @} end( group( BundleSolver_CLASSES ) ) --------------------------------*/
 /*--------------------------------------------------------------------------*/
 
 }  // end( namespace SMSpp_di_unipi_it )
