@@ -2010,8 +2010,8 @@ void BundleSolver::get_dual_solution( Configuration * solc )
  // construct the important linerization for each non-easy component (unless
  // it is already there, and signal to the C05Functions which one it is
 
- for( Index k = 0 ; k < NrFi ; ++k )  // for all components
-  if( ! IsEasy[ k ] ) {               // but skip the easy ones  
+ for( Index k = 0 ; k < NrFi ; ++k )         // for all components
+  if( ( ! NrEasy ) || ( ! IsEasy[ k ] ) ) {  // but skip the easy ones
    C05Function::LinearCombination lc;
 
    if( Zvalid[ k ] ) {
