@@ -8,17 +8,12 @@
  *
  * Apart from that ParallelBundleSolver is completely equivalent to
  * BundleSolver, in particular regarding the class of :Block it can solve.
- * However, the having ParallelBundleSolver solve a :Block with s single
+ * However, having ParallelBundleSolver solve a :Block with a single
  * C0Function hardly makes sense (although it also makes little difference,
- * in that for a single C0Function ParallelBundleSolver behaves exactly in
- * the same way as BundleSolver with an extremely limited overhead).
- *
- * \version 0.10
- *
- * \date 07 - 03 - 2021
+ * in that for a single C0Function ParallelBundleSolver behaves exactly as
+ * BundleSolver with an extremely limited overhead).
  *
  * \author Antonio Frangioni \n
- *         Operations Research Group \n
  *         Dipartimento di Informatica \n
  *         Universita' di Pisa \n
  *
@@ -35,9 +30,6 @@
 /*--------------------------------------------------------------------------*/
 /*------------------------------ INCLUDES ----------------------------------*/
 /*--------------------------------------------------------------------------*/
-
-//#include <ctime>
-//#include <queue>
 
 #include "BundleSolver.h"
 
@@ -62,10 +54,10 @@ namespace SMSpp_di_unipi_it
  *
  * Apart from that ParallelBundleSolver is completely equivalent to
  * BundleSolver, in particular regarding the class of :Block it can solve.
- * However, the having ParallelBundleSolver solve a :Block with s single
+ * However, having ParallelBundleSolver solve a :Block with a single
  * C0Function hardly makes sense (although it also makes little difference,
- * in that for a single C0Function ParallelBundleSolver behaves exactly in
- * the same way as BundleSolver with an extremely limited overhead). */
+ * in that for a single C0Function ParallelBundleSolver behaves exactly as
+ * BundleSolver with an extremely limited overhead). */
 
 class ParallelBundleSolver : public BundleSolver {
 

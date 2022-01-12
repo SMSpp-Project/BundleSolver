@@ -9,7 +9,7 @@
  * The user is assumed to be familiar with the algorithm: refer to
  *
  *  A. Frangioni "Generalized Bundle Methods"
- *  SIAM Journal on Optimization 13(1), p. 117 - 156, 2002
+ *  SIAM Journal on Optimization 13(1), 117--156, 2002
  *
  * available at
  *
@@ -28,6 +28,19 @@
  *
  * \link
  *  http://www.di.unipi.it/~frangio/abstracts.html#NDOB18
+ * \endlink
+ *
+ * In particular, BundleSolver implements the Incremental version of the
+ * (Generalised) Proximal Bundle approach using upper models (for all the
+ * components that provide a Lipschitz constant) described in
+ *
+ *  W. van Ackooij, A. Frangioni "Incremental Bundle Methods Using Upper
+ *  Models" SIAM Journal on Optimization 28(1), 379–410, 2018
+ *
+ * available at
+ *
+ * \link
+ *  http://www.di.unipi.it/~frangio/abstracts.html#SIOPT16
  * \endlink
  *
  * BunldeSolver is capable of solving any Block such that:
@@ -94,12 +107,7 @@
  *     C05FunctionModVarsRngd, OR ALL C05FunctionModVarsSbst, AND THEY MUST
  *     CHANGE THE "ACTIVE" Variable IN PRECISELY THE SAME WAY.
  *
- * \version 0.52
- *
- * \date 05 - 04 - 2021
- *
  * \author Antonio Frangioni \n
- *         Operations Research Group \n
  *         Dipartimento di Informatica \n
  *         Universita' di Pisa \n
  *
@@ -186,6 +194,19 @@ namespace SMSpp_di_unipi_it
  *
  * \link
  *  http://www.di.unipi.it/~frangio/abstracts.html#NDOB18
+ * \endlink
+ *
+ * In particular, BundleSolver implements the Incremental version of the
+ * (Generalised) Proximal Bundle approach using upper models (for all the
+ * components that provide a Lipschitz constant) described in
+ *
+ *  W. van Ackooij, A. Frangioni "Incremental Bundle Methods Using Upper
+ *  Models" SIAM Journal on Optimization 28(1), 379–410, 2018
+ *
+ * available at
+ *
+ * \link
+ *  http://www.di.unipi.it/~frangio/abstracts.html#SIOPT16
  * \endlink
  *
  * BunldeSolver is capable of solving any Block such that:
@@ -364,6 +385,8 @@ public:
 
  intFrcLstSS ,  ///< whether to force the last step to be a SS
 
+ intTrgtMng ,   ///< how to manage targets and accuracy in the functions
+
  intMPName ,  ///< whether the MP solver is QPPenalty or OSIMPSolver
 
  intMPlvl ,  ///< log verbosity of Master Problem
@@ -528,6 +551,7 @@ public:
   DoEasy = char( dflt_int_par[ intDoEasy - intLastParCDAS ] );
   WZNorm = char( dflt_int_par[ intWZNorm - intLastParCDAS ] );
   FrcLstSS = bool( dflt_int_par[ intFrcLstSS - intLastParCDAS ] );
+  TrgtMng = Index( dflt_int_par[ intTrgtMng - intLastParCDAS ] );
   MPName = dflt_int_par[ intMPName - intLastParCDAS ];
   MPlvl = dflt_int_par[ intMPlvl - intLastParCDAS ];
   MxAdd = dflt_int_par[ intQPmp1 - intLastParCDAS ];
@@ -897,6 +921,37 @@ public:
   *   cannot work if the maximum time limit has been exceeded already, and it
   *   may trigger a kStopTime return status where a kOK would have been
   *   produced exactly due to the cost of the extra compute()-tions.
+  *
+  * - intTrgtMng [0]: bit-wise encoding of several details of the algorithm
+  *                   pertaining to how the upper and lower model are used to
+  *   set targets and accuracies for the compute()-tion of the components.
+  *     bit 0: if 1, then a lower/upper target is set to each convex/concave
+  *            component (the role of lower and upper target is exchanged
+  *            for convex and concave functions)
+  *     bit 1: if 1, then a upper/lower target is set to each convex/concave
+  *            component (the role of lower and upper target is exchanged
+  *            for convex and concave functions)
+  *     bit 2: if 1, then the accuracy in compute() is set as the difference
+  *            between the upper and lower target save for what bit 3 says
+  *     bit 3: if 1, then the accuracy in compute() is set as (almost) the
+  *            current achieved accuracy (EpsU as computed via tStar);
+  *            note that if both bit 2 and bit 3 are 1, then the accuracy is
+  *            set as the *maximum* between the two
+  *     bit 4: if 1, then the Lipschitz constant is requested to all the
+  *            components and used to compute the value of the upper model,
+  *            which is useful to perform SS without having to necessarily
+  *            compute() all the components; this is optional in that the
+  *            computation of the Lipschitz constant may be costly
+  *     bit 5- : the following bits encode different farmulae for computing
+  *              the "\beta_k" factors, i.e., a positive number for each
+  *              component summing to one telling how the required global
+  *              decrease or increase is partitioned between the different
+  *              components. currently available formulae are:
+  *
+  *              = 0: all \beta_k = 1 / number of non-easy components
+  *
+  *              note that the values of these bits is only significant if
+  *              at least one among the bits 0, 1 and 2 is 1.
   *
   * - intMPName [1]: bit-wise encoding of which MPSolver is used:
   *                  bit 0: 0 = QPPenalty, 1 = OSiMPSolver
@@ -2178,6 +2233,8 @@ public:
  char WZNorm;       ///< how to compute the norm of z*
 
  bool FrcLstSS;     ///< if all components must be computed in the optimum
+
+ Index TrgtMng;     ///< how targets on components are managed
 
  int MPName;        /**< bit 0 = 0: MP solver == QPPenalty
 		     * bit 0 = 1: MP == OSiMPSolver
