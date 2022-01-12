@@ -519,7 +519,8 @@ int BundleSolver::compute( bool changedvars )
 
  c_start = std::chrono::system_clock::now();
 
- double f_time = 0;  // independently keep function evaluation time
+ double tot_time = 0;  // independently keep function evaluation time
+ long tot_NrEvls = 0;  // total number of C05Function evaluations
 
  // first, process any outstanding Modification - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -780,7 +781,9 @@ int BundleSolver::compute( bool changedvars )
   auto end = std::chrono::system_clock::now();
   std::chrono::duration< double > elapsed = end - start;
 
-  f_time += elapsed.count();
+  tot_time += elapsed.count();
+  tot_NrEvls += std::accumulate( CurrNrEvls.begin() , CurrNrEvls.end() , 0 );
+
   CmptdinL = false;
  
   // compute DeltaFi- - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -828,7 +831,7 @@ int BundleSolver::compute( bool changedvars )
   // some log about the newly obtained information- - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-  Log2( f_time );
+  Log2( tot_time );
 
   // check whether either any error has occurred or time has expired- - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1068,7 +1071,7 @@ int BundleSolver::compute( bool changedvars )
   auto end = std::chrono::system_clock::now();
   std::chrono::duration< double > elapsed = end - start;
 
-  f_time += elapsed.count();
+  tot_time += elapsed.count();
 
   CmptdinL = ( cnt == NrFi - NrEasy );
 
@@ -1082,8 +1085,8 @@ int BundleSolver::compute( bool changedvars )
  
  if( f_log && ( LogVerb >= 1 ) ) {
   *f_log << "Call " << SCalls << ": "  << fixd << ParIter << " ~ "
-	 << std::accumulate( CurrNrEvls.begin() , CurrNrEvls.end() , 0 )
-         << " ~ " << get_elapsed_time() << " ~ " << f_time << " -> ";
+	 << tot_NrEvls  << " ~ " << get_elapsed_time() << " ~ "
+	 << tot_time << " -> ";
   switch( Result ) {
    case( kOK ):           *f_log << "optimal"; break;
    case( kStopTime ):     *f_log << "max time"; break;
@@ -3001,7 +3004,7 @@ bool BundleSolver::FiAndGi( Index wFi , bool getgi )
  // compute and set upper and lower cutoffs and the accuracy- - - - - - - - -
 
  if( f_log && ( LogVerb > 3 ) )
-  *f_log << std::endl << "            Component " << wFi;
+  *f_log << std::endl << "            Fi[ " << wFi;
 
  if( getgi )
   SetupFiLambda1( wFi );
@@ -3026,7 +3029,7 @@ bool BundleSolver::FiAndGi( Index wFi , bool getgi )
  auto le = fwFi->get_lower_estimate();
 
  if( f_log && ( LogVerb > 3 ) ) {
-  *f_log << " evaluated: UB = "<< def;
+  *f_log << " ]: UB = "<< def;
   pval( *f_log , ue );
   *f_log << ", LB = ";
   pval( *f_log , le );
@@ -3088,9 +3091,6 @@ void BundleSolver::SetupFiLambda1( Index wFi )
 
  if( ! ( TrgtMng & 15 ) )
   return;
-
- if( f_log && ( LogVerb > 3 ) )
-  *f_log << " [" << def;
 
  // compute upper and lower cutoffs and the accuracy
  auto UpCutOff = INFshift;
@@ -3196,7 +3196,7 @@ void BundleSolver::SetupFiLambda1( Index wFi )
      ( ( TrgtMng & 2 ) && ( ! f_convex ) ) ) {
   auto lt = f_convex ? LwCutOff : - UpCutOff;
   if( f_log && ( LogVerb > 3 ) )
-   *f_log << " lt = " << lt;
+   *f_log << " ~ lt = " << def << lt;
   fwFi->set_par( dblLwCutOff , lt );
   }
 
@@ -3204,7 +3204,7 @@ void BundleSolver::SetupFiLambda1( Index wFi )
      ( ( TrgtMng & 1 ) && ( ! f_convex ) ) ) {
   auto ut = f_convex ? UpCutOff : - LwCutOff;
   if( f_log && ( LogVerb > 3 ) )
-   *f_log << " ut = " << ut;
+   *f_log << " ~ ut = " << def << ut;
   fwFi->set_par( dblUpCutOff , ut );
   }
 
@@ -3230,13 +3230,9 @@ void BundleSolver::SetupFiLambda1( Index wFi )
   EpsCurr = std::max( EpsCurr , RelAcc / Nearly );
 
   if( f_log && ( LogVerb > 3 ) )
-   *f_log << " eps = " << shrt << EpsCurr;
+   *f_log << " ~ eps = " << shrt << EpsCurr;
   fwFi->set_par( dblRelAcc , EpsCurr );
   }
-
- if( f_log && ( LogVerb > 3 ) )
-  *f_log << " ]";
-
  }  // end( BundleSolver::SetupFiLambda1 )
 
 /*--------------------------------------------------------------------------*/
