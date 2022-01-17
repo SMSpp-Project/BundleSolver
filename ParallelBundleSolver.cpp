@@ -4,12 +4,7 @@
 /** @file
  * Implementation of the ParallelBundleSolver class.
  *
- * \version 0.10
- *
- * \date 07 - 03 - 2021
- *
  * \author Antonio Frangioni \n
- *         Operations Research Group \n
  *         Dipartimento di Informatica \n
  *         Universita' di Pisa \n
  *
@@ -17,8 +12,6 @@
  */
 /*--------------------------------------------------------------------------*/
 /*---------------------------- IMPLEMENTATION ------------------------------*/
-/*--------------------------------------------------------------------------*/
-
 /*--------------------------------------------------------------------------*/
 /*------------------------------ INCLUDES ----------------------------------*/
 /*--------------------------------------------------------------------------*/
@@ -264,13 +257,14 @@ BundleSolver::Index ParallelBundleSolver::InnerLoop( bool extrastep )
   // update UpFiLambd1[ wFi ] (and possibly UpFiLambd1[ NrFi ])
   update_UpFiLambd1( wFi , f_convex ? ue : - le );
 
-  // compute the upper bound in Lambda provided by the upper bound in Lambda1
-  // and try to update UpFiLmb[ wFi ] (and possibly UpFiLambd1[ NrFi ])
+  // if bit 4 of TrgtMng == 1, then compute the upper bound in Lambda
+  // provided by the upper bound in Lambda1 and try to update UpFiLmb[ wFi ]
+  // (and possibly UpFiLambd1[ NrFi ])
   // note that, even if this suceeds and therefore decreases UpFiLmb[ wFi ]
   // (and possibly UpFiLambd[ NrFi ], which would be a "rather big" decrease
   // from +INF to something finite), as the theory requires the upper target
   // is *not* changed
-  if( UpFiLmb1[ wFi ] < INFshift ) {
+  if( ( TrgtMng & 16 ) && ( UpFiLmb1[ wFi ] < INFshift ) ) {
    c_VarValue LwFi = fwFi->get_Lipschitz_constant();
    if( LwFi < INFshift )
     update_UpFiLambd( wFi , UpFiLmb1[ wFi ] + LwFi * NrmD );
@@ -417,13 +411,14 @@ BundleSolver::Index ParallelBundleSolver::InnerLoop( bool extrastep )
   // update UpFiLambd1[ wFi ] (and possibly UpFiLambd1[ NrFi ])
   update_UpFiLambd1( wFi , f_convex ? ue : - le );
 
-  // compute the upper bound in Lambda provided by the upper bound in Lambda1
-  // and try to update UpFiLmb[ wFi ] (and possibly UpFiLambd1[ NrFi ])
+  // if bit 4 of TrgtMng == 1, then compute the upper bound in Lambda
+  // provided by the upper bound in Lambda1 and try to update UpFiLmb[ wFi ]
+  // (and possibly UpFiLambd1[ NrFi ])
   // note that, even if this suceeds and therefore decreases UpFiLmb[ wFi ]
   // (and possibly UpFiLambd[ NrFi ], which would be a "rather big" decrease
   // from +INF to something finite), as the theory requires the upper target
   // is *not* changed
-  if( UpFiLmb1[ wFi ] < INFshift ) {
+  if( ( TrgtMng & 16 ) && ( UpFiLmb1[ wFi ] < INFshift ) ) {
    c_VarValue LwFi = fwFi->get_Lipschitz_constant();
    if( LwFi < INFshift )
     update_UpFiLambd( wFi , UpFiLmb1[ wFi ] + LwFi * NrmD );
