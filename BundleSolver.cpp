@@ -112,11 +112,14 @@ static constexpr HpNum Nearly2 = 1.02;
 static constexpr char LogBnd = 16;        // log Bundle changes
 static constexpr char LogVar = 32;        // log variables changes
 
-static constexpr Index tSP1Msk = ~ 3;     // mask for tSPar1
-static constexpr Index kSLTTS =  4;       // "soft" long-term t-strategy
-static constexpr Index kHLTTS =  8;       // "hard" long-term t-strategy
-static constexpr Index kBLTTS = 12;       // "balancing" long-term t-strategy
-static constexpr Index kEGTTS = 16;       // "endgame" long-term t-strategy
+static constexpr Index tSP1Msk = 12;  // mask for tSPar1: the long-term t-s
+static constexpr Index kSLTTS =  4;   // "soft" long-term t-strategy
+static constexpr Index kHLTTS =  8;   // "hard" long-term t-strategy
+static constexpr Index kBLTTS = 12;   // "balancing" long-term t-strategy
+static constexpr Index kEGTTS = 16;   // "endgame" long-term t-strategy
+static constexpr Index tSPHMsk1 = 3;  // mask for heuristics: bits 0 and 1
+static constexpr Index tSPHMsk2 = 96; // mask for heuristics: bits 6 and 7
+
 
 static constexpr unsigned char RstAlg = 1;  // don't reset algorithmic params
 static constexpr unsigned char RstCrr = 2;  // don't reset current point to
@@ -376,6 +379,7 @@ const std::vector< std::string > BundleSolver::dbl_pars_str = {
  "dbltMinor" ,
  "dbltInit" ,
  "dbltSPar2" ,
+ "dbltSPar3" ,
  "dblCtOff"
  };
 
@@ -430,6 +434,7 @@ const std::map< std::string , BundleSolver::idx_type >
  { "dbltMinor" , BundleSolver::dbltMinor } ,
  { "dbltInit" , BundleSolver::dbltInit } ,
  { "dbltSPar2" , BundleSolver::dbltSPar2 } ,
+ { "dbltSPar3" , BundleSolver::dbltSPar3 } ,
  { "dblCtOff" , BundleSolver::dblCtOff }
  };
 
@@ -478,6 +483,7 @@ const std::vector<double> BundleSolver::dflt_dbl_par = {
  1e-6,    // dbltMinor
  1 ,      // dbltInit
  1e-3 ,   // dbltSPar2
+ 0 ,      // dbltSPar3
  1e-1     // dblCtOff
  };
 
@@ -931,84 +937,131 @@ int BundleSolver::compute( bool changedvars )
   // compute the heuristic t- - - - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-  HpNum tt;
-  if( ( SSDone && ( ! ( tSPar1 & 1 ) ) ) ||
-      ( ( ! SSDone ) && ( tSPar1 & 2 ) ) )
-   tt = Heuristic1();
+  HpNum tt = t;
+
+  // the first two bits command the heuristic if either bits 6 and 7 are 0,
+  // or a SS is being done
+  if( SSDone || ( ! ( tSPar1 & tSPHMsk2 ) ) )
+   switch( tSPar1 & tSPHMsk1 ) {
+    case( 1 ): tt = Heuristic1(); break;
+    case( 2 ): tt = Heuristic2(); break;
+    case( 3 ): tt = Heuristic3();
+    }
   else
-   tt = Heuristic2();
+   // else this is a NS, and the heuristic is commanded by bits 6 and 7
+   // (which cannot be 0)
+   switch( tSPar1 & tSPHMsk2 ) {
+    case( 32 ): tt = Heuristic1(); break;
+    case( 64 ): tt = Heuristic2(); break;
+    case( 96 ): tt = Heuristic3();
+    }
 
   if( SSDone ) {  // SS - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-   BLOG( 1 , std::endl << " SS[" << CSSCntr << "]: DFi = " << shrt );
+   BLOG( 1 , std::endl << " SS[" << CSSCntr++ << "]: DFi = " << shrt );
    if( f_convex ) {
     BLOG( 1 , DeltaFi << def << " ~ Up1(" << UpFiLmb1.back()
-	  << ") <= UpTrgt(" << UpTrgt << ") ~ Ht = " << shrt << tt );
+	      << ") <= UpTrgt(" << UpTrgt << ")" );
     }
    else
     BLOG( 1 , - DeltaFi << def << " ~ Lw1(" << - UpFiLmb1.back()
-	      << ") >= LwTrgt(" << - UpTrgt << ") ~ Ht = " << shrt << tt );
+	      << ") >= LwTrgt(" << - UpTrgt << ")" );
 
-   tt = std::min( std::min( tMaior , t * mxIncr ) ,
- 		  std::max( t * mnIncr , tt ) );
+   if( tt != t )
+    BLOG( 1 , " ~ Ht = " << shrt << tt );
 
-   if( CSSCntr < MnSSC )  // increasing t is inhibited
-    tt = t;
-   else
-    if( ( tSPar1 & tSP1Msk ) == kBLTTS )  // "balancing" long-term t-strategy
-     if( ( DSTS <= tSPar2 * Sigma ) && ( CSSCntr < 10 ) ) {  //!! 10!
-      BLOG( 1 , " ~ small D*_t( 1 )" );
-      tt = t;
-      }
+   double tm = t;
+   double tp = t;
+   if( tSPar3 ) {
+    tp *= std::abs( tSPar3 );
+    if( tSPar3 > 0 )
+     tm /= tSPar3;
+    }
+
+   if( CSSCntr > MnSSC ) {  // increasing t is possible: note the ">"
+    // due to the fact that the counter has just been increased
+    if( ( ( tSPar1 & tSP1Msk ) == kBLTTS )  &&
+	( DSTS <= tSPar2 * Sigma ) && ( CSSCntr < 10 ) ) {  //!! 10!
+     // if the "balancing" long-term t-strategy is active and D*_t( 1 )
+     // is small already, inhibit t increases (but not small heuristic
+     // decreases, if active) unless "too many SS happened"
+     BLOG( 1 , " ~ small D*_t( 1 )" );
+     tp = t;
+     }
+    else {
+     tm = t * mnIncr;  // minimum significant increase
+     tp = t * mxIncr;  // maximum significant increase
+     CSSCntr = 0;      // a significant increase happened, reset counter
+     }
+    }
+
+   if( tm != tp )
+    tt = std::min( std::min( tMaior , tp ) ,
+		   std::max( std::max( tMinor , tm ) , tt ) );
 
    BLOG( 1 , std::endl );
 
    GotoLambda1();
-   CSSCntr++;
    CNSCntr = 0;
    CmptdinL = ( cnt == NrFi - NrEasy );
    }
   else {        // NS - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-   BLOG( 1 , std::endl << " NS[" << CNSCntr << "]: " );
+   BLOG( 1 , std::endl << " NS[" << CNSCntr++ << "]: " );
    BLOG2( 1 , DeltaFi < INFshift , "DFi = " << shrt << rs( DeltaFi )
-	  <<  " ~ " << def );
+	      <<  " ~ " << def );
    if( f_convex ) {
     BLOG( 1 , "Lw1(" << def << LwFiLmb1.back() << ") >= LwTrgt(" << LwTrgt
-	  << ") ~ Ht = " << shrt << tt );
+	      << ")" );
     }
    else
     BLOG( 1 , "Up1(" << - LwFiLmb1.back() << ") <= UpTrgt(" << - LwTrgt
-	      << ") ~ Ht = " << shrt << tt );
+	      << ")" );
 
-   tt = std::max( std::max( tMinor , t * mxDecr ) ,
- 		  std::min( t * mnDecr , tt ) );
+   if( tt != t )
+    BLOG( 1 , " ~ Ht = " << shrt << tt );
 
-   if( CNSCntr < MnNSC )  // decreasing t is inhibited
-    tt = t;
-   else
-    switch( tSPar1 & tSP1Msk ) {
-     case( kSLTTS ):
-     case( kHLTTS ):
-      if( abs( vStar.back() ) <= tSPar2 * EpsU * max_error() ) {
-       BLOG( 1 , " small v" );
-       tt = t;
-       }
-      break;
-     case( kBLTTS ):
-      /*!! this version avoids problems which may occur with ill-set
-	   tStar or tSPar2, but it may give worse performances with
-	   "difficult" problems
-       if( ( tSPar2 * DSTS >= Sigma ) && ( CNSCntr < 20 ) ) {
-       !!*/
-      if( tSPar2 * DSTS >= Sigma ) {
-       BLOG( 1 , " ~ large D*_t( t* )" );
-       tt = t;
-       }
+   double tm = t;
+   double tp = t;
+   if( tSPar3 ) {
+    tm /= std::abs( tSPar3 );
+    if( tSPar3 > 0 )
+     tp *= tSPar3;
+    }
+
+   if( CNSCntr > MnNSC ) {  // decreasing t is possible: note the ">"
+    // due to the fact that the counter has just been increased
+    if( ( ( ( tSPar1 & tSP1Msk ) == kSLTTS ) ||
+	  ( ( tSPar1 & tSP1Msk ) == kHLTTS ) ) &&
+	( abs( vStar.back() ) <= tSPar2 * EpsU * max_error() ) ) {
+     // if either the "hard" or the "soft" long-term t-strategy is active
+     // and v* is small already, inhibit t decreases (but not small
+     // heuristic increases, if active)
+     BLOG( 1 , " small v" );
+     tm = t;
      }
+    else
+     if( ( ( tSPar1 & tSP1Msk ) == kBLTTS ) && ( tSPar2 * DSTS >= Sigma ) ) {
+      // if the "balancing" long-term t-strategy is active and D*_t( 1 )
+      // is large already, inhibit t decreases (but not small heuristic
+      // increases, if active); note that one may add the clause "unless
+      // too many NS happened", i.e. "&& ( CNSCntr < 20 )": this version
+      // avoids problems which may occur with ill-set tStar or tSPar2, but
+      // it may give worse performances with "difficult" problems
+      BLOG( 1 , " ~ large D*_t( 1 )" );
+      tm = t;
+      }
+     else {
+      tm = t * mxDecr;  // maximum significant decrease
+      tp = t * mnDecr;  // minimum significant decrease
+      CNSCntr = 0;      // a significant decrease happened, reset counter
+      }
+    }
+
+   if( tm != tp )
+    tt = std::min( std::min( tMaior , tp ) ,
+		   std::max( std::max( tMinor , tm ) , tt ) );
 
    BLOG( 1 , std::endl );
-
-   CNSCntr++;
    CSSCntr = 0;
 
    }   // end else( NS )- - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1027,10 +1080,8 @@ int BundleSolver::compute( bool changedvars )
   //!! large, t should be increased --> but this would happen surely at
   //!! the beginning, it should be done only near the end
 
-  if( ( tHasChgd = ( t != tt ) ) ) {
-   CSSCntr = CNSCntr = 0;  // reset the counters as t changes
+  if( ( tHasChgd = ( t != tt ) ) )
    t = tt;
-   }
 
   // check max number of iterations - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1941,6 +1992,9 @@ void BundleSolver::set_par( idx_type par , double value )
     throw( std::invalid_argument( "tSPar2 must be > 0" ) );
    tSPar2 = value;
    break;
+  case( dbltSPar3 ):
+   tSPar3 = std::abs( value ) > 1 ? value : 0;
+   break;
   case( dblCtOff ):
    if( value < 0 )
     throw( std::invalid_argument( "CtOff must be >= 0" ) );
@@ -2105,6 +2159,7 @@ double BundleSolver::get_dbl_par( idx_type par ) const
   case( dbltMinor ):    return( tMinor );
   case( dbltInit ):     return( tInit );
   case( dbltSPar2 ):    return( tSPar2 );
+  case( dbltSPar3 ):    return( tSPar3 );
   case( dblCtOff ):     return( CtOff );
   default:              return( CDASolver::get_dbl_par( par ) );
   }
@@ -2595,7 +2650,7 @@ void BundleSolver::FormD( void )
 
  DST = Master->ReadDStart( t );  // D_t( z* )
 
- // Delta* = D_t( z* ) +Sigma* is <= - v*, and a weaker requirement about
+ // Delta* = D_t( z* ) + Sigma* is <= - v*, and a weaker requirement about
  // how much the (total) function must increase for a NS to be declared;
  // however, this only holds if v* is "true", which means that all the
  // components have some diagonal linearization in their bundle; otherwise
@@ -3553,21 +3608,20 @@ void BundleSolver::GotoLambda1( void )
 {
  // compute DeltaFi - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- std::vector< VarValue > DeltaFi( NrFi + 1 );
+ std::vector< VarValue > DF( NrFi + 1 );
  /* DeltaFi = UpFiLmb1 - UpRifFi; note that the code one may expect
+  *
+  * std::transform( UpFiLmb1.begin() , UpFiLmb1.end() , UpRifFi.begin() ,
+  *                 DF.begin() , std::minus< double >() );
+  *
+  * is wrong since the format of DeltaFi expected by ChangeCurrPoint() is
+  * different from the one used in BundleSolver; in particular, the total
+  * value need be in DF.front() rather than in DF.back(), and the value for
+  * component i need be in DF[ i + 1 ] rather than in DF[ i ]. */
 
-    std::transform( UpFiLmb1.begin() , UpFiLmb1.end() , UpRifFi.begin() ,
-                    DeltaFi.begin() , std::minus< double >() );
-
-    is wrong since the format of DeltaFi expected by ChangeCurrPoint() is
-    different from the one used in BundleSolver; in particular, the total
-    value need be in DeltaFi.front() rather than in DeltaFi.back(), and the
-    value for component i need be in DeltaFi[ i + 1 ] rather than in
-    DeltaFi[ i ]. */
-
- DeltaFi.front() = UpFiLmb1.back() - UpRifFi.back();
+ DF.front() = UpFiLmb1.back() - UpRifFi.back();
  std::transform( UpFiLmb1.begin() , --(UpFiLmb1.end()) , UpRifFi.begin() ,
- 		 ++(DeltaFi.begin()) , std::minus< double >() );
+ 		 ++(DF.begin()) , std::minus< double >() );
 
  // do the move - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // Lambda = Lambda1 and all associated data structures
@@ -3583,7 +3637,7 @@ void BundleSolver::GotoLambda1( void )
 
  // change the current point in the MP Solver - - - - - - - - - - - - - - - -
 
- Master->ChangeCurrPoint( t , DeltaFi.data() );
+ Master->ChangeCurrPoint( t , DF.data() );
 
  // signal that Alfa1[] is not reliable - - - - - - - - - - - - - - - - - - -
 
@@ -3604,21 +3658,21 @@ void BundleSolver::GotoLambda( void )
 {
  // compute DeltaFi - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- std::vector< VarValue > DeltaFi( NrFi + 1 );  // DeltaFi = UpFiLmb - UpRifFi
+ std::vector< VarValue > DF( NrFi + 1 );  // DF = UpFiLmb - UpRifFi
 
- DeltaFi.front() = UpFiLmb.back() - UpRifFi.back();
+ DF.front() = UpFiLmb.back() - UpRifFi.back();
  std::transform( UpFiLmb.begin() , --(UpFiLmb.end()) , UpRifFi.begin() ,
- 		 ++(DeltaFi.begin()) , std::minus< double >() );
+ 		 ++(DF.begin()) , std::minus< double >() );
 
  UpRifFi = UpFiLmb;        // set UpFiLmb as the reference values
  RifeqFi = true;
 
  // "change the current point in the MP Solver" - - - - - - - - - - - - - - -
  // use the special case of ChangeCurrPoint() with Tau == 0, whereby only
- // the DeltaFi component of the change is effective: the current point
- // does not really change, but the linearization errors (and bounds) do
+ // the DF component of the change is effective: the current point does not
+ // really change, but the linearization errors (and bounds) do
 
- Master->ChangeCurrPoint( double( 0 ) , DeltaFi.data() );
+ Master->ChangeCurrPoint( double( 0 ) , DF.data() );
 
  #if CHECK_DS & 4
   CheckAlpha();
@@ -4208,32 +4262,227 @@ Index BundleSolver::FindAPlace( Index wFi )
  }  // end( BundleSolver::FindAPlace )
 
 /*--------------------------------------------------------------------------*/
-/* These heuristics consider what we know about the translated cutting plane
- * model along d after the function has been computed:
+/* These heuristics are based on considering the objective f( x ) from the
+ * current stability center \bar{x} along direction d*; however, the function
+ * is seen as a parameter of t, assuming that d* = - t z* (which is, strictly
+ * speaking, only true in the pure quadratic proximal case and therefore does
+ * not cleanly generalise to the generalised one; yet these are heuristics).
  *
- * q[ 0 ] = 0
- * M[ t ] = DeltaFi
- * q'[ 0 ] = 
+ * That is, we consider the translated function along z*
+ *
+ *    q( v ) = f( \bar{x} - v z* ) - f( \bar{x} )
+ *
+ * Assuming (only for notational simplicity) diferentiability, we thus have
+ *
+ *    q'( v ) = < - z* , f'( \bar{x} - v z* ) >
+ *
+ * After that f( \bar{x} + d* ) = f( \bar{x} - t z* ) = q( t ) has been
+ * computed, we know:
+ *
+ * - the aggregated subgradient z*, which is a Sigma*-subgradient in \bar{x}
+ *
+ * - the newly obtained subgradient g, which is an Alfa1.back()-subgradient
+ *   in 0 and and eps-subgradient in t, where
+ *
+ *     eps = DeltaFi - ( Alfa1.back() + < g , d* > )
+ *
+ * We thus assume:
+ *
+ * - q( 0 ) = 0
+ *
+ * - q'( 0 ) = < - z* , z* > = - NrmZ^2
+ *
+ * Note, however, that z* is a Sigma*-subgradient in \bar{x}, and therefore
+ * the value of the linearization there is rather -Sigma*; thus, we could
+ * alternatively assume q( 0 ) = - Sigma*.
+ *
+ * - q( t ) = f( \bar{x} - t z* ) - f( \bar{x} ) = DeltaFi
+ *
+ * - q'( t ) = < - z* , g >; since we have ScPr1.back() = < d* , g > =
+ *   < - t z* , g > (note again that this only holds in the quadratic case),
+ *   we conclude q'( t ) = ScPr1.back() / t
+ *
+ * Note, however, that g* is a Alfa1.back()-subgradient of \bar{x}, and
+ * therefore we could alternatively take the value in t as that of the
+ * corresponding linearization, i.e., q( t ) = ScPr1.back() - Alfa1.back().
+ *
+ * We can then consider the quadratic function
+ *
+ *    m( v ) = a v^2 + b v + c
+ *
+ * and construct different forms of it corresponding to different choices of
+ * three of the four information we have, then use its minimum
+ *
+ *   v* = - b / ( 2 a )
+ *
+ * as the suggested new value for t. Since v* only makes sense if a > 0,
+ * when a <= 0 we use the best possible convex approximation of a concave
+ * function by setting a = 0, in which case the minimum is the extreme of
+ * the interval [ tMinor , tMaior ] dictated by the sign of b.
+ *
+ * In the first case
+ *
+ *    m( 0 )  = c = - Sigma*
+ *    m( t )  = a t^2 + b t + c = DeltaFi
+ *    m'( 0 ) = [ 2 a 0 ] + b = - NrmZ^2
+ *
+ * which yields c = - Sigma*, b = - NrmZ^2,
+ * a = ( DeltaFi + NrmZ^2 t + Sigma*  ) / t^2.
+ * Note that z* is a Sigma*-subgradient in \bar{x}, and therefore
+ *
+ *    f( \bar{x} + d* ) >= f( \bar{x} ) + < d* , z* > - Sigma*
+ *                       = f( \bar{x} ) - t < z* , z* > - Sigma*
+ *    ==> DeltaFi = f( \bar{x} + d* ) - f( \bar{x} ) >= - NrmZ^2 t - Sigma*
+ *    ==> a = DeltaFi + NrmZ^2 t + Sigma* >= 0
+ *
+ * which guarantees that m() is convex and therefore the minimum of m() is
+ *
+ *   v* = - ( - NrmZ^2 ) / ( 2 ( DeltaFi + NrmZ^2 t + Sigma* ) / t^2 )
+ *      =   NrmZ^2 / ( 2 ( DeltaFi + NrmZ^2 t + Sigma* ) / t^2 )
+ *      =   t^2 NrmZ^2 / ( 2 ( DeltaFi + NrmZ^2 t + Sigma* ) )
+ *
+ * Note that, conveniently, v* >= 0 always holds. This corresponds to the
+ * fact that m'( 0 ) = b < 0, i.e., m() is surely decreasing in 0.
+ * 
+ * However, this formula has a serious issue: we need to know DeltaFi,
+ * which may well not be defined when a NS is performed and multiple
+ * components are present since the incremental approach may stop the
+ * inner loop before having computed them all. The obvious solution is
+ * to replace DeltaFi with
+ *
+ *    \underline{f}( \bar{x} + d* ) - \bar{f}( \bar{x} ) =
+ *    LwFiLmb1.back() - UpRifFi.back()
+ *
+ * which is always well-defined since a finite lower bound is always
+ * available (unless some component evaluates to -INF, in which case
+ * the algorithm stops and this method is not invoked). */
 
- */
+#define OLD_HEURISTICS 0
 
 
 HpNum BundleSolver::Heuristic1( void )
 {
+ #if OLD_HEURISTICS
+
  if( Alfa1.back() < Eps<double>() )
   return( DeltaFi > Eps<double>() ? tMaior : tMinor );
  else
   return( t * ( ( DeltaFi + Alfa1.back() ) / ( 2 * Alfa1.back() ) ) );
+
+ #else
+
+ auto DF = DeltaFi < INFshift ? DeltaFi : LwFiLmb1.back() - UpRifFi.back();
+ auto NZ2 = NrmZ * NrmZ;
+ if( DF + NZ2 * t + Sigma > 1e-16 )  // this should always be >=
+  return( t * t * NZ2 / ( 2 * ( DF + NZ2 * t + Sigma ) ) );
+ else                 // a == 0, all depends on the sign of b
+  /* there is no "if" here, NrmZ >= 0 by definition, a fortiori NZ2
+  if( - NZ2 <= 0 )    // b < 0  */
+   return( tMaior );  // ==> tMaior
+  /* there is no "else" here, - NZ2 < 0 cannot happen
+  else                // b > 0
+   return( tMinor );  // ==> tMinor */
+
+ #endif
  }
 
 /*--------------------------------------------------------------------------*/
+/* With the notation above, in the second case we rather impose
+ *
+ *    m( 0 )  = c = 0
+ *    m( t )  = a t^2 + b t [ + 0 ] = ScPr1.back() - Alfa1.back()
+ *    m'( t ) = 2 a t + b = ScPr1.back() / t
+ *
+ * which yields c = 0, a = Alfa1.back() / t^2,
+ * b = ( ScPr1.back() - 2 Alfa1.back() ) / t
+ *
+ * Since Alfa1.back() >= 0, a >= 0 which implies that m() is surely convex
+ * and the minimum is
+ * 
+ *   v* = - [ ( ScPr1.back() - 2 Alfa1.back() ) / t ] /
+ *          [ 2 Alfa1.back() / t^2 ]
+ *      = t ( 2 Alfa1.back() - ScPr1.back() ) / ( 2 Alfa1.back() )
+ *
+ * Note that, unlike in the first case, there is no guarantee that v* >= 0,
+ * because we fix the derivative in t and therefore m'( 0 ) = b may turn up
+ * to be positive (m() in increasing in 0).
+ *
+ * Since this formula does not really use DeltaFi, it being undefined is not
+ * an issue here. However, this formula has a somewhat similar issue with NS
+ * (and SS alike) in that not all components may have been evaluated, and
+ * therefore only a "partial" g may be available. Yet, ScPr1.back() is
+ * always avaiable, it being computed using z*_i in place of g_i for all
+ * components for which g_i has not been computed. */
 
 HpNum BundleSolver::Heuristic2( void )
 {
+ #if OLD_HEURISTICS
+
  if( std::abs( vStar.back() + DeltaFi ) < Eps<double>() )
   return( tMaior );
  else
   return( t * abs( vStar.back() / ( 2 * ( vStar.back() + DeltaFi ) ) ) );
+
+ #else
+
+ if( Alfa1.back() > 1e-16 )         // it is always >= 0, but it may be ==
+  return( t * ( 2 * Alfa1.back() - ScPr1.back() ) / ( 2 * Alfa1.back() ) );
+ else                               // a == 0,  all depends on the sign of b
+  if( ScPr1.back() - 2 * Alfa1.back() <= 0 )  // b < 0
+   return( tMaior );                          // ==> tMaior
+  else                                        // b > 0
+   return( tMinor );                          // ==> tMinor
+
+ #endif
+ }
+
+/*--------------------------------------------------------------------------*/
+/* With the notation above, in the third case we rather impose
+ *
+ *    m'( 0 ) = [ 2 a 0 ] + b = - NrmZ^2
+ *    m( t )  = a t^2 + b t + c = < something >
+ *    m'( t ) = 2 a t + b = ScPr1.back() / t
+ *
+ * which yields b = - NrmZ^2, a  = ( ScPr1.back() / t + NrmZ^2 ) / ( 2 t ),
+ * and c ... something depending on which value we choose for m( t ), but we
+ * don't care about because c does not appear in the computation of v*.
+ * If m() is convex, i.e.
+ *
+ *    ScPr1.back() / t + NrmZ^2 > 0
+ *
+ * yields
+ * 
+ *   v* = - [ - NrmZ^2 ] / [ 2 ( ScPr1.back() / t + NrmZ^2 ) / ( 2 t ) ]
+ *      = t NrmZ^2 / ( ScPr1.back() / t + NrmZ^2 )
+ *
+ * Note that, if m() is convex, then v* >= 0 holds because, as usual, we have
+ * fixed m'( 0 ) = b < 0 and therefore m() is decreasing in 0. 
+ *
+ * See above for the "issue" about ScPr1.back() having been computed with a
+ * "partial" g; however, since this formula does not really use DeltaFi,
+ * it being undefined is not an issue here.
+ *
+ * Note also that the possible fourth case
+ *
+ *    m( 0 )  = c = 0 [or - Sigma*]
+ *    m'( 0 ) = [ 2 a 0 ] + b = - NrmZ^2
+ *    m'( t ) = 2 a t + b = ScPr1.back() / t
+ *
+ * only changes c w.r.t. the current one, hence it does not change v*, and
+ * therefore need not be separately considered. */
+
+HpNum BundleSolver::Heuristic3( void )
+{
+ auto NZ2 = NrmZ * NrmZ;
+ if( ScPr1.back() / t + NZ2 > 1e-16 )
+  return( t * NZ2 / ( ScPr1.back() / t + NZ2 ) );
+ else                 // a == 0, all depends on the sign of b
+  /* there is no "if" here, NrmZ >= 0 by definition, a fortiori NZ2
+  if( - NZ2 <= 0 )    // b < 0  */
+   return( tMaior );  // ==> tMaior
+  /* there is no "else" here, - NZ2 < 0 cannot happen
+  else                // b > 0
+   return( tMinor );  // ==> tMinor */
  }
 
 /*--------------------------------------------------------------------------*/

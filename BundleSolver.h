@@ -448,6 +448,8 @@ public:
 
   dbltSPar2 ,  ///< numerical parameter for the long-term t-strategies
 
+  dbltSPar3 ,  ///< numerical parameter for "small" heuristic-based t changes
+
   dblCtOff ,   ///< cut-off value for QPPenaltyMP solver only
 
   dblLastBndSlvPar ///< first allowed new double parameter for derived classes
@@ -578,6 +580,7 @@ public:
   tMinor = dflt_dbl_par[ dbltMinor - dblLastParCDAS ];
   tInit = dflt_dbl_par[ dbltInit - dblLastParCDAS ];
   tSPar2 = dflt_dbl_par[ dbltSPar2 - dblLastParCDAS ];
+  tSPar3 = dflt_dbl_par[ dbltSPar3 - dblLastParCDAS ];
   CtOff = dflt_dbl_par[ dblCtOff - dblLastParCDAS ];
 
   v_events.resize( max_event_number() );
@@ -778,26 +781,22 @@ public:
   *
   * - inttSPar1 [12]: select the t-strategy used. This field is coded
   *                   bit-wise in the following way.
-  *   The first two bits control which heuristics are used to compute a new
-  *   value of t when increasing/decreasing it. There are two heuristics
-  *   avaliable, H1 and H2, both based on a quadratic interpolation of the
-  *   function but differing in which derivative is used: H1 uses the
-  *   derivative in the new tentative point, and it is guaranteed to produce
-  *   a value greater than the current one if and only if the scalar product
-  *   between the direction and the newly obtained subgradient is < 0
-  *   (indicating that a longer step along the same direction could have been
-  *   advantageous), while H2 uses the derivative in the current point and it
-  *   does not possess this property. The value of the first two bits of
-  *   tSPar1 has the following meaning:
+  *   The first two bits control which heuristics are used compute a new
+  *   value of t when increasing/decreasing it. There are three heuristics
+  *   avaliable, all based on a quadratic interpolation of the function based
+  *   on known data but differing about which three of the four data points
+  *   available (function values and derivatives in 0 and t) are used. The
+  *   setting of the bits is:
   *
-  *   bit 0:  which heuristic is used to increase t: 0 = H1, 1 = H2
+  *    00 (+0):  no heuristic is used
+  *    01 (+1):  Heuristic1 is used
+  *    10 (+2):  Heuristic2 is used
+  *    11 (+2):  Heuristic3 is used
   *
-  *   bit 1:  which heuristic is used to decrease t: 0 = H2, 1 = H1
+  *   The following 2 bits of inttSPar1 tell which long-term t-strategy is
+  *   used, with the following values:
   *
-  *   The following bits of inttSPar1 tell which long-term t-strategy is used,
-  *   with the following values:
-  *
-  *    0 (+ 0):  none, only the heuristics are used
+  *    0 (+ 0):  none, only the heuristics (if any) are used
   *
   *    1 (+ 4):  the "soft" long-term t-strategy is used: the value EpsU is
   *              mantained (cf. intBPar6) which estimates the current
@@ -816,6 +815,10 @@ public:
   *              then t decreases are inhibited (decreasing t causes an
   *              increase of D*_1( -z* ) that is already big)
   *
+  *   These three long-term t-strategies are mutually exclusive. The following
+  *   2 bit of inttSPar1 can instead be used to specify t-strategies that can
+  *   be activated in addition to these, with the following values:
+  *
   *    4 (+16):  the "endgame" t-strategy is used, where if D*_1( -z* ) is
   *              "small" (~ 1/10 of the current absolute epsilon) t is
   *              decreased no matter what the other strategies dictated.
@@ -824,6 +827,21 @@ public:
   *              having D*_1( -z* ) "small" is no guarantee that we actually
   *              are at the end, especially if the oracle dynamically
   *              generates its variables, so use with caution
+  *
+  *    5 (+32):  currently reserved
+  *
+  *   The following two bits (6 and 7) are analogous to the first two ones
+  *   in that they allow to control the heuristic used, but differentiating
+  *   between SS (when t shoudld increase) and NS (when it should decrease).
+  *   That is:
+  *
+  *    00 (+0):  the same heuristic is used for SS and NS
+  *    01 (+32): the heuristic indicated in the first two bits is used for
+  *              SS, while Heuristic1 is used for NS
+  *    10 (+64): the heuristic indicated in the first two bits is used for
+  *              SS, while Heuristic2 is used for NS
+  *    11 (+96): the heuristic indicated in the first two bits is used for
+  *              SS, while Heuristic3 is used for NS
   *
   * - intMaxNrEvls [2]: max number of function evaluations for each
   *                (non-easy) C05Function for each iteration; multiple
@@ -1108,7 +1126,7 @@ public:
   *
   * - dblBPar5 [30]: parameter controlling the dynamic number of 
   *                  linearizations to be fetched from each oracle at each
-  *   iteration, see intbPar6 for details  *
+  *   iteration, see intBPar6 for details  *
   *
   * - dblm1 [0.01]: m1 factor in the all-important NS/SS decision. This
   *                 factor sets the lower target for the objective function
@@ -1208,6 +1226,40 @@ public:
   *
   * - dbltSPar2 [1e-3]: numerical parameter for the long-term t-strategies;
   *                     see inttSPar1 for details
+  *
+  * - dbltSPar3 [0]: numerical parameter for "small heuristic changes in t".
+  *                  The general gist of t-management is that there are three
+  *   hierarchical levels: 1) on top, the long-term t-strategies that try to
+  *   consider the stage at which the optimization process is [see inttSPar1
+  *   and dbltSPar2 for details]; 2) in the middle, multi-step strategies
+  *   that take into account what has happened "in the last few iterations"
+  *   [see intMnSSC, intMnNSC, dblmxIncr, dblmnIncr, dblmxDecr, dblmnDecr];
+  *   3) at the bottom, heuristic t-strategies that only look at information
+  *   from the very current iteration [see inttSPar1]. In particular, both
+  *   the top and the middle layer would stipulate that t cannot change unless
+  *   conditions are met, and when it does the change satisfies other
+  *   conditions (must be larger/smaller than ...), and then the heuristics
+  *   are only used to help in picking the actual value. However, it can be
+  *   useful to allow the heuristics to do "small changes in t" whatever the
+  *   other levels dictate. This is the meaning of this parameter: if
+  *   abs( dbltSPar3 ) > 1, then the heuristics are allowed to change the
+  *   value of t even if it should be fixed according to the other mechanisms.
+  *   The rub is that the change should be "small", that is:
+  *
+  *    = if dbltSPar3 > 1, then t can only get values in the interval
+  *      [ t / dbltSPar3 , t * dbltSPar3 ] (for instance, with dbltSPar3 = 2
+  *      t can at most double or halve); note that this implies that t can
+  *      decrease during a SS and increase during a NS, which is contrary to
+  *      usual practices but not necessarily wrong (the heuristics may "know
+  *      better");
+  *
+  *    = if dbltSPar3 < - 1, then t can only be increased if a SS is being
+  *      performed and decreased in a NS is being performed; in particular,
+  *      for a SS t can be chosen in [ t , t * ( - dbltSPar3 ) ], while for
+  *      a NS t can be chosen in [ t / ( - dbltSPar3 ) , t ].
+  *
+  *   Any value of dbltSPar3 such that abs( dbltSPar3 ) <= 1 is equivalent
+  *   to 0, which means "t cannot be changed by the heuristics only".
   *
   * - dblCtOff [1e-1]: cut-off value for pricing in QPPenaltyMP solver only
   */
@@ -2227,6 +2279,7 @@ public:
 
  int tSPar1;        ///< int parameter for long-term t-strategy
  double tSPar2;     ///< double parameter for long-term t-strategy
+ double tSPar3;     ///< double parameter for small heuristic t changes
 
  char DoEasy;       ///< if and how "easy" components are managed
 
@@ -2644,6 +2697,8 @@ class FakeFiOracle : public FiOracle
  HpNum Heuristic1( void );
 
  HpNum Heuristic2( void );
+
+ HpNum Heuristic3( void );
 
 /*--------------------------------------------------------------------------*/
 
