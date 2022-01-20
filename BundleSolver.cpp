@@ -958,7 +958,7 @@ int BundleSolver::compute( bool changedvars )
 
   if( SSDone ) {  // SS - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-   BLOG( 1 , std::endl << " SS[" << CSSCntr++ << "]: DFi = " << shrt );
+   BLOG( 1 , std::endl << " SS[" << CSSCntr << "]: DFi = " << shrt );
    if( f_convex ) {
     BLOG( 1 , DeltaFi << def << " ~ Up1(" << UpFiLmb1.back()
 	      << ") <= UpTrgt(" << UpTrgt << ")" );
@@ -978,7 +978,7 @@ int BundleSolver::compute( bool changedvars )
      tm /= tSPar3;
     }
 
-   if( CSSCntr > MnSSC ) {  // increasing t is possible: note the ">"
+   if( ++CSSCntr > MnSSC ) {  // increasing t is possible: note the ">"
     // due to the fact that the counter has just been increased
     if( ( ( tSPar1 & tSP1Msk ) == kBLTTS )  &&
 	( DSTS <= tSPar2 * Sigma ) && ( CSSCntr < 10 ) ) {  //!! 10!
@@ -1006,7 +1006,7 @@ int BundleSolver::compute( bool changedvars )
    CmptdinL = ( cnt == NrFi - NrEasy );
    }
   else {        // NS - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-   BLOG( 1 , std::endl << " NS[" << CNSCntr++ << "]: " );
+   BLOG( 1 , std::endl << " NS[" << CNSCntr << "]: " );
    BLOG2( 1 , DeltaFi < INFshift , "DFi = " << shrt << rs( DeltaFi )
 	      <<  " ~ " << def );
    if( f_convex ) {
@@ -1028,7 +1028,7 @@ int BundleSolver::compute( bool changedvars )
      tp *= tSPar3;
     }
 
-   if( CNSCntr > MnNSC ) {  // decreasing t is possible: note the ">"
+   if( ++CNSCntr > MnNSC ) {  // decreasing t is possible: note the ">"
     // due to the fact that the counter has just been increased
     if( ( ( ( tSPar1 & tSP1Msk ) == kSLTTS ) ||
 	  ( ( tSPar1 & tSP1Msk ) == kHLTTS ) ) &&
