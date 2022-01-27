@@ -2737,7 +2737,7 @@ class FakeFiOracle : public FiOracle
 
 /*--------------------------------------------------------------------------*/
 
- HpNum Heuristic( void );
+ HpNum Heuristic( Index whch );
 
  HpNum Heuristic1( void );
 

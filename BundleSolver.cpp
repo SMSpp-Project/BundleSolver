@@ -942,12 +942,10 @@ int BundleSolver::compute( bool changedvars )
 
   SSDone = ( UpFiLmb1.back() < UpTrgt ) ? true : false;
 
-  // compute the heuristic t- - - - - - - - - - - - - - - - - - - - - - - - -
+  // setup for the heuristic t- - - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-  HpNum tt = Heuristic();
-  double tm = t;
-  double tp = t;
+  VarValue tt = t , tm = t , tp = t;
 
   if( SSDone ) {  // SS - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -959,6 +957,9 @@ int BundleSolver::compute( bool changedvars )
    else
     BLOG( 1 , - DeltaFi << def << " ~ Lw1(" << - UpFiLmb1.back()
 	      << ") >= LwTrgt(" << - UpTrgt << ")" );
+
+   if( tSPar1 & 1 )
+    tt = Heuristic( tSPar1 >> 6 );
 
    if( tt != t )
     BLOG( 1 , " ~ Ht = " << shrt << tt );
@@ -1003,6 +1004,9 @@ int BundleSolver::compute( bool changedvars )
    else
     BLOG( 1 , "Up1(" << - LwFiLmb1.back() << ") <= UpTrgt(" << - LwTrgt
 	      << ")" );
+
+   if( tSPar1 & 2 )
+    tt = Heuristic( tSPar1 >> 8 );
 
    if( tt != t )
     BLOG( 1 , " ~ Ht = " << shrt << tt );
@@ -4391,9 +4395,9 @@ void BundleSolver::UpdateHeuristicInfo( void )
  * function by setting a = 0, in which case the minimum is the extreme of
  * the interval [ tMinor , tMaior ] dictated by the sign of b. */
 
-HpNum BundleSolver::Heuristic( void )
+HpNum BundleSolver::Heuristic( Index whch )
 {
- switch( ( SSDone ? tSPar1 >> 6 : tSPar1 >> 8 ) & 3 ) {
+ switch( whch & 3 ) {
   case( 0 ): return( Heuristic1() );
   case( 1 ): return( Heuristic2() );
   case( 2 ): return( Heuristic3() );
