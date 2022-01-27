@@ -117,9 +117,8 @@ static constexpr Index kSLTTS =  4;   // "soft" long-term t-strategy
 static constexpr Index kHLTTS =  8;   // "hard" long-term t-strategy
 static constexpr Index kBLTTS = 12;   // "balancing" long-term t-strategy
 static constexpr Index kEGTTS = 16;   // "endgame" long-term t-strategy
-static constexpr Index tSPHMsk1 = 3;  // mask for heuristics: bits 0 and 1
-static constexpr Index tSPHMsk2 = 96; // mask for heuristics: bits 6 and 7
-
+static constexpr Index tSPHMsk1 = 172;  // mask for heuristics: bits 6 and 7
+static constexpr Index tSPHMsk2 = 768;  // mask for heuristics: bits 7 and 8
 
 static constexpr unsigned char RstAlg = 1;  // don't reset algorithmic params
 static constexpr unsigned char RstCrr = 2;  // don't reset current point to
@@ -291,7 +290,7 @@ static void set_union_in_place( BundleSolver::Subset & S1 ,
 
 /*--------------------------------------------------------------------------*/
 
-static double norm( std::vector< double > & v , char t )
+static double norm( const BundleSolver::Vec_VarValue & v , char t )
 {
  double res = 0;
  if( t == 0 ) {    // INF-norm
@@ -311,6 +310,14 @@ static double norm( std::vector< double > & v , char t )
    }
 
  return( res );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+static void vect_sum( BundleSolver::Vec_VarValue & v1 , double * v2 )
+{
+ for( auto & el : v1 )
+  el += *(v2++);
  }
 
 /*--------------------------------------------------------------------------*/
@@ -581,6 +588,11 @@ int BundleSolver::compute( bool changedvars )
  ++SCalls;            // one more call
  RifeqFi = ( UpRifFi == UpFiLmb );  // true if the reference values are right
 
+ if( NeedsG1() )
+  G1.resize( NrFi );
+ else
+  G1.clear();
+
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // main cycle starts here- - - - - - - - - - - - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -780,6 +792,20 @@ int BundleSolver::compute( bool changedvars )
   // run the inner loop - - - - - - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
+  // first some initializations - - - - - - - - - - - - - - - - - - - - - - -
+  // all stuff that must be computed/changed inside InnerLoop()
+
+  Alfa1 = 0;
+  ScPr1 = NeedsScPr1() ? Master->ReadGid() : 0;
+  if( NeedsG1() ) {
+   G1Norm = INFshift;
+   G1.assign( NrFi , double( 0 ) );
+   }
+
+  CurrNrEvls.assign( NrFi , Index( 0 ) );
+  MPchgs = 0;  // != 0 if the MP is guaranteed to change enugh after the
+               // insertion of new information to ensure convergence
+
   auto start = std::chrono::system_clock::now();
 
   auto cnt = InnerLoop();
@@ -812,27 +838,9 @@ int BundleSolver::compute( bool changedvars )
     LmbdBst = Lambda1;
    }
 
-  // compute the "aggregated" Alfa1 and ScPr1 - - - - - - - - - - - - - - - -
-  // ... using the "representatives" of all components: these are used in
-  // some "global" formulae, such as the t heuristics
+  // update the "aggregated" Alfa1 and ScPr1- - - - - - - - - - - - - - - - -
 
-  Alfa1.back() = 0;
-  ScPr1.back() = Master->ReadGid();
-
-  for( Index k = 0 ; k < NrFi ; k++ )
-   if( whisG1[ k ] < InINF ) {
-    if( Alfa1[ k ] == INFshift )
-     Alfa1[ k ] = (Master->ReadLinErr())[ whisG1[ k ] ];
-
-    Alfa1.back() += Alfa1[ k ];
-
-    if( ScPr1[ k ] == INFshift )
-     ScPr1[ k ] = Master->ReadGid( whisG1[ k ] );
-
-    ScPr1.back() += ScPr1[ k ];
-    }
-   else
-    Alfa1[ k ] = ScPr1[ k ] = 0;
+  UpdateHeuristicInfo();
 
   // some log about the newly obtained information- - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -937,24 +945,9 @@ int BundleSolver::compute( bool changedvars )
   // compute the heuristic t- - - - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-  HpNum tt = t;
-
-  // the first two bits command the heuristic if either bits 6 and 7 are 0,
-  // or a SS is being done
-  if( SSDone || ( ! ( tSPar1 & tSPHMsk2 ) ) )
-   switch( tSPar1 & tSPHMsk1 ) {
-    case( 1 ): tt = Heuristic1(); break;
-    case( 2 ): tt = Heuristic2(); break;
-    case( 3 ): tt = Heuristic3();
-    }
-  else
-   // else this is a NS, and the heuristic is commanded by bits 6 and 7
-   // (which cannot be 0)
-   switch( tSPar1 & tSPHMsk2 ) {
-    case( 32 ): tt = Heuristic1(); break;
-    case( 64 ): tt = Heuristic2(); break;
-    case( 96 ): tt = Heuristic3();
-    }
+  HpNum tt = Heuristic();
+  double tm = t;
+  double tp = t;
 
   if( SSDone ) {  // SS - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -970,8 +963,6 @@ int BundleSolver::compute( bool changedvars )
    if( tt != t )
     BLOG( 1 , " ~ Ht = " << shrt << tt );
 
-   double tm = t;
-   double tp = t;
    if( tSPar3 ) {
     tp *= std::abs( tSPar3 );
     if( tSPar3 > 0 )
@@ -995,10 +986,6 @@ int BundleSolver::compute( bool changedvars )
      }
     }
 
-   if( tm != tp )
-    tt = std::min( std::min( tMaior , tp ) ,
-		   std::max( std::max( tMinor , tm ) , tt ) );
-
    BLOG( 1 , std::endl );
 
    GotoLambda1();
@@ -1020,8 +1007,6 @@ int BundleSolver::compute( bool changedvars )
    if( tt != t )
     BLOG( 1 , " ~ Ht = " << shrt << tt );
 
-   double tm = t;
-   double tp = t;
    if( tSPar3 ) {
     tm /= std::abs( tSPar3 );
     if( tSPar3 > 0 )
@@ -1057,9 +1042,6 @@ int BundleSolver::compute( bool changedvars )
       }
     }
 
-   if( tm != tp )
-    tt = std::min( std::min( tMaior , tp ) ,
-		   std::max( std::max( tMinor , tm ) , tt ) );
 
    BLOG( 1 , std::endl );
    CSSCntr = 0;
@@ -1069,16 +1051,22 @@ int BundleSolver::compute( bool changedvars )
   // actually update t- - - - - - - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-  if( ( tSPar1 & kEGTTS ) && ( UpFiLmb.back() < INFshift ) )
-   // endgame t-strategy: note the "/ 10"!!
-   if( DSTS < max_error() / 10 ) {
+  // if the endgame t-strategy fires (note the "/ 10"!!), the regular
+  // t-updating mechanism is superseeded
+  if( ( tSPar1 & kEGTTS ) && ( UpFiLmb.back() < INFshift ) &&
+      ( DSTS < max_error() / 10 ) ) {
     tt = std::max( t * ( mxDecr + mnDecr ) / 2 , tMinor );
     BLOG( 1 , " ~ endgame, t = " << shrt << tt );
+    //!! the reverse should also be done: if sigma is small and D*( t* ) is
+    //!! large, t should be increased --> but this would happen surely at
+    //!! the beginning, it should be done only near the end
     }
-
-  //!! the reverse should also be done: if sigma is small and D*( t* ) is
-  //!! large, t should be increased --> but this would happen surely at
-  //!! the beginning, it should be done only near the end
+  else             // regular update mechanism
+   if( tm != tp )  // if t can cange, select it in [ tm , tp ] 
+    tt = std::min( std::min( tMaior , tp ) ,
+		   std::max( std::max( tMinor , tm ) , tt ) );
+   else            // else
+    tt = t;        // keep it as it is
 
   if( ( tHasChgd = ( t != tt ) ) )
    t = tt;
@@ -1636,9 +1624,6 @@ void BundleSolver::set_Block( Block * block )
 
  vStar.resize( NrFi + 1 , 0 );
  whisG1.resize( NrFi , InINF );  // no representative yet
-
- ScPr1.resize( NrFi + 1 , 0 );
- Alfa1.resize( NrFi + 1 , 0 );
 
  Result = kError;
  SSDone = false;
@@ -2646,8 +2631,6 @@ void BundleSolver::FormD( void )
 
  Zvalid.assign( NrFi , false );    // the z[ i ] are no longer valid
 
- ScPr1.assign( NrFi , INFshift );  // the scalar products have changed
-
  DST = Master->ReadDStart( t );  // D_t( z* )
 
  // Delta* = D_t( z* ) + Sigma* is <= - v*, and a weaker requirement about
@@ -2970,11 +2953,6 @@ BundleSolver::Index BundleSolver::InnerLoop( bool extrastep )
  // here one might change the value of wFi, corresponding to the first
  // component to be evaluated, if a non-strictly-round-robin order is
  // sought for
-
- CurrNrEvls.assign( NrFi , Index( 0 ) );
- MPchgs = 0;      // != 0 if the MP is guaranteed to change enugh after
-                  // the insertion of new information to ensure that the
-                  // algorithm will converge
 
  // compute the minimum number of components to evaluate
  Index minceval = ( MinNrEvls >= 0 ? Index( MinNrEvls )
@@ -3383,13 +3361,13 @@ bool BundleSolver::GetGi( Index wFi )
 
   // get the space for the item from the MPSolver - - - - - - - - - - - - - -
 
-  auto G1 = Master->GetItem( wFi + 1 );
+  auto G1k = Master->GetItem( wFi + 1 );
 
   // fetch the item from the Oracle - - - - - - - - - - - - - - - - - - - - -
 
-  fwFi->get_linearization_coefficients( G1 );
+  fwFi->get_linearization_coefficients( G1k );
   if( ! f_convex )
-   chgsign( G1 , NumVar );
+   chgsign( G1k , NumVar );
 	
   auto Alfa1k = rs( fwFi->get_linearization_constant() );
   HpNum eps;
@@ -3403,11 +3381,14 @@ bool BundleSolver::GetGi( Index wFi )
 
   Index cp;
   HpNum ScPr1k;
+  bool is_rep = diagonal && ( ! Ftchd ) && ( ! CurrNrEvls[ wFi ] );
+  // if it is the first subgradient of the first call to GetGi() for this
+  // component, it may be the "representative subgradient"
 
   if( diagonal ) {  // it is a subgradient
    // compute the lower bound in Lambda provided by the subgradient
    auto FikLmb = Alfa1k +
-    std::inner_product( Lambda.begin() , Lambda.end() , G1 , double( 0 ) );
+    std::inner_product( Lambda.begin() , Lambda.end() , G1k , double( 0 ) );
 
    // try to update LwFiLmb[ wFi ] (and possibly LwFiLambd.back())
    // note that, even if this suceeds and therefore increases LwFiLmb[ wFi ]
@@ -3423,7 +3404,7 @@ bool BundleSolver::GetGi( Index wFi )
 
    // compute the linearization error in Lambda1
    Alfa1k = UpFiLmb1[ wFi ] - Alfa1k -
-    std::inner_product( Lambda1.begin() , Lambda1.end() , G1 , double( 0 ) );
+    std::inner_product( Lambda1.begin() , Lambda1.end() , G1k , double( 0 ) );
 
    // this is the eps so that G1 is an eps-subgradent in Lambda1
    eps = Alfa1k;
@@ -3444,7 +3425,7 @@ bool BundleSolver::GetGi( Index wFi )
    // i.e., g x + \alpha <= 0; this means that the \alpha produced by
    // get_linearization_constant() is the opposite than that of GetVal()
    // in fact, the standard form of the constraints in the master problem is
-   // [v/0] >= g d - \alpha while the diagonal linearizations are
+   // [ v / 0 ] >= g d - \alpha while the diagonal linearizations are
    //
    //       ( 1 , - g ) ( v , x ) >= \alpha
    //
@@ -3509,6 +3490,20 @@ bool BundleSolver::GetGi( Index wFi )
       }
      }
 
+    // if it is the "representative subgradient", add its contribution to
+    // the required ones of Alfa1, ScPr1 and G1 (if any); do this before
+    // the call to SubstItem() because the state of the G1k memory after
+    // the call is unclear
+    if( is_rep ) {
+     whisG1[ wFi ] = cp;
+     if( NeedsAlfa1() )
+      Alfa1 += Alfa1k;
+     if( NeedsScPr1() )
+      ScPr1 += ScPr1k;
+     if( NeedsG1() )
+      vect_sum( G1 , G1k );
+     }
+
     Master->SubstItem( cp );  // substitute it in the master problem
     // note that the number of items of component wFi in the master problem
     // is unchanged
@@ -3541,6 +3536,20 @@ bool BundleSolver::GetGi( Index wFi )
     ++NrItems[ NrFi ];      // number remains the same as one is replaced)
     }
 
+   // if it is the "representative subgradient", add its contribution to
+   // the required ones of Alfa1, ScPr1 and G1 (if any); do this before
+   // the call to SetItem() because the state of the G1k memory after
+   // the call is unclear
+   if( is_rep ) {
+    whisG1[ wFi ] = wh;
+    if( NeedsAlfa1() )
+     Alfa1 += Alfa1k;
+    if( NeedsScPr1() )
+     ScPr1 += ScPr1k;
+    if( NeedsG1() )
+     vect_sum( G1 , G1k );
+    }
+
    Master->SetItem( wh );   // insert the new item in the MP Solver
 
    // now find a position in the global pool of component wFi where to store
@@ -3560,17 +3569,6 @@ bool BundleSolver::GetGi( Index wFi )
    BLOG( 2 , " stored in " << wh << " (" << gpp << ")"  );
    }
 
-  // in all (subgradient) cases, check and update whisG1- - - - - - - - - - -
-
-  if( diagonal ) {     // it is a subgradient
-   if( ( whisG1[ wFi ] == InINF ) || ( Alfa1k < Alfa1[ wFi ] ) ||
-       ( ( Alfa1k == Alfa1[ wFi ] ) && ( ScPr1k > ScPr1[ wFi ] ) ) ) {
-    whisG1[ wFi ] = wh;  // wh is the new representative of wFi
-    Alfa1[ wFi ] = Alfa1k;
-    ScPr1[ wFi ] = ScPr1k;
-    }
-   }
- 
   // if something was inserted, bookkeeping is needed - - - - - - - - - - - -
 
   if( to_insert ) {
@@ -3638,10 +3636,6 @@ void BundleSolver::GotoLambda1( void )
  // change the current point in the MP Solver - - - - - - - - - - - - - - - -
 
  Master->ChangeCurrPoint( t , DF.data() );
-
- // signal that Alfa1[] is not reliable - - - - - - - - - - - - - - - - - - -
-
- Alfa1.assign( NrFi + 1 , INFshift );
 
  #if CHECK_DS & 4
   CheckAlpha();
@@ -3815,25 +3809,39 @@ void BundleSolver::Log2( double ft )
  *f_log << "Fi1 = ";
 
  if( f_convex ) {
-  if( UpFiLmb1.back() == - INFshift )
+  if( UpFiLmb1.back() == - INFshift ) {
    *f_log << "- INF => STOP." << std::endl;
+   return;
+   }
   else
-   if( UpFiLmb1.back() == INFshift )
+   if( UpFiLmb1.back() == INFshift ) {
     *f_log << "+ INF" << std::endl;
+    return;
+    }
    else
-    *f_log << UpFiLmb1.back() << shrt << " ~ Alfa1 = " << Alfa1.back()
-	   << " ~ Gi1xd = " << ScPr1.back() << std::endl;
+    *f_log << UpFiLmb1.back() << shrt;
   }
  else
-  if( UpFiLmb1.back() == - INFshift )
+  if( UpFiLmb1.back() == - INFshift ) {
    *f_log << "+ INF => STOP." << std::endl;
+   return;
+   }
   else
-   if( UpFiLmb1.back() == INFshift )
+   if( UpFiLmb1.back() == INFshift ) {
     *f_log << "- INF" << std::endl;
+    return;
+    }
    else
-    *f_log << - UpFiLmb1.back() << shrt << " ~ Alfa1 = " << Alfa1.back()
-	   << " ~ Gi1xd = " << - ScPr1.back() << std::endl;
+    *f_log << - UpFiLmb1.back() << shrt;
+
+ if( NeedsAlfa1() )
+  *f_log << " ~ Alfa1 = " << Alfa1;
   
+ if( NeedsScPr1() )
+  *f_log << " ~ Gi1xd = " << ScPr1;
+
+ *f_log << std::endl;
+
  }  // end( BundleSolver::Log2 )
 
 /*--------------------------------------------------------------------------*/
@@ -4262,11 +4270,74 @@ Index BundleSolver::FindAPlace( Index wFi )
  }  // end( BundleSolver::FindAPlace )
 
 /*--------------------------------------------------------------------------*/
-/* These heuristics are based on considering the objective f( x ) from the
- * current stability center \bar{x} along direction d*; however, the function
- * is seen as a parameter of t, assuming that d* = - t z* (which is, strictly
- * speaking, only true in the pure quadratic proximal case and therefore does
- * not cleanly generalise to the generalised one; yet these are heuristics).
+
+bool BundleSolver::NeedsAlfa1( void )
+{
+ // Alfa1 is only used in Heuristic2
+ return( ( ( ( tSPar1 & 1 ) && ( ( tSPar1 & tSPHMsk1 ) == 64 ) ) ) ||
+	 ( ( ( tSPar1 & 2 ) && ( ( tSPar1 & tSPHMsk2 ) == 256 ) ) ) );
+ }
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+
+bool BundleSolver::NeedsScPr1( void )
+{
+ // ScPr1 is used by everyone save for Heuristic1
+ return( ( ( ( tSPar1 & 1 ) && ( tSPar1 & tSPHMsk1 ) ) ) ||
+	 ( ( ( tSPar1 & 2 ) && ( tSPar1 & tSPHMsk2 ) ) ) );
+ }
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+
+bool BundleSolver::NeedsG1( void )
+{
+ // G1 is only used in Heuristic2
+ return( ( ( ( tSPar1 & 1 ) && ( ( tSPar1 & tSPHMsk1 ) == 172 ) ) ) ||
+	 ( ( ( tSPar1 & 2 ) && ( ( tSPar1 & tSPHMsk2 ) == 768 ) ) ) );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::UpdateHeuristicInfo( void )
+{
+ // if required, update the "aggregated" Alfa1 and ScPr1, that are used in
+ // the t heuristics, using the "representatives" of all components that
+ // have not been compute()-d in the latest InnerLoop()
+
+ if( NeedsAlfa1() && NeedsG1() ) {
+  for( Index k = 0 ; k < NrFi ; ++k )
+   if( ( ! CurrNrEvls[ k ] ) && ( whisG1[ k ] < InINF ) ) {
+    Alfa1 += (Master->ReadLinErr())[ whisG1[ k ] ];
+    ScPr1 += Master->ReadGid( whisG1[ k ] );
+    }
+
+  return;
+  }
+
+ if( NeedsAlfa1() ) {
+  for( Index k = 0 ; k < NrFi ; ++k )
+   if( ( ! CurrNrEvls[ k ] ) && ( whisG1[ k ] < InINF ) )
+    Alfa1 += (Master->ReadLinErr())[ whisG1[ k ] ];
+
+  return;
+  }
+
+ if( NeedsG1() )
+  for( Index k = 0 ; k < NrFi ; ++k )
+   if( ( ! CurrNrEvls[ k ] ) && ( whisG1[ k ] < InINF ) )
+    ScPr1 += Master->ReadGid( whisG1[ k ] );
+
+ }  // end( UpdateHeuristicInfo )
+
+/*--------------------------------------------------------------------------*/
+/* Front-end for four different heuristics for short-term t management.
+ *
+ * Three of the heuristics (1, 2, and 3) are based on three slightly different
+ * variants of the same idea: considering the objective f( x ) from the
+ * current stability center \bar{x} along direction d* seen as a function of
+ * t, assuming that d* = - t z* (which is, strictly speaking, only true in
+ * the pure quadratic proximal case and therefore does not cleanly generalise
+ * to the generalised one; yet these are heuristics).
  *
  * That is, we consider the translated function along z*
  *
@@ -4281,10 +4352,10 @@ Index BundleSolver::FindAPlace( Index wFi )
  *
  * - the aggregated subgradient z*, which is a Sigma*-subgradient in \bar{x}
  *
- * - the newly obtained subgradient g, which is an Alfa1.back()-subgradient
- *   in 0 and and eps-subgradient in t, where
+ * - the newly obtained subgradient g, which is an Alfa1-subgradient in 0 and
+ *   and eps-subgradient in t, where
  *
- *     eps = DeltaFi - ( Alfa1.back() + < g , d* > )
+ *     eps = DeltaFi - ( Alfa1 + < g , d* > )
  *
  * We thus assume:
  *
@@ -4298,13 +4369,13 @@ Index BundleSolver::FindAPlace( Index wFi )
  *
  * - q( t ) = f( \bar{x} - t z* ) - f( \bar{x} ) = DeltaFi
  *
- * - q'( t ) = < - z* , g >; since we have ScPr1.back() = < d* , g > =
+ * - q'( t ) = < - z* , g >; since we have ScPr1 = < d* , g > =
  *   < - t z* , g > (note again that this only holds in the quadratic case),
- *   we conclude q'( t ) = ScPr1.back() / t
+ *   we conclude q'( t ) = ScPr1 / t
  *
- * Note, however, that g* is a Alfa1.back()-subgradient of \bar{x}, and
- * therefore we could alternatively take the value in t as that of the
- * corresponding linearization, i.e., q( t ) = ScPr1.back() - Alfa1.back().
+ * Note, however, that g* is a Alfa1-subgradient of \bar{x}, and therefore we
+ * could alternatively take the value in t as that of the corresponding
+ * linearization, i.e., q( t ) = ScPr1 - Alfa1.
  *
  * We can then consider the quadratic function
  *
@@ -4318,9 +4389,21 @@ Index BundleSolver::FindAPlace( Index wFi )
  * as the suggested new value for t. Since v* only makes sense if a > 0,
  * when a <= 0 we use the best possible convex approximation of a concave
  * function by setting a = 0, in which case the minimum is the extreme of
- * the interval [ tMinor , tMaior ] dictated by the sign of b.
- *
- * In the first case
+ * the interval [ tMinor , tMaior ] dictated by the sign of b. */
+
+HpNum BundleSolver::Heuristic( void )
+{
+ switch( ( SSDone ? tSPar1 >> 6 : tSPar1 >> 8 ) & 3 ) {
+  case( 0 ): return( Heuristic1() );
+  case( 1 ): return( Heuristic2() );
+  case( 2 ): return( Heuristic3() );
+  }
+
+ return( Heuristic4() );
+ }
+
+/*--------------------------------------------------------------------------*/
+/* With the notation above, in the first case we impose
  *
  *    m( 0 )  = c = - Sigma*
  *    m( t )  = a t^2 + b t + c = DeltaFi
@@ -4357,20 +4440,8 @@ Index BundleSolver::FindAPlace( Index wFi )
  * available (unless some component evaluates to -INF, in which case
  * the algorithm stops and this method is not invoked). */
 
-#define OLD_HEURISTICS 0
-
-
 HpNum BundleSolver::Heuristic1( void )
 {
- #if OLD_HEURISTICS
-
- if( Alfa1.back() < Eps<double>() )
-  return( DeltaFi > Eps<double>() ? tMaior : tMinor );
- else
-  return( t * ( ( DeltaFi + Alfa1.back() ) / ( 2 * Alfa1.back() ) ) );
-
- #else
-
  auto DF = DeltaFi < INFshift ? DeltaFi : LwFiLmb1.back() - UpRifFi.back();
  auto NZ2 = NrmZ * NrmZ;
  if( DF + NZ2 * t + Sigma > 1e-16 )  // this should always be >=
@@ -4382,26 +4453,22 @@ HpNum BundleSolver::Heuristic1( void )
   /* there is no "else" here, - NZ2 < 0 cannot happen
   else                // b > 0
    return( tMinor );  // ==> tMinor */
-
- #endif
  }
 
 /*--------------------------------------------------------------------------*/
 /* With the notation above, in the second case we rather impose
  *
  *    m( 0 )  = c = 0
- *    m( t )  = a t^2 + b t [ + 0 ] = ScPr1.back() - Alfa1.back()
- *    m'( t ) = 2 a t + b = ScPr1.back() / t
+ *    m( t )  = a t^2 + b t [ + 0 ] = ScPr1 - Alfa1
+ *    m'( t ) = 2 a t + b = ScPr1 / t
  *
- * which yields c = 0, a = Alfa1.back() / t^2,
- * b = ( ScPr1.back() - 2 Alfa1.back() ) / t
+ * which yields c = 0, a = Alfa1 / t^2, b = ( ScPr1 - 2 Alfa1 ) / t
  *
- * Since Alfa1.back() >= 0, a >= 0 which implies that m() is surely convex
- * and the minimum is
+ * Since Alfa1 >= 0, a >= 0 which implies that m() is surely convex and the
+ * minimum is
  * 
- *   v* = - [ ( ScPr1.back() - 2 Alfa1.back() ) / t ] /
- *          [ 2 Alfa1.back() / t^2 ]
- *      = t ( 2 Alfa1.back() - ScPr1.back() ) / ( 2 Alfa1.back() )
+ *   v* = - [ ( ScPr1 - 2 Alfa1 ) / t ] / [ 2 Alfa1 / t^2 ]
+ *      = t ( 2 Alfa1 - ScPr1 ) / ( 2 Alfa1 )
  *
  * Note that, unlike in the first case, there is no guarantee that v* >= 0,
  * because we fix the derivative in t and therefore m'( 0 ) = b may turn up
@@ -4410,30 +4477,23 @@ HpNum BundleSolver::Heuristic1( void )
  * Since this formula does not really use DeltaFi, it being undefined is not
  * an issue here. However, this formula has a somewhat similar issue with NS
  * (and SS alike) in that not all components may have been evaluated, and
- * therefore only a "partial" g may be available. Yet, ScPr1.back() is
- * always avaiable, it being computed using z*_i in place of g_i for all
- * components for which g_i has not been computed. */
+ * therefore only a "partial" g may be available. ScPr1 and Alfa1 are
+ * computed for all non-"easy" components using the "representative
+ * subgradients" out of the previous iterations, *provided they have not by
+ * chance been deleted* (which should not happen unless the bundle is very
+ * very small). Yet, "easy" components are left out. There may be some way
+ * put of this, e.g. by using z*_i in place of g_i for the "easy" components,
+ * but this is nontrivial and therefore avoided for now. */
 
 HpNum BundleSolver::Heuristic2( void )
 {
- #if OLD_HEURISTICS
-
- if( std::abs( vStar.back() + DeltaFi ) < Eps<double>() )
-  return( tMaior );
- else
-  return( t * abs( vStar.back() / ( 2 * ( vStar.back() + DeltaFi ) ) ) );
-
- #else
-
- if( Alfa1.back() > 1e-16 )         // it is always >= 0, but it may be ==
-  return( t * ( 2 * Alfa1.back() - ScPr1.back() ) / ( 2 * Alfa1.back() ) );
- else                               // a == 0,  all depends on the sign of b
-  if( ScPr1.back() - 2 * Alfa1.back() <= 0 )  // b < 0
-   return( tMaior );                          // ==> tMaior
-  else                                        // b > 0
-   return( tMinor );                          // ==> tMinor
-
- #endif
+ if( Alfa1 > 1e-16 )            // it is always >= 0, but it may be ==
+  return( t * ( 2 * Alfa1 - ScPr1 ) / ( 2 * Alfa1 ) );
+ else                           // a == 0,  all depends on the sign of b
+  if( ScPr1 - 2 * Alfa1 <= 0 )  // b < 0
+   return( tMaior );            // ==> tMaior
+  else                          // b > 0
+   return( tMinor );            // ==> tMinor
  }
 
 /*--------------------------------------------------------------------------*/
@@ -4441,32 +4501,32 @@ HpNum BundleSolver::Heuristic2( void )
  *
  *    m'( 0 ) = [ 2 a 0 ] + b = - NrmZ^2
  *    m( t )  = a t^2 + b t + c = < something >
- *    m'( t ) = 2 a t + b = ScPr1.back() / t
+ *    m'( t ) = 2 a t + b = ScPr1 / t
  *
- * which yields b = - NrmZ^2, a  = ( ScPr1.back() / t + NrmZ^2 ) / ( 2 t ),
- * and c ... something depending on which value we choose for m( t ), but we
+ * which yields b = - NrmZ^2, a  = ( ScPr1 / t + NrmZ^2 ) / ( 2 t ), and c
+ * ... something depending on which value we choose for m( t ), but we
  * don't care about because c does not appear in the computation of v*.
  * If m() is convex, i.e.
  *
- *    ScPr1.back() / t + NrmZ^2 > 0
+ *    ScPr1 / t + NrmZ^2 > 0
  *
  * yields
  * 
- *   v* = - [ - NrmZ^2 ] / [ 2 ( ScPr1.back() / t + NrmZ^2 ) / ( 2 t ) ]
- *      = t NrmZ^2 / ( ScPr1.back() / t + NrmZ^2 )
+ *   v* = - [ - NrmZ^2 ] / [ 2 ( ScPr1 / t + NrmZ^2 ) / ( 2 t ) ]
+ *      = t NrmZ^2 / ( ScPr1 / t + NrmZ^2 )
  *
  * Note that, if m() is convex, then v* >= 0 holds because, as usual, we have
  * fixed m'( 0 ) = b < 0 and therefore m() is decreasing in 0. 
  *
- * See above for the "issue" about ScPr1.back() having been computed with a
+ * See above for the "issue" about ScPr1 having been computed with a
  * "partial" g; however, since this formula does not really use DeltaFi,
  * it being undefined is not an issue here.
  *
  * Note also that the possible fourth case
  *
- *    m( 0 )  = c = 0 [or - Sigma*]
+ *    m( 0 )  = c = 0 [ or - Sigma* ]
  *    m'( 0 ) = [ 2 a 0 ] + b = - NrmZ^2
- *    m'( t ) = 2 a t + b = ScPr1.back() / t
+ *    m'( t ) = 2 a t + b = ScPr1 / t
  *
  * only changes c w.r.t. the current one, hence it does not change v*, and
  * therefore need not be separately considered. */
@@ -4474,8 +4534,8 @@ HpNum BundleSolver::Heuristic2( void )
 HpNum BundleSolver::Heuristic3( void )
 {
  auto NZ2 = NrmZ * NrmZ;
- if( ScPr1.back() / t + NZ2 > 1e-16 )
-  return( t * NZ2 / ( ScPr1.back() / t + NZ2 ) );
+ if( ScPr1 / t + NZ2 > 1e-16 )
+  return( t * NZ2 / ( ScPr1 / t + NZ2 ) );
  else                 // a == 0, all depends on the sign of b
   /* there is no "if" here, NrmZ >= 0 by definition, a fortiori NZ2
   if( - NZ2 <= 0 )    // b < 0  */
@@ -4483,6 +4543,63 @@ HpNum BundleSolver::Heuristic3( void )
   /* there is no "else" here, - NZ2 < 0 cannot happen
   else                // b > 0
    return( tMinor );  // ==> tMinor */
+ }
+
+/*--------------------------------------------------------------------------*/
+/* This heuristic is instead based on a completely different approach. It is
+ * called "reversal form of the poorman's quasi-Newton update" and its
+ * nontrivial rationale is described in details in
+ *
+ *  C. Lemarechal and C. Sagastizabal. Variable metric bundle methods: from
+ *  conceptual to implementable forms. Mathematical Programming,
+ *  76(3):393-410, 1997
+ *
+ * A more refined version of the same is proposed in
+ *
+ *  P.A. Rey and C. Sagastizabal. Dynamical adjustment of the prox-parameter
+ *  in variable metric bundle methods. Optimization, 51(2):423-447, 2002
+ *
+ * It should be noted that this heuristic is explicitly developed for being
+ * used at SS only.
+ *
+ * The proposed new value is
+ *
+ *   t = < v , u > / || v ||^2
+ *
+ * where
+ *
+ *   v = g - z*
+ *
+ *   u = ( \bar{x} - v z* ) - \bar{x} + t v = d* + t v
+ *
+ * although v would in general be g_{i+1} - g_i, hence the choice of z* as
+ * g_i is somewhat arbitrary; but in general z* is considered to be "the best
+ * (approximate) subgradient we have at \bar{x}".
+ *
+ * Hence
+ *
+ *   v = < v , d* + t v > / || v ||^2
+ *     = [ < v , d* > + t < v , v > ] / || v ||^2
+ *     = < g - z* , d* > / || g - z* ||^2 + t
+ *     = t + [ < g , d* > + t || z* ||^2 ] /
+ *           [ || g ||^2  - 2 < g , z* > + || z* ||^2 ]
+ *     = t + [ < g , d* > + t || z* ||^2 ] /
+ *           [ || g ||^2  + 2 < g , d* > / t + || z* ||^2 ]
+ *
+ * The issue with this formula is the || g || term. This is the same issue as
+ * with ScPr1 = < g , d* >, i.e., what to do with the easy components which
+ * do not explicitly compute a subgradient. For the scalar product we could
+ * use < z*_i , d* > that should be is available "for free" out of the Master
+ * Problem but it currently isn't; in theory z*_i is also available, and we
+ * could use it to compute < z*_i , d* >, but in practice due to the current
+ * implementation of OSIMPSolver it is too costly to compute. */
+
+HpNum BundleSolver::Heuristic4( void )
+{
+ auto NZ2 = NrmZ * NrmZ;
+ if( G1Norm == INFshift )
+  G1Norm = norm( G1 , 2 );
+ return( t + ( ScPr1 + t * NZ2 ) / ( G1Norm + 2 * ScPr1 / t + NZ2 ) );
  }
 
 /*--------------------------------------------------------------------------*/
@@ -4513,8 +4630,6 @@ void BundleSolver::guts_of_destructor( void )
   Master = nullptr;
   }
 
- Alfa1.clear();
- ScPr1.clear();
  whisG1.clear();
  vStar.clear();
 

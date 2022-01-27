@@ -132,14 +132,6 @@ BundleSolver::Index ParallelBundleSolver::InnerLoop( bool extrastep )
  if( ( NrFi == 1 ) || ( MaxThread == 0 ) )
   return( BundleSolver::InnerLoop( extrastep ) );
 
- // various initializations - - - - - - - - - - - - - - - - - - - - - - - - -
- // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
- CurrNrEvls.assign( NrFi , Index( 0 ) );
- MPchgs = 0;      // != 0 if the MP is guaranteed to change enugh after
-                  // the insertion of new information to ensure that the
-                  // algorithm will converge
-
  // compute the minimum number of components to evaluate
  Index minceval = ( MinNrEvls >= 0 ? Index( MinNrEvls )
 		                   : ( NrFi - NrEasy ) * ( - MinNrEvls ) );
