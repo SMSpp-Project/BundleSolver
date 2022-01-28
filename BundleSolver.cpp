@@ -942,10 +942,7 @@ int BundleSolver::compute( bool changedvars )
 
   SSDone = ( UpFiLmb1.back() < UpTrgt ) ? true : false;
 
-  // setup for the heuristic t- - - - - - - - - - - - - - - - - - - - - - - -
-  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
-  VarValue tt = t , tm = t , tp = t;
+  VarValue tt = t , tm = t , tp = t;  // setup for the heuristic t
 
   if( SSDone ) {  // SS - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -1106,6 +1103,12 @@ int BundleSolver::compute( bool changedvars )
   FiStatus.assign( NrFi , kUnEval );
   for( Index i = 0 ; i < NumVar ; i++ )
    LamVcblr[ i ]->set_value( Lambda[ i ] );
+
+  // note that Alfa1, ScPr1, G1 are computed inside GetGi() that is not
+  // called inside this call to InnerLoop(), so they are not initialised
+  CurrNrEvls.assign( NrFi , Index( 0 ) );
+  MPchgs = 0;  // != 0 if the MP is guaranteed to change enugh after the
+               // insertion of new information to ensure convergence
 
   auto start = std::chrono::system_clock::now();
 

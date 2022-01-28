@@ -347,6 +347,8 @@ BundleSolver::Index ParallelBundleSolver::InnerLoop( bool extrastep )
   // if one future is ready, read it- - - - - - - - - - - - - - - - - - - - -
   Index wFi = it->first;
   it->first = InINF;
+  if( ! CurrNrEvls[ wFi ] )  // not evaluated before
+   ++ceval;                  // one more evaluated
   ++CurrNrEvls[ wFi ];       // evaluated once more
   --cnt;                     // one std::future less to wait for
 
