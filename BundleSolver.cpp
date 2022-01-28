@@ -117,7 +117,7 @@ static constexpr Index kSLTTS =  4;   // "soft" long-term t-strategy
 static constexpr Index kHLTTS =  8;   // "hard" long-term t-strategy
 static constexpr Index kBLTTS = 12;   // "balancing" long-term t-strategy
 static constexpr Index kEGTTS = 16;   // "endgame" long-term t-strategy
-static constexpr Index tSPHMsk1 = 172;  // mask for heuristics: bits 6 and 7
+static constexpr Index tSPHMsk1 = 192;  // mask for heuristics: bits 6 and 7
 static constexpr Index tSPHMsk2 = 768;  // mask for heuristics: bits 7 and 8
 
 static constexpr unsigned char RstAlg = 1;  // don't reset algorithmic params
