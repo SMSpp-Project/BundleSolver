@@ -132,14 +132,6 @@ BundleSolver::Index ParallelBundleSolver::InnerLoop( bool extrastep )
  if( ( NrFi == 1 ) || ( MaxThread == 0 ) )
   return( BundleSolver::InnerLoop( extrastep ) );
 
- // various initializations - - - - - - - - - - - - - - - - - - - - - - - - -
- // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
- CurrNrEvls.assign( NrFi , Index( 0 ) );
- MPchgs = 0;      // != 0 if the MP is guaranteed to change enugh after
-                  // the insertion of new information to ensure that the
-                  // algorithm will converge
-
  // compute the minimum number of components to evaluate
  Index minceval = ( MinNrEvls >= 0 ? Index( MinNrEvls )
 		                   : ( NrFi - NrEasy ) * ( - MinNrEvls ) );
@@ -355,6 +347,8 @@ BundleSolver::Index ParallelBundleSolver::InnerLoop( bool extrastep )
   // if one future is ready, read it- - - - - - - - - - - - - - - - - - - - -
   Index wFi = it->first;
   it->first = InINF;
+  if( ! CurrNrEvls[ wFi ] )  // not evaluated before
+   ++ceval;                  // one more evaluated
   ++CurrNrEvls[ wFi ];       // evaluated once more
   --cnt;                     // one std::future less to wait for
 

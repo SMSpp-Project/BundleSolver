@@ -1,5 +1,5 @@
 /*--------------------------------------------------------------------------*/
-/*---------------------- File BundleFSolver.h ------------------------------*/
+/*----------------------- File BundleSolver.h ------------------------------*/
 /*--------------------------------------------------------------------------*/
 /** @file
  * Header file for the BunldeSolver class, which implements the Solver
@@ -22,7 +22,7 @@
  *  A. Frangioni "Standard Bundle Methods: Untrusted Models and Duality"
  *  in Numerical Nonsmooth Optimization: State of the Art Algorithms,
  *  A.M. Bagirov, M. Gaudioso, N. Karmitsa, M. Mäkelä, S. Taheri (Eds.),
- *  61--116, Springer, 2020
+ *  61 - 116, Springer, 2020
  *
  * available at
  *
@@ -35,7 +35,7 @@
  * components that provide a Lipschitz constant) described in
  *
  *  W. van Ackooij, A. Frangioni "Incremental Bundle Methods Using Upper
- *  Models" SIAM Journal on Optimization 28(1), 379–410, 2018
+ *  Models" SIAM Journal on Optimization 28(1), 379 – 410, 2018
  *
  * available at
  *
@@ -66,7 +66,7 @@
  *
  *   A. Frangioni, E. Gorgone "Generalized Bundle Methods for Sum-Functions
  *   with ``Easy'' Components: Applications to Multicommodity Network Design"
- *   Mathematical Programming 145(1), 133–161, 2014
+ *   Mathematical Programming 145(1), 133 – 161, 2014
  *
  * available at
  *
@@ -144,8 +144,9 @@
 
 #include "MILPSolver.h"
 #include "FakeSolver.h"
-#include "MPSolver.h"
 
+// NDOSolver-derived stuff, it will go one day
+#include "MPSolver.h"
 #include "NDOSlver.h"
 
 /*--------------------------------------------------------------------------*/
@@ -188,7 +189,7 @@ namespace SMSpp_di_unipi_it
  *  A. Frangioni "Standard Bundle Methods: Untrusted Models and Duality"
  *  in Numerical Nonsmooth Optimization: State of the Art Algorithms,
  *  A.M. Bagirov, M. Gaudioso, N. Karmitsa, M. Mäkelä, S. Taheri (Eds.),
- *  61--116, Springer, 2020
+ *  61 - 116, Springer, 2020
  *
  * available at
  *
@@ -201,7 +202,7 @@ namespace SMSpp_di_unipi_it
  * components that provide a Lipschitz constant) described in
  *
  *  W. van Ackooij, A. Frangioni "Incremental Bundle Methods Using Upper
- *  Models" SIAM Journal on Optimization 28(1), 379–410, 2018
+ *  Models" SIAM Journal on Optimization 28(1), 379 – 410, 2018
  *
  * available at
  *
@@ -329,7 +330,7 @@ public:
  using LinearCombination = C05Function::LinearCombination;
  using c_LinearCombination = C05Function::c_LinearCombination;
 
- // NDOSolver/FiOracle stuff
+ // NDOSolver/FiOracle stuff, one day it wil go
  using cIndex = NDO_di_unipi_it::cIndex;
  using cIndex_Set = NDO_di_unipi_it::cIndex_Set;
  using FiOracle = NDO_di_unipi_it::FiOracle;
@@ -341,11 +342,11 @@ public:
      
 /*----------------------------- CONSTANTS ----------------------------------*/
 
- static constexpr VarValue NaNshift
+ static constexpr auto NaNshift
                               = std::numeric_limits< VarValue >::quiet_NaN();
  ///< convenience constexpr for "NaN", *not* to be used with ==
 
- static constexpr VarValue INFshift
+ static constexpr auto INFshift
                                = std::numeric_limits< VarValue >::infinity();
  ///< convenience constexpr for "Infty"
 
@@ -448,6 +449,8 @@ public:
 
   dbltSPar2 ,  ///< numerical parameter for the long-term t-strategies
 
+  dbltSPar3 ,  ///< numerical parameter for "small" heuristic-based t changes
+
   dblCtOff ,   ///< cut-off value for QPPenaltyMP solver only
 
   dblLastBndSlvPar ///< first allowed new double parameter for derived classes
@@ -513,7 +516,7 @@ public:
 
   };  // end( vstr_par_type_BndSlv )
 
-/*@} -----------------------------------------------------------------------*/
+/** @} ---------------------------------------------------------------------*/
 /*----------------- CONSTRUCTING AND DESTRUCTING BundleSolver --------------*/
 /*--------------------------------------------------------------------------*/
 /** @name Constructing and destructing BundleSolver
@@ -523,15 +526,15 @@ public:
 
  BundleSolver( void ) : CDASolver() , Result( kUnEval ) , NumVar( 0 ) ,
   NrFi( 0 ) , SCalls( 0 ) , ParIter( 0 ) , NrEasy( 0 ) , LHasChgd( true ) ,
-  tHasChgd( true ) , MPchgs( 0 ) , t( 0 ) , f_global_LB( -INFshift ) ,
-  Prevt( 0 ) , Sigma( 0 ) , DSTS( 0 ) , DeltaFi( 0 ) , EpsU( 0 ) ,
-  CSSCntr( 0 ) , CNSCntr( 0 ) , TrueLB( false ) , SSDone( true ) ,
-  f_wFi( 0 ) , f_lf( nullptr ) , f_convex( true ) , Master( nullptr ) ,
-  UpTrgt( 0 ) , LwTrgt( 0 ) , RifeqFi( false ) , CmptdinL( false ) ,
-  UpFiBest( INFshift ) , UpFiLmb1def( 0 ) , LwFiLmb1def( 0 ) ,
-  UpFiLmbdef( 0 ) , LwFiLmbdef( 0 ) , Fi0Lmb( 0 ) , Fi0Lmb1( 0 ) ,
-  DST( 0 ) , NrmD( 0 ) , NrmZ( 0 ) , NrmZFctr( 1 ) , c_start() , aBP3( 0 ) ,
-  FakeFi( this ) 
+  tHasChgd( true ) , MPchgs( 0 ) , G1Norm( 0 ) , ScPr1( 0 ) , Alfa1( 0 ) ,
+  f_global_LB( -INFshift ) , t( 0 ) , Prevt( 0 ) , Sigma( 0 ) , DSTS( 0 ) ,
+  DeltaFi( 0 ) , EpsU( 0 ) , CSSCntr( 0 ) , CNSCntr( 0 ) , TrueLB( false ) ,
+  SSDone( true ) , f_wFi( 0 ) , f_lf( nullptr ) , f_convex( true ) ,
+  Master( nullptr ) , UpTrgt( 0 ) , LwTrgt( 0 ) , RifeqFi( false ) ,
+  CmptdinL( false ) , UpFiBest( INFshift ) , UpFiLmb1def( 0 ) ,
+  LwFiLmb1def( 0 ) , UpFiLmbdef( 0 ) , LwFiLmbdef( 0 ) , Fi0Lmb( 0 ) ,
+  Fi0Lmb1( 0 ) , DST( 0 ) , NrmD( 0 ) , NrmZ( 0 ) , NrmZFctr( 1 ) ,
+  c_start() , aBP3( 0 ) , FakeFi( this ) 
  {
   // ensure all parameters are properly given their default value
   MaxIter = CDASolver::get_dflt_int_par( intMaxIter );
@@ -578,6 +581,7 @@ public:
   tMinor = dflt_dbl_par[ dbltMinor - dblLastParCDAS ];
   tInit = dflt_dbl_par[ dbltInit - dblLastParCDAS ];
   tSPar2 = dflt_dbl_par[ dbltSPar2 - dblLastParCDAS ];
+  tSPar3 = dflt_dbl_par[ dbltSPar3 - dblLastParCDAS ];
   CtOff = dflt_dbl_par[ dblCtOff - dblLastParCDAS ];
 
   v_events.resize( max_event_number() );
@@ -588,7 +592,7 @@ public:
 
  virtual ~BundleSolver() { set_Block( nullptr ); }
 
-/*@} -----------------------------------------------------------------------*/
+/** @} ---------------------------------------------------------------------*/
 /*-------------------------- OTHER INITIALIZATIONS -------------------------*/
 /*--------------------------------------------------------------------------*/
 /** @name Other initializations
@@ -778,37 +782,28 @@ public:
   *
   * - inttSPar1 [12]: select the t-strategy used. This field is coded
   *                   bit-wise in the following way.
-  *   The first two bits control which heuristics are used to compute a new
-  *   value of t when increasing/decreasing it. There are two heuristics
-  *   avaliable, H1 and H2, both based on a quadratic interpolation of the
-  *   function but differing in which derivative is used: H1 uses the
-  *   derivative in the new tentative point, and it is guaranteed to produce
-  *   a value greater than the current one if and only if the scalar product
-  *   between the direction and the newly obtained subgradient is < 0
-  *   (indicating that a longer step along the same direction could have been
-  *   advantageous), while H2 uses the derivative in the current point and it
-  *   does not possess this property. The value of the first two bits of
-  *   tSPar1 has the following meaning:
+  *   The first two bits control if heuristics are used compute a new value
+  *   of t when increasing/decreasing it:
   *
-  *   bit 0:  which heuristic is used to increase t: 0 = H1, 1 = H2
+  *    bit 0:    1 (+1) if the heuristic is used during a SS, 0 otherwise
   *
-  *   bit 1:  which heuristic is used to decrease t: 0 = H2, 1 = H1
+  *    bit 1:    1 (+2) if the heuristic is used during a NS, 0 otherwise
   *
-  *   The following bits of inttSPar1 tell which long-term t-strategy is used,
-  *   with the following values:
+  *   The following 2 bits (bit 2 and 3) of inttSPar1 tell which long-term
+  *   t-strategy is used, with the following values:
   *
-  *    0 (+ 0):  none, only the heuristics are used
+  *    00 (+ 0): none, only the heuristics (if any) are used
   *
-  *    1 (+ 4):  the "soft" long-term t-strategy is used: the value EpsU is
+  *    01 (+ 4): the "soft" long-term t-strategy is used: the value EpsU is
   *              mantained (cf. intBPar6) which estimates the current
   *              relative error, and decreases of t are inhibited whenever
   *              v < tSPar2 * EpsU * | FiVal |
   *
-  *    2 (+ 8):  the "hard" long-term t-strategy is used: the value EpsU is
+  *    10 (+ 8): the "hard" long-term t-strategy is used: the value EpsU is
   *              mantained as above, and t is increased whenever
   *              v < tSPar2 * EpsU * | FiVal |
   *
-  *    3 (+12):  the "balancing" long-term t-strategy is used, where the two
+  *    11 (+12): the "balancing" long-term t-strategy is used, where the two
   *              terms D*_t( -z* ) and Sigma* are kept of "roughly the same
   *              size": if D*_1( -z* ) <= tSPar2 * Sigma* then t increases
   *              are inhibited (increasing t causes a decrease of D*_1( -z* )
@@ -816,14 +811,44 @@ public:
   *              then t decreases are inhibited (decreasing t causes an
   *              increase of D*_1( -z* ) that is already big)
   *
-  *    4 (+16):  the "endgame" t-strategy is used, where if D*_1( -z* ) is
-  *              "small" (~ 1/10 of the current absolute epsilon) t is
-  *              decreased no matter what the other strategies dictated.
-  *              The rationale is that we are "towards the end" of the
-  *              optimization and here t needs decrease. However, note that
-  *              having D*_1( -z* ) "small" is no guarantee that we actually
-  *              are at the end, especially if the oracle dynamically
-  *              generates its variables, so use with caution
+  *   These three long-term t-strategies are mutually exclusive. The following
+  *   2 bits (bit 4 and 5) of inttSPar1 can instead be used to specify
+  *   t-strategies that can be activated in addition to these, with the
+  *   following values:
+  *
+  *    bit 4: 1 (+16) if the "endgame" t-strategy is used, where if 
+  *           D*_1( -z* ) is "small" (~ 1/10 of the current absolute epsilon)
+  *           t is decreased no matter what the other strategies dictated.
+  *           The rationale is that we are "towards the end" of the
+  *           optimization and here t needs decrease. However, note that
+  *           having D*_1( -z* ) "small" is no guarantee that we actually
+  *           are at the end, especially if the oracle dynamically
+  *           generates its variables, so use with caution
+  *
+  *    bit 5: currently reserved
+  *
+  *   The following 2 bits (bits 6 and 7) dictate which of the available
+  *   heuristics are used to select t during a SS, if this is activated (see
+  *   the bit 0). There are four heuristics avaliable. The first three are
+  *   based on a quadratic interpolation of the function based on known data,
+  *   differing about which three of the four data points available (function
+  *   values and derivatives in 0 and t) are used, while the fourth one is
+  *   the so-called reversal form of the poorman's quasi-Newton update.
+  *   The setting of the bits is:
+  *
+  *     00 (+  0):  Heuristic1 is used
+  *     01 (+ 64):  Heuristic2 is used
+  *     10 (+128):  Heuristic3 is used
+  *     11 (+192):  Heuristic4 is used
+  *
+  *   The following two bits (8 and 9) are analogous to the previous two ones
+  *   in that they dictate which of the available heuristics are used to
+  *   select t during a NS:
+  *
+  *     00 (+  0):  Heuristic1 is used
+  *     01 (+256):  Heuristic2 is used
+  *     10 (+512):  Heuristic3 is used
+  *     11 (+768):  Heuristic4 is used
   *
   * - intMaxNrEvls [2]: max number of function evaluations for each
   *                (non-easy) C05Function for each iteration; multiple
@@ -1108,7 +1133,7 @@ public:
   *
   * - dblBPar5 [30]: parameter controlling the dynamic number of 
   *                  linearizations to be fetched from each oracle at each
-  *   iteration, see intbPar6 for details  *
+  *   iteration, see intBPar6 for details  *
   *
   * - dblm1 [0.01]: m1 factor in the all-important NS/SS decision. This
   *                 factor sets the lower target for the objective function
@@ -1166,24 +1191,20 @@ public:
   *   practice.
   *
   * - dblmxIncr [10]: maximum increasing t-factor: each time t is increased
-  *                   (for whatever reason), the new value of t must anyway
-  *   be <= t * dblmxIncr (t is the previous value). Clearly, dblmxIncr must
-  *   be > 1.
+  *                   after a SS the new value of t must be <= t * dblmxIncr
+  *   (t is the previous value). It must be dblmxIncr >= dblmnIncr > 1.
   *
   * - dblmnIncr [1.5]: minimum increasing t-factor: each time t is increased
-  *                    (for whatever reason), the new value of t must anyway
-  *   be >= t * dblmnIncr (t is the previous value). Clearly, dblmnIncr must
-  *   be > 1.
+  *                    after a SS the new value of t must be >= t * dblmnIncr
+  *   (t is the previous value). It must be dblmxIncr >= dblmnIncr > 1.
   *
   * - dblmxDecr [0.1]: maximum decreasing t-factor: each time t is decreased
-  *                    (for whatever reason), the new value of t must anyway
-  *   be >= t * dblmxDecr (t is the previous value). Clearly, dblmnIncr must
-  *   be < 1.
+  *                    after a NS the new value of t must be >= t * dblmxDecr
+  *   (t is the previous value). It must be dblmxDecr <= dblmnDecr < 1.
   *
   * - dblmnDecr [0.66]: maximum decreasing t-factor: each time t is decreased
-  *                     (for whatever reason), the new value of t must anyway
-  *   be <= t * dblmnDecr (t is the previous value). Clearly, dblmnDecr must
-  *   be < 1.
+  *                     after a NS the new value of t must be <= t * dblmnDecr
+  *   (t is the previous value). It must be dblmxDecr <= dblmnDecr < 1.
   *
   * - dbltMaior [1e+6]: maximum value of t
   *
@@ -1208,6 +1229,40 @@ public:
   *
   * - dbltSPar2 [1e-3]: numerical parameter for the long-term t-strategies;
   *                     see inttSPar1 for details
+  *
+  * - dbltSPar3 [0]: numerical parameter for "small heuristic changes in t".
+  *                  The general gist of t-management is that there are three
+  *   hierarchical levels: 1) on top, the long-term t-strategies that try to
+  *   consider the stage at which the optimization process is [see inttSPar1
+  *   and dbltSPar2 for details]; 2) in the middle, multi-step strategies
+  *   that take into account what has happened "in the last few iterations"
+  *   [see intMnSSC, intMnNSC, dblmxIncr, dblmnIncr, dblmxDecr, dblmnDecr];
+  *   3) at the bottom, heuristic t-strategies that only look at information
+  *   from the very current iteration [see inttSPar1]. In particular, both
+  *   the top and the middle layer would stipulate that t cannot change unless
+  *   conditions are met, and when it does the change satisfies other
+  *   conditions (must be larger/smaller than ...), and then the heuristics
+  *   are only used to help in picking the actual value. However, it can be
+  *   useful to allow the heuristics to do "small changes in t" whatever the
+  *   other levels dictate. This is the meaning of this parameter: if
+  *   abs( dbltSPar3 ) > 1, then the heuristics are allowed to change the
+  *   value of t even if it should be fixed according to the other mechanisms.
+  *   The rub is that the change should be "small", that is:
+  *
+  *    = if dbltSPar3 > 1, then t can only get values in the interval
+  *      [ t / dbltSPar3 , t * dbltSPar3 ] (for instance, with dbltSPar3 = 2
+  *      t can at most double or halve); note that this implies that t can
+  *      decrease during a SS and increase during a NS, which is contrary to
+  *      usual practices but not necessarily wrong (the heuristics may "know
+  *      better");
+  *
+  *    = if dbltSPar3 < - 1, then t can only be increased if a SS is being
+  *      performed and decreased in a NS is being performed; in particular,
+  *      for a SS t can be chosen in [ t , t * ( - dbltSPar3 ) ], while for
+  *      a NS t can be chosen in [ t / ( - dbltSPar3 ) , t ].
+  *
+  *   Any value of dbltSPar3 such that abs( dbltSPar3 ) <= 1 is equivalent
+  *   to 0, which means "t cannot be changed by the heuristics only".
   *
   * - dblCtOff [1e-1]: cut-off value for pricing in QPPenaltyMP solver only
   */
@@ -1297,7 +1352,7 @@ public:
 
  void set_log( std::ostream *log_stream = nullptr ) override;
 
-/**@} ----------------------------------------------------------------------*/
+/** @} ---------------------------------------------------------------------*/
 /*----------------- METHODS FOR ACCESSING THE DATA OF THE Block ------------*/
 /*--------------------------------------------------------------------------*/
 /** @name Accessing the data of the Block
@@ -1342,7 +1397,7 @@ public:
 
  LinearFunction * l_component( void ) const { return( f_lf ); }
   
-/**@} ----------------------------------------------------------------------*/
+/** @} ---------------------------------------------------------------------*/
 /*---------------------- METHODS FOR EVENTS HANDLING -----------------------*/
 /*--------------------------------------------------------------------------*/
 /** @name Set event handlers
@@ -1365,17 +1420,17 @@ public:
 
  EventID max_event_number( void ) const override { return( 3 ); }
 
-/*@} -----------------------------------------------------------------------*/
+/** @} ---------------------------------------------------------------------*/
 /*--------------------- METHODS FOR SOLVING THE MODEL ----------------------*/
 /*--------------------------------------------------------------------------*/
 /** @name Solving the MCF encoded by the current MCFBlock
  *  @{ */
 
- /// (try to) solve the MCF encoded in the MCFBlock
+ /// (try to) solve the Block
 
  int compute( bool changedvars = true ) override;
 
-/*@} -----------------------------------------------------------------------*/
+/** @} ---------------------------------------------------------------------*/
 /*---------------------- METHODS FOR READING RESULTS -----------------------*/
 /*--------------------------------------------------------------------------*/
 /** @name Accessing the found solutions (if any) and solution information-
@@ -1539,7 +1594,7 @@ public:
   bool new_dual_direction( void ) override{ return( false ); }
 */
 
-/*@} -----------------------------------------------------------------------*/
+/** @} ---------------------------------------------------------------------*/
 /*-------------- METHODS FOR READING THE DATA OF THE Solver ----------------*/
 /*--------------------------------------------------------------------------*/
 /*
@@ -1776,7 +1831,7 @@ public:
   return( CDASolver::vstr_par_idx2str( idx ) );
   }
 
-/**@} ----------------------------------------------------------------------*/
+/** @} ---------------------------------------------------------------------*/
 /*----------- METHODS FOR HANDLING THE State OF THE BundleSolver -----------*/
 /*--------------------------------------------------------------------------*/
 /** @name Handling the State of the BundleSolver
@@ -1815,7 +1870,7 @@ public:
 		       const std::string & sub_group_name = "" )
   const override;
 
-/*@} -----------------------------------------------------------------------*/
+/** @} ---------------------------------------------------------------------*/
 /*-------------------------------- FRIENDS ---------------------------------*/
 /*--------------------------------------------------------------------------*/
 
@@ -1844,21 +1899,15 @@ public:
  void guts_of_put_State( const BundleSolverState & state );
 
 /*--------------------------------------------------------------------------*/
-/* When no variables generation is done (PPar2 == 0), FormD() just calls
- SolveMP() once and calculates the direction d: however, it also implements
- some strategies to survive to "fatal" failures in the subproblem solver,
- typically eliminating some of the items in the bundle.
+ /* FormD() just calls SolveMP() once and calculates the direction d:
+    however, it also implements some strategies to survive to "fatal"
+    failures in the subproblem solver, typically eliminating some of the
+    items in the bundle.
 
- Set the protected field Result to kOK if (evenctually after some "fatal"
- failure) a tentative descent direction could be found, to kUnfsbl if the
- MP is dual unfeasible and to kError if this was returned by SolveMP(): in
- the latter cases, the whole algorithm must abort.
-
- If variables generation is done (PPar2 > 0), this is where the
- corresponding strategies are implemented: in this case, SolveMP() can be
- called more than once within the same call to FormD(), since the resulting
- direction has to be optimal w.r.t. all the current "active set" of
- variables. */
+    Set the protected field Result to kOK if (evenctually after some "fatal"
+    failure) a tentative descent direction could be found, to kUnfsbl if the
+    MP is dual unfeasible and to kError if this was returned by SolveMP(): in
+    the latter cases, the whole algorithm must abort. */
 
  void FormD( void );
 
@@ -1897,7 +1946,7 @@ public:
   *
   * The rationale for the latter choice is that the bundle contains enough
   * linearizations to stop already, hence new ones are not needed, and in
-  * fact the Master Problem is no re-solved, hence even if they were
+  * fact the Master Problem is not re-solved, hence even if they were
   * collected they would not be useful. This is potentially wasteful in that
   * one does the effort to compute() the functions but only collects "a small
   * part" of the ensuing information. However, producing linearizations may
@@ -2120,6 +2169,9 @@ public:
  void SimpleBStrat( void );
 
 /*--------------------------------------------------------------------------*/
+ /* Compute the value of \beta_h for the given component, i.e., which
+  * fraction of the total expected decrease is expected from that specific
+  * component. */
 
  double BetaK( Index wFi );
 
@@ -2227,6 +2279,7 @@ public:
 
  int tSPar1;        ///< int parameter for long-term t-strategy
  double tSPar2;     ///< double parameter for long-term t-strategy
+ double tSPar3;     ///< double parameter for small heuristic t changes
 
  char DoEasy;       ///< if and how "easy" components are managed
 
@@ -2309,11 +2362,42 @@ public:
  * if Zvalid[ k ] == false and whisZ[ k ] < INF, then Z[ k ] had been
  * previously stored in position whisZ[ k ], but the master problem has
  * been re-solved since and therefore Z[ k ] is no longer current. */
- 
+
  Subset whisG1;    ///< "representative subgradient" for each component
- Vec_VarValue ScPr1;  ///< ScalarProduct( dir , G[ WhIsG1[ k ] ] )
- Vec_VarValue Alfa1;  /**< linearization error of G[ WhIsG1[ k ] ] w.r.t. the
-		       * current point Lambda. */
+                   /**< whisG1[ k ] is the first subgradient inserted in the
+		    * bundle for component k in the latest call to InnerLoop
+ * in which component k has actually been evaluated. This is used as the
+ * "representative subgradient" for component k for the computation of the
+ * t heuristics, which use information about an "aggregate representative
+ * subgradient" obtained by summing all the individual "representative
+ * subgradients".
+ * NOTE 1: the "representative subgradient" used to be selected as the one
+ *         with smallest Alfa1k and largest ScPr1k, which may have been a
+ *         bit better but was heuristic anyway; choosing the first makes
+ *         for a simpler logic, and ideally "the first should be the best"
+ *         so it still makes sense.
+ * NOTE 2: "easy" components do not have a "representative subgradient" and
+ *         are therefore excluded from the "aggregate representative
+ *         subgradient": THIS IS WRONG and probably means that most t
+ *         heuristics are unreliable with "easy" components, but the solution
+ *         is not obvious so this is it for now.
+ * NOTE 3: since not all components may be evaluated during one InnerLoop
+ *         (especially in the NS case, but also in the SS one), the
+ *         "representative subgradient" for one component may in fact have
+ *         been inserted several iterations ago or even be missing in the
+ *         (unlikely) case it has been removed in the meantime: this may
+ *         not be ideal but there is not much else we can do.
+ * NOTE 4: A component k s.t. whisG1[ k ] < InINF && CurrNrEvls[ k ] == 0
+ *         has not been compute()-d in the latest InnerLoop and therefore
+ *         its contribution to ScPr1 and Alfa1 (see below) must be added
+ *         separately, as it has not inside InnerLoop(). */
+
+ Vec_VarValue G1;  ///< the aggregate "representative subgradient"
+ VarValue G1Norm;  ///< norm( G1 , 2 )
+
+ VarValue ScPr1;   ///< ideally, ScalarProduct( dir , G1 )
+ VarValue Alfa1;   /**< ideally, the linearization error of G1 w.r.t. the
+		    * current point Lambda. */
 
  Vec_VarValue LowerBound;  ///< Lower Bound over (each component of) Fi
  VarValue f_global_LB;     ///< an algorithmically discovered global LB
@@ -2641,9 +2725,27 @@ class FakeFiOracle : public FiOracle
 
 /*--------------------------------------------------------------------------*/
 
+ bool NeedsAlfa1( void );
+
+ bool NeedsScPr1( void );
+
+ bool NeedsG1( void );
+
+/*--------------------------------------------------------------------------*/
+
+ void UpdateHeuristicInfo( void );
+
+/*--------------------------------------------------------------------------*/
+
+ HpNum Heuristic( Index whch );
+
  HpNum Heuristic1( void );
 
  HpNum Heuristic2( void );
+
+ HpNum Heuristic3( void );
+
+ HpNum Heuristic4( void );
 
 /*--------------------------------------------------------------------------*/
 
