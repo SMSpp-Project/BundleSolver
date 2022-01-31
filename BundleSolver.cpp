@@ -955,11 +955,10 @@ int BundleSolver::compute( bool changedvars )
     BLOG( 1 , - DeltaFi << def << " ~ Lw1(" << - UpFiLmb1.back()
 	      << ") >= LwTrgt(" << - UpTrgt << ")" );
 
-   if( tSPar1 & 1 )
+   if( tSPar1 & 1 ) {
     tt = Heuristic( tSPar1 >> 6 );
-
-   if( tt != t )
     BLOG( 1 , " ~ Ht = " << shrt << tt );
+    }
 
    if( tSPar3 ) {
     tp *= std::abs( tSPar3 );
@@ -1002,11 +1001,10 @@ int BundleSolver::compute( bool changedvars )
     BLOG( 1 , "Up1(" << - LwFiLmb1.back() << ") <= UpTrgt(" << - LwTrgt
 	      << ")" );
 
-   if( tSPar1 & 2 )
+   if( tSPar1 & 2 ) {
     tt = Heuristic( tSPar1 >> 8 );
-
-   if( tt != t )
     BLOG( 1 , " ~ Ht = " << shrt << tt );
+    }
 
    if( tSPar3 ) {
     tm /= std::abs( tSPar3 );
@@ -1144,7 +1142,7 @@ int BundleSolver::compute( bool changedvars )
    }
   if( ( Result != kInfeasible ) && ( Result != kUnbounded ) ) {
    *f_log << " ~ Fi* = " << def;
-   pval( *f_log , rs( UpFiLmb1.back() ) );
+   pval( *f_log , rs( UpRifFi.back() ) );
    }
   *f_log << std::endl;
   }
@@ -4298,7 +4296,7 @@ bool BundleSolver::NeedsScPr1( void )
 
 bool BundleSolver::NeedsG1( void )
 {
- // G1 is only used in Heuristic2
+ // G1 is only used in Heuristic4
  return( ( ( ( tSPar1 & 1 ) && ( ( tSPar1 & tSPHMsk1 ) == 172 ) ) ) ||
 	 ( ( ( tSPar1 & 2 ) && ( ( tSPar1 & tSPHMsk2 ) == 768 ) ) ) );
  }
@@ -4396,7 +4394,11 @@ void BundleSolver::UpdateHeuristicInfo( void )
  * as the suggested new value for t. Since v* only makes sense if a > 0,
  * when a <= 0 we use the best possible convex approximation of a concave
  * function by setting a = 0, in which case the minimum is the extreme of
- * the interval [ tMinor , tMaior ] dictated by the sign of b. */
+ * the interval [ tMinor , tMaior ] dictated by the sign of b.
+ *
+ * The fourth heuristic is based on an entirely different idea related to the
+ * Moreau-Yoshida regularization, called "reversal form of the poorman's
+ * quasi-Newton update". */
 
 HpNum BundleSolver::Heuristic( Index whch )
 {
@@ -4457,7 +4459,7 @@ HpNum BundleSolver::Heuristic1( void )
   /* there is no "if" here, NrmZ >= 0 by definition, a fortiori NZ2
   if( - NZ2 <= 0 )    // b < 0  */
    return( tMaior );  // ==> tMaior
-  /* there is no "else" here, - NZ2 < 0 cannot happen
+  /* there is no "else" here, - NZ2 > 0 cannot happen
   else                // b > 0
    return( tMinor );  // ==> tMinor */
  }
@@ -4547,7 +4549,7 @@ HpNum BundleSolver::Heuristic3( void )
   /* there is no "if" here, NrmZ >= 0 by definition, a fortiori NZ2
   if( - NZ2 <= 0 )    // b < 0  */
    return( tMaior );  // ==> tMaior
-  /* there is no "else" here, - NZ2 < 0 cannot happen
+  /* there is no "else" here, - NZ2 > 0 cannot happen
   else                // b > 0
    return( tMinor );  // ==> tMinor */
  }

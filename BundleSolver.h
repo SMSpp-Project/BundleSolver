@@ -839,7 +839,7 @@ public:
   *     00 (+  0):  Heuristic1 is used
   *     01 (+ 64):  Heuristic2 is used
   *     10 (+128):  Heuristic3 is used
-  *     11 (+172):  Heuristic4 is used
+  *     11 (+192):  Heuristic4 is used
   *
   *   The following two bits (8 and 9) are analogous to the previous two ones
   *   in that they dictate which of the available heuristics are used to
@@ -848,7 +848,7 @@ public:
   *     00 (+  0):  Heuristic1 is used
   *     01 (+256):  Heuristic2 is used
   *     10 (+512):  Heuristic3 is used
-  *     11 (+786):  Heuristic4 is used
+  *     11 (+768):  Heuristic4 is used
   *
   * - intMaxNrEvls [2]: max number of function evaluations for each
   *                (non-easy) C05Function for each iteration; multiple
