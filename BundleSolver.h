@@ -346,8 +346,7 @@ public:
                               = std::numeric_limits< VarValue >::quiet_NaN();
  ///< convenience constexpr for "NaN", *not* to be used with ==
 
- static constexpr auto INFshift
-                               = std::numeric_limits< VarValue >::infinity();
+ static constexpr auto INFshift = Inf< VarValue >();
  ///< convenience constexpr for "Infty"
 
 /*--------------------------------------------------------------------------*/
