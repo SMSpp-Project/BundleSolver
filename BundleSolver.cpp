@@ -1180,6 +1180,11 @@ void BundleSolver::set_Block( Block * block )
   throw( std::runtime_error(
                        "LagrangianDualSolver: unable to lock the Block" ) );
 
+ // generate the abstract representation
+ f_Block->generate_abstract_variables();
+ f_Block->generate_abstract_constraints();
+ f_Block->generate_objective();
+
  /* Two types of block can be handled by the BundleSolver:
 
      1. Only one single non-smooth function
