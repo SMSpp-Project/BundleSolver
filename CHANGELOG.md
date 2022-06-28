@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.2] - 2022-06-28
+
+### Added
+
+- added new parameter intTrgtMng controlling different aspects of how models
+  are used to pass targets and accuracy to the C05Function and to forecast
+  the value (using the Lipschitz_constant)
+
+### Changed
+
+- generate the abstract representation in set_Block()
+
+- minor improvements in logging and comments
+
+- quite significant rehaul of t heuristics: reshuffled the bits in tSPar1
+  (baiscally keeping compatibility with develop branch) and added the "reversal
+  form of the poorman's quasi-Newton update". This requires the computation of
+  the norm of the "aggregated representative subgradient", doing which called
+  for some nontrivial changes in the computation of Alfa1 and ScPr1
+
+### Fixed
+
+- ParallelBundleSolver now properly counts the computed components; previously
+  those of the ramp-down phase were not, which may lead to getting an error if
+  the last step was not a SS and intFrcLstSS was true
+
+- fixed get\_dual\_solution() when there is no easy component
+
 ## [0.4.1] - 2021-12-07
 
 - improved Modification handling (no over-reacting to easy ones, important bugfix)
@@ -93,7 +121,9 @@ Several major improvements:
 
 - First test release.
 
-[Unreleased]: https://gitlab.com/smspp/bundlesolver/-/compare/0.4.0...develop
+[Unreleased]: https://gitlab.com/smspp/bundlesolver/-/compare/0.4.2...develop
+[0.4.2]: https://gitlab.com/smspp/bundlesolver/-/compare/0.4.1...0.4.2
+[0.4.1]: https://gitlab.com/smspp/bundlesolver/-/compare/0.4.0...0.4.1
 [0.4.0]: https://gitlab.com/smspp/bundlesolver/-/compare/0.3.0...0.4.0
 [0.3.0]: https://gitlab.com/smspp/bundlesolver/-/compare/0.2.0...0.3.0
 [0.2.0]: https://gitlab.com/smspp/bundlesolver/-/compare/0.1.2...0.2.0
