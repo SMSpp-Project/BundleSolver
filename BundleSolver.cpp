@@ -503,7 +503,7 @@ int BundleSolver::compute( bool changedvars )
  // ensure no concurrent accesses - - - - - - - - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- f_mutex.lock();                // ... either from other threads
+ lock();                        // ... either from other threads
 
  if( Result == kStillRunning )  // ... or from the same
   throw( std::logic_error( "BundleSolver::compute() called within itself" )
@@ -1128,8 +1128,8 @@ int BundleSolver::compute( bool changedvars )
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  
  if( f_log && ( LogVerb >= 1 ) ) {
-  *f_log << "Call " << SCalls << ": "  << fixd << ParIter << " ~ "
-	 << tot_NrEvls  << " ~ " << get_elapsed_time() << " ~ "
+  *f_log << std::endl << "Call " << SCalls << ": "  << fixd << ParIter
+	 << " ~ " << tot_NrEvls  << " ~ " << get_elapsed_time() << " ~ "
 	 << tot_time << " -> ";
   switch( Result ) {
    case( kOK ):           *f_log << "optimal"; break;
@@ -1147,7 +1147,7 @@ int BundleSolver::compute( bool changedvars )
   *f_log << std::endl;
   }
 
- f_mutex.unlock();  // unlock the mutex
+ unlock();  // unlock the mutex
  
  return( Result );
 
