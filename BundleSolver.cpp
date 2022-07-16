@@ -54,17 +54,24 @@
 #endif
 
 /*--------------------------------------------------------------------------*/
+/* If USE_OSI_QP is nonzero, the OsiSolverInterface used in OSIMPSolver (if
+ * any. i.e., unless a QPPenaltyMP is used) will be one of the two specific
+ * OsiXXXSolverInterface that support a QP Master problem, i.e.,
+ *
+ * - 1: a OsiCpxSolverInterface
+ *
+ * - 2: a OsiGrbSolverInterface
+ *
+ * This requires some includes that can be avoided otherwise, especially
+ * since both Cplex and Gurobi are commercial and therefore the corresponding
+ * OsiXXXSolverInterface are in general not be available to all users. */
 
-#define USE_CPLEX 1
+#define USE_OSI_QP 1
 
-// if USE_CPLEX is nonzero, the OsiSolverInterface used in OSIMPSolver can be
-// a OsiCpxSolverInterface; this requires some includes that can be avoided
-// otherwise (and that someone may not have and therefore may want to avoid)
-
-#if USE_CPLEX
- #include "ilcplex/cplex.h"
-
+#if USE_OSI_QP == 1
  #include "OsiCpxSolverInterface.hpp"
+#elif USE_OSI_QP == 2
+ #include "OsiGrbSolverInterface.hpp"
 #endif
 
 /*--------------------------------------------------------------------------*/
@@ -1647,31 +1654,23 @@ void BundleSolver::set_Block( Block * block )
   #if( ! USE_MPTESTER )
    if( MPName & 1 ) {  // the MPSolver is a OSIMPSolver
   #endif
-    OSIMPSolver * osi_mps = new OSIMPSolver();
+    auto osi_mps = new OSIMPSolver();
     Master = osi_mps;
 
     if( MPName & 2 ) {
-     #if USE_CPLEX
-      OsiCpxSolverInterface *osicpx = new OsiCpxSolverInterface();
-      CPXENVptr env = osicpx->getEnvironmentPtr ();
-      CPXsetintparam( env , CPX_PARAM_THREADS , threads );
-      CPXsetintparam( env , CPXPARAM_ScreenOutput , CPX_OFF );
-      CPXsetintparam( env , CPXPARAM_Barrier_Display , 0 );
-      CPXsetintparam( env , CPXPARAM_Simplex_Display , 0 );
-      CPXsetintparam( env , CPXPARAM_Sifting_Display , 0 );
-      CPXsetintparam( env , CPXPARAM_Network_Display , 0 );
-      CPXsetintparam( env , CPXPARAM_ParamDisplay  , CPX_OFF );
- 
-      osi_mps->SetOsi( osicpx );
+     #if USE_OSI_QP == 1
+      osi_mps->SetOsi( new OsiCpxSolverInterface() );
+     #elif USE_OSI_QP == 2
+      osi_mps->SetOsi( new OsiGrbSolverInterface() );
      #else
-      throw( std::invalid_argument( "OsiCpxSolverInterface not supported" ) );
+      throw( std::invalid_argument( "MPName & 2 not supported" ) );
      #endif
      }
     else
      osi_mps->SetOsi( new OsiClpSolverInterface() );
 
-    osi_mps->SetStabType( MPName & 4 ? OSIMPSolver::quadratic :
-			              OSIMPSolver::boxstep );
+    osi_mps->SetStabType( MPName & 4 ? OSIMPSolver::quadratic
+			             : OSIMPSolver::boxstep );
 
     osi_mps->SetAlgo( OSIMPSolver::OsiAlg( algo ) ,
 		      OSIMPSolver::OsiRed( reduction ) );
@@ -1883,7 +1882,11 @@ void BundleSolver::set_par( idx_type par , int value )
    reduction = value;
    break;
   case( intOSImp3 ):
-   threads = value;
+   if( threads != value ) {
+    threads = value;
+    if( auto osi_mps = dynamic_cast< OSIMPSolver * >( Master ) )
+     osi_mps->SetThreads( threads );
+    }
    break;
   case( intRstAlg ):
    RstAlgPrm = value;
