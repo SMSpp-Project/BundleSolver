@@ -72,6 +72,7 @@
  #include "OsiCpxSolverInterface.hpp"
 #elif USE_OSI_QP == 2
  #include "OsiGrbSolverInterface.hpp"
+ #include "gurobi_c++.h"
 #endif
 
 /*--------------------------------------------------------------------------*/
@@ -1661,7 +1662,17 @@ void BundleSolver::set_Block( Block * block )
      #if USE_OSI_QP == 1
       osi_mps->SetOsi( new OsiCpxSolverInterface() );
      #elif USE_OSI_QP == 2
-      osi_mps->SetOsi( new OsiGrbSolverInterface() );
+      // externally create the Gurobi environment in order to be able to
+      // set it in "silent mode" before it is started
+      GRBenv * envP;
+      auto err = GRBemptyenv( & envP );
+      if( err )
+       throw( std::logic_error( "cannot create Gurobi environment" ) );
+      GRBsetintparam( envP , "OutputFlag" , 0 );
+      err = GRBstartenv( envP );
+      if( err )
+       throw( std::logic_error( "cannot initialize Gurobi environment" ) );
+      osi_mps->SetOsi( new OsiGrbSolverInterface( envP ) );      
      #else
       throw( std::invalid_argument( "MPName & 2 not supported" ) );
      #endif
