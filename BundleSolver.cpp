@@ -3079,8 +3079,11 @@ bool BundleSolver::FiAndGi( Index wFi , bool getgi )
  auto end = std::chrono::system_clock::now();
  std::chrono::duration< double > elapsed = end - start;
 
- if( ( FiStatus[ wFi ] <= kUnEval ) || ( FiStatus[ wFi ] >= kError ) )
+ if( ( FiStatus[ wFi ] <= kUnEval ) || ( FiStatus[ wFi ] >= kError ) ) {
+  if( f_log && ( LogVerb > 3 ) )
+   *f_log << " ] = Error #" <<  FiStatus[ wFi ] << ", stop";
   return( false );
+  }
   
  auto ue = fwFi->get_upper_estimate();
  auto le = fwFi->get_lower_estimate();
