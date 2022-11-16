@@ -7292,6 +7292,8 @@ void BundleSolverState::deserialize( const netCDF::NcGroup & group )
   throw( std::logic_error(
 		      "BundleSolverState::deserialize: missing NumVar" ) );
 
+ NumVar = nv.getSize();
+
  auto l = group.getVar( "BundleSolver_Lambda" );
  if( l.isNull() )
   throw( std::logic_error(
@@ -7310,6 +7312,8 @@ void BundleSolverState::deserialize( const netCDF::NcGroup & group )
  if( nf.isNull() )
   throw( std::logic_error(
 		      "BundleSolverState::deserialize: missing NrFi" ) );
+
+ NrFi = nf.getSize();
 
  v_comp_State.resize( nf.getSize() , nullptr );
 
