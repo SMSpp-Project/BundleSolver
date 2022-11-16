@@ -2219,7 +2219,7 @@ State * BundleSolver::get_State( void ) const {
 void BundleSolver::put_State( const State & state )
 {
  // if state is not a BundleSolverState &, exception will be thrown
- auto s = dynamic_cast< const BundleSolverState & >( state );
+ const auto & s = dynamic_cast< const BundleSolverState & >( state );
 
  guts_of_put_State( s );
 
@@ -2236,7 +2236,7 @@ void BundleSolver::put_State( const State & state )
 void BundleSolver::put_State( State && state )
 {
  // if state is not a BundleSolverState &&, exception will be thrown
- auto s = dynamic_cast< BundleSolverState && >( state );
+ auto && s = dynamic_cast< BundleSolverState && >( state );
 
  guts_of_put_State( s );
 
