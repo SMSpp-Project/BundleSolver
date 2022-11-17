@@ -6592,7 +6592,8 @@ void BundleSolver::process_outstanding_Modification( void )
    if( Addd[ k ].empty() && Chgd[ k ].empty() )  // nothing to see here
     continue;                                    // move on
 
-   if( Chgd[ k ].size() >= NrItems[ k ] ) {      // all items change
+   if( Addd[ k ].empty() && ( Chgd[ k ].size() >= NrItems[ k ] ) ) {
+    // all existing items change and no new one is added
     if( ! reset[ k ] )
      ++cntreset;
     reset[ k ] = AlphaC[ k ] = true;             // this is a reset
