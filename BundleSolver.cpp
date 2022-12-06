@@ -1397,7 +1397,7 @@ void BundleSolver::set_Block( Block * block )
  // if some Constraint are present, their can only be either BoxConstraint
  // (with LHS == 0), LB0Constraint or NNConstraint - - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
- // one day general linear constaints will be allowed
+ // one day general linear constraints will be allowed
  //
  // note that un_any_thing() only serves to verify that the stuff is of the
  // right type, and therefore it has to do nothing; this is obtained by
@@ -2873,7 +2873,7 @@ void BundleSolver::FormLambda1( HpNum Tau )
    UpFiLmb1[ k ] = INFshift;
 
    // computing the upper bound requires the Lipschitz constant and is
-   // onlt done if bit 4 of TrgtMng == 1
+   // only done if bit 4 of TrgtMng == 1
    if( ( TrgtMng & 16 ) && ( UpFiLmb[ k ] < INFshift ) ) {
     c_VarValue Lk = v_c05f[ k ]->get_Lipschitz_constant();
     if( Lk < INFshift ) {
@@ -5492,11 +5492,11 @@ void BundleSolver::process_outstanding_Modification( void )
     if( std::isnan( shift ) ) {  // is a C05FunctionModLin*
      Fi0Chgd = true;             // changing the coefficients
      Fi0Lmb = INFshift;          // the value is no longer known
-     if( UpFiLmbdef == NrFi + 1 ) {  // the total total upper bound was known
+     if( UpFiLmbdef == NrFi + 1 ) {  // the total upper bound was known
       UpFiLmb.back() = INFshift;     // it is no longer so
       UpFiLmbdef = NrFi;             // it will have to be recomputed
       }
-     if( LwFiLmbdef == NrFi + 1 ) {  // the total total lower bound was known
+     if( LwFiLmbdef == NrFi + 1 ) {  // the total lower bound was known
       LwFiLmb.back() = -INFshift;    // it is no longer so
       LwFiLmbdef = NrFi;             // it will have to be recomputed
       }
@@ -6183,7 +6183,7 @@ void BundleSolver::process_outstanding_Modification( void )
  // at the end. all corresponding Modification are removed from the list
  //
  // this loop may also force some linearization errors to be reset since they
- // depends ot only on the initial constant (\alpha), but also from the
+ // depend not only on the initial constant (\alpha), but also from the
  // linearization itself (g) and the current stability centre (Lambda); if
  // any of those changes, the linearization error need be recomputed. in this
  // loop we consider changes of Lambda due to the removal of variables, while

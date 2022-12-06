@@ -1039,7 +1039,7 @@ public:
   *   then z* is the violation of the relaxed constraints. Hence, the right
   *   value for dblNZEps (and its actual form, see intWZNorm) is the one
   *   corresponding to the tolerance required for declaring a solution of the
-  *   original problem feasibile.
+  *   original problem feasible.
   *
   * - dbltStar [1e+2]: optimality parameter related to subgradient scaling.
   *                    Proving that some point Lambda is optimal for a convex
