@@ -2,7 +2,7 @@
 /*------------------------ File BundleSolver.cpp ---------------------------*/
 /*--------------------------------------------------------------------------*/
 /** @file
- * Implementation of the BunldeSolver class.
+ * Implementation of the BundleSolver class.
  *
  * \author Antonio Frangioni \n
  *         Dipartimento di Informatica \n
@@ -896,7 +896,7 @@ int BundleSolver::compute( bool changedvars )
 
   // avoid the t-changing phase if a vertical linearization has been found- -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-  // this is because the vertical linearizatio making Lambda1 unfeasible,
+  // this is because the vertical linearization making Lambda1 unfeasible,
   // surely "change enough the master problem already"
   // yet, one possible t-strategy would be to set t to the largest value
   // that would have produced a feasible point: t := Alfa1 / ( - ScPr1 )
@@ -1250,7 +1250,7 @@ void BundleSolver::set_Block( Block * block )
     if( ! f_lf )
      throw( std::logic_error( "the objective is not a LinearFunction" ) );
 
-    if( ! f_lf->get_num_active_var() )  // the LinarFunction has no Variable
+    if( ! f_lf->get_num_active_var() )  // the LinearFunction has no Variable
      f_lf = nullptr;
     }
    }
@@ -1277,7 +1277,7 @@ void BundleSolver::set_Block( Block * block )
      throw( std::invalid_argument(
 			  "objectives must be all convex or all concave" ) );
 
-   // all have to be be max/min in the right way- - - - - - - - - - - - - - -
+   // all have to be max/min in the right way- - - - - - - - - - - - - - -
    if( ( ! f_convex ) && ( ! c05f->is_concave() ) )
    throw( std::invalid_argument(
 			     "only convex or concave objectives allowed " ) );
@@ -1756,7 +1756,7 @@ void BundleSolver::set_Block( Block * block )
  // however, if ( BPar7 & 3 ) == 3 then BundleSolver does not care at all
  // about what linearizations are there in the global pool because it will
  // treat any position in the global pool as available for it regardless to
- // if there is anything there; hence, in this case we do not bther to even
+ // if there is anything there; hence, in this case we do not bother to even
  // look
 
  if( BPar7 & 8 ) {
@@ -2066,7 +2066,7 @@ void BundleSolver::set_log( std::ostream * log_stream )
 
 void BundleSolver::get_dual_solution( Configuration * solc )
 {
- // construct the important linerization for each non-easy component (unless
+ // construct the important linearization for each non-easy component (unless
  // it is already there, and signal to the C05Functions which one it is
 
  for( Index k = 0 ; k < NrFi ; ++k )         // for all components
@@ -2359,7 +2359,7 @@ void BundleSolver::FormD( void )
  // collect and set individual lower bounds, if any - - - - - - - - - - - - -
  // if the MPSolver accepts them, collect and if necessary set the individual
  // lower bounds. note that if all of them are finite and the 0-th component
- // is not there their sum would give an alterntive valid global lower bound.
+ // is not there their sum would give an alternative valid global lower bound.
  // however, the same information is already encoded in the individual bounds,
  // hence it's of no use. the exception is that QPPenaltyMP does not allow
  // individual lower bounds, but this is not a permanent issue and it'll go
@@ -2614,7 +2614,7 @@ void BundleSolver::FormD( void )
  // wrong, but never reset it to the original value. over long sequences
  // of calls this may make eR to become "big", which in turn ultimately
  // reduces accuracy and created problems. ensure that eR is properly reset
- // after every successfull call
+ // after every successful call
  if( ! ( MPName & 1 ) )
   Master->SetPar( MPSolver::kOptEps , 1e-12 );
 
@@ -2704,7 +2704,7 @@ void BundleSolver::FormD( void )
  if( ( ( ! ( MPName & 1 ) ) || ( MPName & 4 ) ) && ( ( WZNorm & 3 ) == 2 ) )
   NrmZ = NrmD / t;
  else {  // otherwise it has to be computed the hard way
-  // NOTE: THIS CODE IS BOTH HORRIBLY INEFFCIENT DUE TO A CRAP IMPLEMENTATION
+  // NOTE: THIS CODE IS BOTH HORRIBLY INEFFICIENT DUE TO A CRAP IMPLEMENTATION
   // OF OsiMPSolver::ReadZ AND INCORRECT WHEN THERE ARE CONSTRAINTS, AS THE
   // z* COMPUTED BY ReadZ() IS THAT OF THE OBJECTIVE BUT NOT OF THE ESSENTIAL
   // OBJECTIVE. the right vector should be easy to compute since it's basically
@@ -2775,7 +2775,7 @@ void BundleSolver::UpdtCntrs( void )
  // practice, a subgradient with multiplier very close to one). This is
  // checked here (it is basically for free), and in case whisZ[] is properly
  // set so as to avoid pointless aggregations and OOBase[] is set to -1,
- // because under no circumnstances such a subgradient can ever be removed
+ // because under no circumstances such a subgradient can ever be removed
  // from the bundle
  //
  // it now seems to me that this is stupid, since if there is only one
@@ -2956,7 +2956,7 @@ void BundleSolver::FormLambda1( HpNum Tau )
   LwTrgt = -INFshift;
   }
 
- // print the new informaion - - - - - - - - - - - - - - - - - - - - - - - - -
+ // print the new information - - - - - - - - - - - - - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
  if( f_log && ( LogVerb > 4 ) ) {
@@ -2997,7 +2997,7 @@ BundleSolver::Index BundleSolver::InnerLoop( bool extrastep )
  for( bool insrtd = false ; ; ) {
   // round-robin-like loop between the different components
   if( ! FindNext() ) {  // find next component
-   if( ! ceval )        // no componet found to evaluate
+   if( ! ceval )        // no component found to evaluate
     Result = kError;    // this is an error (or is it?)
    break;               // anyway, nothing else to do but stop
    }
@@ -3444,10 +3444,10 @@ bool BundleSolver::GetGi( Index wFi )
    Alfa1k = UpFiLmb1[ wFi ] - Alfa1k -
     std::inner_product( Lambda1.begin() , Lambda1.end() , G1k , double( 0 ) );
 
-   // this is the eps so that G1 is an eps-subgradent in Lambda1
+   // this is the eps so that G1 is an eps-subgradient in Lambda1
    eps = Alfa1k;
 
-   // CheckSubG changes Alfa1k so that G1 is an Alfa1k-subgradent in Lambda
+   // CheckSubG changes Alfa1k so that G1 is an Alfa1k-subgradient in Lambda
    cp = Master->CheckSubG( UpFiLmb1[ wFi ] - UpRifFi[ wFi ] , t , Alfa1k ,
 			   ScPr1k );
    }
@@ -4013,8 +4013,8 @@ Index BundleSolver::BStrategy( Index wFi )
  //
  // Picking a specific spot in the free space is the task of FindAPlace(),
  // which however is not called right away because the place may end up not
- // being needed. If BStrategy() returne InINF because there is plenty of
- // space then FindAPlace() will suceed, if BStrategy() returne InINF because
+ // being needed. If BStrategy() return InINF because there is plenty of
+ // space then FindAPlace() will suceed, if BStrategy() return InINF because
  // there is no way space can be found then FindAPlace() will fail and it
  // will be clear that disaster looms
  //
@@ -4381,7 +4381,7 @@ void BundleSolver::UpdateHeuristicInfo( void )
  *
  *    q( v ) = f( \bar{x} - v z* ) - f( \bar{x} )
  *
- * Assuming (only for notational simplicity) diferentiability, we thus have
+ * Assuming (only for notational simplicity) differentiability, we thus have
  *
  *    q'( v ) = < - z* , f'( \bar{x} - v z* ) >
  *
@@ -4391,7 +4391,7 @@ void BundleSolver::UpdateHeuristicInfo( void )
  * - the aggregated subgradient z*, which is a Sigma*-subgradient in \bar{x}
  *
  * - the newly obtained subgradient g, which is an Alfa1-subgradient in 0 and
- *   and eps-subgradient in t, where
+ *   eps-subgradient in t, where
  *
  *     eps = DeltaFi - ( Alfa1 + < g , d* > )
  *
@@ -5814,7 +5814,7 @@ void BundleSolver::process_outstanding_Modification( void )
  // names of the changed Variable may not be current (additions/deletions may
  // happen in the meantime), and keeping track is too burdensome. similarly
  // for "vertical" changes (a set of specific linearizations). some steps
- // in this direction will perhaps be done in later stages of develpment
+ // in this direction will perhaps be done in later stages of development
 
  if( cntreset ) {                // if there was any hard reset
   reset.assign( NrFi , false );  // reset reset (couldn't resist)
@@ -6171,8 +6171,8 @@ void BundleSolver::process_outstanding_Modification( void )
  if( std::find_if( Rmvd.begin() , Rmvd.end() ,
 		   []( Subset & Rk ) { return( ! Rk.empty() ); }
 		   ) != Rmvd.end() ) {
-  // at least a component has had lnearizations removed, but note that not
-  // all lnearizations need be in the bundle; if they are not they are
+  // at least a component has had linearizations removed, but note that not
+  // all linearizations need be in the bundle; if they are not they are
   // just removed from the global pool (if they are there)
 
   for( Index k = 0 ; k < NrFi ; ++k )
@@ -6597,7 +6597,7 @@ void BundleSolver::process_outstanding_Modification( void )
      ( std::find_if( Chgd.begin() , Chgd.end() ,
 		     []( Subset & Ck ) { return( ! Ck.empty() ); }
 		     ) != Chgd.end() ) ) {
-  // at least a component has had lnearizations added or changed
+  // at least a component has had linearizations added or changed
 
   for( Index k = 0 ; k < NrFi ; ++k ) {
    if( Addd[ k ].empty() && Chgd[ k ].empty() )  // nothing to see here
@@ -7256,7 +7256,7 @@ void BundleSolver::FakeFiOracle::GetADesc( cIndex wFi , int * Abeg ,
 
  Abeg[ nc ] = count;  // end marker
 
- // like everything that goes in the objectve, in the concave case A must be
+ // like everything that goes in the objective, in the concave case A must be
  // changed sign
  if( ! bslv->f_convex )
   chgsign( Aval , count );

@@ -602,7 +602,7 @@ public:
  /** Gives the BundleSolver access to the Block it has to solve; note that
   * this does not register the BundleSolver among the Solver of the Block,
   * because the converse happens. Extensive checks are performed during
-  * set_Block() to ensure that the Block does satify the requirements of
+  * set_Block() to ensure that the Block does satisfy the requirements of
   * BundleSolver, and all the nontrivial internal data structures of
   * BundleSolver are set up.
   *
