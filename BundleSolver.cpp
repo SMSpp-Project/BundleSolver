@@ -2594,10 +2594,21 @@ void BundleSolver::FormD( void )
    return;
    }
 
-  Delete( i );      // just delete i
+  // i can be deleted, do it and try again hoping this will solve the
+  // numerical issue in the master problem
 
+  if( ( BPar7 & 3 ) == 3 ) {
+   // if BPar7 tells that the removal must be "hard", actually remove the
+   // linearization from the global pool, as Delete() does not do that
+   inhibit_Modification( true );
+   v_c05f[ ItemVcblr[ i ].first ]->delete_linearization(
+						   ItemVcblr[ i ].second );
+   inhibit_Modification( false );
+   }
+  Delete( i );
+ 
   }  // end ( error-handling loop )- - - - - - - - - - - - - - - - - - - - -
-  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+     //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
  // MinQuad (in QPPenaltyMP) has the habit to increase eR when things go
  // wrong, but never reset it to the original value. over long sequences
@@ -4825,7 +4836,7 @@ void BundleSolver::Delete( cIndex i , bool ModDelete )
  if( i < MxNm )
   FreList.push( i );
 
- OOBase[ i ] = Inf<SIndex>();
+ OOBase[ i ] = Inf< SIndex >();
  --NrItems[ k ];
  --NrItems[ NrFi ];
 
