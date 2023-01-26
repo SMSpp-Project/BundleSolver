@@ -2,7 +2,7 @@
 /*----------------------- File BundleSolver.h ------------------------------*/
 /*--------------------------------------------------------------------------*/
 /** @file
- * Header file for the BunldeSolver class, which implements the Solver
+ * Header file for the BundleSolver class, which implements the Solver
  * interface, in particular in its CDASolver version, using a "Generalized
  * Bundle" algorithm for the solution of convex nondifferentiable problems.
  *
@@ -43,7 +43,7 @@
  *  http://www.di.unipi.it/~frangio/abstracts.html#SIOPT16
  * \endlink
  *
- * BunldeSolver is capable of solving any Block such that:
+ * BundleSolver is capable of solving any Block such that:
  *
  * - only has "continuous" ColVariable (is_integer() == false);
  *
@@ -170,7 +170,7 @@ namespace SMSpp_di_unipi_it
 /*--------------------------- GENERAL NOTES --------------------------------*/
 /*--------------------------------------------------------------------------*/
 /// A CDASolver using a (Generalized) Bundle algorithm
-/** BunldeSolver implements the Solver interface, in particular in its
+/** BundleSolver implements the Solver interface, in particular in its
  * CDASolver version, using a "Generalized Bundle" algorithm.
  *
  * The user is assumed to be familiar with the algorithm: refer to
@@ -210,7 +210,7 @@ namespace SMSpp_di_unipi_it
  *  http://www.di.unipi.it/~frangio/abstracts.html#SIOPT16
  * \endlink
  *
- * BunldeSolver is capable of solving any Block such that:
+ * BundleSolver is capable of solving any Block such that:
  *
  * - only has "continuous" ColVariable (is_integer() == false) that are
  *   either unconstrained below (lower bound == - INF) or non-negative
@@ -613,9 +613,9 @@ public:
  void set_Block( Block * block ) override;
 
 /*--------------------------------------------------------------------------*/
- /// set the int paramaters of BundleSolver
- /** Set the int paramaters specific of BundleSolver, together with the
-  * paramaters of CDASolver that BundleSolver actually "listens to":
+ /// set the int parameters of BundleSolver
+ /** Set the int parameters specific of BundleSolver, together with the
+  * parameters of CDASolver that BundleSolver actually "listens to":
   *
   * - intMaxIter [Inf<int>]: maximum iterations for the next call to solve()
   *
@@ -652,13 +652,13 @@ public:
   *   C05Function). Of course, keeping the "bundle" small makes the Master
   *   Problem cheaper, but on the other hand acquiring enough first-order
   *   information is typically the name of the game, hence keeping this
-  *   value too low can have a dramatc effect on convergence speed that
+  *   value too low can have a dramatic effect on convergence speed that
   *   can easily counterbalance any improvement in Master Problem cost.
   *
   * - intBPar3 [1]: maximum number of new linearizations to be fetched from
   *                 each (non-easy) C05Function at each function evaluation
   *
-  * - intBPar4 [1]: minmum number of new linearizations to be fetched from
+  * - intBPar4 [1]: minimum number of new linearizations to be fetched from
   *                 each (non-easy) C05Function at each function evaluation
   *
   * - intBPar6 [0]: together with the double parameters dblBPar3, dblBPar4
@@ -723,7 +723,7 @@ public:
   *
   *   = 1 means that BundleSolver will not immediately delete from the global
   *     pool a linearization that it removes from the bundle (the master
-  *     problem). While the lineariztion is kept there, BundleSolver
+  *     problem). While the linearization is kept there, BundleSolver
   *     considers it "free", and can immediately after re-use that position
   *     to store a newly computed linearization. Again, the order is that if
   *     smaller names first, so if a linearization with "large name" is
@@ -735,7 +735,7 @@ public:
   *     pool any linearization that it removes from the bundle (the master
   *     problem). This makes sense if BundleSolver is the only Solver
   *     producing and consuming linearizations in these C05Function(s),
-  *     since it allwas them to immediately delete all the memory (which may
+  *     since it allows them to immediately delete all the memory (which may
   *     be significant) associated with that linearization in the global pool.
   *     However, if a linearization is found to be a "better copy" of a known
   *     one (the new linearization has the same linear part but a larger
@@ -743,7 +743,7 @@ public:
   *     of the convex function, so that no Solver should complain if the
   *     weaker constraint is removed provided that the better one is added),
   *     still the old linearization is kept in the global pool (but not in the
-  *     bundle) unless it is structly necessary to do so.
+  *     bundle) unless it is strictly necessary to do so.
   *
   *   = 3 means that BundleSolver will immediately delete from the global
   *     pool any linearization that it removes from the bundle (the master
@@ -794,12 +794,12 @@ public:
   *    00 (+ 0): none, only the heuristics (if any) are used
   *
   *    01 (+ 4): the "soft" long-term t-strategy is used: the value EpsU is
-  *              mantained (cf. intBPar6) which estimates the current
+  *              maintained (cf. intBPar6) which estimates the current
   *              relative error, and decreases of t are inhibited whenever
   *              v < tSPar2 * EpsU * | FiVal |
   *
   *    10 (+ 8): the "hard" long-term t-strategy is used: the value EpsU is
-  *              mantained as above, and t is increased whenever
+  *              maintained as above, and t is increased whenever
   *              v < tSPar2 * EpsU * | FiVal |
   *
   *    11 (+12): the "balancing" long-term t-strategy is used, where the two
@@ -828,7 +828,7 @@ public:
   *
   *   The following 2 bits (bits 6 and 7) dictate which of the available
   *   heuristics are used to select t during a SS, if this is activated (see
-  *   the bit 0). There are four heuristics avaliable. The first three are
+  *   the bit 0). There are four heuristics available. The first three are
   *   based on a quadratic interpolation of the function based on known data,
   *   differing about which three of the four data points available (function
   *   values and derivatives in 0 and t) are used, while the fourth one is
@@ -966,7 +966,7 @@ public:
   *            which is useful to perform SS without having to necessarily
   *            compute() all the components; this is optional in that the
   *            computation of the Lipschitz constant may be costly
-  *     bit 5- : the following bits encode different farmulae for computing
+  *     bit 5- : the following bits encode different formulae for computing
   *              the "\beta_k" factors, i.e., a positive number for each
   *              component summing to one telling how the required global
   *              decrease or increase is partitioned between the different
@@ -1005,9 +1005,9 @@ public:
  void set_par( idx_type par , int value ) override;
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
- /// set the double paramaters of BundleSolver
- /** Set the double paramaters specific of BundleSolver, together with the
-  * paramaters of CDASolver that BundleSolver actually "listens to":
+ /// set the double parameters of BundleSolver
+ /** Set the double parameters specific of BundleSolver, together with the
+  * parameters of CDASolver that BundleSolver actually "listens to":
   *
   * - dblMaxTime [Inf<double>()]: maximum CPU time for the next call to
   *                               compute(), in seconds
@@ -1163,7 +1163,7 @@ public:
   *   function at the current stability center Lambda and v* < 0 is the
   *   predicted decrease at the new iterate Lambda1. Typically, upper_target
   *   should be "just a bit below UpFi": whenever an upper bound on
-  *   Fi( Lambda1 ) is found that is <= upper_target (which menas that a
+  *   Fi( Lambda1 ) is found that is <= upper_target (which means that a
   *   "sizable decrease" has been achieved), a Serious Step can be safely
   *   declared. Note that it must be 0 < m1 <= m2 < 1; m1 = m2 = 0 is
   *   theoretically possible, but not practically advisable, for
@@ -1213,7 +1213,7 @@ public:
   *                 of t can clearly help the BundleSolver to perform
   *   better in the initial iterations, although the t-strategies should see
   *   to the fact that blatantly wrong t values are rapidly corrected.
-  *   Giving a reasonanble value to this parameter (and, consequently, to
+  *   Giving a reasonable value to this parameter (and, consequently, to
   *   dbltMaior and dbltMinor) is in general nontrivial, but in practice a
   *   minor amount of tuning suffices to find reasonable values. Usually,
   *   there is a "right" order of magnitude for t, that is the one that is
@@ -1269,9 +1269,9 @@ public:
  void set_par( idx_type par , double value ) override;
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
- /// move the string paramaters of BundleSolver
- /** Move in the string paramaters specific of BundleSolver, together with
-  * the paramaters of CDASolver that BundleSolver actually "listens to":
+ /// move the string parameters of BundleSolver
+ /** Move in the string parameters specific of BundleSolver, together with
+  * the parameters of CDASolver that BundleSolver actually "listens to":
   *
   * - strEasyCfg [empty]: filename from where the Configuration of the "easy"
   *                       components is taken. If not empty, strEasyCfg must
@@ -1296,9 +1296,9 @@ public:
  void set_par( idx_type par , std::string && value ) override;
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
- /// move in the vector-of-int paramaters of BundleSolver
- /** Move in the given vector-of-int paramaters specific of BundleSolver,
-  * together with the paramaters of CDASolver that BundleSolver actually
+ /// move in the vector-of-int parameters of BundleSolver
+ /** Move in the given vector-of-int parameters specific of BundleSolver,
+  * together with the parameters of CDASolver that BundleSolver actually
   * "listens to":
   *
   * - vintNoEasy [empty]: the vector vintNoEasy is assumed to contain the
@@ -1309,16 +1309,16 @@ public:
   *   for otherwise no component is ever treated as "easy". The ordering of
   *   the components is as follows: if the Block only has a C05Function as
   *   Objective and no sub-Block then that it is component 0, otherwise the
-  *   component i corresponds to the (the C05Functiono found in the
+  *   component i corresponds to the (the C05Function found in the
   *   FReal)Objective found in the i-th sub-Block of the Block
   *   (get_nested_Block( i )). */
 
  void set_par( idx_type par , std::vector< int > && value ) override;
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
- /// move in the vector-of-string paramaters of BundleSolver
- /** Move in the given vector-of-string paramaters specific of BundleSolver,
-  * together with the paramaters of CDASolver that BundleSolver actually
+ /// move in the vector-of-string parameters of BundleSolver
+ /** Move in the given vector-of-string parameters specific of BundleSolver,
+  * together with the parameters of CDASolver that BundleSolver actually
   * "listens to":
   *
   * - vstrCmpCfg [empty]: the vector vstrCmpCfg is assumed to contain the
@@ -1331,7 +1331,7 @@ public:
   *   supported file types) and used to configure the i-th component. The
   *   ordering of the components is as follows: if the Block only has a
   *   C05Function as Objective and no sub-Block then that it is component 0,
-  *   otherwise the component i corresponds to the (the C05Functiono found
+  *   otherwise the component i corresponds to the (the C05Function found
   *   in the FReal)Objective found in the i-th sub-Block of the Block
   *   (get_nested_Block( i )). This parameter overrides any other
   *   Configuration-related parameter, in particular strEasyCfg and
@@ -1542,7 +1542,7 @@ public:
   * component; this is unless the optimal aggregate linearization has been
   * inserted in the bundle for other reasons (making space in a full bundle),
   * in which case the coefficients of the "important linearization" of that
-  * component are just < 1 , indez of the optimal aggregate linearization >.
+  * component are just < 1 , index of the optimal aggregate linearization >.
   *
   *     IMPORTANT NOTE: THIS CURRENTLY ONLY WORKS FOR "HARD" COMPONENTS, AND
   *     THERE IS NO WAY TO GET THE DUAL OPTIMAL SOLUTION FOR "EASY" ONES.
@@ -1903,7 +1903,7 @@ public:
     failures in the subproblem solver, typically eliminating some of the
     items in the bundle.
 
-    Set the protected field Result to kOK if (evenctually after some "fatal"
+    Set the protected field Result to kOK if (eventually after some "fatal"
     failure) a tentative descent direction could be found, to kUnfsbl if the
     MP is dual unfeasible and to kError if this was returned by SolveMP(): in
     the latter cases, the whole algorithm must abort. */
@@ -1916,7 +1916,7 @@ public:
  void UpdtCntrs( void );
 
 /*--------------------------------------------------------------------------*/
- /* After a (succesfull) call to FormD(), sets the new tentative point Lambda1
+ /* After a (successful) call to FormD(), sets the new tentative point Lambda1
   * as Lambda1 = Lambda + ( Tau / t ) * d. */
 
  void FormLambda1( HpNum Tau );
@@ -1940,7 +1940,7 @@ public:
   * - it disables all fancy early termination checks and forces all (non-easy)
   *   components to be evaluated;
   *
-  * - it only compute function values (upper and lower estimtes), but it does
+  * - it only compute function values (upper and lower estimates), but it does
   *   not collect any new linearization.
   *
   * The rationale for the latter choice is that the bundle contains enough
@@ -2216,7 +2216,7 @@ public:
 
 /*--------------------------------------------------------------------------*/
  /* Concave functions to be maximised are sneakily turned into convex
-  * functions to be minimized inside by changing the sign of funcion values
+  * functions to be minimized inside by changing the sign of function values
   * and linearizations, but they have to be output with the right sign. */
  
  VarValue rs( const VarValue fv ) {
@@ -2233,7 +2233,7 @@ public:
 /*---------------------------- PROTECTED FIELDS  ---------------------------*/
 /*--------------------------------------------------------------------------*/
 
- // algorthmic parameters - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // algorithmic parameters - - - - - - - - - - - - - - - - - - - - - - - - - -
 
  int MaxSol;        ///< maximum number of different solutions to report
  Index MaxNrEvls;   ///< maximum total number of function evaluations
@@ -2357,7 +2357,7 @@ public:
 		    * whisZ[ k ]; Inf<Index>() == it is not in the bundle */
  std::vector< bool > Zvalid;  /**< Zvalid[ k ] == true if the item in position
 			       * whisZ[ k ] is exactly Z[ k ] as computed by
- * the last master problee. Zvalid[ k ] == true ==> whisZ[ k ] < INF.
+ * the last master problem. Zvalid[ k ] == true ==> whisZ[ k ] < INF.
  * if Zvalid[ k ] == false and whisZ[ k ] < INF, then Z[ k ] had been
  * previously stored in position whisZ[ k ], but the master problem has
  * been re-solved since and therefore Z[ k ] is no longer current. */
@@ -2410,7 +2410,7 @@ public:
  Vec_VarValue vStar;   ///< v*, the predicted improvement
 
  VarValue DeltaFi;     ///< FiLambda - FiLambda1
- VarValue EpsU;        ///< precison required by the long-term t-strategy
+ VarValue EpsU;        ///< precision required by the long-term t-strategy
 
  Index CSSCntr;        ///< counter of consecutive SS
 
@@ -2469,7 +2469,7 @@ public:
   * p = InvItemVcblr[ k ][ i ], if p < vBPar2[ NrFi ], then the linearization
   * with name i in the global pool of h is in the bundle at position p.
   * If p == INF, then there is no linearization with name i in the global
-  * pool of k. If vBPar2[ NrFi ] <= p < INF, then there is a inearization with
+  * pool of k. If vBPar2[ NrFi ] <= p < INF, then there is a linearization with
   * name i in the global pool of h, but it is not in the bundle.
   *
   * NOTE: THE GLOBAL POOL OF SOME C05Function CAN BE LARGER THAN vBPar2[ k ],
@@ -2537,9 +2537,9 @@ public:
  Subset CurrNrEvls;      /**< how many times compute() has been called for
 			  * each component in the current iteration */
 
- double DST;             ///< D_t( z* ), used to comupute the crucial Delta*
+ double DST;             ///< D_t( z* ), used to compute the crucial Delta*
  double NrmD;            ///< Euclidean norm of the current direction d*
- double NrmZ;            ///< some norm of the aggregated sungradient z*
+ double NrmZ;            ///< some norm of the aggregated subgradient z*
  double NrmZFctr;        ///< scaling factor to declare NrmZ "small"
 
  // fields for events - - - - - - - - - - - - - - - - - - - - - - - - - - - -
