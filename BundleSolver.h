@@ -1475,15 +1475,15 @@ public:
  VarValue get_lb( void ) override {
   if( f_convex ) {
    if( f_global_LB > - INFshift )
-    return( f_global_LB );
+    return( f_global_LB + constant_value );
 
-   return( TrueLB ? LowerBound.back() : - INFshift );
+   return( TrueLB ? LowerBound.back()  + constant_value : - INFshift );
    }
   else
    if( ( MaxSol > 1 ) && ( UpFiBest < UpFiLmb.back() ) )
-    return( - UpFiBest );
+    return( - UpFiBest + constant_value );
    else
-    return( - UpFiLmb.back() );
+    return( - UpFiLmb.back() + constant_value );
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
@@ -1491,14 +1491,14 @@ public:
  VarValue get_ub( void ) override {
   if( f_convex )
    if( ( MaxSol > 1 ) && ( UpFiBest < UpFiLmb.back() ) )
-    return( UpFiBest );
+    return( UpFiBest + constant_value );
    else
-    return( UpFiLmb.back() );
+    return( UpFiLmb.back() + constant_value );
   else {
    if( f_global_LB > - INFshift )
-    return( - f_global_LB );
+    return( - f_global_LB + constant_value );
 
-   return( TrueLB ? - LowerBound.back() : INFshift );
+   return( TrueLB ? - LowerBound.back() + constant_value : INFshift );
    }
   }
 
@@ -2499,6 +2499,10 @@ public:
 
  std::vector< C05Function * > v_c05f;
  ///< the vector of (pointers to) the components of the sum function
+
+ // this is necessary since OSIMPSolver does not deal with constant term
+ OFValue constant_value{};
+ ///< the summation of the constant terms of all "easy" components
 
  LinearFunction * f_lf;  ///< the 0-th component of the sum function
 
