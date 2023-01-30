@@ -1484,6 +1484,9 @@ void BundleSolver::set_Block( Block * block )
     catch( ... ) {  // exception means that something nonlinear is there
      delete MILPs;
      }
+
+    // this is done since OSIMPSolver does not deal with constant term
+    constant_value += LagB->get_constant_term();
     }
    }
 
@@ -5542,15 +5545,17 @@ void BundleSolver::process_outstanding_Modification( void )
        throw( std::logic_error( "unexpected *FunctionMod* from LinearFunction"
 				) );
      #endif
-     if( Fi0Lmb < INFshift )
-      Fi0Lmb += shift;
-     if( UpFiLmb.back() < INFshift )
-      UpFiLmb.back() += shift;
-     if( UpFiBest < INFshift )
-      UpFiBest += shift;
-     if( LwFiLmb.back() > -INFshift )
-      LwFiLmb.back() += shift;
-     f_global_LB += shift;
+     if( ! std::isnan( shift ) ) {
+      if( Fi0Lmb < INFshift )
+       Fi0Lmb += shift;
+      if( UpFiLmb.back() < INFshift )
+       UpFiLmb.back() += shift;
+      if( UpFiBest < INFshift )
+       UpFiBest += shift;
+      if( LwFiLmb.back() > -INFshift )
+       LwFiLmb.back() += shift;
+      f_global_LB += shift;
+      }
      }
 
     to_delete = true;  // in either case, all that had to be done
