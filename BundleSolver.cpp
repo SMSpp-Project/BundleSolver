@@ -811,7 +811,7 @@ int BundleSolver::compute( bool changedvars )
    }
 
   CurrNrEvls.assign( NrFi , Index( 0 ) );
-  MPchgs = 0;  // != 0 if the MP is guaranteed to change enugh after the
+  MPchgs = 0;  // != 0 if the MP is guaranteed to change enough after the
                // insertion of new information to ensure convergence
 
   auto start = std::chrono::system_clock::now();
@@ -1069,7 +1069,7 @@ int BundleSolver::compute( bool changedvars )
     //!! the beginning, it should be done only near the end
     }
   else             // regular update mechanism
-   if( tm != tp )  // if t can cange, select it in [ tm , tp ]
+   if( tm != tp )  // if t can change, select it in [ tm , tp ]
     tt = std::min( std::min( tMaior , tp ) ,
 		   std::max( std::max( tMinor , tm ) , tt ) );
    else            // else
@@ -1113,7 +1113,7 @@ int BundleSolver::compute( bool changedvars )
   // note that Alfa1, ScPr1, G1 are computed inside GetGi() that is not
   // called inside this call to InnerLoop(), so they are not initialised
   CurrNrEvls.assign( NrFi , Index( 0 ) );
-  MPchgs = 0;  // != 0 if the MP is guaranteed to change enugh after the
+  MPchgs = 0;  // != 0 if the MP is guaranteed to change enough after the
                // insertion of new information to ensure convergence
 
   auto start = std::chrono::system_clock::now();
