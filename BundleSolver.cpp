@@ -5355,8 +5355,21 @@ void BundleSolver::process_outstanding_easy_Modification( void )
      // C05FunctionMod- - - - - - - - - - - - - - - - - - - - - - - - - - - -
      if( auto modl = dynamic_cast< const C05FunctionMod * >( tmod ) ) {
 
-      whch |= 1;
-      continue;
+      if( modl->type() == C05FunctionMod::NothingChanged ) {
+
+       const auto shift = tmod->shift();
+
+       if( ( shift == INFshift ) || ( shift == - INFshift ) )
+        throw( std::logic_error( "unexpected *C05FunctionMod* from LinearFunction" ) );
+
+       if( ! std::isnan( shift ) )
+        constant_value += shift;
+       }
+      else {
+
+       whch |= 1;
+       continue;
+       }
       }
 
      const auto shift = tmod->shift();
