@@ -5359,11 +5359,13 @@ void BundleSolver::process_outstanding_easy_Modification( void )
 
        const auto shift = tmod->shift();
 
-       if( ( shift == INFshift ) || ( shift == - INFshift ) )
-        throw( std::logic_error( "unexpected *C05FunctionMod* from LinearFunction" ) );
+       if( ( shift == INFshift ) ||
+           ( shift == - INFshift ) ||
+           ( std::isnan( shift ) ) )
+        throw( std::logic_error(
+         "unexpected *C05FunctionMod* from Objective Function" ) );
 
-       if( ! std::isnan( shift ) )
-        constant_value += shift;
+       constant_value += shift;
        }
       else {
 
@@ -5371,14 +5373,6 @@ void BundleSolver::process_outstanding_easy_Modification( void )
        continue;
        }
       }
-
-     const auto shift = tmod->shift();
-
-     if( ( shift == INFshift ) || ( shift == - INFshift ) )
-      throw( std::logic_error( "unexpected *FunctionMod* from LinearFunction" ) );
-
-     if( ! std::isnan( shift ) )
-      constant_value += shift;
      }
 
     throw( std::logic_error( "unsupported Modification in easy component" ) );
