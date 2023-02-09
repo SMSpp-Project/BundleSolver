@@ -5649,10 +5649,23 @@ void BundleSolver::process_outstanding_Modification( void )
        to_delete = true;
        }
       continue;
-     case( C05FunctionMod::NothingChanged ):
+     case( C05FunctionMod::NothingChanged ): {
+
       if( v_c05f[ wFi ]->is_convex() != f_convex )
        throw( std::logic_error( "convex/concave switch not allowed" ) );
+
+      const auto shift = tmod->shift();
+
+      if( ( shift == INFshift ) ||
+          ( shift == -INFshift ) ||
+          ( std::isnan( shift ) ) )
+       throw( std::logic_error(
+        "unexpected *C05FunctionMod* from Objective Function" ) );
+
+      constant_value += shift;
+
       to_delete = true;
+      }
      case( C05FunctionMod::AllLinearizationChanged ):
      case( C05FunctionMod::AllEntriesChanged ):
      case( C05FunctionMod::AlphaChanged ):
