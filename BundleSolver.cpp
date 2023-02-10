@@ -5546,8 +5546,7 @@ void BundleSolver::process_outstanding_Modification( void )
     else {                       // a FunctionMod changing the constant
      #ifndef NDEBUG
       if( ( shift == INFshift ) || ( shift == - INFshift ) )
-       throw( std::logic_error( "unexpected *FunctionMod* from LinearFunction"
-				) );
+       throw( std::logic_error( "unexpected *FunctionMod* from LinearFunction" ) );
      #endif
      if( Fi0Lmb < INFshift )
       Fi0Lmb += shift;
@@ -5649,23 +5648,10 @@ void BundleSolver::process_outstanding_Modification( void )
        to_delete = true;
        }
       continue;
-     case( C05FunctionMod::NothingChanged ): {
-
+     case( C05FunctionMod::NothingChanged ):
       if( v_c05f[ wFi ]->is_convex() != f_convex )
        throw( std::logic_error( "convex/concave switch not allowed" ) );
-
-      const auto shift = tmod->shift();
-
-      if( ( shift == INFshift ) ||
-          ( shift == -INFshift ) ||
-          ( std::isnan( shift ) ) )
-       throw( std::logic_error(
-        "unexpected *C05FunctionMod* from Objective Function" ) );
-
-      constant_value += shift;
-
       to_delete = true;
-      }
      case( C05FunctionMod::AllLinearizationChanged ):
      case( C05FunctionMod::AllEntriesChanged ):
      case( C05FunctionMod::AlphaChanged ):
@@ -5698,8 +5684,7 @@ void BundleSolver::process_outstanding_Modification( void )
   // represents a strongly quasi-additive variable change. if not, the
   // variable change also implies a reset
   // in no case, however, the Modification is removed from the list
-  if( const auto tmod = std::dynamic_pointer_cast< FunctionModVars >( mod )
-      ) {
+  if( const auto tmod = std::dynamic_pointer_cast< FunctionModVars >( mod ) ) {
    if( ( NrFi > 1 ) || f_lf )
     throw( std::invalid_argument( "naked FunctionModVars not allowed" ) );
 
@@ -5912,9 +5897,9 @@ void BundleSolver::process_outstanding_Modification( void )
     }
    }  // end( if( tmod == C05FunctionModRngd ) )
 
-  // a C05FunctionModSbst only changes a subet of the linearizations,
+  // a C05FunctionModSbst only changes a subset of the linearizations,
   // and therefore is not considered a "soft" reset even if which().empty()
-  // in fact the subet could be so large as to be (almost) all the
+  // in fact the subset could be so large as to be (almost) all the
   // variables, which would count as a reset, but so far we don't attempt
   // at detecting this. the only easy case would be NothingChanged, but
   // any such C05FunctionModSbst has been deleted already. however, if the
