@@ -3,7 +3,7 @@
 ##############################################################################
 #                                                                            #
 #   makefile of BundleSolver and its dependencies, excluding SMS++           #
-#									     #
+#                                                                            #
 #   The makefile defines internally all external libraries required by       #
 #   BundleSolver, exluding the SMS++ core ones whose symbols are assumed to  #
 #   have been defined already (typically by including SMS++/lib/makefile).   #
