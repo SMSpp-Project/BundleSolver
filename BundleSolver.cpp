@@ -903,8 +903,15 @@ int BundleSolver::compute( bool changedvars )
   // (with Alfa1 and ScPr1 of that particular constraint, though, not the
   // "global" ones)
 
-  if( MPchgs > 1 )
-   continue;
+  if( MPchgs > 1 ) {
+   if( ParIter >= MaxIter ) {  // if we have done too many iterations
+    BLOG( 1 , " ~ stop due to max iter" << std::endl );
+    Result = kStopIter;        // stop already
+    break;
+    }
+   else                        // otherwise
+    continue;                  // go to the next one
+   }
 
   // avoid the t-changing phase if the linearization errors are not reliable-
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1893,7 +1900,7 @@ void BundleSolver::set_par( idx_type par , int value )
    reduction = value;
    break;
   case( intOSImp3 ):
-   if( threads != value ) {
+   if( threads != Index( value ) ) {
     threads = value;
     if( auto osi_mps = dynamic_cast< OSIMPSolver * >( Master ) )
      osi_mps->SetThreads( threads );
