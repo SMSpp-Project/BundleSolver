@@ -482,7 +482,7 @@ const std::vector< int > BundleSolver::dflt_int_par = {
  };
 
 // define and initialize here the default double parameters
-const std::vector<double> BundleSolver::dflt_dbl_par = {
+const std::vector< double > BundleSolver::dflt_dbl_par = {
  0 ,      // dblNZEps
  1e+2 ,   // dbltStar
  0 ,      // dblMinNrEvls
@@ -605,7 +605,7 @@ int BundleSolver::compute( bool changedvars )
  // main cycle starts here- - - - - - - - - - - - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- for(;;) {
+ for( ;; ) {
   // check if time is over- - - - - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -761,8 +761,8 @@ int BundleSolver::compute( bool changedvars )
     Master->SensitAnals( vl , vc );
 
     double tt;
-    if( - vl < Eps<HpNum>() )  // v( t ) is [almost] constant ==> D*_t [~]= 0
-     tt = tStar;               // ==> the CP model is ~bounded
+    if( - vl < Eps< HpNum >() )  // v( t ) is [almost] constant ==> D*_t [~]= 0
+     tt = tStar;                 // ==> the CP model is ~bounded
     else
      tt = std::min( tStar , ( tSPar2 * EpsU * AFL * Nearly + vc ) /
 		            ( - vl ) );
@@ -2501,7 +2501,7 @@ void BundleSolver::FormD( void )
                       ?   f_Block->get_valid_lower_bound( true )
                       : - f_Block->get_valid_upper_bound( true );
 
- for(;;)  // error-handling loop - - - - - - - - - - - - - - - - - - - - - -
+ for( ;; )  // error-handling loop - - - - - - - - - - - - - - - - - - - - - -
  {        // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
   // ensure the MPSolver will not take too much time
@@ -5357,7 +5357,7 @@ void BundleSolver::process_outstanding_easy_Modification( void )
 
       if( modl->type() == C05FunctionMod::NothingChanged ) {
 
-       const auto shift = tmod->shift();
+       const auto shift = modl->shift();
 
        if( ( shift == INFshift ) ||
            ( shift == - INFshift ) ||
@@ -5732,7 +5732,7 @@ void BundleSolver::process_outstanding_Modification( void )
     for( Index k = 0 ; k < NrFi ; ++k )
      if( ! IsEasy[ k ] )
       reset[ k ] = true;
-     }
+    }
    else
     reset.assign( NrFi , true );
    cntreset = NrFi - NrEasy;
