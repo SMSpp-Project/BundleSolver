@@ -605,7 +605,7 @@ int BundleSolver::compute( bool changedvars )
  // main cycle starts here- - - - - - - - - - - - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- for( ;; ) {
+ for( ; ; ) {
   // check if time is over- - - - - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -1253,7 +1253,7 @@ void BundleSolver::set_Block( Block * block )
    if( ! obj->get_function() ) // the FRealObjective has no Function
     f_lf = nullptr;
    else {
-    f_lf = dynamic_cast<LinearFunction *>( obj->get_function() );
+    f_lf = dynamic_cast< LinearFunction * >( obj->get_function() );
     if( ! f_lf )
      throw( std::logic_error( "the objective is not a LinearFunction" ) );
 
@@ -1271,7 +1271,7 @@ void BundleSolver::set_Block( Block * block )
    if( ! obj )
     throw( std::logic_error( "the objective is not a real function" ) );
 
-   auto c05f = dynamic_cast<C05Function *>( obj->get_function() );
+   auto c05f = dynamic_cast< C05Function * >( obj->get_function() );
    if( ! c05f )
     throw( std::logic_error( "the objective is not a C05Function" ) );
 
@@ -1382,11 +1382,11 @@ void BundleSolver::set_Block( Block * block )
  Index cnt = 0;
  for( auto & el : v_s_Variable )
   un_any_static( el , [ & ]( ColVariable & sv ) { LamBVcblr[ cnt++ ] = & sv;
-                  } , un_any_type<ColVariable>() );
+                  } , un_any_type< ColVariable >() );
 
  for( auto & el : v_d_Variable )
   un_any_dynamic( el , [ & ]( ColVariable & sv ) { LamBVcblr[ cnt++ ] = & sv;
-                  } , un_any_type<ColVariable>() );
+                  } , un_any_type< ColVariable >() );
 
  std::sort( LamBVcblr.begin() , LamBVcblr.end() );
 
@@ -1621,8 +1621,8 @@ void BundleSolver::set_Block( Block * block )
  if( MaxSol > 1 )  // best point found so far
   LmbdBst.resize( NumVar );
 
- OOBase.resize( vBPar2.back() , Inf<SIndex>() );
- // counter for eliminating outdated items: Inf<SIndex>() means empty
+ OOBase.resize( vBPar2.back() , Inf< SIndex >() );
+ // counter for eliminating outdated items: Inf< SIndex >() means empty
 
  ItemVcblr.resize( vBPar2.back() , make_pair( InINF , InINF ) );
 
@@ -2508,7 +2508,7 @@ void BundleSolver::FormD( void )
                       ?   f_Block->get_valid_lower_bound( true )
                       : - f_Block->get_valid_upper_bound( true );
 
- for( ;; )  // error-handling loop - - - - - - - - - - - - - - - - - - - - - -
+ for( ; ; )  // error-handling loop - - - - - - - - - - - - - - - - - - - - - -
  {        // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
   // ensure the MPSolver will not take too much time
@@ -2579,21 +2579,21 @@ void BundleSolver::FormD( void )
   if( MBse ) {
    for( ; MBDm-- ; )
     if( ( OOBase[ MBse[ MBDm ] ] >= 0 ) &&
-        ( Mlt[ MBDm ] >= Eps<HpNum>() ) ) {
+        ( Mlt[ MBDm ] >= Eps< HpNum >() ) ) {
      i = MBse[ MBDm ];
      break;
      }
    }
   else
    for( ; MBDm-- ; )
-    if( ( OOBase[ MBDm ] >= 0 ) && ( Mlt[ MBDm ] >= Eps<HpNum>() ) ) {
+    if( ( OOBase[ MBDm ] >= 0 ) && ( Mlt[ MBDm ] >= Eps< HpNum >() ) ) {
      i = MBDm;
      break;
      }
 
   if( i == InINF )  // there are no *removable* items in Base - - - - - - - -
   for( Index j = Master->MaxName() ; j-- ; )  // pick any removable item
-    if( ( OOBase[ j ] >= 0 ) && ( OOBase[ j ] < Inf<SIndex>() ) ) {
+    if( ( OOBase[ j ] >= 0 ) && ( OOBase[ j ] < Inf< SIndex >() ) ) {
      i = j;
      break;
      }
@@ -2637,7 +2637,7 @@ void BundleSolver::FormD( void )
  // returned for that component, and therefore for the total v* (the sum)
 
  // now retrieve vStar[ k ] for each component: for easy ones, the master
- // problem produes the *exact* Fi-value (up = lw) at Lambda1, which we
+ // problem produces the *exact* Fi-value (up = lw) at Lambda1, which we
  // store unmodified in vStar[ k ] (that is not used anyway) for it to be
  // retrieved later by FormLambda1()
  for( Index k = 0 ; k < NrFi ; ++k )
@@ -2745,7 +2745,7 @@ void BundleSolver::FormD( void )
 
 void BundleSolver::UpdtCntrs( void )
 {
- // increase all the OOBase[] counters but those == +/-Inf<SIndex>() - - - - -
+ // increase all the OOBase[] counters but those == +/-Inf< SIndex >() - - - - -
  // items whose OOBase[] becomes 0 (e.g. the newly entered items, which have
  // OOBase[] == -1) are set to +1, in such a way that only the items in the
  // optimal base have OOBase[] == 0; note that the converse is not true, as
@@ -2753,7 +2753,7 @@ void BundleSolver::UpdtCntrs( void )
 
  for( auto OOit = OOBase.begin() ;
       OOit != OOBase.begin() + Master->MaxName() ; ++OOit )
-  if( ( *OOit < Inf<SIndex>() ) && ( *OOit > -Inf<SIndex>() ) ) {
+  if( ( *OOit < Inf< SIndex >() ) && ( *OOit > -Inf< SIndex >() ) ) {
    ++(*OOit);
    if( ! *OOit )
     ++(*OOit);
@@ -2795,7 +2795,7 @@ void BundleSolver::UpdtCntrs( void )
 
  if( MBse ) {
   for( Index i ; ( i = *(MBse++) ) < InINF ; Mlt++ )
-   if( *Mlt >= Eps<HpNum>() ) {
+   if( *Mlt >= Eps< HpNum >() ) {
     if( ( *Mlt >= 1 - RMPAccSol ) && Master->IsSubG( i ) ) {
      // will never happen twice for the same wFi
      whisZ[ Master->WComponent( i ) - 1 ] = i;
@@ -2808,7 +2808,7 @@ void BundleSolver::UpdtCntrs( void )
   }
  else
   for( Index i = 0 ; i < MBDim ; i++ , Mlt++ )
-   if( *Mlt >= Eps<double>() ) {
+   if( *Mlt >= Eps< double >() ) {
     if( ( *Mlt >= 1 - RAccSol ) && Master->IsSubG( i ) ) {
      // will never happen twice for the same wFi
      whisZ[ Master->WComponent( i ) - 1 ] = i;
@@ -2837,7 +2837,7 @@ void BundleSolver::FormLambda1( HpNum Tau )
   //!! this part either to be updated with the bounds from the
   //   OneVarConstraint or, more likely, to be completely removed
 
-  std::vector<VarValue> tL1 = Lambda1;
+  std::vector< VarValue > tL1 = Lambda1;
 
   if( Master->NumNNVars() )             // there are NN vars and UB vars
    if( Master->NumNNVars() == NumVar )  // actually, all variables are NN
@@ -3632,7 +3632,7 @@ bool BundleSolver::GetGi( Index wFi )
    else                 // it is a constraint
     // mark it as permanently fixed: this may be a bad choice in practice,
     // although it is required by the theory (we'll see ...)
-    OOBase[ wh ] = - Inf<SIndex>();
+    OOBase[ wh ] = - Inf< SIndex >();
    }
 
   #if CHECK_DS & 1
@@ -3784,9 +3784,9 @@ void BundleSolver::ResetAlfa( Index k )
 void BundleSolver::SimpleBStrat( void )
 {
  if( ( BPar7 & 3 ) == 3 ) {  // "eager" deletion
-  std::vector<Subset> tbdltd( NrFi );
+  std::vector< Subset > tbdltd( NrFi );
   for( Index i = 0 ; i < Master->MaxName() ; ++i )
-   if( ( OOBase[ i ] < Inf<SIndex>() ) &&
+   if( ( OOBase[ i ] < Inf< SIndex >() ) &&
        ( OOBase[ i ] > SIndex( BPar1 ) ) ) {
     tbdltd[ ItemVcblr[ i ].first ].push_back( ItemVcblr[ i ].second );
     Delete( i );
@@ -3800,7 +3800,7 @@ void BundleSolver::SimpleBStrat( void )
   }
  else                        // "lazy" deletion
   for( Index i = 0 ; i < Master->MaxName() ; ++i )
-   if( ( OOBase[ i ] < Inf<SIndex>() ) && ( OOBase[ i ] > SIndex( BPar1 ) ) )
+   if( ( OOBase[ i ] < Inf< SIndex >() ) && ( OOBase[ i ] > SIndex( BPar1 ) ) )
     Delete( i );
 
  #if CHECK_DS & 1
@@ -4060,8 +4060,8 @@ Index BundleSolver::BStrategy( Index wFi )
  //       wFi has only *one* subgradient in base
 
  Index wh;
- SIndex OOwh = - Inf<SIndex>();
- HpNum Awh = -Inf<HpNum>();
+ SIndex OOwh = - Inf< SIndex >();
+ HpNum Awh = -Inf< HpNum >();
  cHpRow tA = Master->ReadLinErr();
  for( auto i : InvItemVcblr[ wFi ] ) {
   assert( i < vBPar2.back() );
@@ -4122,7 +4122,7 @@ Index BundleSolver::BStrategy( Index wFi )
 
    wh = InINF;
    cHpRow tMlt = Mlt;
-   HpNum tMin = Inf<HpNum>();
+   HpNum tMin = Inf< HpNum >();
    if( MBse ) {
     cIndex_Set tMBse = MBse;
     for( Index h ; ( h = *(tMBse++) ) < InINF ; ++tMlt )
@@ -4147,7 +4147,7 @@ Index BundleSolver::BStrategy( Index wFi )
   // among all the removable ones different from wh
 
   cHpRow tMlt = Mlt;
-  HpNum tMin = Inf<HpNum>();
+  HpNum tMin = Inf< HpNum >();
   if( MBse ) {
    cIndex_Set tMBse = MBse;
    for( Index h ; ( h = *(tMBse++) ) < InINF ; ++tMlt )
@@ -4216,7 +4216,7 @@ Index BundleSolver::BStrategy( Index wFi )
   std::ostream * wlog = ( ( ! f_log ) || ( LogVerb <= 1 ) ) ? & std::cerr
                                                             : f_log;
   *wlog << def;
-  std::vector<VarValue> Z( NumVar );
+  std::vector< VarValue > Z( NumVar );
   v_c05f[ wFi ]->get_linearization_coefficients( Z.data() ,
 						 Range( 0 , NumVar ) ,
 						 ItemVcblr[ whZ ].second );
@@ -5169,7 +5169,7 @@ void BundleSolver::reset_bundle( void )
  // so has(ve) been received. this only affects the BundleSolver data
  // structures and the MPSolver, not the C05Function(s)
 
- OOBase.assign( vBPar2.back() , Inf<SIndex>() );
+ OOBase.assign( vBPar2.back() , Inf< SIndex >() );
 
  ItemVcblr.assign( vBPar2.back() , make_pair( InINF , InINF ) );
 
@@ -5256,7 +5256,7 @@ bool BundleSolver::is_special_GroupMod( GroupModification & gmod )
  if( const auto mod0 =
      std::dynamic_pointer_cast< FunctionModVarsSbst >( sm0 ) ) {
   for( ; smi != gmod.sub_Modifications().end() ; ++smi ) {
-   auto modi = std::static_pointer_cast<FunctionModVarsSbst>( *smi );
+   auto modi = std::static_pointer_cast< FunctionModVarsSbst >( *smi );
    if( mod0->subset() != modi->subset() )
     throw( std::logic_error( "different Variable change in components" ) );
    }
@@ -6092,7 +6092,7 @@ void BundleSolver::process_outstanding_Modification( void )
   // also, note that NothingChanged and AlphaChanged cannot happen, since
   // again these cases have been dealt with already
 
-  if( const auto tmod = std::dynamic_pointer_cast<C05FunctionMod>( mod ) ) {
+  if( const auto tmod = std::dynamic_pointer_cast< C05FunctionMod >( mod ) ) {
    auto wFi = get_index_of_component( tmod->function() );
 
    switch( tmod->type() ) {
