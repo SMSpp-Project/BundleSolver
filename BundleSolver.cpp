@@ -5005,6 +5005,12 @@ void BundleSolver::FModChg( VarValue shift , Index wFi )
  if( UpFiLmb.back() < INFshift )
   UpFiLmb.back() += shift;
 
+ if( UpRifFi[ wFi ] < INFshift )
+  UpRifFi[ wFi ] += shift;
+
+ if( UpRifFi.back() < INFshift )
+  UpRifFi.back() += shift;
+
  if( UpFiBest < INFshift )
   UpFiBest += shift;
 
@@ -5559,6 +5565,8 @@ void BundleSolver::process_outstanding_Modification( void )
       Fi0Lmb += shift;
      if( UpFiLmb.back() < INFshift )
       UpFiLmb.back() += shift;
+     if( UpRifFi.back() < INFshift )
+      UpRifFi.back() += shift;
      if( UpFiBest < INFshift )
       UpFiBest += shift;
      if( LwFiLmb.back() > -INFshift )
