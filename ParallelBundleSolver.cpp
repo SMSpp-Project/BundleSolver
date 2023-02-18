@@ -252,7 +252,7 @@ BundleSolver::Index ParallelBundleSolver::InnerLoop( bool extrastep )
   // if bit 4 of TrgtMng == 1, then compute the upper bound in Lambda
   // provided by the upper bound in Lambda1 and try to update UpFiLmb[ wFi ]
   // (and possibly UpFiLambd1[ NrFi ])
-  // note that, even if this suceeds and therefore decreases UpFiLmb[ wFi ]
+  // note that, even if this succeeds and therefore decreases UpFiLmb[ wFi ]
   // (and possibly UpFiLambd[ NrFi ], which would be a "rather big" decrease
   // from +INF to something finite), as the theory requires the upper target
   // is *not* changed
@@ -408,7 +408,7 @@ BundleSolver::Index ParallelBundleSolver::InnerLoop( bool extrastep )
   // if bit 4 of TrgtMng == 1, then compute the upper bound in Lambda
   // provided by the upper bound in Lambda1 and try to update UpFiLmb[ wFi ]
   // (and possibly UpFiLambd1[ NrFi ])
-  // note that, even if this suceeds and therefore decreases UpFiLmb[ wFi ]
+  // note that, even if this succeeds and therefore decreases UpFiLmb[ wFi ]
   // (and possibly UpFiLambd[ NrFi ], which would be a "rather big" decrease
   // from +INF to something finite), as the theory requires the upper target
   // is *not* changed

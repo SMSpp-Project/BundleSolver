@@ -1,6 +1,6 @@
 # BundleSolver
 
-BunldeSolver class, which implements the CDASolver interface within the SMS++
+BundleSolver class, which implements the CDASolver interface within the SMS++
 framework. The class implements a NonDifferentiable Optimization Solver using
 a "Generalized Bundle" algorithm; cf. e.g.
 
