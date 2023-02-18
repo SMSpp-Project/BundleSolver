@@ -47,7 +47,7 @@ namespace SMSpp_di_unipi_it
 /*--------------------------------------------------------------------------*/
 /*--------------------------- GENERAL NOTES --------------------------------*/
 /*--------------------------------------------------------------------------*/
-/// a BunldeSolver where multiple C05Function computations are parallelised
+/// a BundleSolver where multiple C05Function computations are parallelized
 /** The ParallelBundleSolver class extends BundleSolver to implement the
  * computation of the C0Function in parallel, with a basic master/slave
  * scheme.
@@ -143,9 +143,9 @@ public:
  *
  *  @{ */
 
- /// set the int paramaters of ParallelBundleSolver
- /** Set the int paramaters specific of ParallelBundleSolver, which actually
-  * is a paramater of ThinComputeInterface that ParallelBundleSolver
+ /// set the int parameters of ParallelBundleSolver
+ /** Set the int parameters specific of ParallelBundleSolver, which actually
+  * is a parameter of ThinComputeInterface that ParallelBundleSolver
   * "listens to" while BundleSolver does not:
   *
   * - intMaxThread [0]: maximum number of threads that compute() can spawn.
@@ -167,8 +167,8 @@ public:
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
- /// set the double paramaters of ParallelBundleSolver
- /** Set the double paramaters specific of ParallelBundleSolver, or calls the
+ /// set the double parameters of ParallelBundleSolver
+ /** Set the double parameters specific of ParallelBundleSolver, or calls the
   * BundleSolver version to deal with the rest:
   *
   * - dblPoolingInt [1e-4]: waiting time, in seconds, between each round of 
@@ -306,7 +306,7 @@ public:
 /*---------------------------- PROTECTED FIELDS  ---------------------------*/
 /*--------------------------------------------------------------------------*/
 
- // algorthmic parameters - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // algorithmic parameters - - - - - - - - - - - - - - - - - - - - - - - - - -
 
  Index MaxThread;    ///< maximum number of different threads (tasks)
 
