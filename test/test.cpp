@@ -42,6 +42,7 @@
 /*--------------------------------------------------------------------------*/
 
 using namespace std;
+
 using namespace SMSpp_di_unipi_it;
 
 #if( OPT_USE_NAMESPACES )
