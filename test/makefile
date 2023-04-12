@@ -4,13 +4,7 @@
 #                                                                            #
 #   makefile of test (for core SMS++)                                        #
 #                                                                            #
-#                                VERSION 2.00                                #
-#                               20 - 04 - 2005                               #
-#                                                                            #
-#                              Implementation by:                            #
-#                                                                            #
 #                              Antonio Frangioni                             #
-#                          Operations Research Group                         #
 #                         Dipartimento di Informatica                        #
 #                             Universita' di Pisa                            #
 #                                                                            #

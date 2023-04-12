@@ -154,7 +154,6 @@ conduct, and the process for submitting merge requests to us.
 ### Current Lead Authors
 
 - **Antonio Frangioni**  
-  *Operations Research Group*  
   Dipartimento di Informatica  
   Università di Pisa
 
