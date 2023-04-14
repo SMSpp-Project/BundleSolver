@@ -25,12 +25,8 @@
 #           $(BNDSLVH)     = the .h files to include                         #
 #           $(BNDSLVINC)   = the -I$( source directory )                     #
 #                                                                            #
-#                                VERSION 2.10                                #
-#                               29 - 03 - 2021                               #
-#                                                                            #
 #                              Antonio Frangioni                             #
 #                               Enrico Gorgone                               #
-#                          Operations Research Group                         #
 #                         Dipartimento di Informatica                        #
 #                             Universita' di Pisa                            #
 #                                                                            #

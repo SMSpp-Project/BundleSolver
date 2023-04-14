@@ -19,12 +19,8 @@
 #           $(BNDSLVH)   = the .h files to include for BundleSolver          #
 #           $(BNDSLVINC) = the -I$( BundleSolver directory )                 #
 #                                                                            #
-#                                VERSION 1.12                                #
-#                               30 - 12 - 2020                               #
-#                                                                            #
 #                              Antonio Frangioni                             #
 #                               Enrico Gorgone                               #
-#                          Operations Research Group                         #
 #                         Dipartimento di Informatica                        #
 #                             Universita' di Pisa                            #
 #                                                                            #
