@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- handling the constant term Modification for hard
+  components
+
+- handling constant term for "easy" components
+
+- support for OsiGrbSolverInterface
+
+### Changed
+
+- better printing in case of errors in a Fi
+
+### Fixed
+
+- missing check of max number of iteraitions in one case
+
+- issues in put_State()
+
+- issue in one case of process_outstanding_Modification (adding
+  Linearization was not properly managed)
+
+- management of numerical errors in the MPSolver
+
+- typos and spaces
+
 ## [0.4.2] - 2022-06-28
 
 ### Added
