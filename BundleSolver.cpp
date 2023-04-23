@@ -858,7 +858,7 @@ int BundleSolver::compute( bool changedvars )
   // check whether either any error has occurred or time has expired- - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-  if( UpFiLmb1.back() == - INFshift ) {
+  if( UpFiLmb1.back() == -INFshift ) {
    BLOG2( 1 , f_convex , " ~ stop (Fi = -INF)" << std::endl );
    BLOG2( 1 , ! f_convex , " ~ stop (Fi = INF)" << std::endl );
    Result = kUnbounded;
@@ -2394,7 +2394,7 @@ void BundleSolver::FormD( void )
     // QPPenaltyMP does not allow individual lower bounds, and if a MPTester
     // is used then a QPPenaltyMP is involved anyway
     if( MPName & 1 ) {
-     if( LwrBndk > - INFshift )  // translate it w.r.t. UpRifFi
+     if( LwrBndk > -INFshift )  // translate it w.r.t. UpRifFi
       LwrBndk -= UpRifFi[ k ];
 
      // pass it to the master problem
@@ -2436,7 +2436,7 @@ void BundleSolver::FormD( void )
     }
    }
 
-  TrueLB = ( LwrBnd > - INFshift );  // if it's finite it's a true LB
+  TrueLB = ( LwrBnd > -INFshift );  // if it's finite it's a true LB
 
   // if a true global lower bound was not there and it is set, then ensure
   // it will be properly "baked in" the total lower and upper estimate
@@ -3026,8 +3026,8 @@ BundleSolver::Index BundleSolver::InnerLoop( bool extrastep )
   // seriously unbounded" in that a convex function being -INF anywhere is
   // -INF everywhere, hence if this ever happens it will do it "very soon"
   // (the very first time the offending component is evaluated)
-  if( UpFiLmb1[ f_wFi ] == - INFshift )  {
-   UpFiLmb1.back() = - INFshift;
+  if( UpFiLmb1[ f_wFi ] == -INFshift )  {
+   UpFiLmb1.back() = -INFshift;
    break;
    }
 
@@ -3052,7 +3052,7 @@ BundleSolver::Index BundleSolver::InnerLoop( bool extrastep )
    // for a NS to be performed, LwFiLmb1 must be > than the lower target;
    // again, note the ">" instead of the ">=" (which means this is ever so
    // slightly stronger than it should), which is there to avoid the
-   // condition to work when LwFiLmb1.back() == - INF == LwTrgt
+   // condition to work when LwFiLmb1.back() == -INF == LwTrgt
    //
    // however, for a NS to guarantee no cycling, at least something must
    // have been inserted (on top of all the other conditions)
@@ -3632,7 +3632,7 @@ bool BundleSolver::GetGi( Index wFi )
    else                 // it is a constraint
     // mark it as permanently fixed: this may be a bad choice in practice,
     // although it is required by the theory (we'll see ...)
-    OOBase[ wh ] = - Inf< SIndex >();
+    OOBase[ wh ] = -Inf< SIndex >();
    }
 
   #if CHECK_DS & 1
@@ -3847,7 +3847,7 @@ void BundleSolver::Log2( double ft )
 
  *f_log << std::endl << "            [" << fixd << ft << "] " << def;
 
- if( LowerBound.back() > - INFshift ) {
+ if( LowerBound.back() > -INFshift ) {
   if( f_convex )
    *f_log << "LB = " << LowerBound.back() << " ~ ";
   else
@@ -3857,26 +3857,26 @@ void BundleSolver::Log2( double ft )
  *f_log << "Fi1 = ";
 
  if( f_convex ) {
-  if( UpFiLmb1.back() == - INFshift ) {
-   *f_log << "- INF => STOP." << std::endl;
+  if( UpFiLmb1.back() == -INFshift ) {
+   *f_log << "-INF => STOP." << std::endl;
    return;
    }
   else
    if( UpFiLmb1.back() == INFshift ) {
-    *f_log << "+ INF" << std::endl;
+    *f_log << "+INF" << std::endl;
     return;
     }
    else
     *f_log << UpFiLmb1.back() << shrt;
   }
  else
-  if( UpFiLmb1.back() == - INFshift ) {
-   *f_log << "+ INF => STOP." << std::endl;
+  if( UpFiLmb1.back() == -INFshift ) {
+   *f_log << "+INF => STOP." << std::endl;
    return;
    }
   else
    if( UpFiLmb1.back() == INFshift ) {
-    *f_log << "- INF" << std::endl;
+    *f_log << "-INF" << std::endl;
     return;
     }
    else
@@ -4060,7 +4060,7 @@ Index BundleSolver::BStrategy( Index wFi )
  //       wFi has only *one* subgradient in base
 
  Index wh;
- SIndex OOwh = - Inf< SIndex >();
+ SIndex OOwh = -Inf< SIndex >();
  HpNum Awh = -Inf< HpNum >();
  cHpRow tA = Master->ReadLinErr();
  for( auto i : InvItemVcblr[ wFi ] ) {
@@ -4971,7 +4971,7 @@ void BundleSolver::FModChg( VarValue shift , Index wFi )
    LwFiLmb.back() = -INFshift;  // reset total lower function value
    --LwFiLmbdef;                // one less known
    }
-  f_global_LB = - INFshift;     // global LB no longer valid
+  f_global_LB = -INFshift;      // global LB no longer valid
   return;
   }
 
@@ -4993,7 +4993,7 @@ void BundleSolver::FModChg( VarValue shift , Index wFi )
    LwFiLmb.back() = -INFshift;  // reset total lower function value
    --LwFiLmbdef;                // one less known
    }
-  f_global_LB = - INFshift;     // global LB no longer valid
+  f_global_LB = -INFshift;      // global LB no longer valid
   return;
   }
 
@@ -5372,8 +5372,8 @@ void BundleSolver::process_outstanding_easy_Modification( void )
 
        const auto shift = modl->shift();
 
-       if( ( shift == INFshift ) ||
-           ( shift == - INFshift ) ||
+       if( ( shift ==  INFshift ) ||
+           ( shift == -INFshift ) ||
            ( std::isnan( shift ) ) )
         throw( std::logic_error(
          "unexpected *C05FunctionMod* from Objective Function" ) );
@@ -5558,7 +5558,7 @@ void BundleSolver::process_outstanding_Modification( void )
      }
     else {                       // a FunctionMod changing the constant
      #ifndef NDEBUG
-      if( ( shift == INFshift ) || ( shift == - INFshift ) )
+      if( ( shift == INFshift ) || ( shift == -INFshift ) )
        throw( std::logic_error( "unexpected *FunctionMod* from LinearFunction" ) );
      #endif
      if( Fi0Lmb < INFshift )
@@ -7130,7 +7130,7 @@ bool BundleSolver::FakeFiOracle::GetUC( cIndex i )
    return( false );
   if( const auto bx = dynamic_cast< BoxConstraint * >( cj ) ) {
    const auto lhs = bx->get_lhs();
-   if( lhs == - Inf< BoxConstraint::RHSValue >() )
+   if( lhs == -Inf< BoxConstraint::RHSValue >() )
     return( true );
    if( lhs == BoxConstraint::RHSValue( 0 ) )
     return( false );

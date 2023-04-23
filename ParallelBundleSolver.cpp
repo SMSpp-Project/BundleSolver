@@ -232,7 +232,7 @@ BundleSolver::Index ParallelBundleSolver::InnerLoop( bool extrastep )
   // start the ramp-down- - - - - - - - - - - - - - - - - - - - - - - - - - -
   if( ( f_convex && ( ue == -INFshift ) ) ||
       ( ( ! f_convex ) && ( le == INFshift ) ) ) {
-   UpFiLmb1[ wFi ] = UpFiLmb1.back() = - INFshift;
+   UpFiLmb1[ wFi ] = UpFiLmb1.back() = -INFshift;
    break;
    }
 
@@ -287,7 +287,7 @@ BundleSolver::Index ParallelBundleSolver::InnerLoop( bool extrastep )
    // for a NS to be performed, LwFiLmb1 must be > than the lower target;
    // again, note the ">" instead of the ">=" (which means this is ever so
    // slightly stronger than it should), which is there to avoid the
-   // condition to work when LwFiLmb1.back() == - INF == LwTrgt
+   // condition to work when LwFiLmb1.back() == -INF == LwTrgt
    //
    // however, for a NS to guarantee no cycling, at least something must
    // have been inserted (on top of all the other conditions)
@@ -389,7 +389,7 @@ BundleSolver::Index ParallelBundleSolver::InnerLoop( bool extrastep )
   // start the ramp-down- - - - - - - - - - - - - - - - - - - - - - - - - - -
   if( ( f_convex && ( ue == -INFshift ) ) ||
       ( ( ! f_convex ) && ( le == INFshift ) ) ) {
-   UpFiLmb1[ wFi ] = UpFiLmb1.back() = - INFshift;
+   UpFiLmb1[ wFi ] = UpFiLmb1.back() = -INFshift;
    continue;
    }
 
@@ -423,7 +423,7 @@ BundleSolver::Index ParallelBundleSolver::InnerLoop( bool extrastep )
 
   // if an unrecoverable error had happened previously, or the problem had
   // already been found unbounded below, do nothing else
-  if( ( Result == kError ) || ( UpFiLmb1.back() == - INFshift ) )
+  if( ( Result == kError ) || ( UpFiLmb1.back() == -INFshift ) )
    continue;
   
   // get new linearizations - - - - - - - - - - - - - - - - - - - - - - - - -
