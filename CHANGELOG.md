@@ -22,7 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- missing check of max number of iteraitions in one case
+- missing check of max number of iterations in one case
 
 - issues in put_State()
 
