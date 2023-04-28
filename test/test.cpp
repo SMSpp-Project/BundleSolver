@@ -69,7 +69,7 @@ int main( int argc , char **argv )
  // pass the MPSolver to the Bundle  - - - - - - - - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- BundleSolver *BndSlv = static_cast<BundleSolver *>( Slv );
+ BundleSolver * BndSlv = static_cast< BundleSolver * >( Slv );
  if( BndSlv == nullptr )
   throw( std::logic_error( "the solver is not of the Bundle type" ) );
                     
