@@ -2569,6 +2569,8 @@ void BundleSolver::FormD( void )
   // the MP Solver; it's not yet time to despair, as by eliminating items- -
   // it may be possible to solve the problem - - - - - - - - - - - - - - - -
 
+  BLOG( 2 , std::endl << "Bundle::FormD: error in MP, emergency delete" );
+
   Index MBDm;
   cIndex_Set MBse;
   cHpRow Mlt = Master->ReadMult( MBse , MBDm );
