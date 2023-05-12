@@ -53,7 +53,7 @@ include(BuildType)
 if (NOT hasParent)
     find_package(MILPSolver REQUIRED)
     find_package(NDOFiOracle REQUIRED)
-endif()
+endif ()
 
 # ----- Configuration header ------------------------------------------------ #
 # This will generate a *Config.h header in the build directory.
