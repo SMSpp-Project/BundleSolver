@@ -115,7 +115,7 @@
  *         Dipartimento di Matematica ed Informatica \n
  *         Universita' di Cagliari \n
  *
- * Copyright &copy by Antonio Frangioni, Enrico Gorgone
+ * \copyright &copy; by Antonio Frangioni, Enrico Gorgone
  */
 /*--------------------------------------------------------------------------*/
 /*----------------------------- DEFINITIONS --------------------------------*/
