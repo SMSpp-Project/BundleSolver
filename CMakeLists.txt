@@ -21,7 +21,7 @@
 cmake_minimum_required(VERSION 3.12)
 cmake_policy(VERSION 3.12)
 project(BundleSolver
-        VERSION 0.4.1
+        VERSION 0.4.3
         DESCRIPTION "SMS++ BundleSolver module"
         HOMEPAGE_URL https://gitlab.com/smspp/bundlesolver
         LANGUAGES C CXX)
