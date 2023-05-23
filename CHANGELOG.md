@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.3] - 2023-05-23
+
 ### Added
 
 - handling the constant term Modification for hard
@@ -22,7 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- missing check of max number of iteraitions in one case
+- missing check of max number of iterations in one case
 
 - issues in put_State()
 
@@ -147,7 +149,8 @@ Several major improvements:
 
 - First test release.
 
-[Unreleased]: https://gitlab.com/smspp/bundlesolver/-/compare/0.4.2...develop
+[Unreleased]: https://gitlab.com/smspp/bundlesolver/-/compare/0.4.3...develop
+[0.4.3]: https://gitlab.com/smspp/bundlesolver/-/compare/0.4.2...0.4.3
 [0.4.2]: https://gitlab.com/smspp/bundlesolver/-/compare/0.4.1...0.4.2
 [0.4.1]: https://gitlab.com/smspp/bundlesolver/-/compare/0.4.0...0.4.1
 [0.4.0]: https://gitlab.com/smspp/bundlesolver/-/compare/0.3.0...0.4.0

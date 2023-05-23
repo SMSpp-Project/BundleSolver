@@ -115,7 +115,7 @@
  *         Dipartimento di Matematica ed Informatica \n
  *         Universita' di Cagliari \n
  *
- * Copyright &copy by Antonio Frangioni, Enrico Gorgone
+ * \copyright &copy; by Antonio Frangioni, Enrico Gorgone
  */
 /*--------------------------------------------------------------------------*/
 /*----------------------------- DEFINITIONS --------------------------------*/
@@ -617,7 +617,7 @@ public:
  /** Set the int parameters specific of BundleSolver, together with the
   * parameters of CDASolver that BundleSolver actually "listens to":
   *
-  * - intMaxIter [Inf<int>]: maximum iterations for the next call to solve()
+  * - intMaxIter [Inf< int >]: maximum iterations for the next call to solve()
   *
   * - intMaxSol [1]: maximum number of different solutions to report. Since
   *                  Bundle methods are "almost" monotone ones, they typically
@@ -1009,14 +1009,14 @@ public:
  /** Set the double parameters specific of BundleSolver, together with the
   * parameters of CDASolver that BundleSolver actually "listens to":
   *
-  * - dblMaxTime [Inf<double>()]: maximum CPU time for the next call to
+  * - dblMaxTime [Inf< double >()]: maximum CPU time for the next call to
   *                               compute(), in seconds
   *
   * - dblRelAcc [1e-6]: relative accuracy for declaring a solution optimal
   *                     (the "easy part", see dbltStar below for the
   *                     "complicated part")
   *
-  * - dblAbsAcc [Inf<double>()]: absolute accuracy for declaring a solution
+  * - dblAbsAcc [Inf< double >()]: absolute accuracy for declaring a solution
   *                              optimal; if INF, it is disabled; see dbltStar
   *   below for a detailed recount on how this is used
   *
@@ -2354,7 +2354,7 @@ public:
  
  Subset whisZ;     /**< the position in the bundle where the "aggregate
 		    * subgradient" Z[ k ] of component k is kept in
-		    * whisZ[ k ]; Inf<Index>() == it is not in the bundle */
+		    * whisZ[ k ]; Inf< Index >() == it is not in the bundle */
  std::vector< bool > Zvalid;  /**< Zvalid[ k ] == true if the item in position
 			       * whisZ[ k ] is exactly Z[ k ] as computed by
  * the last master problem. Zvalid[ k ] == true ==> whisZ[ k ] < INF.
@@ -2479,13 +2479,13 @@ public:
  std::vector< Subset > InvItemVcblr;
 
   /** Out-Of-Base counters: if OOBase[ i ]
-   * = Inf<SIndex>() then there is no item in position i of the bundle
+   * = Inf< SIndex >() then there is no item in position i of the bundle
    * = k > 0 means that the item in position i is out of base since k
    *   iterations
    * = 0 means in the current base but potentially removable
    * = a *finite* negative value - k means not removable for the next k
    *   iterations: note that some items in base may be such
-   * = - Inf<SIndex>() means unremovable */
+   * = - Inf< SIndex >() means unremovable */
 
  Vec_SIndex OOBase;
 
@@ -2677,28 +2677,28 @@ class FakeFiOracle : public FiOracle
 
 /*--------------------------------------------------------------------------*/
 
- Index GetANZ( cIndex wFi , cIndex strt = 0 , Index stp = Inf<Index>() )
+ Index GetANZ( cIndex wFi , cIndex strt = 0 , Index stp = Inf< Index >() )
   override;
 
 /*--------------------------------------------------------------------------*/
 
  void GetADesc( cIndex wFi , int *Abeg , int *Aind , double *Aval ,
-		cIndex strt = 0 , Index stp = Inf<Index>() ) override;
+		cIndex strt = 0 , Index stp = Inf< Index >() ) override;
 
 /*--------------------------------------------------------------------------*/
 
- HpNum Fi( cIndex wFi = Inf<Index>() ) override {
+ HpNum Fi( cIndex wFi = Inf< Index >() ) override {
   throw( std::logic_error( "this method cannot be called" ) );
   }
 
 /*------------- METHODS FOR READING SUBGRADIENTS / CONSTRAINTS -------------*/
 
- bool NewGi( cIndex wFi = Inf<Index>() ) override { return( true ); }
+ bool NewGi( cIndex wFi = Inf< Index >() ) override { return( true ); }
 
 /*--------------------------------------------------------------------------*/
 
- Index GetGi( SgRow SubG , cIndex_Set &SGBse , cIndex Name = Inf<Index>() ,
-	      cIndex strt = 0 , Index stp = Inf<Index>() ) override;
+ Index GetGi( SgRow SubG , cIndex_Set &SGBse , cIndex Name = Inf< Index >() ,
+	      cIndex strt = 0 , Index stp = Inf< Index >() ) override;
 
 /*------------------------------ DESTRUCTOR --------------------------------*/
 
@@ -2800,7 +2800,7 @@ class FakeFiOracle : public FiOracle
 
  Index find_place_in_global_pool( Index k );
 
- void add_to_global_pool( Index k , Index i , Index wh = Inf<Index>() );
+ void add_to_global_pool( Index k , Index i , Index wh = Inf< Index >() );
 
  void add_to_bundle( Index k , Index i );
 

@@ -12,7 +12,7 @@
  *         Dipartimento di Matematica ed Informatica \n
  *         Universita' di Cagliari \n
  *
- * Copyright &copy by Antonio Frangioni, Enrico Gorgone
+ * \copyright &copy; by Antonio Frangioni, Enrico Gorgone
  */
 /*--------------------------------------------------------------------------*/
 /*---------------------------- IMPLEMENTATION ------------------------------*/
@@ -2568,6 +2568,8 @@ void BundleSolver::FormD( void )
   // mps == MPSolver::kError, i.e., there has been a numerical problem in- -
   // the MP Solver; it's not yet time to despair, as by eliminating items- -
   // it may be possible to solve the problem - - - - - - - - - - - - - - - -
+
+  BLOG( 2 , std::endl << "Bundle::FormD: error in MP, emergency delete" );
 
   Index MBDm;
   cIndex_Set MBse;
