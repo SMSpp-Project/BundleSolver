@@ -48,11 +48,24 @@ list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 include(BuildType)
 
 # ----- Requirements -------------------------------------------------------- #
-# If it's not being called by the umbrella, we need to
-# look for the system-installed libraries.
+
 if (NOT hasParent)
+    # If it's not being called by the umbrella, we need to
+    # look for the system-installed libraries.
     find_package(MILPSolver REQUIRED)
     find_package(NDOFiOracle REQUIRED)
+else ()
+    # NDOFiOracle library, required by BundleSolver.
+    # Requires CoinUtils, Osi and CPLEX.
+    set(NDOFiOracle_READ_PATHS OFF CACHE BOOL
+                               "Whether NdoFiOracle will read locations for
+		                       dependencies or not." FORCE)
+    add_subdirectory(NdoFiOracle)
+
+    # Add the binary directory to RPATH, so executables that use
+    # dynamic loading will look into it.
+    set(SMSPP_BUILD_RPATH
+        "${SMSPP_BUILD_RPATH};${CMAKE_CURRENT_BINARY_DIR}/NdoFiOracle")
 endif ()
 
 # ----- Configuration header ------------------------------------------------ #
@@ -104,17 +117,6 @@ target_link_libraries(${modName} PUBLIC
 add_library(${modNamespace}::${modName} ALIAS ${modName})
 
 # ----- Subdirectories ------------------------------------------------------ #
-
-# NDOFiOracle library, required by BundleSolver.
-# Requires CoinUtils, Osi and CPLEX.
-set(NDOFiOracle_READ_PATHS OFF CACHE BOOL
-                           "Whether NdoFiOracle will read locations for
-		                   dependencies or not." FORCE)
-add_subdirectory(NdoFiOracle)
-# Add the binary directory to RPATH, so executables that use
-# dynamic loading will look into it.
-set(SMSPP_BUILD_RPATH
-    "${SMSPP_BUILD_RPATH};${CMAKE_CURRENT_BINARY_DIR}/NdoFiOracle")
 
 if (BUILD_TESTING)
 #    add_subdirectory(test)
