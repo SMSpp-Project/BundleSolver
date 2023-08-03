@@ -104,6 +104,18 @@ target_link_libraries(${modName} PUBLIC
 add_library(${modNamespace}::${modName} ALIAS ${modName})
 
 # ----- Subdirectories ------------------------------------------------------ #
+
+# NDOFiOracle library, required by BundleSolver.
+# Requires CoinUtils, Osi and CPLEX.
+set(NDOFiOracle_READ_PATHS OFF CACHE BOOL
+                           "Whether NdoFiOracle will read locations for
+		                   dependencies or not." FORCE)
+add_subdirectory(NdoFiOracle)
+# Add the binary directory to RPATH, so executables that use
+# dynamic loading will look into it.
+set(SMSPP_BUILD_RPATH
+    "${SMSPP_BUILD_RPATH};${CMAKE_CURRENT_BINARY_DIR}/NdoFiOracle")
+
 if (BUILD_TESTING)
 #    add_subdirectory(test)
 endif ()
