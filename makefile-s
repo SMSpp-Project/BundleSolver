@@ -38,11 +38,15 @@
 # *INC is the -I<include directories>
 
 # define input macros for libNDO library makefile, then include it
+# signal that *_ROOT values for external libraries need not be read by
+# the libNDO makefiles since they are defined already by SMS++
+NDOFi_NO_PATHS = 0
 libNDOSDR = $(BNDSLVSDR)/NdoFiOracle
 include $(libNDOSDR)/lib/makefile-inc
 
 # define input macros for MILPSolver makefile + dependencies, then include it
-MILPSSDR = $(BNDSLVSDR)../MILPSolver
+# use the makefile-s version since the SMS++ stuff is supposed to be there
+MILPSSDR = $(BNDSLVSDR)/../MILPSolver
 include $(MILPSSDR)/makefile-s
 
 # include the makefile requiring all external modules in input
