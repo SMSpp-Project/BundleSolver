@@ -16,7 +16,7 @@
 NAME = test
 
 # basic directory
-DIR = ./
+DIR = .
 
 # here is where the specific MCFClass to be tested is decided
 # debug switches
@@ -34,31 +34,31 @@ all default: $(NAME)
 # clean - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 clean::
-	rm -f $(DIR)*.o $(DIR)*~ $(NAME)
+	rm -f $(DIR)/*.o $(DIR)/*~ $(NAME)
 
 # define & include the necessary modules- - - - - - - - - - - - - - - - - - -
 # if a module is not used in the current configuration, just comment out the
 # corresponding include line
 # each module outputs some macros to be used here:
 # *OBJ is the final object(s) / library
-# *LIB is the external libreries + -L<libdirs>
+# *LIB is the external libraries + -L< libdirs >
 # *H   is the list of all include files
-# *INC is the -I<include directories>
+# *INC is the -I< include directories >
 
 # BundeSolver
-BNDSLVSDR = ../
-include $(BNDSLVSDR)makefile-c
+BNDSLVSDR = ..
+include $(BNDSLVSDR)/makefile-c
 
 # main module (linking phase) - - - - - - - - - - - - - - - - - - - - - - - -
 
 # object files
 MOBJ =  $(BNDSLVOBJ)
 
-# libreries
+# libraries
 MLIB =  $(BNDSLVLIB)
 
-$(NAME): $(MOBJ) $(DIR)$(NAME).o
-	$(CC) -o test $(DIR)$(NAME).o $(MOBJ) $(MLIB) $(SW)
+$(NAME): $(MOBJ) $(DIR)/$(NAME).o
+	$(CC) -o $(NAME) $(DIR)/$(NAME).o $(MOBJ) $(MLIB) $(SW)
 
 # dependencies: every .o from its .C + every recursively included .h- - - - -
 
@@ -70,7 +70,7 @@ MH =    $(BNDSLVH)
 
 # compile command
 
-$(DIR)$(NAME).o: $(DIR)$(NAME).cpp $(MH)
+$(DIR)/$(NAME).o: $(DIR)/$(NAME).cpp $(MH)
 	$(CC) -c $*.cpp -o $@ $(MINC) $(SW)
 
 ############################ End of makefile #################################
