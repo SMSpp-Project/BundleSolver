@@ -37,13 +37,6 @@
 # define input macros for libCPLEX library makefile, then include it
 # not necessary, MILPSolver does it already
 
-# define input macros for libNDO library makefile, then include it
-# signal that *_ROOT values for external libraries need not be read by
-# the libNDO makefiles since they are defined already by SMS++
-NDOFi_NO_PATHS = 0
-libNDOSDR = $(BNDSLVSDR)/NdoFiOracle
-include $(libNDOSDR)/lib/makefile-inc
-
 # define input macros for SMS++ library makefile, then include it
 # not necessary, MILPSolver does it already
 #SMS++SDR = $(BNDSLVSDR)/../SMS++
@@ -52,6 +45,13 @@ include $(libNDOSDR)/lib/makefile-inc
 # define input macros for MILPSolver complete makefile, then include it
 MILPSSDR = $(BNDSLVSDR)/../MILPSolver
 include $(MILPSSDR)/makefile-c
+
+# define input macros for libNDO library makefile, then include it
+# signal that *_ROOT values for external libraries need not be read by
+# the libNDO makefiles since they are defined already by SMS++
+NDOFi_NO_PATHS = 0
+libNDOSDR = $(BNDSLVSDR)/NdoFiOracle
+include $(libNDOSDR)/lib/makefile-inc
 
 # include the makefile requiring all external modules in input
 include $(BNDSLVSDR)/makefile
