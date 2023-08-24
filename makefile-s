@@ -35,7 +35,7 @@
 # each module outputs some macros to be used here:
 # *OBJ is the final object/library
 # *H   is the list of all include files
-# *INC is the -I<include directories>
+# *INC is the -I< include directories >
 
 # define input macros for libNDO library makefile, then include it
 # signal that *_ROOT values for external libraries need not be read by
@@ -60,7 +60,7 @@ BNDSLVOBJ := $(BNDSLVOBJ) $(MILPSOBJ) $(libNDOOBJ)
 BNDSLVINC := $(BNDSLVINC) $(MILPSINC) $(libNDOINC)
 BNDSLVH := $(BNDSLVH) $(MILPSH) $(libNDOH) 
 
-# external libreries for BundleSolver
+# external libraries for BundleSolver
 BNDSLVLIB = $(libNDOLIB) $(MILPSLIB)
 
 ########################### End of makefile-s ################################
