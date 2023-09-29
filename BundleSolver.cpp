@@ -1419,6 +1419,9 @@ void BundleSolver::set_Block( Block * block )
    continue;
   if( un_any_thing( NNConstraint , el , [](){}() ) )
    continue;
+  if( un_any_const_static( el , []( BoxConstraint & b ){} ,
+                           un_any_type< BoxConstraint >() ) )
+   continue;
   throw( std::logic_error( "unsupported type of static Constraint" ) );
   }
 
@@ -1695,6 +1698,8 @@ void BundleSolver::set_Block( Block * block )
 
     osi_mps->SetAlgo( OSIMPSolver::OsiAlg( algo ) ,
 		      OSIMPSolver::OsiRed( reduction ) );
+
+    osi_mps->SetThreads( threads );
    #if( ! USE_MPTESTER )
     }
    else {  // the MPSolver is a QPPenaltyMP
@@ -1897,10 +1902,20 @@ void BundleSolver::set_par( idx_type par , int value )
    MxRmv = value;
    break;
   case( intOSImp1 ):
-   algo = value;
+   if( algo != Index( value ) ) {
+    algo = value;
+    if( auto osi_mps = dynamic_cast< OSIMPSolver * >( Master ) )
+     osi_mps->SetAlgo( OSIMPSolver::OsiAlg( algo ) ,
+		       OSIMPSolver::OsiRed( reduction ) );
+    }
    break;
   case( intOSImp2 ):
-   reduction = value;
+   if( reduction != Index( value ) ) {
+    reduction = value;
+    if( auto osi_mps = dynamic_cast< OSIMPSolver * >( Master ) )
+     osi_mps->SetAlgo( OSIMPSolver::OsiAlg( algo ) ,
+		       OSIMPSolver::OsiRed( reduction ) );
+    }
    break;
   case( intOSImp3 ):
    if( threads != Index( value ) ) {
