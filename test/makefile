@@ -20,7 +20,8 @@ DIR = .
 
 # here is where the specific MCFClass to be tested is decided
 # debug switches
-SW = -g -std=c++17 -ferror-limit=1  
+SW = -g -std=c++17 -ferror-limit=1
+
 # production switches
 #SW = -O3 -DNDEBUG -std=c++17
 
