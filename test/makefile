@@ -20,10 +20,10 @@ DIR = .
 
 # here is where the specific MCFClass to be tested is decided
 # debug switches
-SW = -g -std=c++17 -ferror-limit=1
+SW = -g -std=c++17 -ferror-limit=1 -Wno-enum-compare
 
 # production switches
-#SW = -O3 -DNDEBUG -std=c++17
+#SW = -O3 -DNDEBUG -std=c++17 -Wno-enum-compare
 
 # compiler
 CC = clang++
@@ -46,7 +46,7 @@ clean::
 # *H   is the list of all include files
 # *INC is the -I< include directories >
 
-# BundeSolver
+# BundleSolver
 BNDSLVSDR = ..
 include $(BNDSLVSDR)/makefile-c
 
