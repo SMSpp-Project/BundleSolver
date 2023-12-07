@@ -2299,7 +2299,7 @@ void BundleSolver::serialize_State( netCDF::NcGroup & group ,
 
  ( group.addVar( "BundleSolver_t" , netCDF::NcDouble() ) ).putVar( &t );
 
- auto nfi = group.addDim( "BundleSolver_NrFi" , NrFi );
+ auto nfi = group.addDim( "BundleSolver_NrFi" , NrFi + 1 );
 
  if( UpFiLmbdef ) {
   group.addDim( "BundleSolver_UpFiLmbdef" , UpFiLmbdef );
@@ -7433,7 +7433,8 @@ void BundleSolverState::deserialize( const netCDF::NcGroup & group )
 		      "BundleSolverState::deserialize: missing NrFi" ) );
 
  NrFi = nf.getSize();
-
+ --NrFi;
+ 
  auto nup = group.getDim( "BundleSolver_UpFiLmbdef" );
  if( nup.isNull() ) {
   UpFiLmbdef = 0;
@@ -7502,7 +7503,7 @@ void BundleSolverState::serialize( netCDF::NcGroup & group ) const
 
  ( group.addVar( "BundleSolver_t" , netCDF::NcDouble() ) ).putVar( &t );
 
- auto nfi = group.addDim( "BundleSolver_NrFi" , NrFi );
+ auto nfi = group.addDim( "BundleSolver_NrFi" , NrFi + 1 );
 
  if( UpFiLmbdef ) {
   group.addDim( "BundleSolver_UpFiLmbdef" , UpFiLmbdef );
