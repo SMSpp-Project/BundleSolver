@@ -2375,9 +2375,11 @@ void BundleSolver::guts_of_put_State( const BundleSolverState & state )
    // the function value is known, so it has to be passed to the master:
    // see the comments inside GotoLambda1() for the rationale of the
    // curios definition
-   foo.front() = UpFiLmb1.back() - UpRifFi.back();
+   foo.front() = UpFiLmb.back() - UpRifFi.back();
    std::transform( UpFiLmb.begin() , --(UpFiLmb.end()) , UpRifFi.begin() ,
- 		 ++(foo.begin()) , std::minus< double >() );
+		   ++(foo.begin()) , std::minus< double >() );
+   UpRifFi = UpFiLmb;
+   RifeqFi = true;
    }
   // else no change in the (unknown) f-values, so all-0 is OK
 
