@@ -1503,23 +1503,31 @@ public:
   }
 
 /*--------------------------------------------------------------------------*/
+ /// BundleSolver always returns a primal solution, possibly unfeasible
+ 
+ bool has_var_solution( void ) override { return( true ); }
 
- bool has_var_solution( void ) override {
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ /// BundleSolver always returns a dual solution, possibly unfeasible
+ /** BundleSolver always returns a dual solution, possibly unfeasible. This
+  *  in fact requires that the Master Problem has been solved at least once,
+  *  but has_dual_solution() can only be called after compute() and therefore
+  *  the Master Problem must have been solved at least once. */
+ 
+ bool has_dual_solution( void ) override { return( true ); }
+
+/*--------------------------------------------------------------------------*/
+
+ bool is_var_feasible( void ) override { 
   return( ( Result != kInfeasible ) && ( UpFiLmb.back() < INFshift ) );
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- bool has_dual_solution( void ) override {
+ bool is_dual_feasible( void ) override {
   return( f_global_LB > - INFshift );
   }
 
-/*--------------------------------------------------------------------------*/
-/*
- virtual bool is_var_feasible( void ) override { return( true ); }
-
- virtual bool is_dual_feasible( void ) override { return( true ); }
-*/
 /*--------------------------------------------------------------------------*/
  /// write the "current" solution
 

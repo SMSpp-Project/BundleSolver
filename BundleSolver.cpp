@@ -66,7 +66,7 @@
  * since both Cplex and Gurobi are commercial and therefore the corresponding
  * OsiXXXSolverInterface are in general not be available to all users. */
 
-#define USE_OSI_QP 1
+#define USE_OSI_QP 2
 
 #if USE_OSI_QP == 1
  #include "OsiCpxSolverInterface.hpp"
@@ -1039,13 +1039,17 @@ int BundleSolver::compute( bool changedvars )
      tm = t;
      }
     else
-     if( ( ( tSPar1 & tSP1Msk ) == kBLTTS ) && ( tSPar2 * DSTS >= Sigma ) ) {
+     if( ( ( tSPar1 & tSP1Msk ) == kBLTTS ) &&
+	 ( tSPar2 * DSTS >= abs( Sigma ) ) ) {
       // if the "balancing" long-term t-strategy is active and D*_t( 1 )
       // is large already, inhibit t decreases (but not small heuristic
       // increases, if active); note that one may add the clause "unless
       // too many NS happened", i.e. "&& ( CNSCntr < 20 )": this version
       // avoids problems which may occur with ill-set tStar or tSPar2, but
       // it may give worse performances with "difficult" problems
+      // also note the "abs( Sigma )": Sigma should be positive, but in
+      // case it is not the control would always be true irrespectively of
+      // the magnitude of tSPar2 and tStar just because of the sign
       BLOG( 1 , " ~ large D*_t( 1 )" );
       tm = t;
       }
