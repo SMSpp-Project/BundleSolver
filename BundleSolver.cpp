@@ -1044,7 +1044,7 @@ int BundleSolver::compute( bool changedvars )
       // if the "balancing" long-term t-strategy is active and D*_t( 1 )
       // is large already, inhibit t decreases (but not small heuristic
       // increases, if active); note that one may add the clause "unless
-      // too many NS happened", i.e. "&& ( CNSCntr < 20 )": this version
+      // too many NS happened", i.e., "&& ( CNSCntr < 20 )": this version
       // avoids problems which may occur with ill-set tStar or tSPar2, but
       // it may give worse performances with "difficult" problems
       // also note the "abs( Sigma )": Sigma should be positive, but in
