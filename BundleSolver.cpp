@@ -54,7 +54,7 @@
 #endif
 
 /*--------------------------------------------------------------------------*/
-/* If USE_OSI_QP is nonzero, the OsiSolverInterface used in OSIMPSolver (if
+/* If WHICH_OSI_QP is nonzero, the OsiSolverInterface used in OSIMPSolver (if
  * any. i.e., unless a QPPenaltyMP is used) will be one of the two specific
  * OsiXXXSolverInterface that support a QP Master problem, i.e.,
  *
@@ -66,13 +66,13 @@
  * since both Cplex and Gurobi are commercial and therefore the corresponding
  * OsiXXXSolverInterface are in general not be available to all users. */
 
-#ifndef USE_OSI_QP
- #define USE_OSI_QP 2
+#ifndef WHICH_OSI_QP
+ #define WHICH_OSI_QP 2
 #endif
 
-#if USE_OSI_QP == 1
+#if WHICH_OSI_QP == 1
  #include "OsiCpxSolverInterface.hpp"
-#elif USE_OSI_QP == 2
+#elif WHICH_OSI_QP == 2
  #include "OsiGrbSolverInterface.hpp"
  #include "gurobi_c++.h"
 #endif
@@ -1678,9 +1678,9 @@ void BundleSolver::set_Block( Block * block )
     Master = osi_mps;
 
     if( MPName & 2 ) {
-     #if USE_OSI_QP == 1
+     #if WHICH_OSI_QP == 1
       osi_mps->SetOsi( new OsiCpxSolverInterface() );
-     #elif USE_OSI_QP == 2
+     #elif WHICH_OSI_QP == 2
       // externally create the Gurobi environment in order to be able to
       // set it in "silent mode" before it is started
       GRBenv * envP;

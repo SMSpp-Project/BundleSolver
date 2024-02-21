@@ -48,10 +48,10 @@ list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 # See: https://cmake.org/cmake/help/latest/variable/CMAKE_BUILD_TYPE.html
 include(BuildType)
 
-if (NOT DEFINED USE_OSI_QP)
-    set(USE_OSI_QP 2) # use OsiGrbSolverInterface.hpp by default
+if (NOT DEFINED WHICH_OSI_QP)
+    set(WHICH_OSI_QP 2) # use OsiGrbSolverInterface.hpp by default
 endif ()
-add_definitions(-DUSE_OSI_QP=${USE_OSI_QP})
+add_definitions(-DWHICH_OSI_QP=${WHICH_OSI_QP})
 
 # ----- Requirements -------------------------------------------------------- #
 
