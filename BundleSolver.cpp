@@ -66,7 +66,9 @@
  * since both Cplex and Gurobi are commercial and therefore the corresponding
  * OsiXXXSolverInterface are in general not be available to all users. */
 
-#define USE_OSI_QP 2
+#ifndef USE_OSI_QP
+ #define USE_OSI_QP 2
+#endif
 
 #if USE_OSI_QP == 1
  #include "OsiCpxSolverInterface.hpp"
