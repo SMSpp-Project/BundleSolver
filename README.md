@@ -27,19 +27,15 @@ a "Generalized Bundle" algorithm; cf. e.g.
 
 These instructions will let you build MCFBlock and MCFSolver on your system.
 
-
 ### Requirements
 
-- The [SMS++ core library](https://gitlab.com/smspp/smspp) and its
-  requirements.
+- The [SMS++ core library](https://gitlab.com/smspp/smspp) and its requirements.
 
 - The [MILPSolver](https://gitlab.com/smspp/milpsolver) SMS++ module.
 
-- [The NDOSolver/FiOracle
-  project](https://gitlab.com/frangio68/ndosolver_fioracle_project) and its
-  requirements (depending on the actual MPSolver built); note that this
+- The [NDOSolver/FiOracle project](https://gitlab.com/frangio68/ndosolver_fioracle_project)
+  and its requirements (depending on the actual MPSolver built); note that this
   dependency is supposed to be removed down the line.
-
 
 ### Build and install with CMake
 
@@ -51,16 +47,26 @@ cd build
 cmake ..
 make
 ```
-
 The library has the same configuration options of
 [SMS++](https://gitlab.com/smspp/smspp-project/-/wikis/Customize-the-configuration).
+
+You can also choose the following configuration options:
+
+| Variable       | Description         | Default value |
+|----------------|---------------------|---------------|
+| `WHICH_OSI_QP` | Use CPLEX or GUROBI | GUROBI        |
+
+You can set them with:
+
+```sh
+cmake <source-path> -D<var>=<value>
+```
 
 Optionally, install the library in the system with:
 
 ```sh
 sudo make install
 ```
-
 
 ### Usage with CMake
 
@@ -70,7 +76,6 @@ After the library is built, you can use it in your CMake project with:
 find_package(BundleSolver)
 target_link_libraries(<my_target> SMS++::BundleSolver)
 ```
-
 
 ### Build and install with makefiles
 
@@ -92,10 +97,10 @@ to use CMake. General instructions are:
   that are required by the "core" SMS++ library and therefore by everyone.
   Setting the
 
-```make
-lib*INC = -I< paths to include files directories >
-lib*LIB = -L< paths to lib files directories > -l< libs >
-```
+  ```make
+  lib*INC = -I< paths to include files directories >
+  lib*LIB = -L< paths to lib files directories > -l< libs >
+  ```
 
   in each allows one to set any non-standard path if the library is not
   installed in the system (or leave them empty if they are).
@@ -103,51 +108,53 @@ lib*LIB = -L< paths to lib files directories > -l< libs >
 - The "core" SMS++ classes have a makefile for building the corresponding
   library in
 
-```sh
-SMS++/lib/makefile-lib
-```
+  ```sh
+  SMS++/lib/makefile-lib
+  ```
 
   The makefile allow to choose the compiler name and the optimization/debug.
   This builds the lib/libSMS++.a that can be linked upon. Also, the
 
-```sh
-SMS++/lib/makefile-inc
-```
+  ```sh
+  SMS++/lib/makefile-inc
+  ```
 
   file is provided for allowing external makefiles to ensure that the library
   is up-to-date (useful in case one is actually developing it). The simplest
   way to learn how to use it is to check the makefiles of the "main" file
 
-```sh
-Main/makefile
-```
+  ```sh
+  Main/makefile
+  ```
 
   Note that the "basic" makefile macros
 
-```make
-CC =
-SW =
-```
+  ```make
+  CC =
+  SW =
+  ```
 
   for setting the c++ compiler and its options are "automatically forwarded"
   from the makefile to these of the other SMS++ components, and therefore
   (possibly at the cost of a make clean) ensure consistency during the
   building process.
 
-- The [The NDOSolver/FiOracle
-  project](https://gitlab.com/frangio68/ndosolver_fioracle_project)
+- The [NDOSolver/FiOracle project](https://gitlab.com/frangio68/ndosolver_fioracle_project)
   has a similar arrangement with its own extlib/ folder that must be
   independently edited in an analogous way.
+
 
 ## Getting help
 
 If you need support, you want to submit bugs or propose a new feature, you can
 [open a new issue](https://gitlab.com/smspp/bundlesolver/-/issues/new).
 
+
 ## Contributing
 
 Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on our code of
 conduct, and the process for submitting merge requests to us.
+
 
 ## Authors
 
@@ -161,13 +168,13 @@ conduct, and the process for submitting merge requests to us.
   Dipartimento di Matematica ed Informatica  
   Università di Cagliari
 
-### Contributors
 
 ## License
 
 This code is provided free of charge under the [GNU Lesser General Public
 License version 3.0](https://opensource.org/licenses/lgpl-3.0.html) -
 see the [LICENSE](LICENSE) file for details.
+
 
 ## Disclaimer
 
