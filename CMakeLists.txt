@@ -49,12 +49,10 @@ list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 include(BuildType)
 
 # ----- Requirements -------------------------------------------------------- #
-if (NDOFiOracle_USE_OSI)
-    # OsiCpx and/or OsiGrb needed for BundleSolver
-    find_package(Osi OPTIONAL_COMPONENTS OsiCpx OsiGrb)
-    if ((NOT Osi_OsiCpx_FOUND) AND (NOT Osi_OsiGrb_FOUND))
-        set(NDOFiOracle_USE_OSI OFF)
-    endif ()
+# OsiCpx and/or OsiGrb needed for BundleSolver
+find_package(Osi OPTIONAL_COMPONENTS OsiCpx OsiGrb)
+if ((NOT Osi_OsiCpx_FOUND) AND (NOT Osi_OsiGrb_FOUND))
+    set(NDOFiOracle_USE_OSI OFF)
 endif ()
 
 # OsiClp needed for BundleSolver
