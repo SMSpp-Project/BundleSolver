@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.4] - 2024-02-27
+
+### Changed
+
+- makefiles and Cmake files updated to new global SMS++ scheme
+
+- documentation updated accordingly
+
+- default OSISolver is Gurobi
+
+- improved BundleSolverState by keeping all upper and lower values for each component
+
+### Fixed
+
+- fixed sloppy setting of OSI parameters
+
+- fixed `has_*_solution()` and `has_*_feasible()`
+
 ## [0.4.3] - 2023-05-23
 
 ### Added
