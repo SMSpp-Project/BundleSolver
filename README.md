@@ -80,68 +80,37 @@ target_link_libraries(<my_target> SMS++::BundleSolver)
 ### Build and install with makefiles
 
 Carefully hand-crafted makefiles have also been developed for those unwilling
-to use CMake. General instructions are:
+to use CMake. Makefiles build the executable in-source (in the same directory
+tree where the code is) as opposed to out-of-source (in the copy of the
+directory tree constructed in the build/ folder) and therefore it is more
+convenient when having to recompile often, such as when developing/debugging
+a new module, as opposed to the compile-and-forget usage envisioned by CMake.
 
-- The arrangements of folders must be that envisioned by the
-  [Umbrella SMS++ Project](https://gitlab.com/smspp/smspp-project)
+Each executable using `BundleSolver` or `ParallelBundleSolver`,
+such as the [tester for `PolyhedralFunction` comparing `BundleSolver` with
+`MILPSolver`](https://gitlab.com/smspp/tests/-/tree/develop/PolyhedralFunction?ref_type=heads),
+has to include a "main makefile" of the module, which typically is either
+[makefile-c](makefile-c) including all necessary libraries comprised the
+"core SMS++" one, or [makefile-s](makefile-s) including all necessary
+libraries but not the "core SMS++" one (for the common case in which this is
+used together with other modules that already include them). These in turn
+recursively include all the required other makefiles, hence one should only
+need to edit the "main makefile" for compilation type (C++ compiler and its
+options) and it all should be good to go. In case some of the external
+libraries are not at their default location, it should only be necessary to
+create the `../extlib/makefile-paths` out of the
+`extlib/makefile-default-paths-*` for your OS `*` and edit the relevant bits
+(commenting out all the rest).
 
-- The main step is to edit the makefiles into ../extlib/. There is one for
-  each of the external libraries that any module requires, starting with
+Check the [SMS++ installation wiki](https://gitlab.com/smspp/smspp-project/-/wikis/Customize-the-configuration#location-of-required-libraries)
+for further details.
 
-  = [Boost](https://www.boost.org)
-
-  = [Eigen](http://eigen.tuxfamily.org)
-
-  = [netCDF-C++](https://www.unidata.ucar.edu/software/netcdf)
-
-  that are required by the "core" SMS++ library and therefore by everyone.
-  Setting the
-
-  ```make
-  lib*INC = -I< paths to include files directories >
-  lib*LIB = -L< paths to lib files directories > -l< libs >
-  ```
-
-  in each allows one to set any non-standard path if the library is not
-  installed in the system (or leave them empty if they are).
-
-- The "core" SMS++ classes have a makefile for building the corresponding
-  library in
-
-  ```sh
-  SMS++/lib/makefile-lib
-  ```
-
-  The makefile allow to choose the compiler name and the optimization/debug.
-  This builds the lib/libSMS++.a that can be linked upon. Also, the
-
-  ```sh
-  SMS++/lib/makefile-inc
-  ```
-
-  file is provided for allowing external makefiles to ensure that the library
-  is up-to-date (useful in case one is actually developing it). The simplest
-  way to learn how to use it is to check the makefiles of the "main" file
-
-  ```sh
-  Main/makefile
-  ```
-
-  Note that the "basic" makefile macros
-
-  ```make
-  CC =
-  SW =
-  ```
-
-  for setting the c++ compiler and its options are "automatically forwarded"
-  from the makefile to these of the other SMS++ components, and therefore
-  (possibly at the cost of a make clean) ensure consistency during the
-  building process.
-
-- The [NDOSolver/FiOracle project](https://gitlab.com/frangio68/ndosolver_fioracle_project)
-  has a similar arrangement with its own extlib/ folder that must be
-  independently edited in an analogous way.
+Note that the [NDOSolver/FiOracle
+project](https://gitlab.com/frangio68/ndosolver_fioracle_project) has a similar
+arrangement with its own extlib/ folder, but the `*_ROOT` values are set in the
+SMS++ files and therefore are immediately available there, so there is no need
+to separately edit the NDOSolver/FiOracle project ones (but there would be if
+it were downloaded and compiled independenty).
 
 
 ## Getting help
