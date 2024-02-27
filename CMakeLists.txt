@@ -15,10 +15,11 @@
 #          keep it in mind when editing it.                                   #
 #                                                                             #
 #                              Niccolo' Iardella                              #
+#                                Donato Meoli                                 #
 #                         Dipartimento di Informatica                         #
 #                             Universita' di Pisa                             #
 # --------------------------------------------------------------------------- #
-cmake_minimum_required(VERSION 3.12)
+cmake_minimum_required(VERSION 3.19)
 cmake_policy(VERSION 3.12)
 project(BundleSolver
         VERSION 0.4.3
@@ -48,11 +49,74 @@ list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 include(BuildType)
 
 # ----- Requirements -------------------------------------------------------- #
-# If it's not being called by the umbrella, we need to
-# look for the system-installed libraries.
+# OsiCpx and/or OsiGrb needed for BundleSolver
+find_package(Osi OPTIONAL_COMPONENTS OsiCpx OsiGrb)
+if ((NOT Osi_OsiCpx_FOUND) AND (NOT Osi_OsiGrb_FOUND))
+    set(NDOFiOracle_USE_OSI OFF)
+endif ()
+
+# OsiClp needed for BundleSolver
+find_package(Clp COMPONENTS OsiClp)
+if (NOT Clp_FOUND)
+    set(NDOFiOracle_USE_CLP OFF)
+endif ()
+
+# Set the WHICH_OSI_QP macro according to these following priorities:
+# - use the given WHICH_OSI_QP in input as CMake option, if any
+# - use Gurobi, i.e., 1, if available
+# - use Cplex, i.e., 2, if available
+# - otherwise, use Clp
+
+# if WHICH_OSI_QP is *not* given in input as CMake option...
+# (`NOT DEFINED WHICH_OSI_QP` tests `set( )`, not `add_definitions( )`)
+if (NOT DEFINED WHICH_OSI_QP)
+    # ... then use OsiGrb in BundleSolver by default (as in BundleSolver.cpp:70)
+    add_definitions(-DWHICH_OSI_QP=2)
+else () # else if WHICH_OSI_QP is given in input as CMake option...
+    if (WHICH_OSI_QP MATCHES "^(CPLEX|cplex|CPX|cpx|1)$")
+        add_definitions(-DWHICH_OSI_QP=1) # ... then use OsiCpx in BundleSolver
+    elseif (WHICH_OSI_QP MATCHES "^(GUROBI|gurobi|GRB|grb|2)$")
+        add_definitions(-DWHICH_OSI_QP=2) # ... then use OsiGrb in BundleSolver
+    endif ()
+endif ()
+
+# if Cplex is found...
+if (Osi_OsiCpx_FOUND)
+    # ... and if WHICH_OSI_QP is *not* given in input as CMake option...
+    # (`NOT DEFINED WHICH_OSI_QP` tests `set( )`, not `add_definitions( )`)
+    if (NOT DEFINED WHICH_OSI_QP)
+        # ... then use OsiCpx in BundleSolver
+        add_definitions(-DWHICH_OSI_QP=1)
+    endif ()
+endif ()
+
+# but, if also Gurobi is found...
+if (Osi_OsiGrb_FOUND)
+    # ... and if WHICH_OSI_QP is *not* given in input as CMake option...
+    # (`NOT DEFINED WHICH_OSI_QP` tests `set( )`, not `add_definitions( )`)
+    if (NOT DEFINED WHICH_OSI_QP)
+        # ... then use OsiGrb in BundleSolver
+        add_definitions(-DWHICH_OSI_QP=2)
+    endif ()
+endif ()
+
 if (NOT hasParent)
+    # If it's not being called by the umbrella, we need to
+    # look for the system-installed libraries.
     find_package(MILPSolver REQUIRED)
     find_package(NDOFiOracle REQUIRED)
+else ()
+    # NDOFiOracle library, required by BundleSolver.
+    # Requires CoinUtils, Osi and CPLEX.
+    set(NDOFiOracle_READ_PATHS OFF CACHE BOOL
+                               "Whether NdoFiOracle will read locations for
+		                       dependencies or not." FORCE)
+    add_subdirectory(NdoFiOracle)
+
+    # Add the binary directory to RPATH, so executables that use
+    # dynamic loading will look into it.
+    set(SMSPP_BUILD_RPATH
+        "${SMSPP_BUILD_RPATH};${CMAKE_CURRENT_BINARY_DIR}/NdoFiOracle")
 endif ()
 
 # ----- Configuration header ------------------------------------------------ #
@@ -99,11 +163,29 @@ target_link_libraries(${modName} PUBLIC
                       ${modNamespace}::MILPSolver
                       NDOFiOracle::NDOFiOracle)
 
+# if NDOFiOracle library is *not* given as subdirectory since it is
+# in the system-installed libraries, we need to link the Coin::Osi* targets here
+if (NOT hasParent)
+    message(STATUS "${modName}: OsiClp found, configuring BundleSolver")
+    target_link_libraries(${modName} PUBLIC Coin::OsiClp)
+
+    if (Osi_OsiCpx_FOUND)
+        message(STATUS "${modName}: OsiCpx found, configuring BundleSolver")
+        target_link_libraries(${modName} PUBLIC Coin::OsiCpx)
+    endif ()
+
+    if (Osi_OsiGrb_FOUND)
+        message(STATUS "${modName}: OsiGrb found, configuring BundleSolver")
+        target_link_libraries(${modName} PUBLIC Coin::OsiGrb)
+    endif ()
+endif ()
+
 # This alias is defined so that executables in this same project can use
 # the library with this notation.
 add_library(${modNamespace}::${modName} ALIAS ${modName})
 
 # ----- Subdirectories ------------------------------------------------------ #
+
 if (BUILD_TESTING)
 #    add_subdirectory(test)
 endif ()

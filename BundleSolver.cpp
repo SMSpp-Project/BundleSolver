@@ -54,7 +54,7 @@
 #endif
 
 /*--------------------------------------------------------------------------*/
-/* If USE_OSI_QP is nonzero, the OsiSolverInterface used in OSIMPSolver (if
+/* If WHICH_OSI_QP is nonzero, the OsiSolverInterface used in OSIMPSolver (if
  * any. i.e., unless a QPPenaltyMP is used) will be one of the two specific
  * OsiXXXSolverInterface that support a QP Master problem, i.e.,
  *
@@ -66,11 +66,13 @@
  * since both Cplex and Gurobi are commercial and therefore the corresponding
  * OsiXXXSolverInterface are in general not be available to all users. */
 
-#define USE_OSI_QP 1
+#ifndef WHICH_OSI_QP
+ #define WHICH_OSI_QP 2
+#endif
 
-#if USE_OSI_QP == 1
+#if WHICH_OSI_QP == 1
  #include "OsiCpxSolverInterface.hpp"
-#elif USE_OSI_QP == 2
+#elif WHICH_OSI_QP == 2
  #include "OsiGrbSolverInterface.hpp"
  #include "gurobi_c++.h"
 #endif
@@ -1039,13 +1041,17 @@ int BundleSolver::compute( bool changedvars )
      tm = t;
      }
     else
-     if( ( ( tSPar1 & tSP1Msk ) == kBLTTS ) && ( tSPar2 * DSTS >= Sigma ) ) {
+     if( ( ( tSPar1 & tSP1Msk ) == kBLTTS ) &&
+	 ( tSPar2 * DSTS >= abs( Sigma ) ) ) {
       // if the "balancing" long-term t-strategy is active and D*_t( 1 )
       // is large already, inhibit t decreases (but not small heuristic
       // increases, if active); note that one may add the clause "unless
-      // too many NS happened", i.e. "&& ( CNSCntr < 20 )": this version
+      // too many NS happened", i.e., "&& ( CNSCntr < 20 )": this version
       // avoids problems which may occur with ill-set tStar or tSPar2, but
       // it may give worse performances with "difficult" problems
+      // also note the "abs( Sigma )": Sigma should be positive, but in
+      // case it is not the control would always be true irrespectively of
+      // the magnitude of tSPar2 and tStar just because of the sign
       BLOG( 1 , " ~ large D*_t( 1 )" );
       tm = t;
       }
@@ -1419,6 +1425,9 @@ void BundleSolver::set_Block( Block * block )
    continue;
   if( un_any_thing( NNConstraint , el , [](){}() ) )
    continue;
+  if( un_any_const_static( el , []( BoxConstraint & b ){} ,
+                           un_any_type< BoxConstraint >() ) )
+   continue;
   throw( std::logic_error( "unsupported type of static Constraint" ) );
   }
 
@@ -1669,9 +1678,9 @@ void BundleSolver::set_Block( Block * block )
     Master = osi_mps;
 
     if( MPName & 2 ) {
-     #if USE_OSI_QP == 1
+     #if WHICH_OSI_QP == 1
       osi_mps->SetOsi( new OsiCpxSolverInterface() );
-     #elif USE_OSI_QP == 2
+     #elif WHICH_OSI_QP == 2
       // externally create the Gurobi environment in order to be able to
       // set it in "silent mode" before it is started
       GRBenv * envP;
@@ -1695,6 +1704,8 @@ void BundleSolver::set_Block( Block * block )
 
     osi_mps->SetAlgo( OSIMPSolver::OsiAlg( algo ) ,
 		      OSIMPSolver::OsiRed( reduction ) );
+
+    osi_mps->SetThreads( threads );
    #if( ! USE_MPTESTER )
     }
    else {  // the MPSolver is a QPPenaltyMP
@@ -1897,10 +1908,20 @@ void BundleSolver::set_par( idx_type par , int value )
    MxRmv = value;
    break;
   case( intOSImp1 ):
-   algo = value;
+   if( algo != Index( value ) ) {
+    algo = value;
+    if( auto osi_mps = dynamic_cast< OSIMPSolver * >( Master ) )
+     osi_mps->SetAlgo( OSIMPSolver::OsiAlg( algo ) ,
+		       OSIMPSolver::OsiRed( reduction ) );
+    }
    break;
   case( intOSImp2 ):
-   reduction = value;
+   if( reduction != Index( value ) ) {
+    reduction = value;
+    if( auto osi_mps = dynamic_cast< OSIMPSolver * >( Master ) )
+     osi_mps->SetAlgo( OSIMPSolver::OsiAlg( algo ) ,
+		       OSIMPSolver::OsiRed( reduction ) );
+    }
    break;
   case( intOSImp3 ):
    if( threads != Index( value ) ) {
@@ -2284,7 +2305,27 @@ void BundleSolver::serialize_State( netCDF::NcGroup & group ,
 
  ( group.addVar( "BundleSolver_t" , netCDF::NcDouble() ) ).putVar( &t );
 
- group.addDim( "BundleSolver_NrFi" , NrFi );
+ auto nfi = group.addDim( "BundleSolver_NrFi" , NrFi + 1 );
+
+ if( UpFiLmbdef ) {
+  group.addDim( "BundleSolver_UpFiLmbdef" , UpFiLmbdef );
+  ( group.addVar( "BundleSolver_UpFiLmb" , netCDF::NcDouble() , nfi )
+    ).putVar( { 0 } , { NrFi + 1 } , UpFiLmb.data() );
+  }
+
+ if( LwFiLmbdef ) {
+  group.addDim( "BundleSolver_LwFiLmbdef" , LwFiLmbdef );
+  ( group.addVar( "BundleSolver_LwFiLmb" , netCDF::NcDouble() , nfi )
+    ).putVar( { 0 } , { NrFi + 1 } , LwFiLmb.data() );
+  }
+
+ if( Fi0Lmb != 0 )
+  ( group.addVar( "BundleSolver_Fi0Lmb" , netCDF::NcDouble() )
+    ).putVar( & Fi0Lmb );
+
+ if( f_global_LB > - INFshift )
+  ( group.addVar( "BundleSolver_global_LB" , netCDF::NcDouble() )
+    ).putVar( & f_global_LB );
 
  for( Index i = 0 ; i < NrFi ; ++i ) {
   if( NrEasy && IsEasy[ i ] )
@@ -2314,17 +2355,46 @@ void BundleSolver::guts_of_put_State( const BundleSolverState & state )
   tHasChgd = true;
   }
 
- if( Lambda != state.Lambda ) {
-  Vec_VarValue foo( NrFi + 1 , 0 );  // no change in the (unknown) f-values
-  Master->ChangeCurrPoint( state.Lambda.data() , foo.data() );
-  Fi0Lmb = INFshift;  // the value of the linear part must be computed
-
-  // reset function values in Lambda, since they are changing
-  std::fill( UpFiLmb.begin() , UpFiLmb.end() ,  INFshift );  // upper
-  std::fill( LwFiLmb.begin() , LwFiLmb.end() , -INFshift );  // lower
-  UpFiLmbdef = LwFiLmbdef = 0;             // ... at the current point
-  f_global_LB = -INFshift;         // algorithmic global LB
+ if( state.UpFiLmbdef ) {
+  UpFiLmbdef = state.UpFiLmbdef;
+  UpFiLmb = state.UpFiLmb;
   }
+ else {
+  UpFiLmbdef = 0;
+  std::fill( UpFiLmb.begin() , UpFiLmb.end() ,  INFshift );
+  }
+
+ if( state.LwFiLmbdef ) {
+  LwFiLmbdef = state.LwFiLmbdef;
+  LwFiLmb = state.LwFiLmb;
+  }
+ else {
+  LwFiLmbdef = 0;
+  std::fill( LwFiLmb.begin() , LwFiLmb.end() ,  -INFshift );
+  }
+
+ // if Lambda has changed, the master problem need be informed
+ if( Lambda != state.Lambda ) {
+  Vec_VarValue foo( NrFi + 1 , 0 );
+
+  if( UpFiLmbdef == NrFi + 1 ) {
+   // the function value is known, so it has to be passed to the master:
+   // see the comments inside GotoLambda1() for the rationale of the
+   // curios definition
+   foo.front() = UpFiLmb.back() - UpRifFi.back();
+   std::transform( UpFiLmb.begin() , --(UpFiLmb.end()) , UpRifFi.begin() ,
+		   ++(foo.begin()) , std::minus< double >() );
+   UpRifFi = UpFiLmb;
+   RifeqFi = true;
+   }
+  // else no change in the (unknown) f-values, so all-0 is OK
+
+  Master->ChangeCurrPoint( state.Lambda.data() , foo.data() );
+  }
+
+ Fi0Lmb = state.Fi0Lmb;
+ f_global_LB = state.global_LB;
+ 
  }  // end( BundleSolver::guts_of_put_State )
 
 /*--------------------------------------------------------------------------*/
@@ -7371,7 +7441,53 @@ void BundleSolverState::deserialize( const netCDF::NcGroup & group )
 		      "BundleSolverState::deserialize: missing NrFi" ) );
 
  NrFi = nf.getSize();
+ --NrFi;
+ 
+ auto nup = group.getDim( "BundleSolver_UpFiLmbdef" );
+ if( nup.isNull() ) {
+  UpFiLmbdef = 0;
+  UpFiLmb.clear();
+  }
+ else {
+  UpFiLmbdef = nup.getSize();
+  auto vup = group.getVar( "BundleSolver_UpFiLmb" );
+  if( vup.isNull() )
+   throw( std::logic_error(
+		      "BundleSolverState::deserialize: missing UpFiLmb" ) );
 
+  UpFiLmb.resize( NrFi + 1 );
+  vup.getVar( UpFiLmb.data() );
+  }
+
+ auto nlw = group.getDim( "BundleSolver_LwFiLmbdef" );
+ if( nlw.isNull() ) {
+  LwFiLmbdef = 0;
+  LwFiLmb.clear();
+  }
+ else {
+  LwFiLmbdef = nlw.getSize();
+  auto vup = group.getVar( "BundleSolver_LwFiLmb" );
+  if( vup.isNull() )
+   throw( std::logic_error(
+		      "BundleSolverState::deserialize: missing LwFiLmb" ) );
+
+  LwFiLmb.resize( NrFi + 1 );
+  vup.getVar( LwFiLmb.data() );
+  }
+
+ auto f0 = group.getVar( "BundleSolver_Fi0Lmb" );
+ if( f0.isNull() )
+  Fi0Lmb = 0;
+ else
+  f0.getVar( &Fi0Lmb );
+
+ auto lb = group.getVar( "BundleSolver_global_LB" );
+ if( lb.isNull() )
+  global_LB = -BundleSolver::INFshift;
+ else
+  lb.getVar( &global_LB );
+ 
+ 
  v_comp_State.resize( nf.getSize() , nullptr );
 
  for( BundleSolver::Index i = 0 ; i < v_comp_State.size() ; ++i ) {
@@ -7391,11 +7507,31 @@ void BundleSolverState::serialize( netCDF::NcGroup & group ) const
  auto nv = group.addDim( "BundleSolver_NumVar" , NumVar );
 
  ( group.addVar( "BundleSolver_Lambda" , netCDF::NcDouble() , nv ) ).putVar(
-			               { 0 } , {  NumVar } , Lambda.data() );
+			               { 0 } , { NumVar } , Lambda.data() );
 
  ( group.addVar( "BundleSolver_t" , netCDF::NcDouble() ) ).putVar( &t );
 
- group.addDim( "BundleSolver_NrFi" , NrFi );
+ auto nfi = group.addDim( "BundleSolver_NrFi" , NrFi + 1 );
+
+ if( UpFiLmbdef ) {
+  group.addDim( "BundleSolver_UpFiLmbdef" , UpFiLmbdef );
+  ( group.addVar( "BundleSolver_UpFiLmb" , netCDF::NcDouble() , nfi )
+    ).putVar( { 0 } , { NrFi + 1 } , UpFiLmb.data() );
+  }
+
+ if( LwFiLmbdef ) {
+  group.addDim( "BundleSolver_LwFiLmbdef" , LwFiLmbdef );
+  ( group.addVar( "BundleSolver_LwFiLmb" , netCDF::NcDouble() , nfi )
+    ).putVar( { 0 } , { NrFi + 1 } , LwFiLmb.data() );
+  }
+
+ if( Fi0Lmb != 0 )
+  ( group.addVar( "BundleSolver_Fi0Lmb" , netCDF::NcDouble() )
+    ).putVar( & Fi0Lmb );
+
+ if( global_LB > - BundleSolver::INFshift )
+  ( group.addVar( "BundleSolver_global_LB" , netCDF::NcDouble() )
+    ).putVar( & global_LB );
 
  for( Index i = 0 ; i < NrFi ; ++i ) {
   if( ! v_comp_State[ i ] )
@@ -7404,7 +7540,7 @@ void BundleSolverState::serialize( netCDF::NcGroup & group ) const
   auto gi = group.addGroup( "Component_State_" + std::to_string( i ) );
   v_comp_State[ i ]->serialize( gi );
   }
- }  // end( BundleSolver::serialize_State )
+ }  // end( BundleSolverState::serialize )
 
 
 /*--------------------------------------------------------------------------*/

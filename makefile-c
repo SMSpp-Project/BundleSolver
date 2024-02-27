@@ -6,7 +6,7 @@
 #                                                                            #
 #   The makefile defines internally all external libraries (comprised the    #
 #   SMS++ one) required by BundleSolver. Accordingly, all necessary OBJ, H,  #
-#   -I directives, external libraries + -L<libdirs> are added to the         #
+#   -I directives, external libraries + -L< libdirs > are added to the       #
 #   corresponding BNDSLV* macros.                                            #
 #                                                                            #
 #   Input:  $(CC)        = compiler command                                  #
@@ -15,7 +15,7 @@
 #           $(BNDSLVODR) = the directory where the objects have to be put    #
 #                                                                            #
 #   Output: $(BNDSLVOBJ) = the final object(s) / library                     #
-#           $(BNDSLVLIB) = external libraries + -L<libdirs>                  #
+#           $(BNDSLVLIB) = external libraries + -L< libdirs >                #
 #           $(BNDSLVH)   = the .h files to include for BundleSolver          #
 #           $(BNDSLVINC) = the -I$( BundleSolver directory )                 #
 #                                                                            #
@@ -32,30 +32,31 @@
 # each module outputs some macros to be used here:
 # *OBJ is the final object/library
 # *H   is the list of all include files
-# *INC is the -I<include directories>
+# *INC is the -I< include directories >
 
 # define input macros for libCPLEX library makefile, then include it
 # not necessary, MILPSolver does it already
-#libCPLEXDIR = $(BNDSLVSDR)../extlib/
-#include $(libCPLEXDIR)makefile-libCPLEX
-
-# define input macros for libNDO library makefile, then include it
-libNDOSDR = $(BNDSLVSDR)NdoFiOracle/
-include $(libNDOSDR)lib/makefile-inc
 
 # define input macros for SMS++ library makefile, then include it
 # not necessary, MILPSolver does it already
-#SMS++SDR = $(BNDSLVSDR)../SMS++/
-#include $(SMS++SDR)lib/makefile-inc
+#SMS++SDR = $(BNDSLVSDR)/../SMS++
+#include $(SMS++SDR)/lib/makefile-inc
 
 # define input macros for MILPSolver complete makefile, then include it
-MILPSSDR = $(BNDSLVSDR)../MILPSolver/
+MILPSSDR = $(BNDSLVSDR)/../MILPSolver
 include $(MILPSSDR)/makefile-c
+
+# define input macros for libNDO library makefile, then include it
+# signal that *_ROOT values for external libraries need not be read by
+# the libNDO makefiles since they are defined already by SMS++
+NDOFi_NO_PATHS = 0
+libNDOSDR = $(BNDSLVSDR)/NdoFiOracle
+include $(libNDOSDR)/lib/makefile-inc
 
 # include the makefile requiring all external modules in input
 include $(BNDSLVSDR)/makefile
 
-# macroes to be exported- - - - - - - - - - - - - - - - - - - - - - - - - - -
+# macros to be exported - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 # append external stuff defined in the other makefiles to BNDSLVOBJ,
 # BNDSLVINC and BNDSLVH, thus the := assignment has to be used (use GNU make)
@@ -63,7 +64,7 @@ BNDSLVOBJ := $(BNDSLVOBJ) $(MILPSOBJ) $(libNDOOBJ)
 BNDSLVINC := $(BNDSLVINC) $(MILPSINC) $(libNDOINC)
 BNDSLVH := $(BNDSLVH) $(MILPSH) $(libNDOH) 
 
-# external libreries for BundleSolver
+# external libraries for BundleSolver
 BNDSLVLIB = $(libNDOLIB) $(MILPSLIB)
 
 ############################ End of makefile #################################

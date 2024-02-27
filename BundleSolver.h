@@ -1503,23 +1503,31 @@ public:
   }
 
 /*--------------------------------------------------------------------------*/
+ /// BundleSolver always returns a primal solution, possibly unfeasible
+ 
+ bool has_var_solution( void ) override { return( true ); }
 
- bool has_var_solution( void ) override {
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ /// BundleSolver always returns a dual solution, possibly unfeasible
+ /** BundleSolver always returns a dual solution, possibly unfeasible. This
+  *  in fact requires that the Master Problem has been solved at least once,
+  *  but has_dual_solution() can only be called after compute() and therefore
+  *  the Master Problem must have been solved at least once. */
+ 
+ bool has_dual_solution( void ) override { return( true ); }
+
+/*--------------------------------------------------------------------------*/
+
+ bool is_var_feasible( void ) override { 
   return( ( Result != kInfeasible ) && ( UpFiLmb.back() < INFshift ) );
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- bool has_dual_solution( void ) override {
+ bool is_dual_feasible( void ) override {
   return( f_global_LB > - INFshift );
   }
 
-/*--------------------------------------------------------------------------*/
-/*
- virtual bool is_var_feasible( void ) override { return( true ); }
-
- virtual bool is_dual_feasible( void ) override { return( true ); }
-*/
 /*--------------------------------------------------------------------------*/
  /// write the "current" solution
 
@@ -2870,6 +2878,12 @@ class BundleSolverState : public State {
 
  public:
 
+/*----------------------------- PUBLIC TYPES -------------------------------*/
+
+ using Index = BundleSolver::Index;
+ using VarValue = BundleSolver::VarValue;
+ using Vec_VarValue = BundleSolver::Vec_VarValue;
+
 /*------------ CONSTRUCTING AND DESTRUCTING BundleSolverState --------------*/
 
  /// constructor, doing everything or nothing.
@@ -2889,6 +2903,14 @@ class BundleSolverState : public State {
   NrFi = bs->NrFi;
   NumVar = bs->NumVar;
   Lambda = bs->Lambda;
+  UpFiLmbdef = bs->UpFiLmbdef;
+  if( UpFiLmbdef )
+   UpFiLmb = bs->UpFiLmb;
+  LwFiLmbdef = bs->LwFiLmbdef;
+  if( LwFiLmbdef )
+   LwFiLmb = bs->LwFiLmb;
+  Fi0Lmb = bs->Fi0Lmb;
+  global_LB = bs->f_global_LB;
   v_comp_State.resize( NrFi , nullptr );
   for( BundleSolver::Index i = 0 ; i < NrFi ; ++i ) {
    if( bs->NrEasy && bs->IsEasy[ i ] )
@@ -2918,7 +2940,7 @@ class BundleSolverState : public State {
  /** The method serializes the BundleSolverState into the provided
   * netCDF::NcGroup, so that it can later be read back by deserialize().
   *
-  * After the call, \p will contain:
+  * After the call, \p group will contain:
   *
   * - The dimension "BundleSolver_NumVar" containing the (current) number
   *   of variables of all the components.
@@ -2932,6 +2954,36 @@ class BundleSolverState : public State {
   *
   * - The dimension "BundleSolver_NrFi" containing the total number of
   *   components (comprised the "easy" ones).
+  *
+  * - The dimension "BundleSolver_UpFiLmbdef" containing the number of
+  *   components for which a non-+INF upper bound value in Lambda is known.
+  *   The dimension is optional, if it is not present then 0 is assumed.
+  *
+  * - The dimension "BundleSolver_LwFiLmbdef" containing the number of
+  *   components for which a non--INF lower bound value in Lambda is known.
+  *   The dimension is optional, if it is not present then 0 is assumed.
+  *
+  * - The variable "BundleSolver_UpFiLmb", of type netCDF::NcDouble and
+  *   indexed over the dimension BundleSolver_NrFi, which contains the
+  *   known opper bound value on each component in Lambda. The variable
+  *   must be there if "BundleSolver_UpFiLmbdef" (is defined and) has a
+  *   value > 0, but it is ignored (and therefore is optional) otherwise.
+  *
+  * - The variable "BundleSolver_LwFiLmb", of type netCDF::NcDouble and
+  *   indexed over the dimension BundleSolver_NrFi, which contains the
+  *   lower opper bound value on each component in Lambda. The variable
+  *   must be there if "BundleSolver_LwFiLmbdef" (is defined and) has a
+  *   value > 0, but it is ignored (and therefore is optional) otherwise.
+  *
+  * - The variable "BundleSolver_Fi0Lmb", of type netCDF::NcDouble and
+  *   indexed over no dimension (scalar), which contains the value of the
+  *   linear part of the objective. The variable is optional, if it is not
+  *   present then 0 (typically "no linear part") is assumed.
+  *
+  * - The variable "BundleSolver_global_LB", of type netCDF::NcDouble and
+  *   indexed over no dimension (scalar), which contains the value of the
+  *   algorithmic global LB. The variable is optional, if it is not present
+  *   then - INF is assumed.
   *
   * - At most BundleSolver_NrFi netCDF::NcGroup with name
   *   "Component_State_X", with X an integer between 0 and
@@ -2959,13 +3011,25 @@ class BundleSolverState : public State {
 
 /*--------------------------- PROTECTED FIELDS -----------------------------*/
 
- BundleSolver::Index NrFi;      ///< total number of components
+ Index NrFi;             ///< total number of components
 
- BundleSolver::Index NumVar;    ///< number of variables
+ Index NumVar;           ///< number of variables
 
- BundleSolver::Vec_VarValue Lambda;   ///< the current point
+ Vec_VarValue Lambda;    ///< the current point
 
- BundleSolver::VarValue t;            ///< the proximity parameter
+ VarValue t;             ///< the proximity parameter
+
+ Index UpFiLmbdef;       ///< number of known upper bounds
+
+ Index LwFiLmbdef;       ///< number of known lower bounds
+
+ Vec_VarValue UpFiLmb;   ///< the upper bounds
+
+ Vec_VarValue LwFiLmb;   ///< the lower bounds
+
+ VarValue Fi0Lmb;        ///< value of the linear component
+
+ VarValue global_LB;     ///< the global lower bound
 
  std::vector< State * > v_comp_State;  ///< the States of each component
 
