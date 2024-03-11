@@ -1432,9 +1432,14 @@ public:
 /** @} ---------------------------------------------------------------------*/
 /*---------------------- METHODS FOR READING RESULTS -----------------------*/
 /*--------------------------------------------------------------------------*/
-/** @name Accessing the found solutions (if any) and solution information-
+/** @name Accessing the found solutions (if any) and solution information
  *  @{ */
 
+ /// returns the current number of variables in (all) the C0%Function(s)
+
+ Index get_NumVar( void ) { return( NumVar ); }
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// returns the number of calls to compute() (the current one included)
 
  long get_elapsed_calls( void ) const override { return( SCalls ); }
@@ -1600,6 +1605,116 @@ public:
   
   bool new_dual_direction( void ) override{ return( false ); }
 */
+
+/** @} ---------------------------------------------------------------------*/
+/*------------ METHODS FOR READING ALGORITHM PROGRESS DATA -----------------*/
+/*--------------------------------------------------------------------------*/
+/** @name Accessing data describing how the algorithm is progressing, useful
+ *  e.g. inside events to trach the algorithm performances or perform
+ *  dynamic parameters adjustments
+ *  @{ */
+
+ /// returns the current value of the crucial t stabilization parameter
+
+ VarValue get_t( void ) { return( t ); }
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ /// returns the current aggregated linearization error
+ /** Returns the value of Sigma, the current aggregated linearization error.
+  *  If the C05Function(s) are computed without errors (with a "faithful
+  *  oracle", i.e., one that thoes not cheat on the lower bounds) then
+  *  Sigma >= 0, and the current aggregated subgradient is a
+  *  Sigma-subgradient at the current point. This justifies why the
+  *  standard stopping condition of BundleSolver roughly speaking reads
+  *
+  *     Sigma is small and the norm of the aggregated subgradient is small
+  *
+  *  (see get_DSTS() and get_DST()) since the optimality condition would
+  *  be "0 is a subgradient at the current point". A crucial issue is how
+  *  to define "small" for the two terms, but this is easy at least for
+  *  Sigma: in fact, if the aggregated subgradient is small, then
+  *
+  *    Sigma <= RelAcc * | current value of Fi |
+  *
+  *  means that the current point is RelAcc-optimal (relative). */
+
+ VarValue get_Sigma( void ){ return( Sigma ); }
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ /// returns the scaled norm of the aggregated subgradient
+ /** Returns D_{tStar}*( z* ), where z* is the aggregated subgradient. In
+  *  the standard proximal stabilization, this is
+  *
+  *       ( tStar / 2 ) || z* ||_2^2
+  *
+  * (see get_DS()). Since z* is a Sigma-subgradient at the current point
+  * (see get_Sigma()), justifies why one of the stopping condition of
+  * BundleSolver is
+  *
+  *      Sigma + D_{tStar}*( z* ) <= RelAcc * | current value of Fi |
+  *
+  * assuming that tStar is a proper upper bound on the maximum possible
+  * step that one could ever take in direction -z* in order to have the
+  * function decrease (a rater big "if"). */
+
+ VarValue get_DSTS( void ){ return( DSTS ); }
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ /// returns the unscaled norm of the aggregated subgradient
+ /** Returns D_{1}*( z* ), where z* is the aggregated subgradient. In
+  *  the standard proximal stabilization, this is || z* ||_2^2 / 2. See
+  *  get_DSTS() and get_Sigma() for how this number enters in the stopping
+  *  conditions of the method. */
+
+ VarValue get_DS( void ) { return( Master ? Master->ReadDStart( 1 ) : 0 ); }
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ /// returns the current estimate of the (un-)optimality of the current point
+ /** Returns the current best estimate of how far from optimality the current
+  *  point is, i.e.,
+  *
+  *    EpsU = Sigma + D_{tStar}*( z* ) / max( | current value of Fi | , 1 )
+  *
+  *  (see get_Sigma() and get_DSTS()). tStar is a proper upper bound on the
+  *  maximum possible step that one could ever take in direction -z* in order
+  *  to have the function decrease (a rater big "if"), then
+  *
+  *    EpsU <= RelAcc
+  *
+  *  should reliably indicate that the current point is RelAcc-optimal
+  *  (relative). */
+
+ VarValue get_EpsU( void ) { return( EpsU ); }
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ /// returns the number of consecutives Serious Steps
+ /** Returns the current number of consecutives Serious Steps; this is > 0
+  *  only if the last iteration has been a Serious Steps, as the counter is
+  *  immediately reset when a Null Step is performed. Note that some
+  *  t-strategies cause the master problem to be re-solved without the
+  *  C05Function(s) being evaluated, these do not count as iterations. */
+
+ Index get_CSSCntr( void ) { return( CSSCntr ); } 
+
+/*--------------------------------------------------------------------------*/
+ /// returns the number of consecutives Null Steps
+ /** Returns the current number of consecutives Null Steps; this is > 0
+  *  only if the last iteration has been a Null Steps, as the counter is
+  *  immediately reset when a Serious Step is performed. Note that some
+  *  t-strategies cause the master problem to be re-solved without the
+  *  C05Function(s) being evaluated, these do not count as iterations. */
+
+ Index get_CNSCntr( void ) { return( CNSCntr ); }
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ /// returns the predicted improvement of the model at the tentative point
+
+ VarValue get_vStar( void ) { return( vStar.back() ); } 
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ /// returns the gorm of the first inserted subgradient in the last iteration
+
+ VarValue get_G1Norm( void ) { return( G1Norm ); }
 
 /** @} ---------------------------------------------------------------------*/
 /*-------------- METHODS FOR READING THE DATA OF THE Solver ----------------*/

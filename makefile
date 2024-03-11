@@ -49,7 +49,8 @@ clean::
 
 $(BNDSLVSDR)/BundleSolver.o: $(BNDSLVSDR)/BundleSolver.cpp \
 	$(BNDSLVSDR)/BundleSolver.h $(SMS++OBJ) $(MILPSH) $(libNDOOBJ)
-	$(CC) -c $*.cpp -o $@ $(BNDSLVINC) $(SMS++INC) $(MILPSINC) $(libNDOINC) $(SW)
+	$(CC) -c $*.cpp -o $@ $(BNDSLVINC) $(SMS++INC) $(MILPSINC) \
+	$(libNDOINC) $(SW)
 
 $(BNDSLVSDR)/ParallelBundleSolver.o: $(BNDSLVSDR)/ParallelBundleSolver.cpp \
 	$(BNDSLVH) $(SMS++OBJ) $(MILPSH) $(libNDOOBJ)
