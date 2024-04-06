@@ -68,35 +68,35 @@ endif ()
 # - otherwise, use Clp
 
 # if WHICH_OSI_QP is *not* given in input as CMake option...
-# (`NOT DEFINED WHICH_OSI_QP` tests `set( )`, not `add_definitions( )`)
+# (`NOT DEFINED WHICH_OSI_QP` tests `set( )`, not `add_compile_definitions( )`)
 if (NOT DEFINED WHICH_OSI_QP)
     # ... then use OsiGrb in BundleSolver by default (as in BundleSolver.cpp:70)
-    add_definitions(-DWHICH_OSI_QP=2)
+    add_compile_definitions(WHICH_OSI_QP=2)
 else () # else if WHICH_OSI_QP is given in input as CMake option...
     if (WHICH_OSI_QP MATCHES "^(CPLEX|cplex|CPX|cpx|1)$")
-        add_definitions(-DWHICH_OSI_QP=1) # ... then use OsiCpx in BundleSolver
+        add_compile_definitions(WHICH_OSI_QP=1) # ... then use OsiCpx in BundleSolver
     elseif (WHICH_OSI_QP MATCHES "^(GUROBI|gurobi|GRB|grb|2)$")
-        add_definitions(-DWHICH_OSI_QP=2) # ... then use OsiGrb in BundleSolver
+        add_compile_definitions(WHICH_OSI_QP=2) # ... then use OsiGrb in BundleSolver
     endif ()
 endif ()
 
 # if Cplex is found...
 if (Osi_OsiCpx_FOUND)
     # ... and if WHICH_OSI_QP is *not* given in input as CMake option...
-    # (`NOT DEFINED WHICH_OSI_QP` tests `set( )`, not `add_definitions( )`)
+    # (`NOT DEFINED WHICH_OSI_QP` tests `set( )`, not `add_compile_definitions( )`)
     if (NOT DEFINED WHICH_OSI_QP)
         # ... then use OsiCpx in BundleSolver
-        add_definitions(-DWHICH_OSI_QP=1)
+        add_compile_definitions(WHICH_OSI_QP=1)
     endif ()
 endif ()
 
 # but, if also Gurobi is found...
 if (Osi_OsiGrb_FOUND)
     # ... and if WHICH_OSI_QP is *not* given in input as CMake option...
-    # (`NOT DEFINED WHICH_OSI_QP` tests `set( )`, not `add_definitions( )`)
+    # (`NOT DEFINED WHICH_OSI_QP` tests `set( )`, not `add_compile_definitions( )`)
     if (NOT DEFINED WHICH_OSI_QP)
         # ... then use OsiGrb in BundleSolver
-        add_definitions(-DWHICH_OSI_QP=2)
+        add_compile_definitions(WHICH_OSI_QP=2)
     endif ()
 endif ()
 
