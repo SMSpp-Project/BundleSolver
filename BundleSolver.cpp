@@ -97,11 +97,76 @@
   *                   stored in the MPSolver
   *
   * - CHECK_DS & 8 == checks that the lower bounds out of the C05Function
-  *                   agree with these stored in the MPSolver
-  */
+  *                   agree with these stored in the MPSolver */
+
 #else
  #define CHECK_DS 0
  // never change this
+#endif
+
+#define CHECK_BAD_F 3
+/* Bundle methods are supposed to work on convex functions. Technically,
+ * this boils down to the fact that each (eps-)subgradient produced by
+ * each orcale must be a linear lower approximation of the corresponding
+ * function on all the space. This is immediately tested right away for the
+ * current stability centre Lambda by computing the linearization error of
+ * the subgradient (for the corresponding component) w.r.t. that point. If
+ *
+ * - the function is convex to start with
+ *
+ * - the function values and (eps-)subgradients (and the value of eps) are
+ *   correctly computed
+ *
+ * - the oracle is "faithful", i.e., it correctly reports the subgradients
+ *   as eps-ones (with the correct value of eps) rather than pretending that
+ *   they are exact, i.e., it correctly computes and returns the upper and
+ *   lower bounds on the function value
+ *
+ * then no negative linearization error should ever appear. Sometimes this is
+ * not the case. In Lagrangian optimization, for instance, some oracles may
+ * not solve the Lagrangian subproblem exactly and they may not be capable
+ * (or willing) to compute correct upper/lower bounds on the objective value
+ * so as to correctly declare the subgradient as an eps-one and provide a
+ * correct estimate of the eps; rather, these "cheating" oracles may just
+ * pretend the subgradient to be an exact one and leave the poor Bundle
+ * method to fend off with the consequences. These may be particularly
+ * nefarious in that the linearization errors are then used to compute the
+ * aggregate linearization error (Sigma) which enters in the crucial
+ * stopping criterion of the algorithm. Negative linearization errors may
+ * lead to a negative Sigma, which breaks the stopping criterion.
+ *
+ * BundleSolver is engineered to be "resistant" to Negative linearization 
+ * errors by detecting negative Sigma and performing "noise reduction steps"
+ * to try to make them go away. However, in general one may expect that, for
+ * some applications, this should never happen as the functions are convex
+ * and the oracles should be "faithful". Hence, appearence of negative
+ * linearization and especially negative Sigma, would be a sign that the
+ * oracles are not behaving as expected. This macro, coded bitwose, causes
+ * checks on negative linearization errors and/or negative Sigma to be
+ * performed and warnings to be printed on std::cerr if "negative enough"
+ * values are found. The exact coding is:
+ *
+ * - CHECK_BAD_F & 1 == checks the sign of the aggregate linearization error
+ *                      (Sigma) as soon as produced by the Master Problem
+ *
+ * - CHECK_BAD_F & 2 == checks the sign of any linearization error of any
+ *                      new subgradient w.r.t. the current stability centre
+ *                      Lambda as soon as the subgradient is extracted from 
+ *                      the corresponding oracle; the check is disable at
+ *                      the first iteration and in general whenever the
+ *                      reference value of the corresponding component is
+ *                      undefined, as in this case linearization errors are
+ *                      computed w.r.t. an arbitrary reference value (say, 0)
+ *                      and them being negative does not mean anything
+ *                      untowards having happened.
+ *
+ * Note that the warnings are printed whatever the value of the log verbosity
+ * and on std::cerr rather than on the BundleSolver log stream (if any), hence
+ * they are "rather invasive". */
+
+#if CHECK_BAD_F
+ #define CHECK_BAD_F_EPS 1e-6
+ // the relative threshold for checking negative linearization errors
 #endif
 
 /*--------------------------------------------------------------------------*/
@@ -2736,6 +2801,15 @@ void BundleSolver::FormD( void )
   Sigma += EasyRifFi;
   }
 
+ #if CHECK_BAD_F & 1
+  // if so required, check for "very negative Sigma" and print a warning on
+  // std::cerr if it is found
+  auto rel_error = ( Sigma / std::max( std::abs( UpRifFi.back() ) , 1.0 ) );
+  if( rel_error < - CHECK_BAD_F_EPS )
+   std::cerr << std::endl << "Warning[ " << SCalls << ", " << ParIter
+	     << " ]: Sigma = " << rel_error << std::endl;
+ #endif
+
  DSTS = Master->ReadDStart( std::abs( tStar ) );  // D_{t*}( z* )
 
  // Sigma* + D*_{t*}( -z* ) is the "maximum expected increase" used in
@@ -3017,7 +3091,6 @@ void BundleSolver::FormLambda1( HpNum Tau )
   }
  else
   LwFiLmb1.back() = -INFshift;
-
 
  // update the upper and lower targets - - - - - - - - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -3532,6 +3605,23 @@ bool BundleSolver::GetGi( Index wFi )
    // CheckSubG changes Alfa1k so that G1 is an Alfa1k-subgradient in Lambda
    cp = Master->CheckSubG( UpFiLmb1[ wFi ] - UpRifFi[ wFi ] , t , Alfa1k ,
 			   ScPr1k );
+
+   #if CHECK_BAD_F & 2
+    // if so required, check for "very negative Alfa1" and print a warning on
+    // std::cerr if it is found; however, avoid the check if the true function
+    // value of component wFi in Lambda has not been ever computed yet (or has
+    // became invalid), as testified by the fact that UpRifFi[ wFi ] (which is
+    // always finite) is different from UpFiLmb[ wFi ] (which is set to +INF
+    // when unknown), since in this case a negative Alfa1 does not signify
+    // that anything untowards has been done by the oracle
+    if( UpRifFi[ wFi ] == UpFiLmb[ wFi ] ) {
+     auto rel_error = ( Alfa1k / std::max( std::abs( UpFiLmb1[ wFi ] ) , 1.0 )
+			);
+     if( rel_error < - CHECK_BAD_F_EPS )
+      std::cerr << std::endl << "Warning[ " << SCalls << ", " << ParIter
+		<< ", " << wFi << " ]: Alfa1 = " << rel_error << std::endl;
+     }
+   #endif
    }
   else {             // it is a constraint
    // the definition of constraint in FiOracle (hence MPSolver) is
