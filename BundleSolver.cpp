@@ -104,7 +104,7 @@
  // never change this
 #endif
 
-#define CHECK_BAD_F 3
+#define CHECK_BAD_F 0
 /* Bundle methods are supposed to work on convex functions. Technically,
  * this boils down to the fact that each (eps-)subgradient produced by
  * each orcale must be a linear lower approximation of the corresponding
@@ -2803,11 +2803,19 @@ void BundleSolver::FormD( void )
 
  #if CHECK_BAD_F & 1
   // if so required, check for "very negative Sigma" and print a warning on
-  // std::cerr if it is found
-  auto rel_error = ( Sigma / std::max( std::abs( UpRifFi.back() ) , 1.0 ) );
-  if( rel_error < - CHECK_BAD_F_EPS )
-   std::cerr << std::endl << "Warning[ " << SCalls << ", " << ParIter
-	     << " ]: Sigma = " << rel_error << std::endl;
+  // std::cerr if it is found; however, do that only if (an upper bound on
+  // the correct value of) Fi is known, for otherwise the linearization
+  // errors have been computed against an arbitrary reference value and
+  // they easily be negative "by chance", so the same holds for Sigma,
+  // without this indicating a problem; this may happen either at the very
+  // first call to compute(), or at the first iteration of a subsequent
+  // call to compute() where Modification have made the Fi-value invalid
+  if( UpFiLmb.back() < INFshift ) {
+   auto rel_error = ( Sigma / std::max( std::abs( UpRifFi.back() ) , 1.0 ) );
+   if( rel_error < - CHECK_BAD_F_EPS )
+    std::cerr << std::endl << "Warning[ " << SCalls << ", " << ParIter
+	      << " ]: Sigma = " << rel_error << std::endl;
+   }
  #endif
 
  DSTS = Master->ReadDStart( std::abs( tStar ) );  // D_{t*}( z* )
