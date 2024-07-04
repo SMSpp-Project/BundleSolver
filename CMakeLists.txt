@@ -70,7 +70,7 @@ endif ()
 # if WHICH_OSI_QP is *not* given in input as CMake option...
 # (`NOT DEFINED WHICH_OSI_QP` tests `set( )`, not `add_compile_definitions( )`)
 if (NOT DEFINED WHICH_OSI_QP)
-    # ... then use OsiClp in BundleSolver by default (as in BundleSolver.cpp:70)
+    # ... then use OsiClp in BundleSolver by default (as in BundleSolver.cpp:72)
     add_compile_definitions(WHICH_OSI_QP=0)
 else () # else if WHICH_OSI_QP is given in input as CMake option...
     if (WHICH_OSI_QP MATCHES "^(CPLEX|cplex|CPX|cpx|1)$")
