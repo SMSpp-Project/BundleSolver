@@ -58,16 +58,18 @@
  * any. i.e., unless a QPPenaltyMP is used) will be one of the two specific
  * OsiXXXSolverInterface that support a QP Master problem, i.e.,
  *
- * - 1: a OsiCpxSolverInterface
+ * - 0  ==> OsiSolverInterface, so none of these features can be used;
  *
- * - 2: a OsiGrbSolverInterface
+ * - 1  ==> OsiCpxSolverInterface
+ *
+ * - 2  ==> OsiGrbSolverInterface
  *
  * This requires some includes that can be avoided otherwise, especially
  * since both Cplex and Gurobi are commercial and therefore the corresponding
  * OsiXXXSolverInterface are in general not be available to all users. */
 
 #ifndef WHICH_OSI_QP
- #define WHICH_OSI_QP 2
+ #define WHICH_OSI_QP 0
 #endif
 
 #if WHICH_OSI_QP == 1

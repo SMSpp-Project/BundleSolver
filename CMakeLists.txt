@@ -51,7 +51,7 @@ include(BuildType)
 # ----- Requirements -------------------------------------------------------- #
 # OsiCpx and/or OsiGrb needed for BundleSolver
 find_package(Osi OPTIONAL_COMPONENTS OsiCpx OsiGrb)
-if ((NOT Osi_OsiCpx_FOUND) AND (NOT Osi_OsiGrb_FOUND))
+if (NOT Osi_FOUND)
     set(NDOFiOracle_USE_OSI OFF)
 endif ()
 
