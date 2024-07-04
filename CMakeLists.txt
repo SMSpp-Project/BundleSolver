@@ -77,6 +77,8 @@ else () # else if WHICH_OSI_QP is given in input as CMake option...
         add_compile_definitions(WHICH_OSI_QP=1) # ... then use OsiCpx in BundleSolver
     elseif (WHICH_OSI_QP MATCHES "^(GUROBI|gurobi|GRB|grb|2)$")
         add_compile_definitions(WHICH_OSI_QP=2) # ... then use OsiGrb in BundleSolver
+    else ()
+        add_compile_definitions(WHICH_OSI_QP=0) # ... then use OsiClp in BundleSolver
     endif ()
 endif ()
 
