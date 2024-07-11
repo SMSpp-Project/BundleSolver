@@ -67,18 +67,21 @@ endif ()
 # - use Cplex, i.e., 2, if available
 # - otherwise, use Clp
 
+# Define a temporary variable to store the value of WHICH_OSI_QP
+set(TEMP_WHICH_OSI_QP 0)
+
 # if WHICH_OSI_QP is *not* given in input as CMake option...
 # (`NOT DEFINED WHICH_OSI_QP` tests `set( )`, not `add_compile_definitions( )`)
 if (NOT DEFINED WHICH_OSI_QP)
     # ... then use OsiClp in BundleSolver by default (as in BundleSolver.cpp:72)
-    add_compile_definitions(WHICH_OSI_QP=0)
+    set(TEMP_WHICH_OSI_QP 0)
 else () # else if WHICH_OSI_QP is given in input as CMake option...
     if (WHICH_OSI_QP MATCHES "^(CPLEX|cplex|CPX|cpx|1)$")
-        add_compile_definitions(WHICH_OSI_QP=1) # ... then use OsiCpx in BundleSolver
+        set(TEMP_WHICH_OSI_QP 1) # ... then use OsiCpx in BundleSolver
     elseif (WHICH_OSI_QP MATCHES "^(GUROBI|gurobi|GRB|grb|2)$")
-        add_compile_definitions(WHICH_OSI_QP=2) # ... then use OsiGrb in BundleSolver
+        set(TEMP_WHICH_OSI_QP 2) # ... then use OsiGrb in BundleSolver
     else ()
-        add_compile_definitions(WHICH_OSI_QP=0) # ... then use OsiClp in BundleSolver
+        set(TEMP_WHICH_OSI_QP 0) # ... then use OsiClp in BundleSolver
     endif ()
 endif ()
 
@@ -88,7 +91,7 @@ if (Osi_OsiCpx_FOUND)
     # (`NOT DEFINED WHICH_OSI_QP` tests `set( )`, not `add_compile_definitions( )`)
     if (NOT DEFINED WHICH_OSI_QP)
         # ... then use OsiCpx in BundleSolver
-        add_compile_definitions(WHICH_OSI_QP=1)
+        set(TEMP_WHICH_OSI_QP 1)
     endif ()
 endif ()
 
@@ -98,9 +101,15 @@ if (Osi_OsiGrb_FOUND)
     # (`NOT DEFINED WHICH_OSI_QP` tests `set( )`, not `add_compile_definitions( )`)
     if (NOT DEFINED WHICH_OSI_QP)
         # ... then use OsiGrb in BundleSolver
-        add_compile_definitions(WHICH_OSI_QP=2)
+        set(TEMP_WHICH_OSI_QP 2)
     endif ()
 endif ()
+
+# Add the compile definition only once at the end to avoid warnings
+add_compile_definitions(WHICH_OSI_QP=${TEMP_WHICH_OSI_QP})
+
+# Unset the temporary variable
+unset(TEMP_WHICH_OSI_QP)
 
 if (NOT hasParent)
     # If it's not being called by the umbrella, we need to
