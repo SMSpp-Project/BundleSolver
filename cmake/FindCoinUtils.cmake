@@ -97,7 +97,7 @@ if (CoinUtils_FOUND)
         set_target_properties(
                 Coin::CoinUtils PROPERTIES
                 IMPORTED_LOCATION "${CoinUtils_LIBRARY}"
-                INTERFACE_INCLUDE_DIRECTORIES "${CoinUtils_INCLUDE_DIR}"
+                INTERFACE_INCLUDE_DIRECTORIES "${CoinUtils_INCLUDE_DIRS}"
                 INTERFACE_LINK_LIBRARIES "BZip2::BZip2")
     endif ()
 endif ()

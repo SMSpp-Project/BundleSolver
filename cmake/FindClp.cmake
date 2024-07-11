@@ -127,7 +127,7 @@ if (Clp_FOUND)
         set_target_properties(
                 Coin::Clp PROPERTIES
                 IMPORTED_LOCATION "${Clp_LIBRARY}"
-                INTERFACE_INCLUDE_DIRECTORIES "${Clp_INCLUDE_DIR}")
+                INTERFACE_INCLUDE_DIRECTORIES "${Clp_INCLUDE_DIRS}")
     endif ()
 endif ()
 
@@ -140,7 +140,7 @@ if (Clp_ClpSolver_FOUND)
         set_target_properties(
                 Coin::ClpSolver PROPERTIES
                 IMPORTED_LOCATION "${Clp_ClpSolver_LIBRARY}"
-                INTERFACE_INCLUDE_DIRECTORIES "${Clp_ClpSolver_INCLUDE_DIR}"
+                INTERFACE_INCLUDE_DIRECTORIES "${Clp_ClpSolver_INCLUDE_DIRS}"
                 INTERFACE_LINK_LIBRARIES "Coin::Clp")
     endif ()
 endif ()
@@ -154,7 +154,7 @@ if (Clp_OsiClp_FOUND)
         set_target_properties(
                 Coin::OsiClp PROPERTIES
                 IMPORTED_LOCATION "${Clp_OsiClp_LIBRARY}"
-                INTERFACE_INCLUDE_DIRECTORIES "${Clp_OsiClp_INCLUDE_DIR}"
+                INTERFACE_INCLUDE_DIRECTORIES "${Clp_OsiClp_INCLUDE_DIRS}"
                 INTERFACE_LINK_LIBRARIES "Coin::Clp;Coin::Osi")
     endif ()
 endif ()

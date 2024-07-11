@@ -133,7 +133,7 @@ if (Osi_FOUND)
         set_target_properties(
                 Coin::Osi PROPERTIES
                 IMPORTED_LOCATION "${Osi_LIBRARY}"
-                INTERFACE_INCLUDE_DIRECTORIES "${Osi_INCLUDE_DIR}"
+                INTERFACE_INCLUDE_DIRECTORIES "${Osi_INCLUDE_DIRS}"
                 INTERFACE_LINK_LIBRARIES "${LAPACK_LIBRARIES};Coin::CoinUtils")
     endif ()
 endif ()
@@ -147,7 +147,7 @@ if (Osi_OsiCpx_FOUND)
         set_target_properties(
                 Coin::OsiCpx PROPERTIES
                 IMPORTED_LOCATION "${Osi_OsiCpx_LIBRARY}"
-                INTERFACE_INCLUDE_DIRECTORIES "${Osi_OsiCpx_INCLUDE_DIR}"
+                INTERFACE_INCLUDE_DIRECTORIES "${Osi_OsiCpx_INCLUDE_DIRS}"
                 INTERFACE_LINK_LIBRARIES "Coin::Osi;CPLEX::Cplex")
     endif ()
 endif ()
@@ -161,7 +161,7 @@ if (Osi_OsiGrb_FOUND)
         set_target_properties(
                 Coin::OsiGrb PROPERTIES
                 IMPORTED_LOCATION "${Osi_OsiGrb_LIBRARY}"
-                INTERFACE_INCLUDE_DIRECTORIES "${Osi_OsiGrb_INCLUDE_DIR}"
+                INTERFACE_INCLUDE_DIRECTORIES "${Osi_OsiGrb_INCLUDE_DIRS}"
                 INTERFACE_LINK_LIBRARIES "Coin::Osi;GUROBI::Gurobi")
     endif ()
 endif ()
