@@ -45,7 +45,7 @@ Configure and build the library with:
 mkdir build
 cd build
 cmake ..
-make
+cmake --build .
 ```
 The library has the same configuration options of
 [SMS++](https://gitlab.com/smspp/smspp-project/-/wikis/Customize-the-configuration).
@@ -65,7 +65,7 @@ cmake <source-path> -D<var>=<value>
 Optionally, install the library in the system with:
 
 ```sh
-sudo make install
+cmake --install .
 ```
 
 ### Usage with CMake
