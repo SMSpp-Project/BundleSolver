@@ -110,7 +110,7 @@ project](https://gitlab.com/frangio68/ndosolver_fioracle_project) has a similar
 arrangement with its own extlib/ folder, but the `*_ROOT` values are set in the
 SMS++ files and therefore are immediately available there, so there is no need
 to separately edit the NDOSolver/FiOracle project ones (but there would be if
-it were downloaded and compiled independenty).
+it were downloaded and compiled independently).
 
 
 ## Getting help
