@@ -540,48 +540,48 @@ public:
   MaxSol = CDASolver::get_dflt_int_par( intMaxSol );
   EverykIt = CDASolver::get_dflt_int_par( intEverykIt );
   LogVerb = CDASolver::get_dflt_int_par( intLogVerb );
-  BPar1 = Index( dflt_int_par[ intBPar1 - intLastParCDAS ] );
-  BPar2 = Index( dflt_int_par[ intBPar2 - intLastParCDAS ] );
-  BPar3 = Index( dflt_int_par[ intBPar3 - intLastParCDAS ] );
-  BPar4 = Index( dflt_int_par[ intBPar4 - intLastParCDAS ] );
-  BPar6 = dflt_int_par[ intBPar6 - intLastParCDAS ];
-  BPar7 = dflt_int_par[ intBPar7 - intLastParCDAS ];
-  MnSSC = dflt_int_par[ intMnSSC - intLastParCDAS ];
-  MnNSC = dflt_int_par[ intMnNSC - intLastParCDAS ];
-  tSPar1 = dflt_int_par[ inttSPar1 - intLastParCDAS ];
-  MaxNrEvls = dflt_int_par[ intMaxNrEvls - intLastParCDAS ];
-  DoEasy = char( dflt_int_par[ intDoEasy - intLastParCDAS ] );
-  WZNorm = char( dflt_int_par[ intWZNorm - intLastParCDAS ] );
-  FrcLstSS = bool( dflt_int_par[ intFrcLstSS - intLastParCDAS ] );
-  TrgtMng = Index( dflt_int_par[ intTrgtMng - intLastParCDAS ] );
-  MPName = dflt_int_par[ intMPName - intLastParCDAS ];
-  MPlvl = dflt_int_par[ intMPlvl - intLastParCDAS ];
-  MxAdd = dflt_int_par[ intQPmp1 - intLastParCDAS ];
-  MxRmv = dflt_int_par[ intQPmp2 - intLastParCDAS ];
-  algo = dflt_int_par[ intOSImp1 - intLastParCDAS ];
-  reduction = dflt_int_par[ intOSImp2 - intLastParCDAS ];
-  threads = dflt_int_par[ intOSImp3 - intLastParCDAS ];
+  BPar1 = Index( get_dflt_int_par( intBPar1 ) );
+  BPar2 = Index( get_dflt_int_par( intBPar2 ) );
+  BPar3 = Index( get_dflt_int_par( intBPar3 ) );
+  BPar4 = Index( get_dflt_int_par( intBPar4 ) );
+  BPar6 = get_dflt_int_par( intBPar6 );
+  BPar7 = get_dflt_int_par( intBPar7 );
+  MnSSC = get_dflt_int_par( intMnSSC );
+  MnNSC = get_dflt_int_par( intMnNSC );
+  tSPar1 = get_dflt_int_par( inttSPar1 );
+  MaxNrEvls = get_dflt_int_par( intMaxNrEvls );
+  DoEasy = char( get_dflt_int_par( intDoEasy ) );
+  WZNorm = char( get_dflt_int_par( intWZNorm ) );
+  FrcLstSS = bool( get_dflt_int_par( intFrcLstSS ) );
+  TrgtMng = Index( get_dflt_int_par( intTrgtMng ) );
+  MPName = get_dflt_int_par( intMPName );
+  MPlvl = get_dflt_int_par( intMPlvl );
+  MxAdd = get_dflt_int_par( intQPmp1 );
+  MxRmv = get_dflt_int_par( intQPmp2 );
+  algo = get_dflt_int_par( intOSImp1 );
+  reduction = get_dflt_int_par( intOSImp2 );
+  threads = get_dflt_int_par( intOSImp3 );
 
   MaxTime = CDASolver::get_dflt_dbl_par( dblMaxTime );
   RelAcc = CDASolver::get_dflt_dbl_par( dblRelAcc );
   AbsAcc = CDASolver::get_dflt_dbl_par( dblAbsAcc );
   EveryTTm = CDASolver::get_dflt_dbl_par( dblEveryTTm );
-  NZEps = dflt_dbl_par[ dblNZEps - dblLastParCDAS ];
-  tStar = dflt_dbl_par[ dbltStar - dblLastParCDAS ];
-  MinNrEvls = dflt_dbl_par[ dblMinNrEvls - dblLastParCDAS ];
-  m1 = dflt_dbl_par[ dblm1 - dblLastParCDAS ];
-  m2 = dflt_dbl_par[ dblm2 - dblLastParCDAS ];
-  m3 = dflt_dbl_par[ dblm3 - dblLastParCDAS ];
-  mxIncr = dflt_dbl_par[ dblmxIncr - dblLastParCDAS ];
-  mnIncr = dflt_dbl_par[ dblmnIncr - dblLastParCDAS ];
-  mxDecr = dflt_dbl_par[ dblmxDecr - dblLastParCDAS ];
-  mnDecr = dflt_dbl_par[ dblmnDecr - dblLastParCDAS ];
-  tMaior = dflt_dbl_par[ dbltMaior - dblLastParCDAS ];
-  tMinor = dflt_dbl_par[ dbltMinor - dblLastParCDAS ];
-  tInit = dflt_dbl_par[ dbltInit - dblLastParCDAS ];
-  tSPar2 = dflt_dbl_par[ dbltSPar2 - dblLastParCDAS ];
-  tSPar3 = dflt_dbl_par[ dbltSPar3 - dblLastParCDAS ];
-  CtOff = dflt_dbl_par[ dblCtOff - dblLastParCDAS ];
+  NZEps = get_dflt_dbl_par( dblNZEps );
+  tStar = get_dflt_dbl_par( dbltStar );
+  MinNrEvls = get_dflt_dbl_par( dblMinNrEvls );
+  m1 = get_dflt_dbl_par( dblm1 );
+  m2 = get_dflt_dbl_par( dblm2 );
+  m3 = get_dflt_dbl_par( dblm3 );
+  mxIncr = get_dflt_dbl_par( dblmxIncr );
+  mnIncr = get_dflt_dbl_par( dblmnIncr );
+  mxDecr = get_dflt_dbl_par( dblmxDecr );
+  mnDecr = get_dflt_dbl_par( dblmnDecr );
+  tMaior = get_dflt_dbl_par( dbltMaior );
+  tMinor = get_dflt_dbl_par( dbltMinor );
+  tInit = get_dflt_dbl_par( dbltInit );
+  tSPar2 = get_dflt_dbl_par( dbltSPar2 );
+  tSPar3 = get_dflt_dbl_par( dbltSPar3 );
+  CtOff = get_dflt_dbl_par( dblCtOff );
 
   v_events.resize( max_event_number() );
   }
@@ -1769,6 +1769,33 @@ public:
 /*--------------------------------------------------------------------------*/
  
  [[nodiscard]] int get_dflt_int_par( idx_type par ) const override {
+  static const std::array< int , 22 > dflt_int_par = {
+    10 ,  // intBPar1
+   100 ,  // intBPar2
+     1 ,  // intBPar3
+     1 ,  // intBPar4
+     0 ,  // intBPar6
+     3 ,  // intBPar7
+     0 ,  // intMnSSC
+     3 ,  // intMnNSC
+    12 ,  // inttSPar1
+     2 ,  // intMaxNrEvls
+     1 ,  // intDoEasy
+     2 ,  // intWZNorm
+     0 ,  // intFrcLstSS
+     0 ,  // intTrgtMng
+     0 ,  // intMPName
+     0 ,  // intMPlvl
+     0 ,  // intQPmp1
+     0 ,  // intQPmp2
+     4 ,  // intOSImp1
+     0 ,  // intOSImp2
+     1 ,  // intOSImp3
+     2    // intRstAlg, default value:
+          // RstAlg = 0  -  reset algorithmic parameters
+          // RstCrr = 1  -  set current point to using values of the Variable
+     };
+
   if( ( par >= intLastParCDAS ) && ( par < intLastBndSlvPar ) )
    return( dflt_int_par[ par - intLastParCDAS ] );
 
@@ -1778,6 +1805,26 @@ public:
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  
  [[nodiscard]] double get_dflt_dbl_par( idx_type par ) const override {
+  static const std::array< double , 17 > dflt_dbl_par = {
+   0 ,      // dblNZEps
+   1e+2 ,   // dbltStar
+   0 ,      // dblMinNrEvls
+   30 ,     // dblBPar5
+   0.01 ,   // dblm1
+   0.99 ,   // dblm2
+   0.99 ,   // dblm3
+   10 ,     // dblmxIncr
+   1.5 ,    // dblmnIncr
+   0.1 ,    // dblmxDecr
+   0.66 ,   // dblmmDecr
+   1e+6 ,   // dbltMaior
+   1e-6,    // dbltMinor
+   1 ,      // dbltInit
+   1e-3 ,   // dbltSPar2
+   0 ,      // dbltSPar3
+   1e-1     // dblCtOff
+   };
+
   if( ( par >= dblLastParCDAS ) && ( par < dblLastBndSlvPar ) )
    return( dflt_dbl_par[ par - dblLastParCDAS ] );
 
@@ -1851,6 +1898,31 @@ public:
 
  [[nodiscard]] idx_type int_par_str2idx( const std::string & name )
   const override {
+  static const std::map< std::string , idx_type > int_pars_map = {
+   { "intBPar1" , BundleSolver::intBPar1  } ,
+   { "intBPar2" , BundleSolver::intBPar2  } ,
+   { "intBPar3" , BundleSolver::intBPar3 } ,
+   { "intBPar4" , BundleSolver::intBPar4 } ,
+   { "intBPar6" , BundleSolver::intBPar6 } ,
+   { "intBPar7" , BundleSolver::intBPar7 } ,
+   { "intMnSSC" , BundleSolver::intMnSSC } ,
+   { "intMnNSC" , BundleSolver::intMnNSC } ,
+   { "inttSPar1" , BundleSolver::inttSPar1 } ,
+   { "intMaxNrEvls" , BundleSolver::intMaxNrEvls } ,
+   { "intDoEasy" , BundleSolver::intDoEasy } ,
+   { "intWZNorm" , BundleSolver::intWZNorm } ,
+   { "intFrcLstSS" , BundleSolver::intFrcLstSS } ,
+   { "intTrgtMng" , BundleSolver::intTrgtMng } ,
+   { "intMPName" , BundleSolver::intMPName } ,
+   { "intMPlvl" , BundleSolver::intMPlvl } ,
+   { "intQPmp1" , BundleSolver::intQPmp1 } ,
+   { "intQPmp2" , BundleSolver::intQPmp2 } ,
+   { "intOSImp1" , BundleSolver::intOSImp1 } ,
+   { "intOSImp2" , BundleSolver::intOSImp2 } ,
+   { "intOSImp3" , BundleSolver::intOSImp3 } ,
+   { "intRstAlg" , BundleSolver::intRstAlg } ,
+   };
+
   const auto it = int_pars_map.find( name );
   if( it != int_pars_map.end() )
    return( it->second );
@@ -1862,6 +1934,26 @@ public:
 
  [[nodiscard]] idx_type dbl_par_str2idx( const std::string & name )
   const override {
+  static const std::map< std::string , idx_type > dbl_pars_map = {
+   { "dblNZEps" , BundleSolver::dblNZEps } ,
+   { "dbltStar" , BundleSolver::dbltStar } ,
+   { "dblMinNrEvls" , BundleSolver::dblMinNrEvls } ,
+   { "dblBPar5" , BundleSolver::dblBPar5 } ,
+   { "dblm1" , BundleSolver::dblm1 } ,
+   { "dblm2" , BundleSolver::dblm2 } ,
+   { "dblm3" , BundleSolver::dblm3 } ,
+   { "dblmxIncr" , BundleSolver::dblmxIncr } ,
+   { "dblmnIncr" , BundleSolver::dblmnIncr } ,
+   { "dblmxDecr" , BundleSolver::dblmxDecr } ,
+   { "dblmnDecr" , BundleSolver::dblmnDecr } ,
+   { "dbltMaior" , BundleSolver::dbltMaior } ,
+   { "dbltMinor" , BundleSolver::dbltMinor } ,
+   { "dbltInit" , BundleSolver::dbltInit } ,
+   { "dbltSPar2" , BundleSolver::dbltSPar2 } ,
+   { "dbltSPar3" , BundleSolver::dbltSPar3 } ,
+   { "dblCtOff" , BundleSolver::dblCtOff }
+   };
+
   const auto it = dbl_pars_map.find( name );
   if( it != dbl_pars_map.end() )
    return( it->second );
@@ -1905,6 +1997,13 @@ public:
 
  [[nodiscard]] const std::string & int_par_idx2str( idx_type idx )
   const override {
+  static const std::array< std::string , 22 > int_pars_str = {
+   "intBPar1" , "intBPar2" , "intBPar3" , "intBPar4" , "intBPar6" ,
+   "intBPar7" , "intMnSSC" , "intMnNSC" , "inttSPar1" , "intMaxNrEvls" ,
+   "intDoEasy" , "intWZNorm" , "intFrcLstSS" , "intTrgtMng" , "intMPName" ,
+   "intMPlvl" , "intQPmp1" , "intQPmp2", "OSImp1" , "OSImp2" , "OSImp3" ,
+   "intRstAlg"  };
+
   if( ( idx >= intLastParCDAS ) && ( idx < intLastBndSlvPar ) )
    return( int_pars_str[ idx - intBPar1 ] );
 
@@ -1915,7 +2014,13 @@ public:
 
  [[nodiscard]] const std::string & dbl_par_idx2str( idx_type idx )
   const override {
-  if( ( idx >= dblLastParCDAS ) && ( idx < dblLastBndSlvPar ) )
+  static const std::array< std::string , 17 > dbl_pars_str = {
+   "dblNZEps" , "dbltStar" , "dblMinNrEvls" , "dblBPar5" , "dblm1" ,
+   "dblm2" , "dblm3" , "dblmxIncr" , "dblmnIncr" , "dblmxDecr" ,
+   "dblmnDecr" , "dbltMaior" , "dbltMinor" , "dbltInit" , "dbltSPar2" ,
+   "dbltSPar3" , "dblCtOff" };
+
+ if( ( idx >= dblLastParCDAS ) && ( idx < dblLastBndSlvPar ) )
    return( dbl_pars_str[ idx - dblLastParCDAS ] );
 
   return( CDASolver::dbl_par_idx2str( idx ) );
@@ -1925,6 +2030,9 @@ public:
 
  [[nodiscard]] const std::string & str_par_idx2str( idx_type idx )
   const override {
+  static const std::array< std::string , 2 > str_pars_str = {
+   "strEasyCfg" , "strHardCfg" };
+
   if( ( idx >= strLastParCDAS ) && ( idx < strLastBndSlvPar ) )
    return( str_pars_str[ idx - strLastParCDAS ] );
 
@@ -2673,29 +2781,6 @@ public:
 
  std::chrono::time_point< std::chrono::system_clock > c_start;
  ///< starting instant of last call to compute()
-
- // static fields - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
- const static std::vector< int > dflt_int_par;
- ///< the (static const) vector of int parameters default values
-
- const static std::vector< double > dflt_dbl_par;
- ///< the (static const) vector of double parameters default values
-
- const static std::vector< std::string > int_pars_str;
- ///< the (static const) vector of int parameters names
-
- const static std::vector< std::string > dbl_pars_str;
- ///< the (static const) vector of double parameters names
-
- const static std::vector< std::string > str_pars_str;
- ///< the (static const) vector of string parameters names
-
- const static std::map< std::string , idx_type > int_pars_map;
-  ///< the (static const) map for int parameters names
-
- const static std::map< std::string , idx_type > dbl_pars_map;
- ///< the (static const) map for double parameters names
 
 /*--------------------------------------------------------------------------*/
 /*--------------------- PRIVATE PART OF THE CLASS --------------------------*/
