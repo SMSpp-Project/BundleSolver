@@ -2010,50 +2010,169 @@ void BundleSolver::set_log( std::ostream * log_stream )
 /*---------------------- METHODS FOR READING RESULTS -----------------------*/
 /*--------------------------------------------------------------------------*/
 
+void BundleSolver::get_var_solution( Configuration *solc ) 
+{
+ // first take the values of the ColVariable in the Block
+
+ if( ( MaxSol > 1 ) && ( UpFiBest < UpRifFi.back() ) ) {
+  for( Index i = 0 ; i < NumVar ; i++ )
+   LamVcblr[ i ]->set_value( LmbdBst[ i ] );
+  }
+ else
+  for( Index i = 0 ; i < NumVar ; i++ )
+   LamVcblr[ i ]->set_value( Lambda[ i ] );
+
+ // now, if so instructed, also take the dual optimal solutions of the
+ // chosen easy components
+
+ auto c = dynamic_cast< SimpleConfiguration< std::vector<
+                                    std::pair< int , int > > > * >( solc );
+ if( ! c )
+  return;
+
+ for( auto p : c->f_value ) {
+  if( ( p.first < 0 ) || ( p.first >= NrFi ) )
+   throw( std::invalid_argument( "get_var_solution: invalid index " +
+				 std::to_string( p.first ) ) );
+  if( ! IsEasy[ p.first ] )
+   throw( std::invalid_argument( "get_var_solution: " +
+				 std::to_string( p.first ) + " not easy" ) );
+  if( p.second & 1 )
+   get_var_solution_easy_pi( p.first );
+
+  if( p.second & 2 )
+   get_var_solution_easy_rc( p.first );
+  }
+ }  // end( BundleSolver::get_var_solution )
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::get_var_solution_easy_pi( Index k )
+{
+ auto nr = IsEasy[ k ]->get_numrows();
+ std::vector< double > pi( nr );
+
+ cHpRow DE = Master->ReadDualEasy( k + 1 );
+
+ for( int i = 0 ; i < nr ; ++i )
+  pi[ i ] = DE[ i ];
+ 
+ IsEasy[ k ]->write_dual_solution( pi , {} );
+
+ }  // end( BundleSolver::get_var_solution_easy_pi() )
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::get_var_solution_easy_rc( Index k )
+{
+ auto nc = IsEasy[ k ]->get_numcols();
+ std::vector< double > rc( nc );
+
+ cHpRow RCE = Master->ReadReducedCostsEasy( k + 1 );
+
+ for( int i = 0 ; i < nc ; ++i )
+  rc[ i ] = RCE[ i ];
+ 
+ IsEasy[ k ]->write_dual_solution( {} , rc );
+
+ }  // end( BundleSolver::get_var_solution_easy_pi() )
+
+/*--------------------------------------------------------------------------*/
+
 void BundleSolver::get_dual_solution( Configuration * solc )
 {
- // construct the important linearization for each non-easy component (unless
- // it is already there, and signal to the C05Functions which one it is
+ if( auto c = dynamic_cast< SimpleConfiguration< std::vector< int > > * >(
+								  solc ) ) {
+  for( auto k : c->f_value ) {
+   if( ( k < 0 ) || ( k >= NrFi ) )
+    throw( std::invalid_argument( "get_dual_solution: invalid index " +
+				  std::to_string( k ) ) );
 
- for( Index k = 0 ; k < NrFi ; ++k )         // for all components
-  if( ( ! NrEasy ) || ( ! IsEasy[ k ] ) ) {  // but skip the easy ones
-   C05Function::LinearCombination lc;
+   if( NrEasy && ( ! IsEasy[ k ] ) )
+    get_dual_solution_hard( k );
+   else
+    get_dual_solution_easy( k );
+   }
 
-   if( Zvalid[ k ] ) {
-    // the optimal aggregated linearization for component k is in the
-    // bundle (and, therefore, global pool) already: the optimal
-    // coefficients are very simple, it's just that one
-    lc.resize( 1 );
-    lc[ 0 ].first = ItemVcblr[ whisZ[ k ] ].second;
-    lc[ 0 ].second = 1;
-    }
-   else {
-    // retrieve optimal multipliers from the Master
-    Index MBDm;
-    cIndex_Set MBse;
-    cHpRow Mlt = Master->ReadMult( MBse , MBDm , k + 1 , false );
+  return;
+  }
 
-    // copy them in the LinearCombination
-    lc.resize( MBDm );
-    auto lcit = lc.begin();
-
-    if( MBse )
-     for( Index h ; ( h = *(MBse++) ) < InINF ; ) {
-      lcit->first = ItemVcblr[ h ].second;
-      (lcit++)->second = *(Mlt++);
-      }
-    else
-     for( Index h = 0 ; h < MBDm ; ) {
-      lcit->first = ItemVcblr[ h++ ].second;
-      (lcit++)->second = *(Mlt++);
-      }
-    }
-
-   v_c05f[ k ]->set_important_linearization( std::move( lc ) );
-
-   }  // end( if( not easy ) )
+ if( NrEasy ) {
+  for( Index k = 0 ; k < NrFi ; ++k )
+   if( IsEasy[ k ] )
+    get_dual_solution_easy( k );
+   else
+    get_dual_solution_hard( k );
+  }
+ else
+  for( Index k = 0 ; k < NrFi ; ++k )
+   get_dual_solution_hard( k );
 
  }  // end( BundleSolver::get_dual_solution() )
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::get_dual_solution_easy( Index k )
+{
+ auto nc = IsEasy[ k ]->get_numcols();
+ std::vector< double > x( nc );
+ 
+ Index MBDm;
+ cIndex_Set MBse;
+ cHpRow Mlt = Master->ReadMult( MBse , MBDm , k + 1 , false );
+
+ if( MBDm != nc )
+  throw( std::logic_error( "get_dual_solution_easy: size mismatch" ) );
+
+ for( int i = 0 ; i < nc ; ++i )
+  x[ i ] = Mlt[ i ];
+ 
+ IsEasy[ k ]->write_var_solution( x );
+
+ }  // end( BundleSolver::get_dual_solution_easy() )
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::get_dual_solution_hard( Index k )
+{
+ // construct the important linearization for the non-easy component (unless
+ // it is already there, and signal to the C05Functions which one it is
+
+ C05Function::LinearCombination lc;
+
+ if( Zvalid[ k ] ) {
+  // the optimal aggregated linearization for component k is in the
+  // bundle (and, therefore, global pool) already: the optimal
+  // coefficients are very simple, it's just that one
+  lc.resize( 1 );
+  lc[ 0 ].first = ItemVcblr[ whisZ[ k ] ].second;
+  lc[ 0 ].second = 1;
+  }
+ else {
+  // retrieve optimal multipliers from the Master
+  Index MBDm;
+  cIndex_Set MBse;
+  cHpRow Mlt = Master->ReadMult( MBse , MBDm , k + 1 , false );
+
+  // copy them in the LinearCombination
+  lc.resize( MBDm );
+  auto lcit = lc.begin();
+
+  if( MBse )
+   for( Index h ; ( h = *(MBse++) ) < InINF ; ) {
+    lcit->first = ItemVcblr[ h ].second;
+    (lcit++)->second = *(Mlt++);
+    }
+  else
+   for( Index h = 0 ; h < MBDm ; ) {
+    lcit->first = ItemVcblr[ h++ ].second;
+    (lcit++)->second = *(Mlt++);
+    }
+  }
+
+ v_c05f[ k ]->set_important_linearization( std::move( lc ) );
+
+ }  // end( BundleSolver::get_dual_solution_hard() )
 
 /*--------------------------------------------------------------------------*/
 

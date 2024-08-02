@@ -1535,40 +1535,76 @@ public:
 
 /*--------------------------------------------------------------------------*/
  /// write the "current" solution
+ /** Write the  "current" optimal solution in the Block. There are two
+  * different pieces of optimal solution:
+  *
+  * - The optimal values of the ColVariable in the Block;
+  *
+  * - If some of the C05Function are LagBFunction and are handled as "easy"
+  *   components, the primal optimal solution of the dual problem that
+  *   BundleSolver is using is actually the dual optimal solution of the
+  *   constraints in the master problem, and the reduced costs of the
+  *   variables, that represent that component; this can be is fished out
+  *   of the master problem and directly written in the Block inside the
+  *   LagBFunction.
+  *
+  * If \p solc is nullptr, then only the optimal values of the ColVariable
+  * in the Block are written.  Otherwise, \p solc must be a pointer to a 
+  * SimpleConfiguration< std::vector< std::pair< int , int > > >, assuming
+  * to contain pairs < i , h > such that:
+  *
+  * - i is the index of an easy components of which the dual solution has
+  *   to be written
+  *
+  * - h is coded bit-wise, with the first bit (+1) representing if the
+  *   dual variables need be taken, and the second bit (+2) is the
+  *   reduced costs need be taken.
+  */
 
- void get_var_solution( Configuration *solc = nullptr ) override
- {
-  if( ( MaxSol > 1 ) && ( UpFiBest < UpRifFi.back() ) ) {
-   for( Index i = 0 ; i < NumVar ; i++ )
-    LamVcblr[ i ]->set_value( LmbdBst[ i ] );
-   }
-  else
-   for( Index i = 0 ; i < NumVar ; i++ )
-    LamVcblr[ i ]->set_value( Lambda[ i ] );
-  }
+ void get_var_solution( Configuration *solc = nullptr ) override;
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+
+ void get_var_solution_easy_pi( Index k );
+
+ void get_var_solution_easy_rc( Index k );
+
+/*--------------------------------------------------------------------------*/
  /// write the "current" dual solution
- /** Write the  "current" dual optimal solution in the Block. This is the
-  * done by taking the optimal solution of the master problem for each
-  * component and writing is as the "important linearization" of that
-  * component; this is unless the optimal aggregate linearization has been
-  * inserted in the bundle for other reasons (making space in a full bundle),
-  * in which case the coefficients of the "important linearization" of that
-  * component are just < 1 , index of the optimal aggregate linearization >.
+ /** Write the  "current" dual optimal solution in the Block. This is done
+  * in two different ways for "easy" and "not easy" components:
   *
-  *     IMPORTANT NOTE: THIS CURRENTLY ONLY WORKS FOR "HARD" COMPONENTS, AND
-  *     THERE IS NO WAY TO GET THE DUAL OPTIMAL SOLUTION FOR "EASY" ONES.
+  * - for "not easy" ones, the optimal solution of the master problem for 
+  *   that component, which is a set of convex multipliers associated to
+  *   the linearizations currently in the pool, is used for forming the
+  *   "important linearization" of that component and adding them to the
+  *   corresponding linearizations pool; this is unless the optimal
+  *   aggregate linearization has been inserted in the bundle for other 
+  *   reasons (making space in a full bundle), in which case the
+  *   coefficients of the "important linearization" of that component are
+  *   just < 1 , index of the optimal aggregate linearization > (that is,
+  *   this costs nothing);
   *
-  * Doing that is in principle possible, because the dual optimal solution is
-  * indeed computed by the master problem. But taking the solution from the
-  * OSIMPSolver and writing it back in the original Block requires some
-  * support that MILPSolver does not provide, and it's complicated, so it
-  * is not implemented. This will hopefully be cleanly solved when
-  * OSIMPSolver will be rightly consigned to the dustbin of history. */
+  * - for "easy" components, the dual solution for the dual problem that
+  *   BundleSolver is solving is actually the primal optimal solution of
+  *   the master problem for the variables that represent that component;
+  *   this is fished out of the master problem and directly written in the
+  *   Block inside the LagBFunction.
+  *
+  * If \p solc is nullptr, then the solution for all components is written.
+  * Otherwise, \p solc must be a pointer to a 
+  * SimpleConfiguration< std::vector< int > >, assuming to contain the
+  * indices of the components of which the primal solution has to be written.
+  */
 
  void get_dual_solution( Configuration *solc = nullptr ) override;
 
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+
+ void get_dual_solution_easy( Index k );
+
+ void get_dual_solution_hard( Index k );
+ 
 /*--------------------------------------------------------------------------*/
 
  bool new_var_solution( void ) override
