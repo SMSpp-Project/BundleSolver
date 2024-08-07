@@ -100,8 +100,15 @@ if (Osi_OsiGrb_FOUND)
     # ... and if WHICH_OSI_QP is *not* given in input as CMake option...
     # (`NOT DEFINED WHICH_OSI_QP` tests `set( )`, not `add_compile_definitions( )`)
     if (NOT DEFINED WHICH_OSI_QP)
-        # ... then use OsiGrb in BundleSolver
-        set(TEMP_WHICH_OSI_QP 2)
+        # ... and if the gurobi.lic file is in the path
+        if (GUROBI_LICENSE_FOUND)
+            # ... then use OsiGrb in BundleSolver
+            set(TEMP_WHICH_OSI_QP 2)
+        else ()
+            message(WARNING "OsiGrb found, but Gurobi license file environment \
+                             variable $GRB_LICENSE_FILE not defined, \
+                             setting WHICH_OSI_QP to CPLEX.")
+        endif ()
     endif ()
 endif ()
 

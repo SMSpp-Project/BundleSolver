@@ -125,6 +125,35 @@ else ()
     # Debug library
     set(GUROBI_LIBRARY_DEBUG ${GUROBI_LIBRARY})
 
+    # ----- Check the GUROBI license ---------------------------------------- #
+
+    # Define the path to the Gurobi script
+    if (UNIX)
+        set(GUROBI_SCRIPT "${GUROBI_DIR}/bin/gurobi.sh")
+    elseif (WIN32)
+        set(GUROBI_SCRIPT "${GUROBI_DIR}/bin/gurobi.bat")
+    endif ()
+
+    # Execute the Gurobi script and capture the output
+    if (EXISTS ${GUROBI_SCRIPT})
+        execute_process(
+                COMMAND ${GUROBI_SCRIPT}
+                OUTPUT_VARIABLE GUROBI_OUTPUT
+                ERROR_VARIABLE GUROBI_ERROR_OUTPUT
+                OUTPUT_STRIP_TRAILING_WHITESPACE
+        )
+
+        # Check if the output contains the pattern "No Gurobi license found"
+        if ("${GUROBI_OUTPUT}" MATCHES "No Gurobi license found")
+            set(GUROBI_LICENSE_FOUND FALSE)
+        else ()
+            set(GUROBI_LICENSE_FOUND TRUE)
+        endif ()
+    else ()
+        set(GUROBI_LICENSE_FOUND FALSE)
+        message(WARNING "Gurobi script not found: ${GUROBI_SCRIPT}")
+    endif ()
+
     # ----- Parse the version ----------------------------------------------- #
     if (GUROBI_INCLUDE_DIR)
         file(STRINGS
