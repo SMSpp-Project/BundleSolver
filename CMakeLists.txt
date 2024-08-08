@@ -105,9 +105,8 @@ if (Osi_OsiGrb_FOUND)
             # ... then use OsiGrb in BundleSolver
             set(TEMP_WHICH_OSI_QP 2)
         else ()
-            message(WARNING "OsiGrb found, but Gurobi license file environment \
-                             variable $GRB_LICENSE_FILE not defined, \
-                             setting WHICH_OSI_QP to CPLEX.")
+            message(WARNING "Gurobi license file gurobi.lic not found in default\
+                             directory ${GUROBI_ROOT}, setting WHICH_OSI_QP to CPLEX.")
         endif ()
     endif ()
 endif ()

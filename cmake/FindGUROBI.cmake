@@ -9,6 +9,7 @@
 #    The results are stored in the following variables:                       #
 #                                                                             #
 #        GUROBI_FOUND         - True if headers are found                     #
+#        GUROBI_LICENSE_FOUND - True if gurobi.lic file is found              #
 #        GUROBI_INCLUDE_DIRS  - Include directories                           #
 #        GUROBI_LIBRARIES     - Libraries to be linked                        #
 #        GUROBI_VERSION       - Version number                                #
@@ -125,33 +126,31 @@ else ()
     # Debug library
     set(GUROBI_LIBRARY_DEBUG ${GUROBI_LIBRARY})
 
-    # ----- Check the GUROBI license ---------------------------------------- #
+    # ----- Find the GUROBI license ----------------------------------------- #
+    set(GUROBI_LICENSE_FOUND FALSE)
 
-    # Define the path to the Gurobi script
     if (UNIX)
-        set(GUROBI_SCRIPT "${GUROBI_DIR}/bin/gurobi.sh")
+        if (APPLE)
+            set(LICENSE_PATHS ${GUROBI_ROOT} "/Users/$ENV{USER}")
+        else ()
+            set(LICENSE_PATHS ${GUROBI_ROOT} "/home/$ENV{USER}")
+        endif ()
     elseif (WIN32)
-        set(GUROBI_SCRIPT "${GUROBI_DIR}/bin/gurobi.bat")
+        set(LICENSE_PATHS ${GUROBI_ROOT} "C:/Users/$ENV{USERNAME}")
     endif ()
 
-    # Execute the Gurobi script and capture the output
-    if (EXISTS ${GUROBI_SCRIPT})
-        execute_process(
-                COMMAND ${GUROBI_SCRIPT}
-                OUTPUT_VARIABLE GUROBI_OUTPUT
-                ERROR_VARIABLE GUROBI_ERROR_OUTPUT
-                OUTPUT_STRIP_TRAILING_WHITESPACE
-        )
-
-        # Check if the output contains the pattern "No Gurobi license found"
-        if ("${GUROBI_OUTPUT}" MATCHES "No Gurobi license found")
-            set(GUROBI_LICENSE_FOUND FALSE)
-        else ()
+    foreach (path ${LICENSE_PATHS})
+        if (EXISTS "${path}/gurobi.lic")
             set(GUROBI_LICENSE_FOUND TRUE)
+            message(STATUS "Gurobi license file found at: ${path}/gurobi.lic")
+            break()
         endif ()
-    else ()
-        set(GUROBI_LICENSE_FOUND FALSE)
-        message(WARNING "Gurobi script not found: ${GUROBI_SCRIPT}")
+    endforeach ()
+
+    if (NOT GUROBI_LICENSE_FOUND)
+        message(WARNING "Gurobi license file not found in default locations.\
+                         Cannot access the $GRB_LICENSE_FILE environment variable.\
+                         Move the gurobi.lic file to one of the default paths, i.e.: ${LICENSE_PATHS}")
     endif ()
 
     # ----- Parse the version ----------------------------------------------- #
