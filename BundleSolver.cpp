@@ -1377,6 +1377,8 @@ void BundleSolver::set_Block( Block * block )
   IsEasy.resize( NrFi , nullptr );
   auto NEit = NoEasy.begin();
   for( Index k = 0 ; k < NrFi ; ++k ) {
+   // check if component k is marked as being forbidden to be easy (this
+   // assumes NoEasy ordered in increasing sense and without duplications)
    if( ( NEit != NoEasy.end() ) && ( Index( *NEit ) == k ) ) {
     ++NEit;
     continue;
@@ -2029,7 +2031,7 @@ void BundleSolver::get_var_solution( Configuration *solc )
  if( auto c = dynamic_cast< SimpleConfiguration< std::vector<
                                    std::pair< int , int > > > * >( solc ) ) {
   for( auto p : c->f_value ) {
-   if( ( p.first < 0 ) || ( p.first >= NrFi ) )
+   if( ( p.first < 0 ) || ( p.first >= int( NrFi ) ) )
     throw( std::invalid_argument( "get_var_solution: invalid index " +
 				  std::to_string( p.first ) ) );
    if( ! IsEasy[ p.first ] )
@@ -2103,7 +2105,7 @@ void BundleSolver::get_dual_solution( Configuration * solc )
  if( auto c = dynamic_cast< SimpleConfiguration< std::vector< int > > * >(
 								  solc ) ) {
   for( auto k : c->f_value ) {
-   if( ( k < 0 ) || ( k >= NrFi ) )
+   if( ( k < 0 ) || ( k >= int( NrFi ) ) )
     throw( std::invalid_argument( "get_dual_solution: invalid index " +
 				  std::to_string( k ) ) );
 
@@ -2140,7 +2142,7 @@ void BundleSolver::get_dual_solution_easy( Index k )
  cIndex_Set MBse;
  cHpRow Mlt = Master->ReadMult( MBse , MBDm , k + 1 , false );
 
- if( MBDm != nc )
+ if( MBDm != Index( nc ) )
   throw( std::logic_error( "get_dual_solution_easy: size mismatch" ) );
 
  for( int i = 0 ; i < nc ; ++i )
