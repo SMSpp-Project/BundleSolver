@@ -2023,25 +2023,44 @@ void BundleSolver::get_var_solution( Configuration *solc )
    LamVcblr[ i ]->set_value( Lambda[ i ] );
 
  // now, if so instructed, also take the dual optimal solutions of the
- // chosen easy components
+ // (chosen) easy components
 
- auto c = dynamic_cast< SimpleConfiguration< std::vector<
-                                    std::pair< int , int > > > * >( solc );
- if( ! c )
+ // case where a subset of (easy) components is specified
+ if( auto c = dynamic_cast< SimpleConfiguration< std::vector<
+                                   std::pair< int , int > > > * >( solc ) ) {
+  for( auto p : c->f_value ) {
+   if( ( p.first < 0 ) || ( p.first >= NrFi ) )
+    throw( std::invalid_argument( "get_var_solution: invalid index " +
+				  std::to_string( p.first ) ) );
+   if( ! IsEasy[ p.first ] )
+    throw( std::invalid_argument( "get_var_solution: " +
+				  std::to_string( p.first ) + " not easy" ) );
+   if( p.second & 1 )
+    get_var_solution_easy_pi( p.first );
+
+   if( p.second & 2 )
+    get_var_solution_easy_rc( p.first );
+   }
+
   return;
+  }
 
- for( auto p : c->f_value ) {
-  if( ( p.first < 0 ) || ( p.first >= NrFi ) )
-   throw( std::invalid_argument( "get_var_solution: invalid index " +
-				 std::to_string( p.first ) ) );
-  if( ! IsEasy[ p.first ] )
-   throw( std::invalid_argument( "get_var_solution: " +
-				 std::to_string( p.first ) + " not easy" ) );
-  if( p.second & 1 )
-   get_var_solution_easy_pi( p.first );
+ // case "all the easy components"
+ if( auto c = dynamic_cast< SimpleConfiguration< int > * >( solc ) ) {
+  auto h = c->f_value;
+  if( ! ( h & 3 ) )  // it'd be funny, but ...
+   return;
 
-  if( p.second & 2 )
-   get_var_solution_easy_rc( p.first );
+  for( Index i = 0 ; i < NrFi ; ++i )
+   if( IsEasy[ i ] ) {
+    if( h & 1 )
+     get_var_solution_easy_pi( i );
+
+    if( h & 2 )
+     get_var_solution_easy_rc( i );
+    }
+
+  return;
   }
  }  // end( BundleSolver::get_var_solution )
 

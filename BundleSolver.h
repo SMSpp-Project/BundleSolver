@@ -1544,22 +1544,32 @@ public:
   *   components, the primal optimal solution of the dual problem that
   *   BundleSolver is using is actually the dual optimal solution of the
   *   constraints in the master problem, and the reduced costs of the
-  *   variables, that represent that component; this can be is fished out
-  *   of the master problem and directly written in the Block inside the
-  *   LagBFunction.
+  *   variables, that represent that component; this can be fished out of
+  *   the master problem and written in the Block inside the LagBFunction.
+  *   (via the MILPSolver that is attached to it).
   *
   * If \p solc is nullptr, then only the optimal values of the ColVariable
-  * in the Block are written.  Otherwise, \p solc must be a pointer to a 
-  * SimpleConfiguration< std::vector< std::pair< int , int > > >, assuming
-  * to contain pairs < i , h > such that:
+  * in the Block are written. Otherwise, \p solc can be:
   *
-  * - i is the index of an easy components of which the dual solution has
-  *   to be written
+  * - a pointer to a
+  *   SimpleConfiguration< std::vector< std::pair< int , int > > >, assumed
+  *   to contain pairs < i , h > such that:
   *
-  * - h is coded bit-wise, with the first bit (+1) representing if the
-  *   dual variables need be taken, and the second bit (+2) is the
-  *   reduced costs need be taken.
-  */
+  *   = i is the index of an "easy" component of which the dual solution has
+  *     to be written;
+  *
+  *   = h is coded bit-wise, with the first bit (+1) representing if the
+  *     dual variables need be written, and the second bit (+2) if the
+  *     reduced costs need be written;
+  *
+  *   note that indices i *must* be of "easy" components, otherwise an
+  *   exception will be thrown;
+  *
+  * - a pointer to a SimpleConfiguration< int > containing the number h with
+  *   the same meaning in the previous case (coded bit-wise, with the first
+  *   bit (+1) representing if the dual variables need be written, and the
+  *   second bit (+2) if the reduced costs need be written) which is applied
+  *   to *all easy* components. */
 
  void get_var_solution( Configuration *solc = nullptr ) override;
 
