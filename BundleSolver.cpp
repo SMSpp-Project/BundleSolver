@@ -2070,6 +2070,10 @@ void BundleSolver::get_var_solution( Configuration *solc )
 
 void BundleSolver::get_var_solution_easy_pi( Index k )
 {
+ if( ! ( ( DoEasy & 12 ) == 12 ) )
+  throw( std::logic_error(
+	      "intDoEasy & 12 == 12 required to get easy components pi" ) );
+ 
  auto nr = IsEasy[ k ]->get_numrows();
  std::vector< double > pi( nr );
 
@@ -2086,6 +2090,10 @@ void BundleSolver::get_var_solution_easy_pi( Index k )
 
 void BundleSolver::get_var_solution_easy_rc( Index k )
 {
+ if( ! ( DoEasy & 8 ) )
+  throw( std::logic_error( "intDoEasy & 8 required to get easy components rc"
+			   ) );
+
  auto nc = IsEasy[ k ]->get_numcols();
  std::vector< double > rc( nc );
 

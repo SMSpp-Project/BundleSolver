@@ -1569,7 +1569,16 @@ public:
   *   the same meaning in the previous case (coded bit-wise, with the first
   *   bit (+1) representing if the dual variables need be written, and the
   *   second bit (+2) if the reduced costs need be written) which is applied
-  *   to *all easy* components. */
+  *   to *all easy* components.
+  *
+  * IMPORTANT NOTE: getting access to dual variables / reduced costs of any
+  *                 easy component requires access to that component's
+  * description, which is *deleted if not needed* as dictated by intDoEasy.
+  * Hence, if reduced costs are required then ( intDoEasy & 8 ) must be true,
+  * if dual variables are required then *both* ( intDoEasy & 4 ) and
+  * ( intDoEasy & 8 ) must be true [due to the internal working of
+  * OSIMPSolver the information about reduced costs is required when
+  * getting dual variables, please don't ask ...]). */
 
  void get_var_solution( Configuration *solc = nullptr ) override;
 
