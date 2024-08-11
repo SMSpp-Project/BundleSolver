@@ -126,8 +126,7 @@ else ()
     # NDOFiOracle library, required by BundleSolver.
     # Requires CoinUtils, Osi and CPLEX.
     set(NDOFiOracle_READ_PATHS OFF CACHE BOOL
-                               "Whether NdoFiOracle will read locations for
-		                       dependencies or not." FORCE)
+        "Whether NdoFiOracle will read locations for dependencies or not." FORCE)
     add_subdirectory(NdoFiOracle)
 
     # Add the binary directory to RPATH, so executables that use
