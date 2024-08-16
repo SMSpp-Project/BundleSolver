@@ -85,17 +85,7 @@ else () # else if WHICH_OSI_QP is given in input as CMake option...
     endif ()
 endif ()
 
-# if Cplex is found...
-if (Osi_OsiCpx_FOUND)
-    # ... and if WHICH_OSI_QP is *not* given in input as CMake option...
-    # (`NOT DEFINED WHICH_OSI_QP` tests `set( )`, not `add_compile_definitions( )`)
-    if (NOT DEFINED WHICH_OSI_QP)
-        # ... then use OsiCpx in BundleSolver
-        set(TEMP_WHICH_OSI_QP 1)
-    endif ()
-endif ()
-
-# but, if also Gurobi is found...
+# if Gurobi is found...
 if (Osi_OsiGrb_FOUND)
     # ... and if WHICH_OSI_QP is *not* given in input as CMake option...
     # (`NOT DEFINED WHICH_OSI_QP` tests `set( )`, not `add_compile_definitions( )`)
@@ -108,6 +98,16 @@ if (Osi_OsiGrb_FOUND)
             message(WARNING "Gurobi license file gurobi.lic not found in default\
                              directory ${GUROBI_ROOT}, setting WHICH_OSI_QP to CPLEX.")
         endif ()
+    endif ()
+endif ()
+
+# but, if also Cplex is found...
+if (Osi_OsiCpx_FOUND)
+    # ... and if WHICH_OSI_QP is *not* given in input as CMake option...
+    # (`NOT DEFINED WHICH_OSI_QP` tests `set( )`, not `add_compile_definitions( )`)
+    if (NOT DEFINED WHICH_OSI_QP)
+        # ... then use OsiCpx in BundleSolver
+        set(TEMP_WHICH_OSI_QP 1)
     endif ()
 endif ()
 
