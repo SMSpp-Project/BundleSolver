@@ -978,7 +978,7 @@ public:
   *              at least one among the bits 0, 1 and 2 is 1.
   *
   * - intMPName [1]: bit-wise encoding of which MPSolver is used:
-  *                  bit 0: 0 = QPPenalty, 1 = OSiMPSolver
+  *                  bit 0: 0 = QPPenalty, 1 = OSIMPSolver
   *                  bit 1: 1 = OsiCpxInterface, 0 = OsiCLPInterface
   *                  bit 2: 1 = Quadratic, 0 = BoxStep
   *                  bit 3: 1 = CheckIdentical( true ) is called, 0 = not
@@ -2575,7 +2575,7 @@ public:
  Index TrgtMng;     ///< how targets on components are managed
 
  int MPName;        /**< bit 0 = 0: MP solver == QPPenalty
-		     * bit 0 = 1: MP == OSiMPSolver
+		     * bit 0 = 1: MP == OSIMPSolver
 		     * bit 1 = 1: Cplex, bit 1 = 0 CLP
 		     * bit 2 = 1: Quadratic, bit 2 = 0 BoxStep
 		     * + bit 3 = 1 (+8) = check for duplicates. */

@@ -2681,7 +2681,7 @@ void BundleSolver::FormD( void )
     * Master->Sett( t = std::max( t / 2 , tMinor ) );
     * continue;
     *
-    * However, currently BundleSolver only admits QPPenaltyMP or OSiMPSolver
+    * However, currently BundleSolver only admits QPPenaltyMP or OSIMPSolver
     * with either Quadratic or BoxStep stabilisation, which can never be
     * unbounded: hence, the MPSolver returning kUnbndd can only be a
     * numerical error in disguise. */
