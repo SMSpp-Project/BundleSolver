@@ -149,8 +149,8 @@ target_compile_features(${modName} PUBLIC cxx_std_17)
 # but should be added to anything that links to it.
 # Note: do not GLOB files here.
 target_sources(${modName} PRIVATE
-               BundleSolver.cpp
-               ParallelBundleSolver.cpp)
+               src/BundleSolver.cpp
+               src/ParallelBundleSolver.cpp)
 
 # When using target_include_directories(), PUBLIC means that any targets
 # that link to this target also need that include directory.
@@ -164,7 +164,7 @@ target_sources(${modName} PRIVATE
 # installed in the system will look into the INSTALL_INTERFACE path.
 target_include_directories(
         ${modName} PUBLIC
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:include/${modNamespace}>)
 
 # When linking other targets to the library with target_link_libraries(),
