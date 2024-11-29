@@ -122,7 +122,7 @@ BundleSolver::Index ParallelBundleSolver::InnerLoop( bool extrastep )
   *   takes its place, so that eventually the process ends.
   *
   * Note that gathering function values and linearizations from the evaluated
-  * components is done in the main thread and therefore it is a part of the
+  * components is done in the main thread, and therefore it is a part of the
   * sequential bottleneck; however, this is required since the master problem
   * and all the other BundleSolver data structures are not protected from
   * concurrent access. */
