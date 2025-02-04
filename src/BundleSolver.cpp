@@ -678,8 +678,8 @@ int BundleSolver::compute( bool changedvars )
     Master->SensitAnals( vl , vc );
 
     double tt;
-    if( - vl < Eps< HpNum >() )  // v( t ) is [almost] constant ==> D*_t [~]= 0
-     tt = tStar;                 // ==> the CP model is ~bounded
+    if( - vl < Eps< HpNum >() )  // v( t ) is [~] constant ==> D*_t [~]= 0
+     tt = tStar;                 // ==> the CP model is [~]bounded
     else
      tt = std::min( tStar , ( tSPar2 * EpsU * AFL * Nearly + vc ) /
 		            ( - vl ) );
@@ -847,8 +847,14 @@ int BundleSolver::compute( bool changedvars )
    // MPchgs == 0 (but this is acted upon right below) but not otherwise,
    // since a "normal" NS will be done which is the right thing to do
    BLOG( 1 , "            Fi1 defined ==> SS " << std::endl );
-   GotoLambda1();         // go to the feasible point
-   continue;              // and start the actual minimization of Fi()
+   GotoLambda1();              // go to the feasible point
+   if( ParIter >= MaxIter ) {  // if this was the last possible iteration
+    BLOG( 1 , " ~ stop due to max iter" << std::endl );
+    Result = kStopIter;
+    break;                     // main loop ends here
+    }
+   else
+    continue;                  // go start the actual minimization of Fi()
    }
 
   // check if noise reduction has to be done- - - - - - - - - - - - - - - - -
