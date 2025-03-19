@@ -1029,7 +1029,7 @@ int BundleSolver::compute( bool changedvars )
  // if necessary, force one last SS to the stability center - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- if( FrcLstSS && ( ! CmptdinL ) &&
+ if( ( FrcLstSS & 1 ) && ( ! CmptdinL ) &&
      ( ( Result == kOK ) || ( Result == kStopIter ) ||
        ( Result == kLowPrecision ) ) ) {
   BLOG( 1 , "            Recomputing the current point" << std::endl );
@@ -1751,9 +1751,7 @@ void BundleSolver::set_par( idx_type par , int value )
   case( intEverykIt ):
    EverykIt = value;
    break;
-  case( intLogVerb ):
-   LogVerb = value;
-   break;
+  case( intLogVerb ): LogVerb = value; break;
   case( intBPar1 ):
    if( value < 1 )
     throw( std::invalid_argument( "BPar1 must be >= 1" ) );
@@ -1780,27 +1778,13 @@ void BundleSolver::set_par( idx_type par , int value )
    if( BPar4 > BPar3 )
     BPar3 = BPar4;
    break;
-  case( intBPar6 ):
-   BPar6 = value;
-   break;
-  case( intBPar7 ):
-   BPar7 = value;
-   break;
-  case( intMnSSC ):
-   MnSSC = value;
-   break;
-  case( intMnNSC ):
-   MnNSC = value;
-   break;
-  case( inttSPar1 ):
-   tSPar1 = value;
-   break;
-  case( intMaxNrEvls ):
-   MaxNrEvls = value;
-   break;
-  case( intDoEasy ):
-   DoEasy = char( value & 15 );
-   break;
+  case( intBPar6 ): BPar6 = value; break;
+  case( intBPar7 ): BPar7 = value; break;
+  case( intMnSSC ): MnSSC = value; break;
+  case( intMnNSC ): MnNSC = value; break;
+  case( inttSPar1 ): tSPar1 = value; break;
+  case( intMaxNrEvls ): MaxNrEvls = value; break;
+  case( intDoEasy ): DoEasy = char( value & 15 ); break;
   case( intWZNorm ):
    if( WZNorm != char( value ) ) {
     WZNorm = char( value );
@@ -1810,26 +1794,16 @@ void BundleSolver::set_par( idx_type par , int value )
      NrmZFctr = INFshift;    // factor to be computed
     }
    break;
-  case( intFrcLstSS ):
-   FrcLstSS = bool( value );
-   break;
-  case( intTrgtMng ):
-   TrgtMng = Index( value );
-   break;
+  case( intFrcLstSS ): FrcLstSS = value; break;
+  case( intTrgtMng ):  TrgtMng = Index( value ); break;
   case( intMPName ):
    if( ( value < 0 ) || ( value > 15 ) )
     throw( std::invalid_argument( "MPName must be in [0, 15]" ) );
    MPName = value;
    break;
-  case( intMPlvl ):
-   MPlvl = value;
-   break;
-  case( intQPmp1 ):
-   MxAdd = value;
-   break;
-  case( intQPmp2 ):
-   MxRmv = value;
-   break;
+  case( intMPlvl ): MPlvl = value; break;
+  case( intQPmp1 ): MxAdd = value; break;
+  case( intQPmp2 ): MxRmv = value; break;
   case( intOSImp1 ):
    if( algo != Index( value ) ) {
     algo = value;
@@ -1853,11 +1827,8 @@ void BundleSolver::set_par( idx_type par , int value )
      osi_mps->SetThreads( threads );
     }
    break;
-  case( intRstAlg ):
-   RstAlgPrm = value;
-   break;
-  default:
-   CDASolver::set_par( par , value );
+  case( intRstAlg ): RstAlgPrm = value; break;
+  default: CDASolver::set_par( par , value );
   }
  }  // end( BundleSolver::set_par( int ) )
 
@@ -2461,6 +2432,14 @@ void BundleSolver::guts_of_put_State( const BundleSolverState & state )
   Master->ChangeCurrPoint( state.Lambda.data() , foo.data() );
   }
 
+ if( FrcLstSS & 2 ) {
+  // something may have changed in the Block in the meantime, force the
+  // recomputation of all components before trusting the current state
+  UpFiLmbdef = 0;
+  std::fill( UpFiLmb.begin() , UpFiLmb.end() ,  INFshift );
+  RifeqFi = false;
+  }
+ 
  Fi0Lmb = state.Fi0Lmb;
  f_global_LB = state.global_LB;
  
@@ -5543,11 +5522,9 @@ void BundleSolver::process_outstanding_easy_Modification( void )
      if( auto modl = dynamic_cast< const C05FunctionMod * >( tmod ) ) {
 
       if( modl->type() == C05FunctionMod::NothingChanged ) {
-
        const auto shift = modl->shift();
 
-       if( ( shift ==  INFshift ) ||
-           ( shift == -INFshift ) ||
+       if( ( shift ==  INFshift ) || ( shift == -INFshift ) ||
            ( std::isnan( shift ) ) )
         throw( std::logic_error(
          "unexpected *C05FunctionMod* from Objective Function" ) );
@@ -5555,7 +5532,6 @@ void BundleSolver::process_outstanding_easy_Modification( void )
        constant_value += shift;
        }
       else {
-
        whch |= 1;
        continue;
        }
