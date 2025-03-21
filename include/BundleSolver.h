@@ -552,7 +552,7 @@ public:
   MaxNrEvls = get_dflt_int_par( intMaxNrEvls );
   DoEasy = char( get_dflt_int_par( intDoEasy ) );
   WZNorm = char( get_dflt_int_par( intWZNorm ) );
-  FrcLstSS = bool( get_dflt_int_par( intFrcLstSS ) );
+  FrcLstSS = get_dflt_int_par( intFrcLstSS );
   TrgtMng = Index( get_dflt_int_par( intTrgtMng ) );
   MPName = get_dflt_int_par( intMPName );
   MPlvl = get_dflt_int_par( intMPlvl );
@@ -932,19 +932,37 @@ public:
   *   "almost 0" in the specific sense dictated by this parameter together
   *   with dblZNEps.
   *
-  * - intFrcLstSS [0 == false] If set to true, ensures that all the non-easy
-  *                            components have been evaluated the last time
-  *   on the point that is returned (first) by get_var_solution(). Some
-  *   approaches using BundleSolver may require this because they use some
-  *   other information provided by the compute()-tion process of the
-  *   components that need be "current" with the optimal solution. This may
-  *   happen automatically if the very last iteration that the algorithm
-  *   performs before stopping is a "serious step", but in general this is not
-  *   guaranteed, whence the need for this parameter. Note that setting it to
-  *   true may be expensive as computing all components is; in particular it
-  *   cannot work if the maximum time limit has been exceeded already, and it
-  *   may trigger a kStopTime return status where a kOK would have been
-  *   produced exactly due to the cost of the extra compute()-tions.
+  * - intFrcLstSS [0]: bit-wise encoding that controls two "symmetric" issues
+  *                    about "trusting" input/output state.
+  *     bit 0: if 1, it ensures that all the non-easy components have been
+  *            evaluated the last time on the point that is returned (first)
+  *            by get_var_solution(). Some approaches using BundleSolver may
+  *     require this because they use some other information provided by the
+  *     compute()-tion process of the components that need be "current" with
+  *     the optimal solution. This may happen automatically if the very last
+  *     iteration that the algorithm performs before stopping is a "serious
+  *     step", but in general this is not guaranteed, whence the need for
+  *     this parameter. Note that setting it to 1 may be as expensive as
+  *     computing all components is; in particular it cannot work if the
+  *     maximum time limit has been exceeded already, and it may trigger a
+  *     kStopTime return status where a kOK would have been produced exactly
+  *     due to the cost of the extra compute()-tions.
+  *     bit 1: if 1, it makes it so that the function values stored in a
+  *            BundleSolverState [see] are not trusted when it is put() back
+  *            in BundleSolver. This causes the re-computation of all
+  *     function values at the first iteration before the algorithm can
+  *     declare optimality. this is provided in case the state of the Block
+  *     to which BundleSolver is registered is not the same as that when the
+  *     BundleSolverState was get(), which may happen either if they are
+  *     actually two different (similar, but not identical) Block, or if
+  *     BundleSolver was detached, some changes were effected in the Block
+  *     and then BundleSolver was re-attached. this way of using 
+  *     [BundleSolver]State is explicitly permitted by the definition of
+  *     State, with the provision that the Solver must be able to identify
+  *     somehow the inconsistencies that it can create. since BundleSolver
+  *     has no way to check what had happened to the Block "when it was not
+  *     listening to Modificaion", this setting provides a (crude but
+  *     functional) way to ensure consistency for this use case.
   *
   * - intTrgtMng [0]: bit-wise encoding of several details of the algorithm
   *                   pertaining to how the upper and lower model are used to
@@ -2570,7 +2588,9 @@ public:
 
  char WZNorm;       ///< how to compute the norm of z*
 
- bool FrcLstSS;     ///< if all components must be computed in the optimum
+ int FrcLstSS;      /**<  bit 0 = 1: all components must be computed in
+		     *               the optimum
+		     *    bit 1 = 1: the State is not to be trusted */
 
  Index TrgtMng;     ///< how targets on components are managed
 
