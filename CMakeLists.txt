@@ -89,11 +89,8 @@ if (Osi_OsiGrb_FOUND)
     # ... and if WHICH_OSI_QP is *not* given in input as CMake option...
     # (`NOT DEFINED WHICH_OSI_QP` tests `set( )`, not `add_compile_definitions( )`)
     if (NOT DEFINED WHICH_OSI_QP)
-        # ... and if the gurobi.lic file is in the path
-        if (GUROBI_LICENSE_FOUND)
-            # ... then use OsiGrb in BundleSolver
-            set(TEMP_WHICH_OSI_QP 2)
-        endif ()
+        # ... then use OsiGrb in BundleSolver
+        set(TEMP_WHICH_OSI_QP 2)
     endif ()
 endif ()
 
