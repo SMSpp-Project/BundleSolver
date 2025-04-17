@@ -1276,26 +1276,18 @@ void BundleSolver::set_Block( Block * block )
  Index NumBVar = 0;  // count the number of Variable in the Block
  auto v_s_Variable = f_Block->get_static_variables();
  for( auto & el : v_s_Variable ) {
-  if( un_any_thing_0( ColVariable , el , ++NumBVar ) )
-   continue;
-  if( un_any_thing_1( ColVariable , el , NumBVar += var.size() ) )
-   continue;
-  if( un_any_thing_K( ColVariable , el , NumBVar += var.num_elements() ) )
-   continue;
-  throw( std::logic_error( "some static Variable is not a ColVariable" ) );
+  auto sz = un_any_thing_count_static( ColVariable , el );
+  if( sz == Inf< std::size_t >() )
+   throw( std::logic_error( "some static Variable is not a ColVariable" ) );
+  NumBVar += sz;
   }
 
  auto v_d_Variable = f_Block->get_dynamic_variables();
  for( auto & el : v_d_Variable ) {
-  if( un_any_thing_0( std::list< ColVariable > , el , ++NumBVar ) )
-   continue;
-  if( un_any_thing_1( std::list< ColVariable > , el ,
-		      NumBVar += var.size() ) )
-   continue;
-  if( un_any_thing_K( std::list< ColVariable > , el ,
-		      NumBVar += var.num_elements() ) )
-   continue;
-  throw( std::logic_error( "some dynamic Variable is not a ColVariable" ) );
+  auto sz = un_any_thing_count_dynamic( ColVariable , el );
+  if( sz == Inf< std::size_t >() )
+   throw( std::logic_error( "some dynamic Variable is not a ColVariable" ) );
+  NumBVar += sz;
   }
 
  if( NumBVar < NumVar )
@@ -1333,31 +1325,32 @@ void BundleSolver::set_Block( Block * block )
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // one day general linear constraints will be allowed
  //
- // note that un_any_thing() only serves to verify that the stuff is of the
+ // note that un_any_thing_*() only serves to verify that the stuff is of the
  // right type, and therefore it has to do nothing; this is obtained by
  // passing it as, the "function" argument, a void --> void lambda doing
  // nothing immediately applied to nothing, cue the curios list of
  // parentheses "[](){}()"
 
  for( auto & el : f_Block->get_static_constraints() ) {
-  if( un_any_thing( BoxConstraint , el , [](){}() ) )
+  if( un_any_thing_static( BoxConstraint , el , [](){}() ) )
    continue;
-  if( un_any_thing( LB0Constraint , el , [](){}() ) )
+  if( un_any_thing_static( LB0Constraint , el , [](){}() ) )
    continue;
-  if( un_any_thing( NNConstraint , el , [](){}() ) )
+  if( un_any_thing_static( NNConstraint , el , [](){}() ) )
    continue;
-  if( un_any_const_static( el , []( BoxConstraint & b ){} ,
-                           un_any_type< BoxConstraint >() ) )
-   continue;
+  //!! this should never have been needed in the first place
+  //!!if( un_any_const_static( el , []( BoxConstraint & b ){} ,
+  //!!                         un_any_type< BoxConstraint >() ) )
+  //!! continue;
   throw( std::logic_error( "unsupported type of static Constraint" ) );
   }
 
  for( auto & el : f_Block->get_dynamic_constraints() ) {
-  if( un_any_thing( std::list< BoxConstraint > , el , [](){}() ) )
+  if( un_any_thing_dynamic( BoxConstraint , el , [](){}() ) )
    continue;
-  if( un_any_thing( std::list< LB0Constraint > , el , [](){}() ) )
+  if( un_any_thing_dynamic( LB0Constraint , el , [](){}() ) )
    continue;
-  if( un_any_thing( std::list< NNConstraint > , el , [](){}() ) )
+  if( un_any_thing_dynamic( NNConstraint , el , [](){}() ) )
    continue;
   throw( std::logic_error( "unsupported type of dynamic Constraint" ) );
   }
