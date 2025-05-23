@@ -575,6 +575,11 @@ int BundleSolver::compute( bool changedvars )
    break;
    }
 
+  if( Result == kUnbounded ) {  // the Master Problem is unbounded
+   BLOG( 1 , " ~ stop (MP unbounded)" << std::endl );
+   break;
+   }
+  
   if( Result >= kError ) {  // problems in the Master Problem solver
    BLOG( 1 , " ~ error in the MPSolver" << std::endl );
    break;
@@ -2620,7 +2625,7 @@ void BundleSolver::FormD( void )
                       : - f_Block->get_valid_upper_bound( true );
 
  for( ; ; )  // error-handling loop - - - - - - - - - - - - - - - - - - - - - -
- {        // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ {           // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
   // ensure the MPSolver will not take too much time
   if( MaxTime < INFshift ) {
@@ -2633,8 +2638,46 @@ void BundleSolver::FormD( void )
   if( mps == MPSolver::kOK )        // everything's alright
    break;
 
-  if( mps == MPSolver::kUnfsbl ) {  // the MP is empty
-   if( ! Master->BCSize() )         // but no vertical linearizations
+  /* If it's not OK, three things can happen: unfeasible, unbounded, or a
+   * numerical error.
+   *
+   * Note that MPSolver assumes the primal Master Problem being 
+   *
+   *    P_{B,Lambda,t}:   inf{ Fi_{B,Lambda}( d ) + D_t( d ) }
+   *
+   * where Fi_{B,Lambda}() is the cutting-plane model and D_t() is the
+   * stabilisation term, although with easy components the most natural
+   * implementation is actually in terms of the dual
+   *
+   *    D_{B,Lambda,t}:   inf{ Fi_{B,Lambda}*( z ) + D_t*( -z ) }
+   *
+   * The primal Master Problem can therefore be unfeasible only if there are
+   * vertical linearizations. As for being unbounded, with a "loosely
+   * stabilised" MPSolver (one with, say, a 1-norm or INF-norm primal
+   * penalty), this may happen and it could be mended by decreasing t, which
+   * would lead to the following piece of code:
+   *
+   * if( ( t <= tMinor ) || ( Master->BCSize() >= Master->BSize() ) ) {
+   *  // ... but t must always be >= tMinor, and it is already == tMinor
+   *  // in the "empty" case of the initial iteration with empty bundle
+   *  BLOG( 1 , std::endl << "Bundle::FormD: failure in MPSolver." );
+   *  Result = kError;
+   *  return;
+   *  }
+   *
+   * BLOG( 1 , std::endl << "Bundle::FormD: MP unbounded, decreasing t" );
+   * Master->Sett( t = std::max( t / 2 , tMinor ) );
+   * continue;
+   *
+   * However, currently BundleSolver only admits QPPenaltyMP or OSIMPSolver
+   * with either Quadratic or BoxStep stabilisation, which can never be
+   * "naturally" unbounded. Yet, the primal Master Problem can still be
+   * unbounded if the dual Master Problem is empty, which can happen if
+   * there are easy components. If there are not, the MPSolver returning
+   * kUnbndd can only be a numerical error in disguise. */
+  
+  if( mps == MPSolver::kUnfsbl ) {  // the MP is (primal) empty
+   if( ! Master->BCSize() )         // there are no vertical linearizations
     mps = MPSolver::kError;         // it must be a numerical error
    else {                           // there are vertical linearizations
     Result = kInfeasible;           // the MP can really be infeasible
@@ -2642,28 +2685,14 @@ void BundleSolver::FormD( void )
     }
    }
 
-  if( mps == MPSolver::kUnbndd )  // the MP is unbounded
-   /* With a "loosely stabilised" MPSolver (one with, say, a 1-norm or
-    * INF-norm primal penalty), this may happen and it could be mended
-    * by decreasing t, which would lead to the following piece of code:
-    *
-    * if( ( t <= tMinor ) || ( Master->BCSize() >= Master->BSize() ) ) {
-    *  // ... but t must always be >= tMinor, and it is already == tMinor
-    *  // in the "empty" case of the initial iteration with empty bundle
-    *  BLOG( 1 , std::endl << "Bundle::FormD: failure in MPSolver." );
-    *  Result = kError;
-    *  return;
-    *  }
-    *
-    * BLOG( 1 , std::endl << "Bundle::FormD: MP unbounded, decreasing t" );
-    * Master->Sett( t = std::max( t / 2 , tMinor ) );
-    * continue;
-    *
-    * However, currently BundleSolver only admits QPPenaltyMP or OSIMPSolver
-    * with either Quadratic or BoxStep stabilisation, which can never be
-    * unbounded: hence, the MPSolver returning kUnbndd can only be a
-    * numerical error in disguise. */
-   mps = MPSolver::kError;
+  if( mps == MPSolver::kUnbndd ) {  // the MP is (primal) unbounded
+   if( ! NrEasy )                   // there are no easy components
+    mps = MPSolver::kError;         // it must be a numerical error
+   else {                           // there are easy components
+    Result = kUnbounded;            // the MP can really be unbounded
+    return;                         // nothing else to do
+    }
+   }
 
   if( mps == MPSolver::kStppd ) {  // stopped by time limit
    //!! so far, the time limit in the MPSolver is only due to the global time
