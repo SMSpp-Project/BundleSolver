@@ -1427,6 +1427,10 @@ void BundleSolver::set_Block( Block * block )
   if( ! NrEasy )
    IsEasy.clear();
   else {
+   if( NrEasy == NrFi )
+    throw( std::logic_error(
+	   "BundleSolver: all components are easy, this is no supported" ) );
+   
    // ComputeConfig-ure the easy components
    if( eCC || ( ! CmpCfg.empty() ) )
     for( Index k = 0 ; k < NrFi ; ++k ) {
