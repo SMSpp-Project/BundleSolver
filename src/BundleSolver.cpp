@@ -1953,7 +1953,7 @@ void BundleSolver::set_par( idx_type par , std::string && value )
    HardCfg = std::move( value );
    break;
   default:
-   CDASolver::set_par( par , value );
+   CDASolver::set_par( par , std::move( value ) );
   }
  }  // end( BundleSolver::set_par( std::string && ) )
 
@@ -2256,7 +2256,7 @@ const std::string & BundleSolver::get_str_par( idx_type par ) const
   case( strHardCfg ):   return( HardCfg );
   default:              return( CDASolver::get_str_par( par ) );
   }
- }
+ }  // end( BundleSolver::get_str_par )
 
 /*--------------------------------------------------------------------------*/
 
@@ -2266,7 +2266,7 @@ const std::vector< int > & BundleSolver::get_vint_par( idx_type par ) const
   return( NoEasy );
 
  return( CDASolver::get_vint_par( par ) );
- }
+ }  // end( BundleSolver::get_vint_par )
 
 /*--------------------------------------------------------------------------*/
 
@@ -2277,7 +2277,7 @@ const std::vector< std::string > & BundleSolver::get_vstr_par( idx_type par )
   return( CmpCfg );
 
  return( CDASolver::get_vstr_par( par ) );
- }
+ }  // end( BundleSolver::get_vstr_par )
 
 /*--------------------------------------------------------------------------*/
 /*----------- METHODS FOR HANDLING THE State OF THE BundleSolver -----------*/
@@ -2285,7 +2285,7 @@ const std::vector< std::string > & BundleSolver::get_vstr_par( idx_type par )
 
 State * BundleSolver::get_State( void ) const {
   return( new BundleSolverState( this ) );
-  }
+  }  // end( BundleSolver::get_State )
 
 /*--------------------------------------------------------------------------*/
 

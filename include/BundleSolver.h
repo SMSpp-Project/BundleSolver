@@ -1906,17 +1906,14 @@ public:
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
-/* !! not necessary so far: CDASolver and Solver do not have string
- *    parameters and the default is empty anyway
 
  const std::string & get_dflt_str_par( idx_type par ) const override {
   static std::string __empty;
   if( ( par == strEasyCfg ) || ( par == strHardCfg ) )
    return( __empty );
 
-  return( CDASolver::get_dflt_vint_par( par ) );
+  return( CDASolver::get_dflt_str_par( par ) );
   }
-!!*/
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 /* !! not necessary so far: CDASolver and Solver do not have vector-of-int
@@ -1941,7 +1938,7 @@ public:
   if( par == vstrCmpCfg )
    return( __empty );
 
-  return( CDASolver::get_dflt_vint_par( par ) );
+  return( CDASolver::get_dflt_vstr_par( par ) );
   }
 !!*/
 
