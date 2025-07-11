@@ -41,7 +41,6 @@ include(FindPackageHandleStandardArgs)
 find_package(CoinUtils REQUIRED)
 
 # ----- Find the library ---------------------------------------------------- #
-# Note that find_path() creates a cache entry
 find_path(Clp_INCLUDE_DIR
           NAMES ClpConfig.h
           HINTS ${Clp_ROOT}/include
@@ -54,7 +53,6 @@ find_library(Clp_LIBRARY
              DOC "Clp library.")
 
 # ----- ClpSolver component ------------------------------------------------- #
-# Note that find_path() creates a cache entry
 find_path(Clp_ClpSolver_INCLUDE_DIR
           NAMES ClpSolve.hpp
           HINTS ${Clp_ROOT}/include
@@ -71,7 +69,6 @@ if (Clp_ClpSolver_INCLUDE_DIR AND Clp_ClpSolver_LIBRARY)
 endif ()
 
 # ----- OsiClp component ---------------------------------------------------- #
-# Note that find_path() creates a cache entry
 find_path(Clp_OsiClp_INCLUDE_DIR
           NAMES OsiClpSolverInterface.hpp
           HINTS ${Clp_ROOT}/include

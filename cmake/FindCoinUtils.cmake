@@ -45,7 +45,6 @@ if (CoinUtils_INCLUDE_DIR AND CoinUtils_LIBRARY)
 else ()
 
     # ----- Find the library ------------------------------------------------ #
-    # Note that find_path() creates a cache entry
     find_path(CoinUtils_INCLUDE_DIR
               NAMES CoinUtilsConfig.h
               HINTS ${CoinUtils_ROOT}/include

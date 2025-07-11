@@ -43,7 +43,6 @@ find_package(CPLEX)
 find_package(GUROBI)
 
 # ----- Find the library ---------------------------------------------------- #
-# Note that find_path() creates a cache entry
 find_path(Osi_INCLUDE_DIR
           NAMES OsiConfig.h
           HINTS ${Osi_ROOT}/include
@@ -57,7 +56,6 @@ find_library(Osi_LIBRARY
 
 # ----- OsiCpx component ---------------------------------------------------- #
 if (CPLEX_FOUND)
-    # Note that find_path() creates a cache entry
     find_path(Osi_OsiCpx_INCLUDE_DIR
               NAMES OsiCpxSolverInterface.hpp
               HINTS ${Osi_ROOT}/include
@@ -76,7 +74,6 @@ endif ()
 
 # ----- OsiGrb component ---------------------------------------------------- #
 if (GUROBI_FOUND)
-    # Note that find_path() creates a cache entry
     find_path(Osi_OsiGrb_INCLUDE_DIR
               NAMES OsiGrbSolverInterface.hpp
               HINTS ${Osi_ROOT}/include
