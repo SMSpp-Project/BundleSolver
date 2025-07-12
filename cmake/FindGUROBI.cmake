@@ -77,7 +77,7 @@ endforeach ()
 find_package(Threads QUIET)
 
 # Check if already in cache
-if (GUROBI_INCLUDE_DIR AND GUROBI_LIBRARY AND GUROBI_LIBRARY_DEBUG)
+if (GUROBI_INCLUDE_DIR AND GUROBI_LIBRARY)
     set(GUROBI_FOUND TRUE)
 else ()
 
@@ -119,14 +119,11 @@ else ()
                      PATHS ${GUROBI_DIR}/lib
                      DOC "GUROBI library.")
     else ()
-        set(GUROBI_LIBRARY NOTFOUND)
+        set(GUROBI_LIBRARY GUROBI_LIBRARY-NOTFOUND)
     endif ()
 
-    # Library
-    set(GUROBI_LIBRARY ${GUROBI_LIB})
-
-    # Debug library
-    set(GUROBI_LIBRARY_DEBUG ${GUROBI_LIBRARY})
+    set(GUROBI_LIBRARY ${GUROBI_LIB}
+            CACHE FILEPATH "GUROBI library." FORCE)
 
     # ----- Find the GUROBI license ----------------------------------------- #
     set(GUROBI_LICENSE_FOUND FALSE)
@@ -206,7 +203,6 @@ if (GUROBI_FOUND)
         set_target_properties(
                 GUROBI::Gurobi PROPERTIES
                 IMPORTED_LOCATION "${GUROBI_LIBRARY}"
-                IMPORTED_LOCATION_DEBUG "${GUROBI_LIBRARY_DEBUG}"
                 INTERFACE_INCLUDE_DIRECTORIES "${GUROBI_INCLUDE_DIRS}"
                 INTERFACE_LINK_LIBRARIES "${GUROBI_LINK_LIBRARIES}")
     endif ()
