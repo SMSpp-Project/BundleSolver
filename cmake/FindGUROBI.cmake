@@ -186,16 +186,16 @@ endif ()
 # ----- Export the target --------------------------------------------------- #
 if (GUROBI_FOUND)
     set(GUROBI_INCLUDE_DIRS "${GUROBI_INCLUDE_DIR}")
-    set(GUROBI_LINK_LIBRARIES ${CMAKE_THREAD_LIBS_INIT})
+    set(GUROBI_LIBRARIES ${CMAKE_THREAD_LIBS_INIT})
 
     # See: https://cmake.org/cmake/help/latest/module/CheckLibraryExists.html
     check_library_exists(m floor "" HAVE_LIBM)
     if (HAVE_LIBM)
-        set(GUROBI_LINK_LIBRARIES ${GUROBI_LINK_LIBRARIES} m)
+        set(GUROBI_LIBRARIES ${GUROBI_LIBRARIES} m)
     endif ()
 
     if (UNIX)
-        set(GUROBI_LINK_LIBRARIES ${GUROBI_LINK_LIBRARIES} dl)
+        set(GUROBI_LIBRARIES ${GUROBI_LIBRARIES} dl)
     endif ()
 
     if (NOT TARGET GUROBI::Gurobi)
@@ -204,7 +204,7 @@ if (GUROBI_FOUND)
                 GUROBI::Gurobi PROPERTIES
                 IMPORTED_LOCATION "${GUROBI_LIBRARY}"
                 INTERFACE_INCLUDE_DIRECTORIES "${GUROBI_INCLUDE_DIRS}"
-                INTERFACE_LINK_LIBRARIES "${GUROBI_LINK_LIBRARIES}")
+                INTERFACE_LINK_LIBRARIES "${GUROBI_LIBRARIES}")
     endif ()
 endif ()
 

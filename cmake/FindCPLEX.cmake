@@ -215,7 +215,7 @@ endif ()
 # ----- Export the target --------------------------------------------------- #
 if (CPLEX_FOUND)
     set(CPLEX_INCLUDE_DIRS "${CPLEX_INCLUDE_DIR}")
-    set(CPLEX_LINK_LIBRARIES ${CMAKE_THREAD_LIBS_INIT})
+    set(CPLEX_LIBRARIES ${CMAKE_THREAD_LIBS_INIT})
 
     if (NOT TARGET CPLEX::Cplex)
         add_library(CPLEX::Cplex STATIC IMPORTED)
@@ -224,7 +224,7 @@ if (CPLEX_FOUND)
                 IMPORTED_LOCATION "${CPLEX_LIBRARY}"
                 IMPORTED_LOCATION_DEBUG "${CPLEX_LIBRARY_DEBUG}"
                 INTERFACE_INCLUDE_DIRECTORIES "${CPLEX_INCLUDE_DIRS}"
-                INTERFACE_LINK_LIBRARIES "${CPLEX_LINK_LIBRARIES}")
+                INTERFACE_LINK_LIBRARIES "${CPLEX_LIBRARIES}")
     endif ()
 endif ()
 
