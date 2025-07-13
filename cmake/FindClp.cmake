@@ -115,42 +115,42 @@ find_package_handle_standard_args(
 
 # ----- Export the targets -------------------------------------------------- #
 if (Clp_FOUND)
-    set(Clp_INCLUDE_DIRS "${Clp_INCLUDE_DIR}")
-    set(Clp_LIBRARIES "${Clp_LIBRARY}")
+    set(Clp_INCLUDE_DIRS ${Clp_INCLUDE_DIR})
+    set(Clp_LIBRARIES ${Clp_LIBRARY})
 
     if (NOT TARGET Coin::Clp)
         add_library(Coin::Clp UNKNOWN IMPORTED)
         set_target_properties(
                 Coin::Clp PROPERTIES
-                IMPORTED_LOCATION "${Clp_LIBRARY}"
-                INTERFACE_INCLUDE_DIRECTORIES "${Clp_INCLUDE_DIRS}")
+                IMPORTED_LOCATION ${Clp_LIBRARY}
+                INTERFACE_INCLUDE_DIRECTORIES ${Clp_INCLUDE_DIRS})
     endif ()
 endif ()
 
 if (Clp_ClpSolver_FOUND)
-    set(Clp_ClpSolver_INCLUDE_DIRS "${Clp_ClpSolver_INCLUDE_DIR}")
-    set(Clp_ClpSolver_LIBRARIES "${Clp_ClpSolver_LIBRARY}")
+    set(Clp_ClpSolver_INCLUDE_DIRS ${Clp_ClpSolver_INCLUDE_DIR})
+    set(Clp_ClpSolver_LIBRARIES ${Clp_ClpSolver_LIBRARY})
 
     if (NOT TARGET Coin::ClpSolver)
         add_library(Coin::ClpSolver UNKNOWN IMPORTED)
         set_target_properties(
                 Coin::ClpSolver PROPERTIES
-                IMPORTED_LOCATION "${Clp_ClpSolver_LIBRARY}"
-                INTERFACE_INCLUDE_DIRECTORIES "${Clp_ClpSolver_INCLUDE_DIRS}"
+                IMPORTED_LOCATION ${Clp_ClpSolver_LIBRARY}
+                INTERFACE_INCLUDE_DIRECTORIES ${Clp_ClpSolver_INCLUDE_DIRS}
                 INTERFACE_LINK_LIBRARIES "Coin::Clp")
     endif ()
 endif ()
 
 if (Clp_OsiClp_FOUND)
-    set(Clp_OsiClp_INCLUDE_DIRS "${Clp_OsiClp_INCLUDE_DIR}")
-    set(Clp_OsiClp_LIBRARIES "${Clp_OsiClp_LIBRARY}")
+    set(Clp_OsiClp_INCLUDE_DIRS ${Clp_OsiClp_INCLUDE_DIR})
+    set(Clp_OsiClp_LIBRARIES ${Clp_OsiClp_LIBRARY})
 
     if (NOT TARGET Coin::OsiClp)
         add_library(Coin::OsiClp UNKNOWN IMPORTED)
         set_target_properties(
                 Coin::OsiClp PROPERTIES
-                IMPORTED_LOCATION "${Clp_OsiClp_LIBRARY}"
-                INTERFACE_INCLUDE_DIRECTORIES "${Clp_OsiClp_INCLUDE_DIRS}"
+                IMPORTED_LOCATION ${Clp_OsiClp_LIBRARY}
+                INTERFACE_INCLUDE_DIRECTORIES ${Clp_OsiClp_INCLUDE_DIRS}
                 INTERFACE_LINK_LIBRARIES "Coin::Clp;Coin::Osi")
     endif ()
 endif ()

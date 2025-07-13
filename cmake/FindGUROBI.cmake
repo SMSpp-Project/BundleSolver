@@ -185,7 +185,7 @@ endif ()
 
 # ----- Export the target --------------------------------------------------- #
 if (GUROBI_FOUND)
-    set(GUROBI_INCLUDE_DIRS "${GUROBI_INCLUDE_DIR}")
+    set(GUROBI_INCLUDE_DIRS ${GUROBI_INCLUDE_DIR})
     set(GUROBI_LIBRARIES ${CMAKE_THREAD_LIBS_INIT})
 
     # See: https://cmake.org/cmake/help/latest/module/CheckLibraryExists.html
