@@ -43,25 +43,25 @@ find_package(CoinUtils REQUIRED)
 # ----- Find the library ---------------------------------------------------- #
 find_path(Clp_INCLUDE_DIR
           NAMES ClpConfig.h
-          HINTS ${Clp_ROOT}/include
+          PATHS ${Clp_ROOT}/include
           PATH_SUFFIXES coin clp/coin coin-or
           DOC "Clp include directory.")
 
 find_library(Clp_LIBRARY
              NAMES Clp
-             HINTS ${Clp_ROOT}/lib
+             PATHS ${Clp_ROOT}/lib
              DOC "Clp library.")
 
 # ----- ClpSolver component ------------------------------------------------- #
 find_path(Clp_ClpSolver_INCLUDE_DIR
           NAMES ClpSolve.hpp
-          HINTS ${Clp_ROOT}/include
+          PATHS ${Clp_ROOT}/include
           PATH_SUFFIXES coin clp/coin coin-or
           DOC "ClpSolver include directory.")
 
 find_library(Clp_ClpSolver_LIBRARY
              NAMES ClpSolver
-             HINTS ${Clp_ROOT}/lib
+             PATHS ${Clp_ROOT}/lib
              DOC "ClpSolver library.")
 
 if (Clp_ClpSolver_INCLUDE_DIR AND Clp_ClpSolver_LIBRARY)
@@ -71,13 +71,13 @@ endif ()
 # ----- OsiClp component ---------------------------------------------------- #
 find_path(Clp_OsiClp_INCLUDE_DIR
           NAMES OsiClpSolverInterface.hpp
-          HINTS ${Clp_ROOT}/include
+          PATHS ${Clp_ROOT}/include
           PATH_SUFFIXES coin clp/coin coin-or
           DOC "OsiClp include directory.")
 
 find_library(Clp_OsiClp_LIBRARY
              NAMES OsiClp
-             HINTS ${Clp_ROOT}/lib
+             PATHS ${Clp_ROOT}/lib
              DOC "OsiClp library.")
 
 if (Clp_OsiClp_INCLUDE_DIR AND Clp_OsiClp_LIBRARY)

@@ -47,13 +47,13 @@ else ()
     # ----- Find the library ------------------------------------------------ #
     find_path(CoinUtils_INCLUDE_DIR
               NAMES CoinUtilsConfig.h
-              HINTS ${CoinUtils_ROOT}/include
+              PATHS ${CoinUtils_ROOT}/include
               PATH_SUFFIXES coin coinutils/coin coin-or
               DOC "CoinUtils include directory.")
 
     find_library(CoinUtils_LIBRARY
                  NAMES CoinUtils
-                 HINTS ${CoinUtils_ROOT}/lib
+                 PATHS ${CoinUtils_ROOT}/lib
                  DOC "CoinUtils library.")
 
     # ----- Parse the version ----------------------------------------------- #

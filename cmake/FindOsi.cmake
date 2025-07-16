@@ -45,26 +45,26 @@ find_package(GUROBI)
 # ----- Find the library ---------------------------------------------------- #
 find_path(Osi_INCLUDE_DIR
           NAMES OsiConfig.h
-          HINTS ${Osi_ROOT}/include
+          PATHS ${Osi_ROOT}/include
           PATH_SUFFIXES coin osi/coin coin-or
           DOC "Osi include directory.")
 
 find_library(Osi_LIBRARY
              NAMES Osi
-             HINTS ${Osi_ROOT}/lib
+             PATHS ${Osi_ROOT}/lib
              DOC "Osi library.")
 
 # ----- OsiCpx component ---------------------------------------------------- #
 if (CPLEX_FOUND)
     find_path(Osi_OsiCpx_INCLUDE_DIR
               NAMES OsiCpxSolverInterface.hpp
-              HINTS ${Osi_ROOT}/include
+              PATHS ${Osi_ROOT}/include
               PATH_SUFFIXES coin osi/coin coin-or
               DOC "OsiCpx include directory.")
 
     find_library(Osi_OsiCpx_LIBRARY
                  NAMES OsiCpx
-                 HINTS ${Osi_ROOT}/lib
+                 PATHS ${Osi_ROOT}/lib
                  DOC "OsiCpx library.")
 
     if (Osi_OsiCpx_INCLUDE_DIR AND Osi_OsiCpx_LIBRARY)
@@ -76,13 +76,13 @@ endif ()
 if (GUROBI_FOUND)
     find_path(Osi_OsiGrb_INCLUDE_DIR
               NAMES OsiGrbSolverInterface.hpp
-              HINTS ${Osi_ROOT}/include
+              PATHS ${Osi_ROOT}/include
               PATH_SUFFIXES coin osi/coin coin-or
               DOC "OsiGrb include directory.")
 
     find_library(Osi_OsiGrb_LIBRARY
                  NAMES OsiGrb
-                 HINTS ${Osi_ROOT}/lib
+                 PATHS ${Osi_ROOT}/lib
                  DOC "OsiGrb library.")
 
     if (Osi_OsiGrb_INCLUDE_DIR AND Osi_OsiGrb_LIBRARY)
