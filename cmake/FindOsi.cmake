@@ -130,7 +130,7 @@ if (Osi_FOUND)
                 Coin::Osi PROPERTIES
                 IMPORTED_LOCATION ${Osi_LIBRARY}
                 INTERFACE_INCLUDE_DIRECTORIES ${Osi_INCLUDE_DIRS}
-                INTERFACE_LINK_LIBRARIES "${LAPACK_LIBRARIES};Coin::CoinUtils")
+                INTERFACE_LINK_LIBRARIES "Coin::CoinUtils")
     endif ()
 endif ()
 
