@@ -37,6 +37,7 @@ include(FindPackageHandleStandardArgs)
 
 # ----- Requirements -------------------------------------------------------- #
 find_package(BZip2 REQUIRED QUIET)
+find_package(BLAS REQUIRED QUIET)
 find_package(LAPACK REQUIRED QUIET)
 
 # Check if already in cache
@@ -96,7 +97,7 @@ if (CoinUtils_FOUND)
                 Coin::CoinUtils PROPERTIES
                 IMPORTED_LOCATION ${CoinUtils_LIBRARY}
                 INTERFACE_INCLUDE_DIRECTORIES ${CoinUtils_INCLUDE_DIRS}
-                INTERFACE_LINK_LIBRARIES "BZip2::BZip2;${LAPACK_LIBRARIES}")
+                INTERFACE_LINK_LIBRARIES "BZip2::BZip2;${BLAS_LIBRARIES};${LAPACK_LIBRARIES}")
     endif ()
 endif ()
 
