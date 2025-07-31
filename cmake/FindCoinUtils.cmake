@@ -37,21 +37,50 @@ include(FindPackageHandleStandardArgs)
 
 # ----- Requirements -------------------------------------------------------- #
 find_package(BZip2 REQUIRED QUIET)
-find_package(BLAS REQUIRED QUIET)
-find_package(LAPACK REQUIRED QUIET)
+
+if (WIN32 AND DEFINED ENV{LIBRARY_PREFIX})
+    find_library(MKL_ILP64_LIB
+                 NAMES mkl_intel_ilp64
+                 PATHS $ENV{LIBRARY_LIB}
+                 NO_DEFAULT_PATH
+                 DOC "mkl_intel_ilp64 library.")
+
+    find_library(MKL_SEQ_LIB
+                 NAMES mkl_sequential
+                 PATHS $ENV{LIBRARY_LIB}
+                 NO_DEFAULT_PATH
+                 DOC "mkl_sequential library.")
+
+    find_library(MKL_CORE_LIB
+                 NAMES mkl_core
+                 PATHS $ENV{LIBRARY_LIB}
+                 NO_DEFAULT_PATH
+                 DOC "mkl_core library")
+
+    find_package_handle_standard_args(
+            MKL
+            REQUIRED_VARS MKL_ILP64_LIB MKL_SEQ_LIB MKL_CORE_LIB)
+
+    if (MKL_FOUND)
+        set(BLAS_LIBRARIES ${MKL_ILP64_LIB} ${MKL_SEQ_LIB} ${MKL_CORE_LIB})
+    endif ()
+else ()
+    set(BLAS_LIBRARIES "")
+endif ()
 
 # Check if already in cache
 if (CoinUtils_INCLUDE_DIR AND CoinUtils_LIBRARY)
     set(CoinUtils_FOUND TRUE)
 else ()
 
-    # ----- Find the library ------------------------------------------------ #
+    # ----- Find the headers ------------------------------------------------ #
     find_path(CoinUtils_INCLUDE_DIR
               NAMES CoinUtilsConfig.h
               PATHS ${CoinUtils_ROOT}/include
               PATH_SUFFIXES coin coinutils/coin coin-or
               DOC "CoinUtils include directory.")
 
+    # ----- Find the library ------------------------------------------------ #
     find_library(CoinUtils_LIBRARY
                  NAMES CoinUtils
                  PATHS ${CoinUtils_ROOT}/lib
@@ -97,7 +126,7 @@ if (CoinUtils_FOUND)
                 Coin::CoinUtils PROPERTIES
                 IMPORTED_LOCATION ${CoinUtils_LIBRARY}
                 INTERFACE_INCLUDE_DIRECTORIES ${CoinUtils_INCLUDE_DIRS}
-                INTERFACE_LINK_LIBRARIES "BZip2::BZip2;${BLAS_LIBRARIES};${LAPACK_LIBRARIES}")
+                INTERFACE_LINK_LIBRARIES "BZip2::BZip2;${BLAS_LIBRARIES}")
     endif ()
 endif ()
 

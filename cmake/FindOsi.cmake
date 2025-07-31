@@ -42,13 +42,14 @@ find_package(CoinUtils REQUIRED)
 find_package(CPLEX)
 find_package(GUROBI)
 
-# ----- Find the library ---------------------------------------------------- #
+# ----- Find the headers ---------------------------------------------------- #
 find_path(Osi_INCLUDE_DIR
           NAMES OsiConfig.h
           PATHS ${Osi_ROOT}/include
           PATH_SUFFIXES coin osi/coin coin-or
           DOC "Osi include directory.")
 
+# ----- Find the library ---------------------------------------------------- #
 find_library(Osi_LIBRARY
              NAMES Osi
              PATHS ${Osi_ROOT}/lib

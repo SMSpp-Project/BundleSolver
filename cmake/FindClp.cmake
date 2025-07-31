@@ -40,13 +40,14 @@ include(FindPackageHandleStandardArgs)
 # ----- Requirements -------------------------------------------------------- #
 find_package(CoinUtils REQUIRED)
 
-# ----- Find the library ---------------------------------------------------- #
+# ----- Find the headers ---------------------------------------------------- #
 find_path(Clp_INCLUDE_DIR
           NAMES ClpConfig.h
           PATHS ${Clp_ROOT}/include
           PATH_SUFFIXES coin clp/coin coin-or
           DOC "Clp include directory.")
 
+# ----- Find the library ---------------------------------------------------- #
 find_library(Clp_LIBRARY
              NAMES Clp
              PATHS ${Clp_ROOT}/lib
