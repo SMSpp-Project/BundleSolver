@@ -38,6 +38,8 @@ include(FindPackageHandleStandardArgs)
 # ----- Requirements -------------------------------------------------------- #
 find_package(BZip2 REQUIRED QUIET)
 
+# Conda coin-or-utils package statically links MKL BLAS library
+# https://github.com/conda-forge/coin-or-utils-feedstock/blob/main/recipe/build.sh#L12
 if (WIN32 AND DEFINED ENV{LIBRARY_PREFIX})
     find_library(MKL_ILP64_LIB
                  NAMES mkl_intel_ilp64
@@ -55,17 +57,25 @@ if (WIN32 AND DEFINED ENV{LIBRARY_PREFIX})
                  NAMES mkl_core
                  PATHS $ENV{LIBRARY_LIB}
                  NO_DEFAULT_PATH
-                 DOC "mkl_core library")
+                 DOC "mkl_core library.")
 
-    find_package_handle_standard_args(
-            MKL
-            REQUIRED_VARS MKL_ILP64_LIB MKL_SEQ_LIB MKL_CORE_LIB)
+    find_library(MKL_CDFT_CORE_LIB
+                 NAMES mkl_cdft_core
+                 PATHS $ENV{LIBRARY_LIB}
+                 NO_DEFAULT_PATH
+                 DOC "mkl_cdft_core library.")
 
-    if (MKL_FOUND)
-        set(BLAS_LIBRARIES ${MKL_ILP64_LIB} ${MKL_SEQ_LIB} ${MKL_CORE_LIB})
+    find_library(MKL_BLACS_MPI_LIB
+                 NAMES mkl_blacs_intelmpi_ilp64
+                 PATHS $ENV{LIBRARY_LIB}
+                 NO_DEFAULT_PATH
+                 DOC "mkl_blacs_intelmpi_ilp64 library.")
+
+    if (MKL_ILP64_LIB AND MKL_SEQ_LIB AND MKL_CORE_LIB AND
+            MKL_CDFT_CORE_LIB AND MKL_BLACS_MPI_LIB)
+        set(BLAS_LIBRARIES ${MKL_ILP64_LIB} ${MKL_SEQ_LIB} ${MKL_CORE_LIB}
+                           ${MKL_CDFT_CORE_LIB} ${MKL_BLACS_MPI_LIB})
     endif ()
-else ()
-    set(BLAS_LIBRARIES "")
 endif ()
 
 # Check if already in cache
