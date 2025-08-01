@@ -65,16 +65,8 @@ if (WIN32 AND DEFINED ENV{LIBRARY_PREFIX})
                  NO_DEFAULT_PATH
                  DOC "mkl_cdft_core library.")
 
-    find_library(MKL_BLACS_MPI_LIB
-                 NAMES mkl_blacs_intelmpi_ilp64
-                 PATHS $ENV{LIBRARY_LIB}
-                 NO_DEFAULT_PATH
-                 DOC "mkl_blacs_intelmpi_ilp64 library.")
-
-    if (MKL_ILP64_LIB AND MKL_SEQ_LIB AND MKL_CORE_LIB AND
-            MKL_CDFT_CORE_LIB AND MKL_BLACS_MPI_LIB)
-        set(BLAS_LIBRARIES ${MKL_ILP64_LIB} ${MKL_SEQ_LIB} ${MKL_CORE_LIB}
-                           ${MKL_CDFT_CORE_LIB} ${MKL_BLACS_MPI_LIB})
+    if (MKL_ILP64_LIB AND MKL_SEQ_LIB AND MKL_CORE_LIB AND MKL_CDFT_CORE_LIB)
+        set(BLAS_LIBRARIES ${MKL_ILP64_LIB} ${MKL_SEQ_LIB} ${MKL_CORE_LIB} ${MKL_CDFT_CORE_LIB})
     endif ()
 endif ()
 
