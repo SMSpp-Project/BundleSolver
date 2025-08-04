@@ -998,7 +998,8 @@ public:
   *
   * - intMPName [1]: bit-wise encoding of which MPSolver is used:
   *                  bit 0: 0 = QPPenalty, 1 = OSIMPSolver
-  *                  bit 1: 1 = OsiCpxInterface, 0 = OsiCLPInterface
+  *                  bit 1: 1 = OsiCpxSolverInterface / OsiGrbSolverInterface,
+  *                             0 = OsiClpInterface
   *                  bit 2: 1 = Quadratic, 0 = BoxStep
   *                  bit 3: 1 = CheckIdentical( true ) is called, 0 = not
   *

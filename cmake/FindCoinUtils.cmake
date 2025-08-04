@@ -38,9 +38,13 @@ include(FindPackageHandleStandardArgs)
 # ----- Requirements -------------------------------------------------------- #
 find_package(BZip2 REQUIRED QUIET)
 
-set(MKL_LINK sdl CACHE STRING "MKL link type (static, dynamic, sdl)")
-set(MKL_THREADING sequential CACHE STRING "MKL threading model (intel_thread, gnu_thread, tbb_thread, sequential)")
-find_package(MKL QUIET)
+# Conda coin-or-utils package links MKL BLAS library
+# https://github.com/conda-forge/coin-or-utils-feedstock/blob/main/recipe/build.sh#L12
+if (WIN32 AND DEFINED ENV{LIBRARY_PREFIX})
+    set(MKL_LINK sdl CACHE STRING "MKL link type (static, dynamic, sdl)")
+    set(MKL_THREADING sequential CACHE STRING "MKL threading model (intel_thread, gnu_thread, tbb_thread, sequential)")
+    find_package(MKL REQUIRED QUIET)
+endif ()
 
 # Check if already in cache
 if (CoinUtils_INCLUDE_DIR AND CoinUtils_LIBRARY)
