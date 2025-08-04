@@ -37,6 +37,9 @@ include(FindPackageHandleStandardArgs)
 
 # ----- Requirements -------------------------------------------------------- #
 find_package(BZip2 REQUIRED QUIET)
+
+set(MKL_LINK sdl CACHE STRING "MKL link type (static, dynamic, sdl)")
+set(MKL_THREADING sequential CACHE STRING "MKL threading model (intel_thread, gnu_thread, tbb_thread, sequential)")
 find_package(MKL QUIET)
 
 # Check if already in cache
