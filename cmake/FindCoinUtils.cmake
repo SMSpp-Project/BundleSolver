@@ -42,7 +42,7 @@ find_package(BZip2 REQUIRED QUIET)
 # https://github.com/conda-forge/coin-or-utils-feedstock/blob/main/recipe/build.sh#L12
 if (WIN32 AND DEFINED ENV{LIBRARY_PREFIX})
     set(MKL_LINK sdl CACHE STRING "MKL link type (static, dynamic, sdl)")
-    set(MKL_THREADING sequential CACHE STRING "MKL threading model (intel_thread, gnu_thread, tbb_thread, sequential)")
+    set(MKL_THREADING gnu_thread CACHE STRING "MKL threading model (intel_thread, gnu_thread, tbb_thread, sequential)")
     find_package(MKL REQUIRED QUIET)
 endif ()
 
