@@ -1713,7 +1713,7 @@ public:
   *
   *  means that the current point is RelAcc-optimal (relative). */
 
- VarValue get_Sigma( void ){ return( Sigma ); }
+ VarValue get_Sigma( void ) { return( Sigma ); }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// returns the scaled norm of the aggregated subgradient
@@ -1732,7 +1732,7 @@ public:
   * step that one could ever take in direction -z* in order to have the
   * function decrease (a rater big "if"). */
 
- VarValue get_DSTS( void ){ return( DSTS ); }
+ VarValue get_DSTS( void ) { return( DSTS ); }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// returns the unscaled norm of the aggregated subgradient
