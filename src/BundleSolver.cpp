@@ -4141,6 +4141,283 @@ bool BundleSolver::FindNext( void )
  }  // end( BundleSolver::FindNext )
 
 /*--------------------------------------------------------------------------*/
+/* Front-end for four different heuristics for short-term t management.
+ *
+ * Three of the heuristics (1, 2, and 3) are based on three slightly different
+ * variants of the same idea: considering the objective f( x ) from the
+ * current stability center \bar{x} along direction d* seen as a function of
+ * t, assuming that d* = - t z* (which is, strictly speaking, only true in
+ * the pure quadratic proximal case and therefore does not cleanly generalise
+ * to the generalised one; yet these are heuristics).
+ *
+ * That is, we consider the translated function along z*
+ *
+ *    q( v ) = f( \bar{x} - v z* ) - f( \bar{x} )
+ *
+ * Assuming (only for notational simplicity) differentiability, we thus have
+ *
+ *    q'( v ) = < - z* , f'( \bar{x} - v z* ) >
+ *
+ * After that f( \bar{x} + d* ) = f( \bar{x} - t z* ) = q( t ) has been
+ * computed, we know:
+ *
+ * - the aggregated subgradient z*, which is a Sigma*-subgradient in \bar{x}
+ *
+ * - the newly obtained subgradient g, which is an Alfa1-subgradient in 0 and
+ *   eps-subgradient in t, where
+ *
+ *     eps = DeltaFi - ( Alfa1 + < g , d* > )
+ *
+ * We thus assume:
+ *
+ * - q( 0 ) = 0
+ *
+ * - q'( 0 ) = < - z* , z* > = - NrmZ^2
+ *
+ * Note, however, that z* is a Sigma*-subgradient in \bar{x}, and therefore
+ * the value of the linearization there is rather -Sigma*; thus, we could
+ * alternatively assume q( 0 ) = - Sigma*.
+ *
+ * - q( t ) = f( \bar{x} - t z* ) - f( \bar{x} ) = DeltaFi
+ *
+ * - q'( t ) = < - z* , g >; since we have ScPr1 = < d* , g > =
+ *   < - t z* , g > (note again that this only holds in the quadratic case),
+ *   we conclude q'( t ) = ScPr1 / t
+ *
+ * Note, however, that g* is a Alfa1-subgradient of \bar{x}, and therefore we
+ * could alternatively take the value in t as that of the corresponding
+ * linearization, i.e., q( t ) = ScPr1 - Alfa1.
+ *
+ * We can then consider the quadratic function
+ *
+ *    m( v ) = a v^2 + b v + c
+ *
+ * and construct different forms of it corresponding to different choices of
+ * three of the four information we have, then use its minimum
+ *
+ *   v* = - b / ( 2 a )
+ *
+ * as the suggested new value for t. Since v* only makes sense if a > 0,
+ * when a <= 0 we use the best possible convex approximation of a concave
+ * function by setting a = 0, in which case the minimum is the extreme of
+ * the interval [ tMinor , tMaior ] dictated by the sign of b.
+ *
+ * The fourth heuristic is based on an entirely different idea related to the
+ * Moreau-Yoshida regularization, called "reversal form of the poorman's
+ * quasi-Newton update". */
+
+HpNum BundleSolver::Heuristic( Index whch )
+{
+ switch( whch & 3 ) {
+  case( 0 ): return( Heuristic1() );
+  case( 1 ): return( Heuristic2() );
+  case( 2 ): return( Heuristic3() );
+  }
+
+ return( Heuristic4() );
+ }
+
+/*--------------------------------------------------------------------------*/
+/* With the notation above, in the first case we impose
+ *
+ *    m( 0 )  = c = - Sigma*
+ *    m( t )  = a t^2 + b t + c = DeltaFi
+ *    m'( 0 ) = [ 2 a 0 ] + b = - NrmZ^2
+ *
+ * which yields c = - Sigma*, b = - NrmZ^2,
+ * a = ( DeltaFi + NrmZ^2 t + Sigma*  ) / t^2.
+ * Note that z* is a Sigma*-subgradient in \bar{x}, and therefore
+ *
+ *    f( \bar{x} + d* ) >= f( \bar{x} ) + < d* , z* > - Sigma*
+ *                       = f( \bar{x} ) - t < z* , z* > - Sigma*
+ *    ==> DeltaFi = f( \bar{x} + d* ) - f( \bar{x} ) >= - NrmZ^2 t - Sigma*
+ *    ==> a = DeltaFi + NrmZ^2 t + Sigma* >= 0
+ *
+ * which guarantees that m() is convex and therefore the minimum of m() is
+ *
+ *   v* = - ( - NrmZ^2 ) / ( 2 ( DeltaFi + NrmZ^2 t + Sigma* ) / t^2 )
+ *      =   NrmZ^2 / ( 2 ( DeltaFi + NrmZ^2 t + Sigma* ) / t^2 )
+ *      =   t^2 NrmZ^2 / ( 2 ( DeltaFi + NrmZ^2 t + Sigma* ) )
+ *
+ * Note that, conveniently, v* >= 0 always holds. This corresponds to the
+ * fact that m'( 0 ) = b < 0, i.e., m() is surely decreasing in 0.
+ * 
+ * However, this formula has a serious issue: we need to know DeltaFi,
+ * which may well not be defined when a NS is performed and multiple
+ * components are present since the incremental approach may stop the
+ * inner loop before having computed them all. The obvious solution is
+ * to replace DeltaFi with
+ *
+ *    \underline{f}( \bar{x} + d* ) - \bar{f}( \bar{x} ) =
+ *    LwFiLmb1.back() - UpRifFi.back()
+ *
+ * which is always well-defined since a finite lower bound is always
+ * available (unless some component evaluates to -INF, in which case
+ * the algorithm stops and this method is not invoked). */
+
+HpNum BundleSolver::Heuristic1( void )
+{
+ auto DF = DeltaFi < INFshift ? DeltaFi : LwFiLmb1.back() - UpRifFi.back();
+ auto NZ2 = NrmZ * NrmZ;
+ if( DF + NZ2 * t + Sigma > 1e-16 )  // this should always be >=
+  return( t * t * NZ2 / ( 2 * ( DF + NZ2 * t + Sigma ) ) );
+ else                 // a == 0, all depends on the sign of b
+  /* there is no "if" here, NrmZ >= 0 by definition, a fortiori NZ2
+  if( - NZ2 <= 0 )    // b < 0  */
+   return( tMaior );  // ==> tMaior
+  /* there is no "else" here, - NZ2 > 0 cannot happen
+  else                // b > 0
+   return( tMinor );  // ==> tMinor */
+ }
+
+/*--------------------------------------------------------------------------*/
+/* With the notation above, in the second case we rather impose
+ *
+ *    m( 0 )  = c = 0
+ *    m( t )  = a t^2 + b t [ + 0 ] = ScPr1 - Alfa1
+ *    m'( t ) = 2 a t + b = ScPr1 / t
+ *
+ * which yields c = 0, a = Alfa1 / t^2, b = ( ScPr1 - 2 Alfa1 ) / t
+ *
+ * Since Alfa1 >= 0, a >= 0 which implies that m() is surely convex and the
+ * minimum is
+ * 
+ *   v* = - [ ( ScPr1 - 2 Alfa1 ) / t ] / [ 2 Alfa1 / t^2 ]
+ *      = t ( 2 Alfa1 - ScPr1 ) / ( 2 Alfa1 )
+ *
+ * Note that, unlike in the first case, there is no guarantee that v* >= 0,
+ * because we fix the derivative in t and therefore m'( 0 ) = b may turn up
+ * to be positive (m() in increasing in 0).
+ *
+ * Since this formula does not really use DeltaFi, it being undefined is not
+ * an issue here. However, this formula has a somewhat similar issue with NS
+ * (and SS alike) in that not all components may have been evaluated, and
+ * therefore only a "partial" g may be available. ScPr1 and Alfa1 are
+ * computed for all non-"easy" components using the "representative
+ * subgradients" out of the previous iterations, *provided they have not by
+ * chance been deleted* (which should not happen unless the bundle is very
+ * very small). Yet, "easy" components are left out. There may be some way
+ * put of this, e.g. by using z*_i in place of g_i for the "easy" components,
+ * but this is nontrivial and therefore avoided for now. */
+
+HpNum BundleSolver::Heuristic2( void )
+{
+ if( Alfa1 > 1e-16 )            // it is always >= 0, but it may be ==
+  return( t * ( 2 * Alfa1 - ScPr1 ) / ( 2 * Alfa1 ) );
+ else                           // a == 0,  all depends on the sign of b
+  if( ScPr1 - 2 * Alfa1 <= 0 )  // b < 0
+   return( tMaior );            // ==> tMaior
+  else                          // b > 0
+   return( tMinor );            // ==> tMinor
+ }
+
+/*--------------------------------------------------------------------------*/
+/* With the notation above, in the third case we rather impose
+ *
+ *    m'( 0 ) = [ 2 a 0 ] + b = - NrmZ^2
+ *    m( t )  = a t^2 + b t + c = < something >
+ *    m'( t ) = 2 a t + b = ScPr1 / t
+ *
+ * which yields b = - NrmZ^2, a  = ( ScPr1 / t + NrmZ^2 ) / ( 2 t ), and c
+ * ... something depending on which value we choose for m( t ), but we
+ * don't care about because c does not appear in the computation of v*.
+ * If m() is convex, i.e.
+ *
+ *    ScPr1 / t + NrmZ^2 > 0
+ *
+ * yields
+ * 
+ *   v* = - [ - NrmZ^2 ] / [ 2 ( ScPr1 / t + NrmZ^2 ) / ( 2 t ) ]
+ *      = t NrmZ^2 / ( ScPr1 / t + NrmZ^2 )
+ *
+ * Note that, if m() is convex, then v* >= 0 holds because, as usual, we have
+ * fixed m'( 0 ) = b < 0 and therefore m() is decreasing in 0. 
+ *
+ * See above for the "issue" about ScPr1 having been computed with a
+ * "partial" g; however, since this formula does not really use DeltaFi,
+ * it being undefined is not an issue here.
+ *
+ * Note also that the possible fourth case
+ *
+ *    m( 0 )  = c = 0 [ or - Sigma* ]
+ *    m'( 0 ) = [ 2 a 0 ] + b = - NrmZ^2
+ *    m'( t ) = 2 a t + b = ScPr1 / t
+ *
+ * only changes c w.r.t. the current one, hence it does not change v*, and
+ * therefore need not be separately considered. */
+
+HpNum BundleSolver::Heuristic3( void )
+{
+ auto NZ2 = NrmZ * NrmZ;
+ if( ScPr1 / t + NZ2 > 1e-16 )
+  return( t * NZ2 / ( ScPr1 / t + NZ2 ) );
+ else                 // a == 0, all depends on the sign of b
+  /* there is no "if" here, NrmZ >= 0 by definition, a fortiori NZ2
+  if( - NZ2 <= 0 )    // b < 0  */
+   return( tMaior );  // ==> tMaior
+  /* there is no "else" here, - NZ2 > 0 cannot happen
+  else                // b > 0
+   return( tMinor );  // ==> tMinor */
+ }
+
+/*--------------------------------------------------------------------------*/
+/* This heuristic is instead based on a completely different approach. It is
+ * called "reversal form of the poorman's quasi-Newton update" and its
+ * nontrivial rationale is described in details in
+ *
+ *  C. Lemarechal and C. Sagastizabal. Variable metric bundle methods: from
+ *  conceptual to implementable forms. Mathematical Programming,
+ *  76(3):393-410, 1997
+ *
+ * A more refined version of the same is proposed in
+ *
+ *  P.A. Rey and C. Sagastizabal. Dynamical adjustment of the prox-parameter
+ *  in variable metric bundle methods. Optimization, 51(2):423-447, 2002
+ *
+ * It should be noted that this heuristic is explicitly developed for being
+ * used at SS only.
+ *
+ * The proposed new value is
+ *
+ *   t = < v , u > / || v ||^2
+ *
+ * where
+ *
+ *   v = g - z*
+ *
+ *   u = ( \bar{x} - v z* ) - \bar{x} + t v = d* + t v
+ *
+ * although v would in general be g_{i+1} - g_i, hence the choice of z* as
+ * g_i is somewhat arbitrary; but in general z* is considered to be "the best
+ * (approximate) subgradient we have at \bar{x}".
+ *
+ * Hence
+ *
+ *   v = < v , d* + t v > / || v ||^2
+ *     = [ < v , d* > + t < v , v > ] / || v ||^2
+ *     = < g - z* , d* > / || g - z* ||^2 + t
+ *     = t + [ < g , d* > + t || z* ||^2 ] /
+ *           [ || g ||^2  - 2 < g , z* > + || z* ||^2 ]
+ *     = t + [ < g , d* > + t || z* ||^2 ] /
+ *           [ || g ||^2  + 2 < g , d* > / t + || z* ||^2 ]
+ *
+ * The issue with this formula is the || g || term. This is the same issue as
+ * with ScPr1 = < g , d* >, i.e., what to do with the easy components which
+ * do not explicitly compute a subgradient. For the scalar product we could
+ * use < z*_i , d* > that should be is available "for free" out of the Master
+ * Problem but it currently isn't; in theory z*_i is also available, and we
+ * could use it to compute < z*_i , d* >, but in practice due to the current
+ * implementation of OSIMPSolver it is too costly to compute. */
+
+HpNum BundleSolver::Heuristic4( void )
+{
+ auto NZ2 = NrmZ * NrmZ;
+ if( G1Norm == INFshift )
+  G1Norm = norm( G1 , 2 );
+ return( t + ( ScPr1 + t * NZ2 ) / ( G1Norm + 2 * ScPr1 / t + NZ2 ) );
+ }
+
+/*--------------------------------------------------------------------------*/
 /*-------------------------- PRIVATE METHODS -------------------------------*/
 /*--------------------------------------------------------------------------*/
 
@@ -4555,283 +4832,6 @@ void BundleSolver::UpdateHeuristicInfo( void )
     ScPr1 += Master->ReadGid( whisG1[ k ] );
 
  }  // end( UpdateHeuristicInfo )
-
-/*--------------------------------------------------------------------------*/
-/* Front-end for four different heuristics for short-term t management.
- *
- * Three of the heuristics (1, 2, and 3) are based on three slightly different
- * variants of the same idea: considering the objective f( x ) from the
- * current stability center \bar{x} along direction d* seen as a function of
- * t, assuming that d* = - t z* (which is, strictly speaking, only true in
- * the pure quadratic proximal case and therefore does not cleanly generalise
- * to the generalised one; yet these are heuristics).
- *
- * That is, we consider the translated function along z*
- *
- *    q( v ) = f( \bar{x} - v z* ) - f( \bar{x} )
- *
- * Assuming (only for notational simplicity) differentiability, we thus have
- *
- *    q'( v ) = < - z* , f'( \bar{x} - v z* ) >
- *
- * After that f( \bar{x} + d* ) = f( \bar{x} - t z* ) = q( t ) has been
- * computed, we know:
- *
- * - the aggregated subgradient z*, which is a Sigma*-subgradient in \bar{x}
- *
- * - the newly obtained subgradient g, which is an Alfa1-subgradient in 0 and
- *   eps-subgradient in t, where
- *
- *     eps = DeltaFi - ( Alfa1 + < g , d* > )
- *
- * We thus assume:
- *
- * - q( 0 ) = 0
- *
- * - q'( 0 ) = < - z* , z* > = - NrmZ^2
- *
- * Note, however, that z* is a Sigma*-subgradient in \bar{x}, and therefore
- * the value of the linearization there is rather -Sigma*; thus, we could
- * alternatively assume q( 0 ) = - Sigma*.
- *
- * - q( t ) = f( \bar{x} - t z* ) - f( \bar{x} ) = DeltaFi
- *
- * - q'( t ) = < - z* , g >; since we have ScPr1 = < d* , g > =
- *   < - t z* , g > (note again that this only holds in the quadratic case),
- *   we conclude q'( t ) = ScPr1 / t
- *
- * Note, however, that g* is a Alfa1-subgradient of \bar{x}, and therefore we
- * could alternatively take the value in t as that of the corresponding
- * linearization, i.e., q( t ) = ScPr1 - Alfa1.
- *
- * We can then consider the quadratic function
- *
- *    m( v ) = a v^2 + b v + c
- *
- * and construct different forms of it corresponding to different choices of
- * three of the four information we have, then use its minimum
- *
- *   v* = - b / ( 2 a )
- *
- * as the suggested new value for t. Since v* only makes sense if a > 0,
- * when a <= 0 we use the best possible convex approximation of a concave
- * function by setting a = 0, in which case the minimum is the extreme of
- * the interval [ tMinor , tMaior ] dictated by the sign of b.
- *
- * The fourth heuristic is based on an entirely different idea related to the
- * Moreau-Yoshida regularization, called "reversal form of the poorman's
- * quasi-Newton update". */
-
-HpNum BundleSolver::Heuristic( Index whch )
-{
- switch( whch & 3 ) {
-  case( 0 ): return( Heuristic1() );
-  case( 1 ): return( Heuristic2() );
-  case( 2 ): return( Heuristic3() );
-  }
-
- return( Heuristic4() );
- }
-
-/*--------------------------------------------------------------------------*/
-/* With the notation above, in the first case we impose
- *
- *    m( 0 )  = c = - Sigma*
- *    m( t )  = a t^2 + b t + c = DeltaFi
- *    m'( 0 ) = [ 2 a 0 ] + b = - NrmZ^2
- *
- * which yields c = - Sigma*, b = - NrmZ^2,
- * a = ( DeltaFi + NrmZ^2 t + Sigma*  ) / t^2.
- * Note that z* is a Sigma*-subgradient in \bar{x}, and therefore
- *
- *    f( \bar{x} + d* ) >= f( \bar{x} ) + < d* , z* > - Sigma*
- *                       = f( \bar{x} ) - t < z* , z* > - Sigma*
- *    ==> DeltaFi = f( \bar{x} + d* ) - f( \bar{x} ) >= - NrmZ^2 t - Sigma*
- *    ==> a = DeltaFi + NrmZ^2 t + Sigma* >= 0
- *
- * which guarantees that m() is convex and therefore the minimum of m() is
- *
- *   v* = - ( - NrmZ^2 ) / ( 2 ( DeltaFi + NrmZ^2 t + Sigma* ) / t^2 )
- *      =   NrmZ^2 / ( 2 ( DeltaFi + NrmZ^2 t + Sigma* ) / t^2 )
- *      =   t^2 NrmZ^2 / ( 2 ( DeltaFi + NrmZ^2 t + Sigma* ) )
- *
- * Note that, conveniently, v* >= 0 always holds. This corresponds to the
- * fact that m'( 0 ) = b < 0, i.e., m() is surely decreasing in 0.
- * 
- * However, this formula has a serious issue: we need to know DeltaFi,
- * which may well not be defined when a NS is performed and multiple
- * components are present since the incremental approach may stop the
- * inner loop before having computed them all. The obvious solution is
- * to replace DeltaFi with
- *
- *    \underline{f}( \bar{x} + d* ) - \bar{f}( \bar{x} ) =
- *    LwFiLmb1.back() - UpRifFi.back()
- *
- * which is always well-defined since a finite lower bound is always
- * available (unless some component evaluates to -INF, in which case
- * the algorithm stops and this method is not invoked). */
-
-HpNum BundleSolver::Heuristic1( void )
-{
- auto DF = DeltaFi < INFshift ? DeltaFi : LwFiLmb1.back() - UpRifFi.back();
- auto NZ2 = NrmZ * NrmZ;
- if( DF + NZ2 * t + Sigma > 1e-16 )  // this should always be >=
-  return( t * t * NZ2 / ( 2 * ( DF + NZ2 * t + Sigma ) ) );
- else                 // a == 0, all depends on the sign of b
-  /* there is no "if" here, NrmZ >= 0 by definition, a fortiori NZ2
-  if( - NZ2 <= 0 )    // b < 0  */
-   return( tMaior );  // ==> tMaior
-  /* there is no "else" here, - NZ2 > 0 cannot happen
-  else                // b > 0
-   return( tMinor );  // ==> tMinor */
- }
-
-/*--------------------------------------------------------------------------*/
-/* With the notation above, in the second case we rather impose
- *
- *    m( 0 )  = c = 0
- *    m( t )  = a t^2 + b t [ + 0 ] = ScPr1 - Alfa1
- *    m'( t ) = 2 a t + b = ScPr1 / t
- *
- * which yields c = 0, a = Alfa1 / t^2, b = ( ScPr1 - 2 Alfa1 ) / t
- *
- * Since Alfa1 >= 0, a >= 0 which implies that m() is surely convex and the
- * minimum is
- * 
- *   v* = - [ ( ScPr1 - 2 Alfa1 ) / t ] / [ 2 Alfa1 / t^2 ]
- *      = t ( 2 Alfa1 - ScPr1 ) / ( 2 Alfa1 )
- *
- * Note that, unlike in the first case, there is no guarantee that v* >= 0,
- * because we fix the derivative in t and therefore m'( 0 ) = b may turn up
- * to be positive (m() in increasing in 0).
- *
- * Since this formula does not really use DeltaFi, it being undefined is not
- * an issue here. However, this formula has a somewhat similar issue with NS
- * (and SS alike) in that not all components may have been evaluated, and
- * therefore only a "partial" g may be available. ScPr1 and Alfa1 are
- * computed for all non-"easy" components using the "representative
- * subgradients" out of the previous iterations, *provided they have not by
- * chance been deleted* (which should not happen unless the bundle is very
- * very small). Yet, "easy" components are left out. There may be some way
- * put of this, e.g. by using z*_i in place of g_i for the "easy" components,
- * but this is nontrivial and therefore avoided for now. */
-
-HpNum BundleSolver::Heuristic2( void )
-{
- if( Alfa1 > 1e-16 )            // it is always >= 0, but it may be ==
-  return( t * ( 2 * Alfa1 - ScPr1 ) / ( 2 * Alfa1 ) );
- else                           // a == 0,  all depends on the sign of b
-  if( ScPr1 - 2 * Alfa1 <= 0 )  // b < 0
-   return( tMaior );            // ==> tMaior
-  else                          // b > 0
-   return( tMinor );            // ==> tMinor
- }
-
-/*--------------------------------------------------------------------------*/
-/* With the notation above, in the third case we rather impose
- *
- *    m'( 0 ) = [ 2 a 0 ] + b = - NrmZ^2
- *    m( t )  = a t^2 + b t + c = < something >
- *    m'( t ) = 2 a t + b = ScPr1 / t
- *
- * which yields b = - NrmZ^2, a  = ( ScPr1 / t + NrmZ^2 ) / ( 2 t ), and c
- * ... something depending on which value we choose for m( t ), but we
- * don't care about because c does not appear in the computation of v*.
- * If m() is convex, i.e.
- *
- *    ScPr1 / t + NrmZ^2 > 0
- *
- * yields
- * 
- *   v* = - [ - NrmZ^2 ] / [ 2 ( ScPr1 / t + NrmZ^2 ) / ( 2 t ) ]
- *      = t NrmZ^2 / ( ScPr1 / t + NrmZ^2 )
- *
- * Note that, if m() is convex, then v* >= 0 holds because, as usual, we have
- * fixed m'( 0 ) = b < 0 and therefore m() is decreasing in 0. 
- *
- * See above for the "issue" about ScPr1 having been computed with a
- * "partial" g; however, since this formula does not really use DeltaFi,
- * it being undefined is not an issue here.
- *
- * Note also that the possible fourth case
- *
- *    m( 0 )  = c = 0 [ or - Sigma* ]
- *    m'( 0 ) = [ 2 a 0 ] + b = - NrmZ^2
- *    m'( t ) = 2 a t + b = ScPr1 / t
- *
- * only changes c w.r.t. the current one, hence it does not change v*, and
- * therefore need not be separately considered. */
-
-HpNum BundleSolver::Heuristic3( void )
-{
- auto NZ2 = NrmZ * NrmZ;
- if( ScPr1 / t + NZ2 > 1e-16 )
-  return( t * NZ2 / ( ScPr1 / t + NZ2 ) );
- else                 // a == 0, all depends on the sign of b
-  /* there is no "if" here, NrmZ >= 0 by definition, a fortiori NZ2
-  if( - NZ2 <= 0 )    // b < 0  */
-   return( tMaior );  // ==> tMaior
-  /* there is no "else" here, - NZ2 > 0 cannot happen
-  else                // b > 0
-   return( tMinor );  // ==> tMinor */
- }
-
-/*--------------------------------------------------------------------------*/
-/* This heuristic is instead based on a completely different approach. It is
- * called "reversal form of the poorman's quasi-Newton update" and its
- * nontrivial rationale is described in details in
- *
- *  C. Lemarechal and C. Sagastizabal. Variable metric bundle methods: from
- *  conceptual to implementable forms. Mathematical Programming,
- *  76(3):393-410, 1997
- *
- * A more refined version of the same is proposed in
- *
- *  P.A. Rey and C. Sagastizabal. Dynamical adjustment of the prox-parameter
- *  in variable metric bundle methods. Optimization, 51(2):423-447, 2002
- *
- * It should be noted that this heuristic is explicitly developed for being
- * used at SS only.
- *
- * The proposed new value is
- *
- *   t = < v , u > / || v ||^2
- *
- * where
- *
- *   v = g - z*
- *
- *   u = ( \bar{x} - v z* ) - \bar{x} + t v = d* + t v
- *
- * although v would in general be g_{i+1} - g_i, hence the choice of z* as
- * g_i is somewhat arbitrary; but in general z* is considered to be "the best
- * (approximate) subgradient we have at \bar{x}".
- *
- * Hence
- *
- *   v = < v , d* + t v > / || v ||^2
- *     = [ < v , d* > + t < v , v > ] / || v ||^2
- *     = < g - z* , d* > / || g - z* ||^2 + t
- *     = t + [ < g , d* > + t || z* ||^2 ] /
- *           [ || g ||^2  - 2 < g , z* > + || z* ||^2 ]
- *     = t + [ < g , d* > + t || z* ||^2 ] /
- *           [ || g ||^2  + 2 < g , d* > / t + || z* ||^2 ]
- *
- * The issue with this formula is the || g || term. This is the same issue as
- * with ScPr1 = < g , d* >, i.e., what to do with the easy components which
- * do not explicitly compute a subgradient. For the scalar product we could
- * use < z*_i , d* > that should be is available "for free" out of the Master
- * Problem but it currently isn't; in theory z*_i is also available, and we
- * could use it to compute < z*_i , d* >, but in practice due to the current
- * implementation of OSIMPSolver it is too costly to compute. */
-
-HpNum BundleSolver::Heuristic4( void )
-{
- auto NZ2 = NrmZ * NrmZ;
- if( G1Norm == INFshift )
-  G1Norm = norm( G1 , 2 );
- return( t + ( ScPr1 + t * NZ2 ) / ( G1Norm + 2 * ScPr1 / t + NZ2 ) );
- }
 
 /*--------------------------------------------------------------------------*/
 

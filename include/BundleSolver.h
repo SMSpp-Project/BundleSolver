@@ -2518,7 +2518,7 @@ public:
  void compute_NrmZFctr( void );
 
 /*--------------------------------------------------------------------------*/
- /* Concave functions to be maximised are sneakily turned into convex
+ /** Concave functions to be maximised are sneakily turned into convex
   * functions to be minimized inside by changing the sign of function values
   * and linearizations, but they have to be output with the right sign. */
  
@@ -2527,10 +2527,35 @@ public:
   }
 
 /*--------------------------------------------------------------------------*/
- /* Finds the next component to compute in the inner loop, writes is in
+ /** Finds the next component to compute in the inner loop, writes is in
   * f_wFi; returns false if there is no other component to compute. */
 
  bool FindNext( void );
+
+/*--------------------------------------------------------------------------*/
+ /// method implementing the short-term t-strategies
+ /** The method is called after a SS if inttSPar1 & 1 and after a NS if
+  * tSPar1 & 2 and should return a proposed new value for t using only
+  * information pertaining to the current iteration (typically, the
+  * aggregated subgradient and its linearization error, the newly obtained
+  * subgradient and its linearization error). The base class implements four
+  * simple heuristics chosen on the basis of the bits 6 and 7 of inttSPar1;
+  * see the comments to set_par( inttSPar1 ) and those inside Heuristic1()
+  * to Heuristic4() for details. However, the method is virtual so that
+  * derived classes can implement new ones, typically using the remaining
+  * bits of inttSPar1 (from 8 on) to select them. */
+
+ virtual HpNum Heuristic( Index whch );
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+
+ HpNum Heuristic1( void );
+
+ HpNum Heuristic2( void );
+
+ HpNum Heuristic3( void );
+
+ HpNum Heuristic4( void );
 
 /*--------------------------------------------------------------------------*/
 /*---------------------------- PROTECTED FIELDS  ---------------------------*/
@@ -3019,18 +3044,6 @@ class FakeFiOracle : public FiOracle
 /*--------------------------------------------------------------------------*/
 
  void UpdateHeuristicInfo( void );
-
-/*--------------------------------------------------------------------------*/
-
- HpNum Heuristic( Index whch );
-
- HpNum Heuristic1( void );
-
- HpNum Heuristic2( void );
-
- HpNum Heuristic3( void );
-
- HpNum Heuristic4( void );
 
 /*--------------------------------------------------------------------------*/
 
