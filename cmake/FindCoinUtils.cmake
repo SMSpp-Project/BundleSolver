@@ -41,7 +41,10 @@ find_package(BZip2 REQUIRED QUIET)
 # Conda coin-or-utils package links MKL BLAS library
 # https://github.com/conda-forge/coin-or-utils-feedstock/blob/main/recipe/build.sh#L12
 if (WIN32 AND DEFINED ENV{LIBRARY_PREFIX})
-    find_package(MKL REQUIRED QUIET)
+    find_library(MKL_RT
+                 NAMES mkl_rt
+                 PATHS "$ENV{LIBRARY_PREFIX}/lib"
+                 NO_DEFAULT_PATH)
 endif ()
 
 # Check if already in cache
@@ -103,8 +106,8 @@ if (CoinUtils_FOUND)
                 IMPORTED_LOCATION ${CoinUtils_LIBRARY}
                 INTERFACE_INCLUDE_DIRECTORIES ${CoinUtils_INCLUDE_DIRS})
         target_link_libraries(Coin::CoinUtils INTERFACE "BZip2::BZip2")
-        if (MKL_FOUND)
-            target_link_libraries(Coin::CoinUtils INTERFACE "MKL::MKL")
+        if (MKL_RT)
+            target_link_libraries(Coin::CoinUtils INTERFACE ${MKL_RT})
         endif ()
     endif ()
 endif ()
