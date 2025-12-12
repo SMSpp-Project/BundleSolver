@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 
-## [0.4.5] - 2025-12-XX
+## [0.4.5] - 2025-12-12
 
 ### Added
 
@@ -40,6 +40,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   develop new ML-based ones)
 
 - support to un\_any\_thing\_count\_*
+
+- adapted to new standard organization of makefiles
 
 - avoided const vectors prone to static initialization fiasco
 
