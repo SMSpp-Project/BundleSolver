@@ -31,7 +31,6 @@
 #    This find module is provided because Osi does not provide                #
 #    a CMake configuration file on its own.                                   #
 #                                                                             #
-#                              Niccolo' Iardella                              #
 #                                Donato Meoli                                 #
 #                         Dipartimento di Informatica                         #
 #                             Universita' di Pisa                             #
@@ -43,31 +42,30 @@ find_package(CoinUtils REQUIRED)
 find_package(CPLEX)
 find_package(GUROBI)
 
-# ----- Find the library ---------------------------------------------------- #
-# Note that find_path() creates a cache entry
+# ----- Find the headers ---------------------------------------------------- #
 find_path(Osi_INCLUDE_DIR
           NAMES OsiConfig.h
-          HINTS ${Osi_ROOT}/include
+          PATHS ${Osi_ROOT}/include
           PATH_SUFFIXES coin osi/coin coin-or
           DOC "Osi include directory.")
 
+# ----- Find the library ---------------------------------------------------- #
 find_library(Osi_LIBRARY
              NAMES Osi
-             HINTS ${Osi_ROOT}/lib
+             PATHS ${Osi_ROOT}/lib
              DOC "Osi library.")
 
 # ----- OsiCpx component ---------------------------------------------------- #
 if (CPLEX_FOUND)
-    # Note that find_path() creates a cache entry
     find_path(Osi_OsiCpx_INCLUDE_DIR
               NAMES OsiCpxSolverInterface.hpp
-              HINTS ${Osi_ROOT}/include
+              PATHS ${Osi_ROOT}/include
               PATH_SUFFIXES coin osi/coin coin-or
               DOC "OsiCpx include directory.")
 
     find_library(Osi_OsiCpx_LIBRARY
                  NAMES OsiCpx
-                 HINTS ${Osi_ROOT}/lib
+                 PATHS ${Osi_ROOT}/lib
                  DOC "OsiCpx library.")
 
     if (Osi_OsiCpx_INCLUDE_DIR AND Osi_OsiCpx_LIBRARY)
@@ -77,16 +75,15 @@ endif ()
 
 # ----- OsiGrb component ---------------------------------------------------- #
 if (GUROBI_FOUND)
-    # Note that find_path() creates a cache entry
     find_path(Osi_OsiGrb_INCLUDE_DIR
               NAMES OsiGrbSolverInterface.hpp
-              HINTS ${Osi_ROOT}/include
+              PATHS ${Osi_ROOT}/include
               PATH_SUFFIXES coin osi/coin coin-or
               DOC "OsiGrb include directory.")
 
     find_library(Osi_OsiGrb_LIBRARY
                  NAMES OsiGrb
-                 HINTS ${Osi_ROOT}/lib
+                 PATHS ${Osi_ROOT}/lib
                  DOC "OsiGrb library.")
 
     if (Osi_OsiGrb_INCLUDE_DIR AND Osi_OsiGrb_LIBRARY)
@@ -125,43 +122,43 @@ find_package_handle_standard_args(
 
 # ----- Export the targets -------------------------------------------------- #
 if (Osi_FOUND)
-    set(Osi_INCLUDE_DIRS "${Osi_INCLUDE_DIR}")
-    set(Osi_LIBRARIES "${Osi_LIBRARY}")
+    set(Osi_INCLUDE_DIRS ${Osi_INCLUDE_DIR})
+    set(Osi_LIBRARIES ${Osi_LIBRARY})
 
     if (NOT TARGET Coin::Osi)
         add_library(Coin::Osi UNKNOWN IMPORTED)
         set_target_properties(
                 Coin::Osi PROPERTIES
-                IMPORTED_LOCATION "${Osi_LIBRARY}"
-                INTERFACE_INCLUDE_DIRECTORIES "${Osi_INCLUDE_DIR}"
-                INTERFACE_LINK_LIBRARIES "${LAPACK_LIBRARIES};Coin::CoinUtils")
+                IMPORTED_LOCATION ${Osi_LIBRARY}
+                INTERFACE_INCLUDE_DIRECTORIES ${Osi_INCLUDE_DIRS}
+                INTERFACE_LINK_LIBRARIES "Coin::CoinUtils")
     endif ()
 endif ()
 
 if (Osi_OsiCpx_FOUND)
-    set(Osi_OsiCpx_INCLUDE_DIRS "${Osi_OsiCpx_INCLUDE_DIR}")
-    set(Osi_OsiCpx_LIBRARIES "${Osi_OsiCpx_LIBRARY}")
+    set(Osi_OsiCpx_INCLUDE_DIRS ${Osi_OsiCpx_INCLUDE_DIR})
+    set(Osi_OsiCpx_LIBRARIES ${Osi_OsiCpx_LIBRARY})
 
     if (NOT TARGET Coin::OsiCpx)
         add_library(Coin::OsiCpx UNKNOWN IMPORTED)
         set_target_properties(
                 Coin::OsiCpx PROPERTIES
-                IMPORTED_LOCATION "${Osi_OsiCpx_LIBRARY}"
-                INTERFACE_INCLUDE_DIRECTORIES "${Osi_OsiCpx_INCLUDE_DIR}"
+                IMPORTED_LOCATION ${Osi_OsiCpx_LIBRARY}
+                INTERFACE_INCLUDE_DIRECTORIES ${Osi_OsiCpx_INCLUDE_DIRS}
                 INTERFACE_LINK_LIBRARIES "Coin::Osi;CPLEX::Cplex")
     endif ()
 endif ()
 
 if (Osi_OsiGrb_FOUND)
-    set(Osi_OsiGrb_INCLUDE_DIRS "${Osi_OsiGrb_INCLUDE_DIR}")
-    set(Osi_OsiGrb_LIBRARIES "${Osi_OsiGrb_LIBRARY}")
+    set(Osi_OsiGrb_INCLUDE_DIRS ${Osi_OsiGrb_INCLUDE_DIR})
+    set(Osi_OsiGrb_LIBRARIES ${Osi_OsiGrb_LIBRARY})
 
     if (NOT TARGET Coin::OsiGrb)
         add_library(Coin::OsiGrb UNKNOWN IMPORTED)
         set_target_properties(
                 Coin::OsiGrb PROPERTIES
-                IMPORTED_LOCATION "${Osi_OsiGrb_LIBRARY}"
-                INTERFACE_INCLUDE_DIRECTORIES "${Osi_OsiGrb_INCLUDE_DIR}"
+                IMPORTED_LOCATION ${Osi_OsiGrb_LIBRARY}
+                INTERFACE_INCLUDE_DIRECTORIES ${Osi_OsiGrb_INCLUDE_DIRS}
                 INTERFACE_LINK_LIBRARIES "Coin::Osi;GUROBI::Gurobi")
     endif ()
 endif ()

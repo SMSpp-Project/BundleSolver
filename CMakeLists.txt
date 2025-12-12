@@ -11,18 +11,14 @@
 #                                                                             #
 #        $ cmake --build <build-path> --target install                        #
 #                                                                             #
-#    Note: this file tries to respect the principles of Modern CMake,         #
-#          keep it in mind when editing it.                                   #
-#                                                                             #
-#                              Niccolo' Iardella                              #
 #                                Donato Meoli                                 #
 #                         Dipartimento di Informatica                         #
 #                             Universita' di Pisa                             #
 # --------------------------------------------------------------------------- #
-cmake_minimum_required(VERSION 3.19)
-cmake_policy(VERSION 3.12)
+cmake_minimum_required(VERSION 3.16)
+cmake_policy(VERSION 3.15)
 project(BundleSolver
-        VERSION 0.4.3
+        VERSION 0.4.5
         DESCRIPTION "SMS++ BundleSolver module"
         HOMEPAGE_URL https://gitlab.com/smspp/bundlesolver
         LANGUAGES C CXX)
@@ -50,8 +46,8 @@ include(BuildType)
 
 # ----- Requirements -------------------------------------------------------- #
 # OsiCpx and/or OsiGrb needed for BundleSolver
-find_package(Osi OPTIONAL_COMPONENTS OsiCpx OsiGrb)
-if ((NOT Osi_OsiCpx_FOUND) AND (NOT Osi_OsiGrb_FOUND))
+find_package(Osi REQUIRED OPTIONAL_COMPONENTS OsiCpx OsiGrb)
+if (NOT Osi_FOUND)
     set(NDOFiOracle_USE_OSI OFF)
 endif ()
 
@@ -67,38 +63,49 @@ endif ()
 # - use Cplex, i.e., 2, if available
 # - otherwise, use Clp
 
+# Define a temporary variable to store the value of WHICH_OSI_QP
+set(TEMP_WHICH_OSI_QP 0)
+
 # if WHICH_OSI_QP is *not* given in input as CMake option...
-# (`NOT DEFINED WHICH_OSI_QP` tests `set( )`, not `add_definitions( )`)
+# (`NOT DEFINED WHICH_OSI_QP` tests `set( )`, not `add_compile_definitions( )`)
 if (NOT DEFINED WHICH_OSI_QP)
-    # ... then use OsiGrb in BundleSolver by default (as in BundleSolver.cpp:70)
-    add_definitions(-DWHICH_OSI_QP=2)
+    # ... then use OsiClp in BundleSolver by default (as in BundleSolver.cpp:72)
+    set(TEMP_WHICH_OSI_QP 0)
 else () # else if WHICH_OSI_QP is given in input as CMake option...
     if (WHICH_OSI_QP MATCHES "^(CPLEX|cplex|CPX|cpx|1)$")
-        add_definitions(-DWHICH_OSI_QP=1) # ... then use OsiCpx in BundleSolver
+        set(TEMP_WHICH_OSI_QP 1) # ... then use OsiCpx in BundleSolver
     elseif (WHICH_OSI_QP MATCHES "^(GUROBI|gurobi|GRB|grb|2)$")
-        add_definitions(-DWHICH_OSI_QP=2) # ... then use OsiGrb in BundleSolver
+        set(TEMP_WHICH_OSI_QP 2) # ... then use OsiGrb in BundleSolver
+    else ()
+        set(TEMP_WHICH_OSI_QP 0) # ... then use OsiClp in BundleSolver
     endif ()
 endif ()
 
-# if Cplex is found...
-if (Osi_OsiCpx_FOUND)
-    # ... and if WHICH_OSI_QP is *not* given in input as CMake option...
-    # (`NOT DEFINED WHICH_OSI_QP` tests `set( )`, not `add_definitions( )`)
-    if (NOT DEFINED WHICH_OSI_QP)
-        # ... then use OsiCpx in BundleSolver
-        add_definitions(-DWHICH_OSI_QP=1)
-    endif ()
-endif ()
-
-# but, if also Gurobi is found...
+# if Gurobi is found...
 if (Osi_OsiGrb_FOUND)
     # ... and if WHICH_OSI_QP is *not* given in input as CMake option...
-    # (`NOT DEFINED WHICH_OSI_QP` tests `set( )`, not `add_definitions( )`)
+    # (`NOT DEFINED WHICH_OSI_QP` tests `set( )`, not `add_compile_definitions( )`)
     if (NOT DEFINED WHICH_OSI_QP)
         # ... then use OsiGrb in BundleSolver
-        add_definitions(-DWHICH_OSI_QP=2)
+        set(TEMP_WHICH_OSI_QP 2)
     endif ()
 endif ()
+
+# but, if also Cplex is found...
+if (Osi_OsiCpx_FOUND)
+    # ... and if WHICH_OSI_QP is *not* given in input as CMake option...
+    # (`NOT DEFINED WHICH_OSI_QP` tests `set( )`, not `add_compile_definitions( )`)
+    if (NOT DEFINED WHICH_OSI_QP)
+        # ... then use OsiCpx in BundleSolver
+        set(TEMP_WHICH_OSI_QP 1)
+    endif ()
+endif ()
+
+# Add the compile definition only once at the end to avoid warnings
+add_compile_definitions(WHICH_OSI_QP=${TEMP_WHICH_OSI_QP})
+
+# Unset the temporary variable
+unset(TEMP_WHICH_OSI_QP)
 
 if (NOT hasParent)
     # If it's not being called by the umbrella, we need to
@@ -109,8 +116,7 @@ else ()
     # NDOFiOracle library, required by BundleSolver.
     # Requires CoinUtils, Osi and CPLEX.
     set(NDOFiOracle_READ_PATHS OFF CACHE BOOL
-                               "Whether NdoFiOracle will read locations for
-		                       dependencies or not." FORCE)
+        "Whether NdoFiOracle will read locations for dependencies or not." FORCE)
     add_subdirectory(NdoFiOracle)
 
     # Add the binary directory to RPATH, so executables that use
@@ -136,8 +142,8 @@ target_compile_features(${modName} PUBLIC cxx_std_17)
 # but should be added to anything that links to it.
 # Note: do not GLOB files here.
 target_sources(${modName} PRIVATE
-               BundleSolver.cpp
-               ParallelBundleSolver.cpp)
+               src/BundleSolver.cpp
+               src/ParallelBundleSolver.cpp)
 
 # When using target_include_directories(), PUBLIC means that any targets
 # that link to this target also need that include directory.
@@ -151,7 +157,7 @@ target_sources(${modName} PRIVATE
 # installed in the system will look into the INSTALL_INTERFACE path.
 target_include_directories(
         ${modName} PUBLIC
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:include/${modNamespace}>)
 
 # When linking other targets to the library with target_link_libraries(),
@@ -185,9 +191,8 @@ endif ()
 add_library(${modNamespace}::${modName} ALIAS ${modName})
 
 # ----- Subdirectories ------------------------------------------------------ #
-
 if (BUILD_TESTING)
-#    add_subdirectory(test)
+    # Just consuming BUILD_TESTING to avoid warnings
 endif ()
 
 # ----- Install instructions ------------------------------------------------ #
@@ -200,12 +205,13 @@ include(GNUInstallDirs)
 # Install the library
 install(TARGETS ${modName}
         EXPORT ${modName}Targets
-        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} # .dll
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} # .so .dylib
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}) # .lib
 
 # Install the headers
 install(FILES
-        ${CMAKE_CURRENT_SOURCE_DIR}/BundleSolver.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/BundleSolver.h
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/${modNamespace})
 
 # Install the auto-generated configuration header (see above).
@@ -261,7 +267,7 @@ endif ()
 # Using this with the umbrella project is too messy.
 if (NOT hasParent)
     set(CPACK_PACKAGE_VENDOR "SMS++ Team")
-    set(CPACK_PACKAGE_CONTACT "Niccolo' Iardella")
+    set(CPACK_PACKAGE_CONTACT "Donato Meoli")
     set(CPACK_PACKAGE_DESCRIPTION_SUMMARY ${PROJECT_DESCRIPTION})
     set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_LIST_DIR}/LICENSE")
     set(CPACK_RESOURCE_FILE_README "${CMAKE_CURRENT_LIST_DIR}/README.md")

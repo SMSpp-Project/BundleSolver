@@ -45,7 +45,7 @@ Configure and build the library with:
 mkdir build
 cd build
 cmake ..
-make
+cmake --build .
 ```
 The library has the same configuration options of
 [SMS++](https://gitlab.com/smspp/smspp-project/-/wikis/Customize-the-configuration).
@@ -65,7 +65,7 @@ cmake <source-path> -D<var>=<value>
 Optionally, install the library in the system with:
 
 ```sh
-sudo make install
+cmake --install .
 ```
 
 ### Usage with CMake
@@ -110,7 +110,7 @@ project](https://gitlab.com/frangio68/ndosolver_fioracle_project) has a similar
 arrangement with its own extlib/ folder, but the `*_ROOT` values are set in the
 SMS++ files and therefore are immediately available there, so there is no need
 to separately edit the NDOSolver/FiOracle project ones (but there would be if
-it were downloaded and compiled independenty).
+it were downloaded and compiled independently).
 
 
 ## Getting help

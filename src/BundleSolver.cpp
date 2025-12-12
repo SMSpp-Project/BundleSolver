@@ -58,16 +58,18 @@
  * any. i.e., unless a QPPenaltyMP is used) will be one of the two specific
  * OsiXXXSolverInterface that support a QP Master problem, i.e.,
  *
- * - 1: a OsiCpxSolverInterface
+ * - 0  ==> OsiSolverInterface, so none of these features can be used;
  *
- * - 2: a OsiGrbSolverInterface
+ * - 1  ==> OsiCpxSolverInterface
+ *
+ * - 2  ==> OsiGrbSolverInterface
  *
  * This requires some includes that can be avoided otherwise, especially
  * since both Cplex and Gurobi are commercial and therefore the corresponding
  * OsiXXXSolverInterface are in general not be available to all users. */
 
 #ifndef WHICH_OSI_QP
- #define WHICH_OSI_QP 2
+ #define WHICH_OSI_QP 1
 #endif
 
 #if WHICH_OSI_QP == 1
@@ -97,11 +99,76 @@
   *                   stored in the MPSolver
   *
   * - CHECK_DS & 8 == checks that the lower bounds out of the C05Function
-  *                   agree with these stored in the MPSolver
-  */
+  *                   agree with these stored in the MPSolver */
+
 #else
  #define CHECK_DS 0
  // never change this
+#endif
+
+#define CHECK_BAD_F 0
+/* Bundle methods are supposed to work on convex functions. Technically,
+ * this boils down to the fact that each (eps-)subgradient produced by
+ * each orcale must be a linear lower approximation of the corresponding
+ * function on all the space. This is immediately tested right away for the
+ * current stability centre Lambda by computing the linearization error of
+ * the subgradient (for the corresponding component) w.r.t. that point. If
+ *
+ * - the function is convex to start with
+ *
+ * - the function values and (eps-)subgradients (and the value of eps) are
+ *   correctly computed
+ *
+ * - the oracle is "faithful", i.e., it correctly reports the subgradients
+ *   as eps-ones (with the correct value of eps) rather than pretending that
+ *   they are exact, i.e., it correctly computes and returns the upper and
+ *   lower bounds on the function value
+ *
+ * then no negative linearization error should ever appear. Sometimes this is
+ * not the case. In Lagrangian optimization, for instance, some oracles may
+ * not solve the Lagrangian subproblem exactly and they may not be capable
+ * (or willing) to compute correct upper/lower bounds on the objective value
+ * so as to correctly declare the subgradient as an eps-one and provide a
+ * correct estimate of the eps; rather, these "cheating" oracles may just
+ * pretend the subgradient to be an exact one and leave the poor Bundle
+ * method to fend off with the consequences. These may be particularly
+ * nefarious in that the linearization errors are then used to compute the
+ * aggregate linearization error (Sigma) which enters in the crucial
+ * stopping criterion of the algorithm. Negative linearization errors may
+ * lead to a negative Sigma, which breaks the stopping criterion.
+ *
+ * BundleSolver is engineered to be "resistant" to Negative linearization 
+ * errors by detecting negative Sigma and performing "noise reduction steps"
+ * to try to make them go away. However, in general one may expect that, for
+ * some applications, this should never happen as the functions are convex
+ * and the oracles should be "faithful". Hence, appearence of negative
+ * linearization and especially negative Sigma, would be a sign that the
+ * oracles are not behaving as expected. This macro, coded bitwose, causes
+ * checks on negative linearization errors and/or negative Sigma to be
+ * performed and warnings to be printed on std::cerr if "negative enough"
+ * values are found. The exact coding is:
+ *
+ * - CHECK_BAD_F & 1 == checks the sign of the aggregate linearization error
+ *                      (Sigma) as soon as produced by the Master Problem
+ *
+ * - CHECK_BAD_F & 2 == checks the sign of any linearization error of any
+ *                      new subgradient w.r.t. the current stability centre
+ *                      Lambda as soon as the subgradient is extracted from 
+ *                      the corresponding oracle; the check is disable at
+ *                      the first iteration and in general whenever the
+ *                      reference value of the corresponding component is
+ *                      undefined, as in this case linearization errors are
+ *                      computed w.r.t. an arbitrary reference value (say, 0)
+ *                      and them being negative does not mean anything
+ *                      untowards having happened.
+ *
+ * Note that the warnings are printed whatever the value of the log verbosity
+ * and on std::cerr rather than on the BundleSolver log stream (if any), hence
+ * they are "rather invasive". */
+
+#if CHECK_BAD_F
+ #define CHECK_BAD_F_EPS 1e-6
+ // the relative threshold for checking negative linearization errors
 #endif
 
 /*--------------------------------------------------------------------------*/
@@ -353,158 +420,6 @@ SMSpp_insert_in_factory_cpp_0( BundleSolver );
 SMSpp_insert_in_factory_cpp_0( BundleSolverState );
 
 /*--------------------------------------------------------------------------*/
-// define and initialize here the vector of int parameters names
-const std::vector< std::string > BundleSolver::int_pars_str = {
- "intBPar1" ,
- "intBPar2" ,
- "intBPar3" ,
- "intBPar4" ,
- "intBPar6" ,
- "intBPar7" ,
- "intMnSSC" ,
- "intMnNSC" ,
- "inttSPar1" ,
- "intMaxNrEvls" ,
- "intDoEasy" ,
- "intWZNorm" ,
- "intFrcLstSS" ,
- "intTrgtMng" ,
- "intMPName" ,
- "intMPlvl" ,
- "intQPmp1" ,
- "intQPmp2",
- "OSImp1" ,
- "OSImp2" ,
- "OSImp3" ,
- "intRstAlg"
- };
-
-// define and initialize here the vector of double parameters names
-const std::vector< std::string > BundleSolver::dbl_pars_str = {
- "dblNZEps" ,
- "dbltStar" ,
- "dblMinNrEvls" ,
- "dblBPar5" ,
- "dblm1" ,
- "dblm2" ,
- "dblm3" ,
- "dblmxIncr" ,
- "dblmnIncr" ,
- "dblmxDecr" ,
- "dblmnDecr" ,
- "dbltMaior" ,
- "dbltMinor" ,
- "dbltInit" ,
- "dbltSPar2" ,
- "dbltSPar3" ,
- "dblCtOff"
- };
-
-// define and initialize here the vector of string parameters names
-const std::vector< std::string > BundleSolver::str_pars_str = {
- "strEasyCfg" ,
- "strHardCfg"
- };
-
-// define and initialize here the map for int parameters names
-const std::map< std::string , BundleSolver::idx_type >
- BundleSolver::int_pars_map = {
- { "intBPar1" , BundleSolver::intBPar1  } ,
- { "intBPar2" , BundleSolver::intBPar2  } ,
- { "intBPar3" , BundleSolver::intBPar3 } ,
- { "intBPar4" , BundleSolver::intBPar4 } ,
- { "intBPar6" , BundleSolver::intBPar6 } ,
- { "intBPar7" , BundleSolver::intBPar7 } ,
- { "intMnSSC" , BundleSolver::intMnSSC } ,
- { "intMnNSC" , BundleSolver::intMnNSC } ,
- { "inttSPar1" , BundleSolver::inttSPar1 } ,
- { "intMaxNrEvls" , BundleSolver::intMaxNrEvls } ,
- { "intDoEasy" , BundleSolver::intDoEasy } ,
- { "intWZNorm" , BundleSolver::intWZNorm } ,
- { "intFrcLstSS" , BundleSolver::intFrcLstSS } ,
- { "intTrgtMng" , BundleSolver::intTrgtMng } ,
- { "intMPName" , BundleSolver::intMPName } ,
- { "intMPlvl" , BundleSolver::intMPlvl } ,
- { "intQPmp1" , BundleSolver::intQPmp1 } ,
- { "intQPmp2" , BundleSolver::intQPmp2 } ,
- { "intOSImp1" , BundleSolver::intOSImp1 } ,
- { "intOSImp2" , BundleSolver::intOSImp2 } ,
- { "intOSImp3" , BundleSolver::intOSImp3 } ,
- { "intRstAlg" , BundleSolver::intRstAlg } ,
- };
-
-// define and initialize here the map for double parameters names
-const std::map< std::string , BundleSolver::idx_type >
- BundleSolver::dbl_pars_map = {
- { "dblNZEps" , BundleSolver::dblNZEps } ,
- { "dbltStar" , BundleSolver::dbltStar } ,
- { "dblMinNrEvls" , BundleSolver::dblMinNrEvls } ,
- { "dblBPar5" , BundleSolver::dblBPar5 } ,
- { "dblm1" , BundleSolver::dblm1 } ,
- { "dblm2" , BundleSolver::dblm2 } ,
- { "dblm3" , BundleSolver::dblm3 } ,
- { "dblmxIncr" , BundleSolver::dblmxIncr } ,
- { "dblmnIncr" , BundleSolver::dblmnIncr } ,
- { "dblmxDecr" , BundleSolver::dblmxDecr } ,
- { "dblmnDecr" , BundleSolver::dblmnDecr } ,
- { "dbltMaior" , BundleSolver::dbltMaior } ,
- { "dbltMinor" , BundleSolver::dbltMinor } ,
- { "dbltInit" , BundleSolver::dbltInit } ,
- { "dbltSPar2" , BundleSolver::dbltSPar2 } ,
- { "dbltSPar3" , BundleSolver::dbltSPar3 } ,
- { "dblCtOff" , BundleSolver::dblCtOff }
- };
-
-// define and initialize here the default int parameters
-const std::vector< int > BundleSolver::dflt_int_par = {
- 10 ,  // intBPar1
-100 ,  // intBPar2
-  1 ,  // intBPar3
-  1 ,  // intBPar4
-  0 ,  // intBPar6
-  3 ,  // intBPar7
-  0 ,  // intMnSSC
-  3 ,  // intMnNSC
- 12 ,  // inttSPar1
-  2 ,  // intMaxNrEvls
-  1 ,  // intDoEasy
-  2 ,  // intWZNorm
-  0 ,  // intFrcLstSS
-  0 ,  // intTrgtMng
-  0 ,  // intMPName
-  0 ,  // intMPlvl
-  0 ,  // intQPmp1
-  0 ,  // intQPmp2
-  4 ,  // intOSImp1
-  0 ,  // intOSImp2
-  1 ,  // intOSImp3
-  2    // intRstAlg, default value:
-       // RstAlg = 0  -  reset algorithmic parameters
-       // RstCrr = 1  -  set current point to using values of the Variable
- };
-
-// define and initialize here the default double parameters
-const std::vector< double > BundleSolver::dflt_dbl_par = {
- 0 ,      // dblNZEps
- 1e+2 ,   // dbltStar
- 0 ,      // dblMinNrEvls
- 30 ,     // dblBPar5
- 0.01 ,   // dblm1
- 0.99 ,   // dblm2
- 0.99 ,   // dblm3
- 10 ,     // dblmxIncr
- 1.5 ,    // dblmnIncr
- 0.1 ,    // dblmxDecr
- 0.66 ,   // dblmmDecr
- 1e+6 ,   // dbltMaior
- 1e-6,    // dbltMinor
- 1 ,      // dbltInit
- 1e-3 ,   // dbltSPar2
- 0 ,      // dbltSPar3
- 1e-1     // dblCtOff
- };
-
-/*--------------------------------------------------------------------------*/
 /*----------------------- METHODS OF BundleSolver --------------------------*/
 /*--------------------------------------------------------------------------*/
 
@@ -660,6 +575,11 @@ int BundleSolver::compute( bool changedvars )
    break;
    }
 
+  if( Result == kUnbounded ) {  // the Master Problem is unbounded
+   BLOG( 1 , " ~ stop (MP unbounded)" << std::endl );
+   break;
+   }
+  
   if( Result >= kError ) {  // problems in the Master Problem solver
    BLOG( 1 , " ~ error in the MPSolver" << std::endl );
    break;
@@ -763,8 +683,8 @@ int BundleSolver::compute( bool changedvars )
     Master->SensitAnals( vl , vc );
 
     double tt;
-    if( - vl < Eps< HpNum >() )  // v( t ) is [almost] constant ==> D*_t [~]= 0
-     tt = tStar;                 // ==> the CP model is ~bounded
+    if( - vl < Eps< HpNum >() )  // v( t ) is [~] constant ==> D*_t [~]= 0
+     tt = tStar;                 // ==> the CP model is [~]bounded
     else
      tt = std::min( tStar , ( tSPar2 * EpsU * AFL * Nearly + vc ) /
 		            ( - vl ) );
@@ -932,8 +852,14 @@ int BundleSolver::compute( bool changedvars )
    // MPchgs == 0 (but this is acted upon right below) but not otherwise,
    // since a "normal" NS will be done which is the right thing to do
    BLOG( 1 , "            Fi1 defined ==> SS " << std::endl );
-   GotoLambda1();         // go to the feasible point
-   continue;              // and start the actual minimization of Fi()
+   GotoLambda1();              // go to the feasible point
+   if( ParIter >= MaxIter ) {  // if this was the last possible iteration
+    BLOG( 1 , " ~ stop due to max iter" << std::endl );
+    Result = kStopIter;
+    break;                     // main loop ends here
+    }
+   else
+    continue;                  // go start the actual minimization of Fi()
    }
 
   // check if noise reduction has to be done- - - - - - - - - - - - - - - - -
@@ -1108,7 +1034,7 @@ int BundleSolver::compute( bool changedvars )
  // if necessary, force one last SS to the stability center - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- if( FrcLstSS && ( ! CmptdinL ) &&
+ if( ( FrcLstSS & 1 ) && ( ! CmptdinL ) &&
      ( ( Result == kOK ) || ( Result == kStopIter ) ||
        ( Result == kLowPrecision ) ) ) {
   BLOG( 1 , "            Recomputing the current point" << std::endl );
@@ -1355,26 +1281,18 @@ void BundleSolver::set_Block( Block * block )
  Index NumBVar = 0;  // count the number of Variable in the Block
  auto v_s_Variable = f_Block->get_static_variables();
  for( auto & el : v_s_Variable ) {
-  if( un_any_thing_0( ColVariable , el , ++NumBVar ) )
-   continue;
-  if( un_any_thing_1( ColVariable , el , NumBVar += var.size() ) )
-   continue;
-  if( un_any_thing_K( ColVariable , el , NumBVar += var.num_elements() ) )
-   continue;
-  throw( std::logic_error( "some static Variable is not a ColVariable" ) );
+  auto sz = un_any_thing_count_static( ColVariable , el );
+  if( sz == Inf< std::size_t >() )
+   throw( std::logic_error( "some static Variable is not a ColVariable" ) );
+  NumBVar += sz;
   }
 
  auto v_d_Variable = f_Block->get_dynamic_variables();
  for( auto & el : v_d_Variable ) {
-  if( un_any_thing_0( std::list< ColVariable > , el , ++NumBVar ) )
-   continue;
-  if( un_any_thing_1( std::list< ColVariable > , el ,
-		      NumBVar += var.size() ) )
-   continue;
-  if( un_any_thing_K( std::list< ColVariable > , el ,
-		      NumBVar += var.num_elements() ) )
-   continue;
-  throw( std::logic_error( "some dynamic Variable is not a ColVariable" ) );
+  auto sz = un_any_thing_count_dynamic( ColVariable , el );
+  if( sz == Inf< std::size_t >() )
+   throw( std::logic_error( "some dynamic Variable is not a ColVariable" ) );
+  NumBVar += sz;
   }
 
  if( NumBVar < NumVar )
@@ -1412,31 +1330,32 @@ void BundleSolver::set_Block( Block * block )
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // one day general linear constraints will be allowed
  //
- // note that un_any_thing() only serves to verify that the stuff is of the
+ // note that un_any_thing_*() only serves to verify that the stuff is of the
  // right type, and therefore it has to do nothing; this is obtained by
  // passing it as, the "function" argument, a void --> void lambda doing
  // nothing immediately applied to nothing, cue the curios list of
  // parentheses "[](){}()"
 
  for( auto & el : f_Block->get_static_constraints() ) {
-  if( un_any_thing( BoxConstraint , el , [](){}() ) )
+  if( un_any_thing_static( BoxConstraint , el , [](){}() ) )
    continue;
-  if( un_any_thing( LB0Constraint , el , [](){}() ) )
+  if( un_any_thing_static( LB0Constraint , el , [](){}() ) )
    continue;
-  if( un_any_thing( NNConstraint , el , [](){}() ) )
+  if( un_any_thing_static( NNConstraint , el , [](){}() ) )
    continue;
-  if( un_any_const_static( el , []( BoxConstraint & b ){} ,
-                           un_any_type< BoxConstraint >() ) )
-   continue;
+  //!! this should never have been needed in the first place
+  //!!if( un_any_const_static( el , []( BoxConstraint & b ){} ,
+  //!!                         un_any_type< BoxConstraint >() ) )
+  //!! continue;
   throw( std::logic_error( "unsupported type of static Constraint" ) );
   }
 
  for( auto & el : f_Block->get_dynamic_constraints() ) {
-  if( un_any_thing( std::list< BoxConstraint > , el , [](){}() ) )
+  if( un_any_thing_dynamic( BoxConstraint , el , [](){}() ) )
    continue;
-  if( un_any_thing( std::list< LB0Constraint > , el , [](){}() ) )
+  if( un_any_thing_dynamic( LB0Constraint , el , [](){}() ) )
    continue;
-  if( un_any_thing( std::list< NNConstraint > , el , [](){}() ) )
+  if( un_any_thing_dynamic( NNConstraint , el , [](){}() ) )
    continue;
   throw( std::logic_error( "unsupported type of dynamic Constraint" ) );
   }
@@ -1462,6 +1381,8 @@ void BundleSolver::set_Block( Block * block )
   IsEasy.resize( NrFi , nullptr );
   auto NEit = NoEasy.begin();
   for( Index k = 0 ; k < NrFi ; ++k ) {
+   // check if component k is marked as being forbidden to be easy (this
+   // assumes NoEasy ordered in increasing sense and without duplications)
    if( ( NEit != NoEasy.end() ) && ( Index( *NEit ) == k ) ) {
     ++NEit;
     continue;
@@ -1506,6 +1427,10 @@ void BundleSolver::set_Block( Block * block )
   if( ! NrEasy )
    IsEasy.clear();
   else {
+   if( NrEasy == NrFi )
+    throw( std::logic_error(
+	   "BundleSolver: all components are easy, this is no supported" ) );
+   
    // ComputeConfig-ure the easy components
    if( eCC || ( ! CmpCfg.empty() ) )
     for( Index k = 0 ; k < NrFi ; ++k ) {
@@ -1828,9 +1753,7 @@ void BundleSolver::set_par( idx_type par , int value )
   case( intEverykIt ):
    EverykIt = value;
    break;
-  case( intLogVerb ):
-   LogVerb = value;
-   break;
+  case( intLogVerb ): LogVerb = value; break;
   case( intBPar1 ):
    if( value < 1 )
     throw( std::invalid_argument( "BPar1 must be >= 1" ) );
@@ -1857,27 +1780,13 @@ void BundleSolver::set_par( idx_type par , int value )
    if( BPar4 > BPar3 )
     BPar3 = BPar4;
    break;
-  case( intBPar6 ):
-   BPar6 = value;
-   break;
-  case( intBPar7 ):
-   BPar7 = value;
-   break;
-  case( intMnSSC ):
-   MnSSC = value;
-   break;
-  case( intMnNSC ):
-   MnNSC = value;
-   break;
-  case( inttSPar1 ):
-   tSPar1 = value;
-   break;
-  case( intMaxNrEvls ):
-   MaxNrEvls = value;
-   break;
-  case( intDoEasy ):
-   DoEasy = char( value & 15 );
-   break;
+  case( intBPar6 ): BPar6 = value; break;
+  case( intBPar7 ): BPar7 = value; break;
+  case( intMnSSC ): MnSSC = value; break;
+  case( intMnNSC ): MnNSC = value; break;
+  case( inttSPar1 ): tSPar1 = value; break;
+  case( intMaxNrEvls ): MaxNrEvls = value; break;
+  case( intDoEasy ): DoEasy = char( value & 15 ); break;
   case( intWZNorm ):
    if( WZNorm != char( value ) ) {
     WZNorm = char( value );
@@ -1887,26 +1796,16 @@ void BundleSolver::set_par( idx_type par , int value )
      NrmZFctr = INFshift;    // factor to be computed
     }
    break;
-  case( intFrcLstSS ):
-   FrcLstSS = bool( value );
-   break;
-  case( intTrgtMng ):
-   TrgtMng = Index( value );
-   break;
+  case( intFrcLstSS ): FrcLstSS = value; break;
+  case( intTrgtMng ):  TrgtMng = Index( value ); break;
   case( intMPName ):
    if( ( value < 0 ) || ( value > 15 ) )
     throw( std::invalid_argument( "MPName must be in [0, 15]" ) );
    MPName = value;
    break;
-  case( intMPlvl ):
-   MPlvl = value;
-   break;
-  case( intQPmp1 ):
-   MxAdd = value;
-   break;
-  case( intQPmp2 ):
-   MxRmv = value;
-   break;
+  case( intMPlvl ): MPlvl = value; break;
+  case( intQPmp1 ): MxAdd = value; break;
+  case( intQPmp2 ): MxRmv = value; break;
   case( intOSImp1 ):
    if( algo != Index( value ) ) {
     algo = value;
@@ -1930,11 +1829,8 @@ void BundleSolver::set_par( idx_type par , int value )
      osi_mps->SetThreads( threads );
     }
    break;
-  case( intRstAlg ):
-   RstAlgPrm = value;
-   break;
-  default:
-   CDASolver::set_par( par , value );
+  case( intRstAlg ): RstAlgPrm = value; break;
+  default: CDASolver::set_par( par , value );
   }
  }  // end( BundleSolver::set_par( int ) )
 
@@ -2057,7 +1953,7 @@ void BundleSolver::set_par( idx_type par , std::string && value )
    HardCfg = std::move( value );
    break;
   default:
-   CDASolver::set_par( par , value );
+   CDASolver::set_par( par , std::move( value ) );
   }
  }  // end( BundleSolver::set_par( std::string && ) )
 
@@ -2095,50 +1991,196 @@ void BundleSolver::set_log( std::ostream * log_stream )
 /*---------------------- METHODS FOR READING RESULTS -----------------------*/
 /*--------------------------------------------------------------------------*/
 
+void BundleSolver::get_var_solution( Configuration *solc ) 
+{
+ // first take the values of the ColVariable in the Block
+
+ if( ( MaxSol > 1 ) && ( UpFiBest < UpRifFi.back() ) ) {
+  for( Index i = 0 ; i < NumVar ; i++ )
+   LamVcblr[ i ]->set_value( LmbdBst[ i ] );
+  }
+ else
+  for( Index i = 0 ; i < NumVar ; i++ )
+   LamVcblr[ i ]->set_value( Lambda[ i ] );
+
+ // now, if so instructed, also take the dual optimal solutions of the
+ // (chosen) easy components
+
+ // case where a subset of (easy) components is specified
+ if( auto c = dynamic_cast< SimpleConfiguration< std::vector<
+                                   std::pair< int , int > > > * >( solc ) ) {
+  for( auto p : c->f_value ) {
+   if( ( p.first < 0 ) || ( p.first >= int( NrFi ) ) )
+    throw( std::invalid_argument( "get_var_solution: invalid index " +
+				  std::to_string( p.first ) ) );
+   if( ! IsEasy[ p.first ] )
+    throw( std::invalid_argument( "get_var_solution: " +
+				  std::to_string( p.first ) + " not easy" ) );
+   if( p.second & 1 )
+    get_var_solution_easy_pi( p.first );
+
+   if( p.second & 2 )
+    get_var_solution_easy_rc( p.first );
+   }
+
+  return;
+  }
+
+ // case "all the easy components"
+ if( auto c = dynamic_cast< SimpleConfiguration< int > * >( solc ) ) {
+  auto h = c->f_value;
+  if( ! ( h & 3 ) )  // it'd be funny, but ...
+   return;
+
+  for( Index i = 0 ; i < NrFi ; ++i )
+   if( IsEasy[ i ] ) {
+    if( h & 1 )
+     get_var_solution_easy_pi( i );
+
+    if( h & 2 )
+     get_var_solution_easy_rc( i );
+    }
+
+  return;
+  }
+ }  // end( BundleSolver::get_var_solution )
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::get_var_solution_easy_pi( Index k )
+{
+ if( ! ( ( DoEasy & 12 ) == 12 ) )
+  throw( std::logic_error(
+	      "intDoEasy & 12 == 12 required to get easy components pi" ) );
+ 
+ auto nr = IsEasy[ k ]->get_numrows();
+ std::vector< double > pi( nr );
+
+ cHpRow DE = Master->ReadDualEasy( k + 1 );
+
+ for( int i = 0 ; i < nr ; ++i )
+  pi[ i ] = DE[ i ];
+ 
+ IsEasy[ k ]->write_dual_solution( pi , {} );
+
+ }  // end( BundleSolver::get_var_solution_easy_pi() )
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::get_var_solution_easy_rc( Index k )
+{
+ if( ! ( DoEasy & 8 ) )
+  throw( std::logic_error( "intDoEasy & 8 required to get easy components rc"
+			   ) );
+
+ auto nc = IsEasy[ k ]->get_numcols();
+ std::vector< double > rc( nc );
+
+ cHpRow RCE = Master->ReadReducedCostsEasy( k + 1 );
+
+ for( int i = 0 ; i < nc ; ++i )
+  rc[ i ] = RCE[ i ];
+ 
+ IsEasy[ k ]->write_dual_solution( {} , rc );
+
+ }  // end( BundleSolver::get_var_solution_easy_pi() )
+
+/*--------------------------------------------------------------------------*/
+
 void BundleSolver::get_dual_solution( Configuration * solc )
 {
- // construct the important linearization for each non-easy component (unless
- // it is already there, and signal to the C05Functions which one it is
+ if( auto c = dynamic_cast< SimpleConfiguration< std::vector< int > > * >(
+								  solc ) ) {
+  for( auto k : c->f_value ) {
+   if( ( k < 0 ) || ( k >= int( NrFi ) ) )
+    throw( std::invalid_argument( "get_dual_solution: invalid index " +
+				  std::to_string( k ) ) );
 
- for( Index k = 0 ; k < NrFi ; ++k )         // for all components
-  if( ( ! NrEasy ) || ( ! IsEasy[ k ] ) ) {  // but skip the easy ones
-   C05Function::LinearCombination lc;
+   if( NrEasy && ( ! IsEasy[ k ] ) )
+    get_dual_solution_hard( k );
+   else
+    get_dual_solution_easy( k );
+   }
 
-   if( Zvalid[ k ] ) {
-    // the optimal aggregated linearization for component k is in the
-    // bundle (and, therefore, global pool) already: the optimal
-    // coefficients are very simple, it's just that one
-    lc.resize( 1 );
-    lc[ 0 ].first = ItemVcblr[ whisZ[ k ] ].second;
-    lc[ 0 ].second = 1;
-    }
-   else {
-    // retrieve optimal multipliers from the Master
-    Index MBDm;
-    cIndex_Set MBse;
-    cHpRow Mlt = Master->ReadMult( MBse , MBDm , k + 1 , false );
+  return;
+  }
 
-    // copy them in the LinearCombination
-    lc.resize( MBDm );
-    auto lcit = lc.begin();
-
-    if( MBse )
-     for( Index h ; ( h = *(MBse++) ) < InINF ; ) {
-      lcit->first = ItemVcblr[ h ].second;
-      (lcit++)->second = *(Mlt++);
-      }
-    else
-     for( Index h = 0 ; h < MBDm ; ) {
-      lcit->first = ItemVcblr[ h++ ].second;
-      (lcit++)->second = *(Mlt++);
-      }
-    }
-
-   v_c05f[ k ]->set_important_linearization( std::move( lc ) );
-
-   }  // end( if( not easy ) )
+ if( NrEasy ) {
+  for( Index k = 0 ; k < NrFi ; ++k )
+   if( IsEasy[ k ] )
+    get_dual_solution_easy( k );
+   else
+    get_dual_solution_hard( k );
+  }
+ else
+  for( Index k = 0 ; k < NrFi ; ++k )
+   get_dual_solution_hard( k );
 
  }  // end( BundleSolver::get_dual_solution() )
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::get_dual_solution_easy( Index k )
+{
+ auto nc = IsEasy[ k ]->get_numcols();
+ std::vector< double > x( nc );
+ 
+ Index MBDm;
+ cIndex_Set MBse;
+ cHpRow Mlt = Master->ReadMult( MBse , MBDm , k + 1 , false );
+
+ if( MBDm != Index( nc ) )
+  throw( std::logic_error( "get_dual_solution_easy: size mismatch" ) );
+
+ for( int i = 0 ; i < nc ; ++i )
+  x[ i ] = Mlt[ i ];
+ 
+ IsEasy[ k ]->write_var_solution( x );
+
+ }  // end( BundleSolver::get_dual_solution_easy() )
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::get_dual_solution_hard( Index k )
+{
+ // construct the important linearization for the non-easy component (unless
+ // it is already there, and signal to the C05Functions which one it is
+
+ C05Function::LinearCombination lc;
+
+ if( Zvalid[ k ] ) {
+  // the optimal aggregated linearization for component k is in the
+  // bundle (and, therefore, global pool) already: the optimal
+  // coefficients are very simple, it's just that one
+  lc.resize( 1 );
+  lc[ 0 ].first = ItemVcblr[ whisZ[ k ] ].second;
+  lc[ 0 ].second = 1;
+  }
+ else {
+  // retrieve optimal multipliers from the Master
+  Index MBDm;
+  cIndex_Set MBse;
+  cHpRow Mlt = Master->ReadMult( MBse , MBDm , k + 1 , false );
+
+  // copy them in the LinearCombination
+  lc.resize( MBDm );
+  auto lcit = lc.begin();
+
+  if( MBse )
+   for( Index h ; ( h = *(MBse++) ) < InINF ; ) {
+    lcit->first = ItemVcblr[ h ].second;
+    (lcit++)->second = *(Mlt++);
+    }
+  else
+   for( Index h = 0 ; h < MBDm ; ) {
+    lcit->first = ItemVcblr[ h++ ].second;
+    (lcit++)->second = *(Mlt++);
+    }
+  }
+
+ v_c05f[ k ]->set_important_linearization( std::move( lc ) );
+
+ }  // end( BundleSolver::get_dual_solution_hard() )
 
 /*--------------------------------------------------------------------------*/
 
@@ -2214,7 +2256,7 @@ const std::string & BundleSolver::get_str_par( idx_type par ) const
   case( strHardCfg ):   return( HardCfg );
   default:              return( CDASolver::get_str_par( par ) );
   }
- }
+ }  // end( BundleSolver::get_str_par )
 
 /*--------------------------------------------------------------------------*/
 
@@ -2224,7 +2266,7 @@ const std::vector< int > & BundleSolver::get_vint_par( idx_type par ) const
   return( NoEasy );
 
  return( CDASolver::get_vint_par( par ) );
- }
+ }  // end( BundleSolver::get_vint_par )
 
 /*--------------------------------------------------------------------------*/
 
@@ -2235,7 +2277,7 @@ const std::vector< std::string > & BundleSolver::get_vstr_par( idx_type par )
   return( CmpCfg );
 
  return( CDASolver::get_vstr_par( par ) );
- }
+ }  // end( BundleSolver::get_vstr_par )
 
 /*--------------------------------------------------------------------------*/
 /*----------- METHODS FOR HANDLING THE State OF THE BundleSolver -----------*/
@@ -2243,7 +2285,7 @@ const std::vector< std::string > & BundleSolver::get_vstr_par( idx_type par )
 
 State * BundleSolver::get_State( void ) const {
   return( new BundleSolverState( this ) );
-  }
+  }  // end( BundleSolver::get_State )
 
 /*--------------------------------------------------------------------------*/
 
@@ -2392,6 +2434,14 @@ void BundleSolver::guts_of_put_State( const BundleSolverState & state )
   Master->ChangeCurrPoint( state.Lambda.data() , foo.data() );
   }
 
+ if( FrcLstSS & 2 ) {
+  // something may have changed in the Block in the meantime, force the
+  // recomputation of all components before trusting the current state
+  UpFiLmbdef = 0;
+  std::fill( UpFiLmb.begin() , UpFiLmb.end() ,  INFshift );
+  RifeqFi = false;
+  }
+ 
  Fi0Lmb = state.Fi0Lmb;
  f_global_LB = state.global_LB;
  
@@ -2579,7 +2629,7 @@ void BundleSolver::FormD( void )
                       : - f_Block->get_valid_upper_bound( true );
 
  for( ; ; )  // error-handling loop - - - - - - - - - - - - - - - - - - - - - -
- {        // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ {           // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
   // ensure the MPSolver will not take too much time
   if( MaxTime < INFshift ) {
@@ -2592,8 +2642,46 @@ void BundleSolver::FormD( void )
   if( mps == MPSolver::kOK )        // everything's alright
    break;
 
-  if( mps == MPSolver::kUnfsbl ) {  // the MP is empty
-   if( ! Master->BCSize() )         // but no vertical linearizations
+  /* If it's not OK, three things can happen: unfeasible, unbounded, or a
+   * numerical error.
+   *
+   * Note that MPSolver assumes the primal Master Problem being 
+   *
+   *    P_{B,Lambda,t}:   inf{ Fi_{B,Lambda}( d ) + D_t( d ) }
+   *
+   * where Fi_{B,Lambda}() is the cutting-plane model and D_t() is the
+   * stabilisation term, although with easy components the most natural
+   * implementation is actually in terms of the dual
+   *
+   *    D_{B,Lambda,t}:   inf{ Fi_{B,Lambda}*( z ) + D_t*( -z ) }
+   *
+   * The primal Master Problem can therefore be unfeasible only if there are
+   * vertical linearizations. As for being unbounded, with a "loosely
+   * stabilised" MPSolver (one with, say, a 1-norm or INF-norm primal
+   * penalty), this may happen and it could be mended by decreasing t, which
+   * would lead to the following piece of code:
+   *
+   * if( ( t <= tMinor ) || ( Master->BCSize() >= Master->BSize() ) ) {
+   *  // ... but t must always be >= tMinor, and it is already == tMinor
+   *  // in the "empty" case of the initial iteration with empty bundle
+   *  BLOG( 1 , std::endl << "Bundle::FormD: failure in MPSolver." );
+   *  Result = kError;
+   *  return;
+   *  }
+   *
+   * BLOG( 1 , std::endl << "Bundle::FormD: MP unbounded, decreasing t" );
+   * Master->Sett( t = std::max( t / 2 , tMinor ) );
+   * continue;
+   *
+   * However, currently BundleSolver only admits QPPenaltyMP or OSIMPSolver
+   * with either Quadratic or BoxStep stabilisation, which can never be
+   * "naturally" unbounded. Yet, the primal Master Problem can still be
+   * unbounded if the dual Master Problem is empty, which can happen if
+   * there are easy components. If there are not, the MPSolver returning
+   * kUnbndd can only be a numerical error in disguise. */
+  
+  if( mps == MPSolver::kUnfsbl ) {  // the MP is (primal) empty
+   if( ! Master->BCSize() )         // there are no vertical linearizations
     mps = MPSolver::kError;         // it must be a numerical error
    else {                           // there are vertical linearizations
     Result = kInfeasible;           // the MP can really be infeasible
@@ -2601,28 +2689,14 @@ void BundleSolver::FormD( void )
     }
    }
 
-  if( mps == MPSolver::kUnbndd )  // the MP is unbounded
-   /* With a "loosely stabilised" MPSolver (one with, say, a 1-norm or
-    * INF-norm primal penalty), this may happen and it could be mended
-    * by decreasing t, which would lead to the following piece of code:
-    *
-    * if( ( t <= tMinor ) || ( Master->BCSize() >= Master->BSize() ) ) {
-    *  // ... but t must always be >= tMinor, and it is already == tMinor
-    *  // in the "empty" case of the initial iteration with empty bundle
-    *  BLOG( 1 , std::endl << "Bundle::FormD: failure in MPSolver." );
-    *  Result = kError;
-    *  return;
-    *  }
-    *
-    * BLOG( 1 , std::endl << "Bundle::FormD: MP unbounded, decreasing t" );
-    * Master->Sett( t = std::max( t / 2 , tMinor ) );
-    * continue;
-    *
-    * However, currently BundleSolver only admits QPPenaltyMP or OSiMPSolver
-    * with either Quadratic or BoxStep stabilisation, which can never be
-    * unbounded: hence, the MPSolver returning kUnbndd can only be a
-    * numerical error in disguise. */
-   mps = MPSolver::kError;
+  if( mps == MPSolver::kUnbndd ) {  // the MP is (primal) unbounded
+   if( ! NrEasy )                   // there are no easy components
+    mps = MPSolver::kError;         // it must be a numerical error
+   else {                           // there are easy components
+    Result = kUnbounded;            // the MP can really be unbounded
+    return;                         // nothing else to do
+    }
+   }
 
   if( mps == MPSolver::kStppd ) {  // stopped by time limit
    //!! so far, the time limit in the MPSolver is only due to the global time
@@ -2735,6 +2809,23 @@ void BundleSolver::FormD( void )
    vStar.back() -= EasyRifFi;
   Sigma += EasyRifFi;
   }
+
+ #if CHECK_BAD_F & 1
+  // if so required, check for "very negative Sigma" and print a warning on
+  // std::cerr if it is found; however, do that only if (an upper bound on
+  // the correct value of) Fi is known, for otherwise the linearization
+  // errors have been computed against an arbitrary reference value and
+  // they easily be negative "by chance", so the same holds for Sigma,
+  // without this indicating a problem; this may happen either at the very
+  // first call to compute(), or at the first iteration of a subsequent
+  // call to compute() where Modification have made the Fi-value invalid
+  if( UpFiLmb.back() < INFshift ) {
+   auto rel_error = ( Sigma / std::max( std::abs( UpRifFi.back() ) , 1.0 ) );
+   if( rel_error < - CHECK_BAD_F_EPS )
+    std::cerr << std::endl << "Warning[ " << SCalls << ", " << ParIter
+	      << " ]: Sigma = " << rel_error << std::endl;
+   }
+ #endif
 
  DSTS = Master->ReadDStart( std::abs( tStar ) );  // D_{t*}( z* )
 
@@ -3017,7 +3108,6 @@ void BundleSolver::FormLambda1( HpNum Tau )
   }
  else
   LwFiLmb1.back() = -INFshift;
-
 
  // update the upper and lower targets - - - - - - - - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -3532,6 +3622,23 @@ bool BundleSolver::GetGi( Index wFi )
    // CheckSubG changes Alfa1k so that G1 is an Alfa1k-subgradient in Lambda
    cp = Master->CheckSubG( UpFiLmb1[ wFi ] - UpRifFi[ wFi ] , t , Alfa1k ,
 			   ScPr1k );
+
+   #if CHECK_BAD_F & 2
+    // if so required, check for "very negative Alfa1" and print a warning on
+    // std::cerr if it is found; however, avoid the check if the true function
+    // value of component wFi in Lambda has not been ever computed yet (or has
+    // became invalid), as testified by the fact that UpRifFi[ wFi ] (which is
+    // always finite) is different from UpFiLmb[ wFi ] (which is set to +INF
+    // when unknown), since in this case a negative Alfa1 does not signify
+    // that anything untowards has been done by the oracle
+    if( UpRifFi[ wFi ] == UpFiLmb[ wFi ] ) {
+     auto rel_error = ( Alfa1k / std::max( std::abs( UpFiLmb1[ wFi ] ) , 1.0 )
+			);
+     if( rel_error < - CHECK_BAD_F_EPS )
+      std::cerr << std::endl << "Warning[ " << SCalls << ", " << ParIter
+		<< ", " << wFi << " ]: Alfa1 = " << rel_error << std::endl;
+     }
+   #endif
    }
   else {             // it is a constraint
    // the definition of constraint in FiOracle (hence MPSolver) is
@@ -4034,6 +4141,283 @@ bool BundleSolver::FindNext( void )
  }  // end( BundleSolver::FindNext )
 
 /*--------------------------------------------------------------------------*/
+/* Front-end for four different heuristics for short-term t management.
+ *
+ * Three of the heuristics (1, 2, and 3) are based on three slightly different
+ * variants of the same idea: considering the objective f( x ) from the
+ * current stability center \bar{x} along direction d* seen as a function of
+ * t, assuming that d* = - t z* (which is, strictly speaking, only true in
+ * the pure quadratic proximal case and therefore does not cleanly generalise
+ * to the generalised one; yet these are heuristics).
+ *
+ * That is, we consider the translated function along z*
+ *
+ *    q( v ) = f( \bar{x} - v z* ) - f( \bar{x} )
+ *
+ * Assuming (only for notational simplicity) differentiability, we thus have
+ *
+ *    q'( v ) = < - z* , f'( \bar{x} - v z* ) >
+ *
+ * After that f( \bar{x} + d* ) = f( \bar{x} - t z* ) = q( t ) has been
+ * computed, we know:
+ *
+ * - the aggregated subgradient z*, which is a Sigma*-subgradient in \bar{x}
+ *
+ * - the newly obtained subgradient g, which is an Alfa1-subgradient in 0 and
+ *   eps-subgradient in t, where
+ *
+ *     eps = DeltaFi - ( Alfa1 + < g , d* > )
+ *
+ * We thus assume:
+ *
+ * - q( 0 ) = 0
+ *
+ * - q'( 0 ) = < - z* , z* > = - NrmZ^2
+ *
+ * Note, however, that z* is a Sigma*-subgradient in \bar{x}, and therefore
+ * the value of the linearization there is rather -Sigma*; thus, we could
+ * alternatively assume q( 0 ) = - Sigma*.
+ *
+ * - q( t ) = f( \bar{x} - t z* ) - f( \bar{x} ) = DeltaFi
+ *
+ * - q'( t ) = < - z* , g >; since we have ScPr1 = < d* , g > =
+ *   < - t z* , g > (note again that this only holds in the quadratic case),
+ *   we conclude q'( t ) = ScPr1 / t
+ *
+ * Note, however, that g* is a Alfa1-subgradient of \bar{x}, and therefore we
+ * could alternatively take the value in t as that of the corresponding
+ * linearization, i.e., q( t ) = ScPr1 - Alfa1.
+ *
+ * We can then consider the quadratic function
+ *
+ *    m( v ) = a v^2 + b v + c
+ *
+ * and construct different forms of it corresponding to different choices of
+ * three of the four information we have, then use its minimum
+ *
+ *   v* = - b / ( 2 a )
+ *
+ * as the suggested new value for t. Since v* only makes sense if a > 0,
+ * when a <= 0 we use the best possible convex approximation of a concave
+ * function by setting a = 0, in which case the minimum is the extreme of
+ * the interval [ tMinor , tMaior ] dictated by the sign of b.
+ *
+ * The fourth heuristic is based on an entirely different idea related to the
+ * Moreau-Yoshida regularization, called "reversal form of the poorman's
+ * quasi-Newton update". */
+
+HpNum BundleSolver::Heuristic( Index whch )
+{
+ switch( whch & 3 ) {
+  case( 0 ): return( Heuristic1() );
+  case( 1 ): return( Heuristic2() );
+  case( 2 ): return( Heuristic3() );
+  }
+
+ return( Heuristic4() );
+ }
+
+/*--------------------------------------------------------------------------*/
+/* With the notation above, in the first case we impose
+ *
+ *    m( 0 )  = c = - Sigma*
+ *    m( t )  = a t^2 + b t + c = DeltaFi
+ *    m'( 0 ) = [ 2 a 0 ] + b = - NrmZ^2
+ *
+ * which yields c = - Sigma*, b = - NrmZ^2,
+ * a = ( DeltaFi + NrmZ^2 t + Sigma*  ) / t^2.
+ * Note that z* is a Sigma*-subgradient in \bar{x}, and therefore
+ *
+ *    f( \bar{x} + d* ) >= f( \bar{x} ) + < d* , z* > - Sigma*
+ *                       = f( \bar{x} ) - t < z* , z* > - Sigma*
+ *    ==> DeltaFi = f( \bar{x} + d* ) - f( \bar{x} ) >= - NrmZ^2 t - Sigma*
+ *    ==> a = DeltaFi + NrmZ^2 t + Sigma* >= 0
+ *
+ * which guarantees that m() is convex and therefore the minimum of m() is
+ *
+ *   v* = - ( - NrmZ^2 ) / ( 2 ( DeltaFi + NrmZ^2 t + Sigma* ) / t^2 )
+ *      =   NrmZ^2 / ( 2 ( DeltaFi + NrmZ^2 t + Sigma* ) / t^2 )
+ *      =   t^2 NrmZ^2 / ( 2 ( DeltaFi + NrmZ^2 t + Sigma* ) )
+ *
+ * Note that, conveniently, v* >= 0 always holds. This corresponds to the
+ * fact that m'( 0 ) = b < 0, i.e., m() is surely decreasing in 0.
+ * 
+ * However, this formula has a serious issue: we need to know DeltaFi,
+ * which may well not be defined when a NS is performed and multiple
+ * components are present since the incremental approach may stop the
+ * inner loop before having computed them all. The obvious solution is
+ * to replace DeltaFi with
+ *
+ *    \underline{f}( \bar{x} + d* ) - \bar{f}( \bar{x} ) =
+ *    LwFiLmb1.back() - UpRifFi.back()
+ *
+ * which is always well-defined since a finite lower bound is always
+ * available (unless some component evaluates to -INF, in which case
+ * the algorithm stops and this method is not invoked). */
+
+HpNum BundleSolver::Heuristic1( void )
+{
+ auto DF = DeltaFi < INFshift ? DeltaFi : LwFiLmb1.back() - UpRifFi.back();
+ auto NZ2 = NrmZ * NrmZ;
+ if( DF + NZ2 * t + Sigma > 1e-16 )  // this should always be >=
+  return( t * t * NZ2 / ( 2 * ( DF + NZ2 * t + Sigma ) ) );
+ else                 // a == 0, all depends on the sign of b
+  /* there is no "if" here, NrmZ >= 0 by definition, a fortiori NZ2
+  if( - NZ2 <= 0 )    // b < 0  */
+   return( tMaior );  // ==> tMaior
+  /* there is no "else" here, - NZ2 > 0 cannot happen
+  else                // b > 0
+   return( tMinor );  // ==> tMinor */
+ }
+
+/*--------------------------------------------------------------------------*/
+/* With the notation above, in the second case we rather impose
+ *
+ *    m( 0 )  = c = 0
+ *    m( t )  = a t^2 + b t [ + 0 ] = ScPr1 - Alfa1
+ *    m'( t ) = 2 a t + b = ScPr1 / t
+ *
+ * which yields c = 0, a = Alfa1 / t^2, b = ( ScPr1 - 2 Alfa1 ) / t
+ *
+ * Since Alfa1 >= 0, a >= 0 which implies that m() is surely convex and the
+ * minimum is
+ * 
+ *   v* = - [ ( ScPr1 - 2 Alfa1 ) / t ] / [ 2 Alfa1 / t^2 ]
+ *      = t ( 2 Alfa1 - ScPr1 ) / ( 2 Alfa1 )
+ *
+ * Note that, unlike in the first case, there is no guarantee that v* >= 0,
+ * because we fix the derivative in t and therefore m'( 0 ) = b may turn up
+ * to be positive (m() in increasing in 0).
+ *
+ * Since this formula does not really use DeltaFi, it being undefined is not
+ * an issue here. However, this formula has a somewhat similar issue with NS
+ * (and SS alike) in that not all components may have been evaluated, and
+ * therefore only a "partial" g may be available. ScPr1 and Alfa1 are
+ * computed for all non-"easy" components using the "representative
+ * subgradients" out of the previous iterations, *provided they have not by
+ * chance been deleted* (which should not happen unless the bundle is very
+ * very small). Yet, "easy" components are left out. There may be some way
+ * put of this, e.g. by using z*_i in place of g_i for the "easy" components,
+ * but this is nontrivial and therefore avoided for now. */
+
+HpNum BundleSolver::Heuristic2( void )
+{
+ if( Alfa1 > 1e-16 )            // it is always >= 0, but it may be ==
+  return( t * ( 2 * Alfa1 - ScPr1 ) / ( 2 * Alfa1 ) );
+ else                           // a == 0,  all depends on the sign of b
+  if( ScPr1 - 2 * Alfa1 <= 0 )  // b < 0
+   return( tMaior );            // ==> tMaior
+  else                          // b > 0
+   return( tMinor );            // ==> tMinor
+ }
+
+/*--------------------------------------------------------------------------*/
+/* With the notation above, in the third case we rather impose
+ *
+ *    m'( 0 ) = [ 2 a 0 ] + b = - NrmZ^2
+ *    m( t )  = a t^2 + b t + c = < something >
+ *    m'( t ) = 2 a t + b = ScPr1 / t
+ *
+ * which yields b = - NrmZ^2, a  = ( ScPr1 / t + NrmZ^2 ) / ( 2 t ), and c
+ * ... something depending on which value we choose for m( t ), but we
+ * don't care about because c does not appear in the computation of v*.
+ * If m() is convex, i.e.
+ *
+ *    ScPr1 / t + NrmZ^2 > 0
+ *
+ * yields
+ * 
+ *   v* = - [ - NrmZ^2 ] / [ 2 ( ScPr1 / t + NrmZ^2 ) / ( 2 t ) ]
+ *      = t NrmZ^2 / ( ScPr1 / t + NrmZ^2 )
+ *
+ * Note that, if m() is convex, then v* >= 0 holds because, as usual, we have
+ * fixed m'( 0 ) = b < 0 and therefore m() is decreasing in 0. 
+ *
+ * See above for the "issue" about ScPr1 having been computed with a
+ * "partial" g; however, since this formula does not really use DeltaFi,
+ * it being undefined is not an issue here.
+ *
+ * Note also that the possible fourth case
+ *
+ *    m( 0 )  = c = 0 [ or - Sigma* ]
+ *    m'( 0 ) = [ 2 a 0 ] + b = - NrmZ^2
+ *    m'( t ) = 2 a t + b = ScPr1 / t
+ *
+ * only changes c w.r.t. the current one, hence it does not change v*, and
+ * therefore need not be separately considered. */
+
+HpNum BundleSolver::Heuristic3( void )
+{
+ auto NZ2 = NrmZ * NrmZ;
+ if( ScPr1 / t + NZ2 > 1e-16 )
+  return( t * NZ2 / ( ScPr1 / t + NZ2 ) );
+ else                 // a == 0, all depends on the sign of b
+  /* there is no "if" here, NrmZ >= 0 by definition, a fortiori NZ2
+  if( - NZ2 <= 0 )    // b < 0  */
+   return( tMaior );  // ==> tMaior
+  /* there is no "else" here, - NZ2 > 0 cannot happen
+  else                // b > 0
+   return( tMinor );  // ==> tMinor */
+ }
+
+/*--------------------------------------------------------------------------*/
+/* This heuristic is instead based on a completely different approach. It is
+ * called "reversal form of the poorman's quasi-Newton update" and its
+ * nontrivial rationale is described in details in
+ *
+ *  C. Lemarechal and C. Sagastizabal. Variable metric bundle methods: from
+ *  conceptual to implementable forms. Mathematical Programming,
+ *  76(3):393-410, 1997
+ *
+ * A more refined version of the same is proposed in
+ *
+ *  P.A. Rey and C. Sagastizabal. Dynamical adjustment of the prox-parameter
+ *  in variable metric bundle methods. Optimization, 51(2):423-447, 2002
+ *
+ * It should be noted that this heuristic is explicitly developed for being
+ * used at SS only.
+ *
+ * The proposed new value is
+ *
+ *   t = < v , u > / || v ||^2
+ *
+ * where
+ *
+ *   v = g - z*
+ *
+ *   u = ( \bar{x} - v z* ) - \bar{x} + t v = d* + t v
+ *
+ * although v would in general be g_{i+1} - g_i, hence the choice of z* as
+ * g_i is somewhat arbitrary; but in general z* is considered to be "the best
+ * (approximate) subgradient we have at \bar{x}".
+ *
+ * Hence
+ *
+ *   v = < v , d* + t v > / || v ||^2
+ *     = [ < v , d* > + t < v , v > ] / || v ||^2
+ *     = < g - z* , d* > / || g - z* ||^2 + t
+ *     = t + [ < g , d* > + t || z* ||^2 ] /
+ *           [ || g ||^2  - 2 < g , z* > + || z* ||^2 ]
+ *     = t + [ < g , d* > + t || z* ||^2 ] /
+ *           [ || g ||^2  + 2 < g , d* > / t + || z* ||^2 ]
+ *
+ * The issue with this formula is the || g || term. This is the same issue as
+ * with ScPr1 = < g , d* >, i.e., what to do with the easy components which
+ * do not explicitly compute a subgradient. For the scalar product we could
+ * use < z*_i , d* > that should be is available "for free" out of the Master
+ * Problem but it currently isn't; in theory z*_i is also available, and we
+ * could use it to compute < z*_i , d* >, but in practice due to the current
+ * implementation of OSIMPSolver it is too costly to compute. */
+
+HpNum BundleSolver::Heuristic4( void )
+{
+ auto NZ2 = NrmZ * NrmZ;
+ if( G1Norm == INFshift )
+  G1Norm = norm( G1 , 2 );
+ return( t + ( ScPr1 + t * NZ2 ) / ( G1Norm + 2 * ScPr1 / t + NZ2 ) );
+ }
+
+/*--------------------------------------------------------------------------*/
 /*-------------------------- PRIVATE METHODS -------------------------------*/
 /*--------------------------------------------------------------------------*/
 
@@ -4448,283 +4832,6 @@ void BundleSolver::UpdateHeuristicInfo( void )
     ScPr1 += Master->ReadGid( whisG1[ k ] );
 
  }  // end( UpdateHeuristicInfo )
-
-/*--------------------------------------------------------------------------*/
-/* Front-end for four different heuristics for short-term t management.
- *
- * Three of the heuristics (1, 2, and 3) are based on three slightly different
- * variants of the same idea: considering the objective f( x ) from the
- * current stability center \bar{x} along direction d* seen as a function of
- * t, assuming that d* = - t z* (which is, strictly speaking, only true in
- * the pure quadratic proximal case and therefore does not cleanly generalise
- * to the generalised one; yet these are heuristics).
- *
- * That is, we consider the translated function along z*
- *
- *    q( v ) = f( \bar{x} - v z* ) - f( \bar{x} )
- *
- * Assuming (only for notational simplicity) differentiability, we thus have
- *
- *    q'( v ) = < - z* , f'( \bar{x} - v z* ) >
- *
- * After that f( \bar{x} + d* ) = f( \bar{x} - t z* ) = q( t ) has been
- * computed, we know:
- *
- * - the aggregated subgradient z*, which is a Sigma*-subgradient in \bar{x}
- *
- * - the newly obtained subgradient g, which is an Alfa1-subgradient in 0 and
- *   eps-subgradient in t, where
- *
- *     eps = DeltaFi - ( Alfa1 + < g , d* > )
- *
- * We thus assume:
- *
- * - q( 0 ) = 0
- *
- * - q'( 0 ) = < - z* , z* > = - NrmZ^2
- *
- * Note, however, that z* is a Sigma*-subgradient in \bar{x}, and therefore
- * the value of the linearization there is rather -Sigma*; thus, we could
- * alternatively assume q( 0 ) = - Sigma*.
- *
- * - q( t ) = f( \bar{x} - t z* ) - f( \bar{x} ) = DeltaFi
- *
- * - q'( t ) = < - z* , g >; since we have ScPr1 = < d* , g > =
- *   < - t z* , g > (note again that this only holds in the quadratic case),
- *   we conclude q'( t ) = ScPr1 / t
- *
- * Note, however, that g* is a Alfa1-subgradient of \bar{x}, and therefore we
- * could alternatively take the value in t as that of the corresponding
- * linearization, i.e., q( t ) = ScPr1 - Alfa1.
- *
- * We can then consider the quadratic function
- *
- *    m( v ) = a v^2 + b v + c
- *
- * and construct different forms of it corresponding to different choices of
- * three of the four information we have, then use its minimum
- *
- *   v* = - b / ( 2 a )
- *
- * as the suggested new value for t. Since v* only makes sense if a > 0,
- * when a <= 0 we use the best possible convex approximation of a concave
- * function by setting a = 0, in which case the minimum is the extreme of
- * the interval [ tMinor , tMaior ] dictated by the sign of b.
- *
- * The fourth heuristic is based on an entirely different idea related to the
- * Moreau-Yoshida regularization, called "reversal form of the poorman's
- * quasi-Newton update". */
-
-HpNum BundleSolver::Heuristic( Index whch )
-{
- switch( whch & 3 ) {
-  case( 0 ): return( Heuristic1() );
-  case( 1 ): return( Heuristic2() );
-  case( 2 ): return( Heuristic3() );
-  }
-
- return( Heuristic4() );
- }
-
-/*--------------------------------------------------------------------------*/
-/* With the notation above, in the first case we impose
- *
- *    m( 0 )  = c = - Sigma*
- *    m( t )  = a t^2 + b t + c = DeltaFi
- *    m'( 0 ) = [ 2 a 0 ] + b = - NrmZ^2
- *
- * which yields c = - Sigma*, b = - NrmZ^2,
- * a = ( DeltaFi + NrmZ^2 t + Sigma*  ) / t^2.
- * Note that z* is a Sigma*-subgradient in \bar{x}, and therefore
- *
- *    f( \bar{x} + d* ) >= f( \bar{x} ) + < d* , z* > - Sigma*
- *                       = f( \bar{x} ) - t < z* , z* > - Sigma*
- *    ==> DeltaFi = f( \bar{x} + d* ) - f( \bar{x} ) >= - NrmZ^2 t - Sigma*
- *    ==> a = DeltaFi + NrmZ^2 t + Sigma* >= 0
- *
- * which guarantees that m() is convex and therefore the minimum of m() is
- *
- *   v* = - ( - NrmZ^2 ) / ( 2 ( DeltaFi + NrmZ^2 t + Sigma* ) / t^2 )
- *      =   NrmZ^2 / ( 2 ( DeltaFi + NrmZ^2 t + Sigma* ) / t^2 )
- *      =   t^2 NrmZ^2 / ( 2 ( DeltaFi + NrmZ^2 t + Sigma* ) )
- *
- * Note that, conveniently, v* >= 0 always holds. This corresponds to the
- * fact that m'( 0 ) = b < 0, i.e., m() is surely decreasing in 0.
- * 
- * However, this formula has a serious issue: we need to know DeltaFi,
- * which may well not be defined when a NS is performed and multiple
- * components are present since the incremental approach may stop the
- * inner loop before having computed them all. The obvious solution is
- * to replace DeltaFi with
- *
- *    \underline{f}( \bar{x} + d* ) - \bar{f}( \bar{x} ) =
- *    LwFiLmb1.back() - UpRifFi.back()
- *
- * which is always well-defined since a finite lower bound is always
- * available (unless some component evaluates to -INF, in which case
- * the algorithm stops and this method is not invoked). */
-
-HpNum BundleSolver::Heuristic1( void )
-{
- auto DF = DeltaFi < INFshift ? DeltaFi : LwFiLmb1.back() - UpRifFi.back();
- auto NZ2 = NrmZ * NrmZ;
- if( DF + NZ2 * t + Sigma > 1e-16 )  // this should always be >=
-  return( t * t * NZ2 / ( 2 * ( DF + NZ2 * t + Sigma ) ) );
- else                 // a == 0, all depends on the sign of b
-  /* there is no "if" here, NrmZ >= 0 by definition, a fortiori NZ2
-  if( - NZ2 <= 0 )    // b < 0  */
-   return( tMaior );  // ==> tMaior
-  /* there is no "else" here, - NZ2 > 0 cannot happen
-  else                // b > 0
-   return( tMinor );  // ==> tMinor */
- }
-
-/*--------------------------------------------------------------------------*/
-/* With the notation above, in the second case we rather impose
- *
- *    m( 0 )  = c = 0
- *    m( t )  = a t^2 + b t [ + 0 ] = ScPr1 - Alfa1
- *    m'( t ) = 2 a t + b = ScPr1 / t
- *
- * which yields c = 0, a = Alfa1 / t^2, b = ( ScPr1 - 2 Alfa1 ) / t
- *
- * Since Alfa1 >= 0, a >= 0 which implies that m() is surely convex and the
- * minimum is
- * 
- *   v* = - [ ( ScPr1 - 2 Alfa1 ) / t ] / [ 2 Alfa1 / t^2 ]
- *      = t ( 2 Alfa1 - ScPr1 ) / ( 2 Alfa1 )
- *
- * Note that, unlike in the first case, there is no guarantee that v* >= 0,
- * because we fix the derivative in t and therefore m'( 0 ) = b may turn up
- * to be positive (m() in increasing in 0).
- *
- * Since this formula does not really use DeltaFi, it being undefined is not
- * an issue here. However, this formula has a somewhat similar issue with NS
- * (and SS alike) in that not all components may have been evaluated, and
- * therefore only a "partial" g may be available. ScPr1 and Alfa1 are
- * computed for all non-"easy" components using the "representative
- * subgradients" out of the previous iterations, *provided they have not by
- * chance been deleted* (which should not happen unless the bundle is very
- * very small). Yet, "easy" components are left out. There may be some way
- * put of this, e.g. by using z*_i in place of g_i for the "easy" components,
- * but this is nontrivial and therefore avoided for now. */
-
-HpNum BundleSolver::Heuristic2( void )
-{
- if( Alfa1 > 1e-16 )            // it is always >= 0, but it may be ==
-  return( t * ( 2 * Alfa1 - ScPr1 ) / ( 2 * Alfa1 ) );
- else                           // a == 0,  all depends on the sign of b
-  if( ScPr1 - 2 * Alfa1 <= 0 )  // b < 0
-   return( tMaior );            // ==> tMaior
-  else                          // b > 0
-   return( tMinor );            // ==> tMinor
- }
-
-/*--------------------------------------------------------------------------*/
-/* With the notation above, in the third case we rather impose
- *
- *    m'( 0 ) = [ 2 a 0 ] + b = - NrmZ^2
- *    m( t )  = a t^2 + b t + c = < something >
- *    m'( t ) = 2 a t + b = ScPr1 / t
- *
- * which yields b = - NrmZ^2, a  = ( ScPr1 / t + NrmZ^2 ) / ( 2 t ), and c
- * ... something depending on which value we choose for m( t ), but we
- * don't care about because c does not appear in the computation of v*.
- * If m() is convex, i.e.
- *
- *    ScPr1 / t + NrmZ^2 > 0
- *
- * yields
- * 
- *   v* = - [ - NrmZ^2 ] / [ 2 ( ScPr1 / t + NrmZ^2 ) / ( 2 t ) ]
- *      = t NrmZ^2 / ( ScPr1 / t + NrmZ^2 )
- *
- * Note that, if m() is convex, then v* >= 0 holds because, as usual, we have
- * fixed m'( 0 ) = b < 0 and therefore m() is decreasing in 0. 
- *
- * See above for the "issue" about ScPr1 having been computed with a
- * "partial" g; however, since this formula does not really use DeltaFi,
- * it being undefined is not an issue here.
- *
- * Note also that the possible fourth case
- *
- *    m( 0 )  = c = 0 [ or - Sigma* ]
- *    m'( 0 ) = [ 2 a 0 ] + b = - NrmZ^2
- *    m'( t ) = 2 a t + b = ScPr1 / t
- *
- * only changes c w.r.t. the current one, hence it does not change v*, and
- * therefore need not be separately considered. */
-
-HpNum BundleSolver::Heuristic3( void )
-{
- auto NZ2 = NrmZ * NrmZ;
- if( ScPr1 / t + NZ2 > 1e-16 )
-  return( t * NZ2 / ( ScPr1 / t + NZ2 ) );
- else                 // a == 0, all depends on the sign of b
-  /* there is no "if" here, NrmZ >= 0 by definition, a fortiori NZ2
-  if( - NZ2 <= 0 )    // b < 0  */
-   return( tMaior );  // ==> tMaior
-  /* there is no "else" here, - NZ2 > 0 cannot happen
-  else                // b > 0
-   return( tMinor );  // ==> tMinor */
- }
-
-/*--------------------------------------------------------------------------*/
-/* This heuristic is instead based on a completely different approach. It is
- * called "reversal form of the poorman's quasi-Newton update" and its
- * nontrivial rationale is described in details in
- *
- *  C. Lemarechal and C. Sagastizabal. Variable metric bundle methods: from
- *  conceptual to implementable forms. Mathematical Programming,
- *  76(3):393-410, 1997
- *
- * A more refined version of the same is proposed in
- *
- *  P.A. Rey and C. Sagastizabal. Dynamical adjustment of the prox-parameter
- *  in variable metric bundle methods. Optimization, 51(2):423-447, 2002
- *
- * It should be noted that this heuristic is explicitly developed for being
- * used at SS only.
- *
- * The proposed new value is
- *
- *   t = < v , u > / || v ||^2
- *
- * where
- *
- *   v = g - z*
- *
- *   u = ( \bar{x} - v z* ) - \bar{x} + t v = d* + t v
- *
- * although v would in general be g_{i+1} - g_i, hence the choice of z* as
- * g_i is somewhat arbitrary; but in general z* is considered to be "the best
- * (approximate) subgradient we have at \bar{x}".
- *
- * Hence
- *
- *   v = < v , d* + t v > / || v ||^2
- *     = [ < v , d* > + t < v , v > ] / || v ||^2
- *     = < g - z* , d* > / || g - z* ||^2 + t
- *     = t + [ < g , d* > + t || z* ||^2 ] /
- *           [ || g ||^2  - 2 < g , z* > + || z* ||^2 ]
- *     = t + [ < g , d* > + t || z* ||^2 ] /
- *           [ || g ||^2  + 2 < g , d* > / t + || z* ||^2 ]
- *
- * The issue with this formula is the || g || term. This is the same issue as
- * with ScPr1 = < g , d* >, i.e., what to do with the easy components which
- * do not explicitly compute a subgradient. For the scalar product we could
- * use < z*_i , d* > that should be is available "for free" out of the Master
- * Problem but it currently isn't; in theory z*_i is also available, and we
- * could use it to compute < z*_i , d* >, but in practice due to the current
- * implementation of OSIMPSolver it is too costly to compute. */
-
-HpNum BundleSolver::Heuristic4( void )
-{
- auto NZ2 = NrmZ * NrmZ;
- if( G1Norm == INFshift )
-  G1Norm = norm( G1 , 2 );
- return( t + ( ScPr1 + t * NZ2 ) / ( G1Norm + 2 * ScPr1 / t + NZ2 ) );
- }
 
 /*--------------------------------------------------------------------------*/
 
@@ -5441,11 +5548,9 @@ void BundleSolver::process_outstanding_easy_Modification( void )
      if( auto modl = dynamic_cast< const C05FunctionMod * >( tmod ) ) {
 
       if( modl->type() == C05FunctionMod::NothingChanged ) {
-
        const auto shift = modl->shift();
 
-       if( ( shift ==  INFshift ) ||
-           ( shift == -INFshift ) ||
+       if( ( shift ==  INFshift ) || ( shift == -INFshift ) ||
            ( std::isnan( shift ) ) )
         throw( std::logic_error(
          "unexpected *C05FunctionMod* from Objective Function" ) );
@@ -5453,7 +5558,6 @@ void BundleSolver::process_outstanding_easy_Modification( void )
        constant_value += shift;
        }
       else {
-
        whch |= 1;
        continue;
        }

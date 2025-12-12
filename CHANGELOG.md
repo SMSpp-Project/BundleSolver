@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+### Changed
+
+### Fixed
+
+
+## [0.4.5] - 2025-12-12
+
+### Added
+
+- check for when all components are easy
+
+- temporary solution to management of putting an
+  inconsistent BundleSolverState (see comments to
+  intFrcLstSS)
+
+- useful option to get\_var\_solution() for duals/reduced
+  costs of all easy components
+
+- support for reading primal and dual solutions out of
+  easy components
+
+- CHECK_BAD_F (warnings to show possible oracle issues)
+
+- algo information getters
+
+### Changed
+
+- Heuristic() are protected and virtual (so that we can
+  develop new ML-based ones)
+
+- support to un\_any\_thing\_count\_*
+
+- adapted to new standard organization of makefiles
+
+- avoided const vectors prone to static initialization fiasco
+
+- deactivated useless warnings
+
+### Fixed
+
+- huge logical flaw whereby a problem that was empty due to
+  easy components making it so was not properly recognised
+  as being so
+
+- allow to terminate in exactly one iteration 
+
+
 ## [0.4.4] - 2024-02-27
 
 ### Changed

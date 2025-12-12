@@ -34,11 +34,13 @@
 
 # macros to be exported - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-BNDSLVOBJ = $(BNDSLVSDR)/BundleSolver.o $(BNDSLVSDR)/ParallelBundleSolver.o 
+BNDSLVOBJ = $(BNDSLVSDR)/obj/BundleSolver.o \
+	$(BNDSLVSDR)/obj/ParallelBundleSolver.o
 
-BNDSLVINC = -I$(BNDSLVSDR)
+BNDSLVINC = -I$(BNDSLVSDR)/include
 
-BNDSLVH   = $(BNDSLVSDR)/BundleSolver.h $(BNDSLVSDR)/ParallelBundleSolver.h 
+BNDSLVH   = $(BNDSLVSDR)/include/BundleSolver.h \
+	$(BNDSLVSDR)/include/ParallelBundleSolver.h
 
 # clean - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -47,13 +49,14 @@ clean::
 
 # dependencies: every .o from its .cpp + every recursively included .h- - - -
 
-$(BNDSLVSDR)/BundleSolver.o: $(BNDSLVSDR)/BundleSolver.cpp \
-	$(BNDSLVSDR)/BundleSolver.h $(SMS++OBJ) $(MILPSH) $(libNDOOBJ)
-	$(CC) -c $*.cpp -o $@ $(BNDSLVINC) $(SMS++INC) $(MILPSINC) $(libNDOINC) $(SW)
+$(BNDSLVSDR)/obj/BundleSolver.o: $(BNDSLVSDR)/src/BundleSolver.cpp \
+	$(BNDSLVSDR)/include/BundleSolver.h $(SMS++OBJ) $(MILPSH) $(libNDOOBJ)
+	$(CC) -c $(BNDSLVSDR)/src/BundleSolver.cpp -o $@ $(BNDSLVINC) \
+	$(SMS++INC) $(MILPSINC) $(libNDOINC) $(SW)
 
-$(BNDSLVSDR)/ParallelBundleSolver.o: $(BNDSLVSDR)/ParallelBundleSolver.cpp \
+$(BNDSLVSDR)/obj/ParallelBundleSolver.o: $(BNDSLVSDR)/src/ParallelBundleSolver.cpp \
 	$(BNDSLVH) $(SMS++OBJ) $(MILPSH) $(libNDOOBJ)
-	$(CC) -c $*.cpp -o $@ $(BNDSLVINC) $(SMS++INC) $(MILPSINC) \
-	$(libNDOINC) $(SW)
+	$(CC) -c $(BNDSLVSDR)/src/ParallelBundleSolver.cpp -o $@ \
+	$(BNDSLVINC) $(SMS++INC) $(MILPSINC) $(libNDOINC) $(SW)
 
 ########################## End of makefile ###################################

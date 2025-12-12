@@ -129,6 +129,7 @@
 /*------------------------------ INCLUDES ----------------------------------*/
 /*--------------------------------------------------------------------------*/
 
+#include <chrono>
 #include <ctime>
 #include <queue>
 
@@ -540,48 +541,48 @@ public:
   MaxSol = CDASolver::get_dflt_int_par( intMaxSol );
   EverykIt = CDASolver::get_dflt_int_par( intEverykIt );
   LogVerb = CDASolver::get_dflt_int_par( intLogVerb );
-  BPar1 = Index( dflt_int_par[ intBPar1 - intLastParCDAS ] );
-  BPar2 = Index( dflt_int_par[ intBPar2 - intLastParCDAS ] );
-  BPar3 = Index( dflt_int_par[ intBPar3 - intLastParCDAS ] );
-  BPar4 = Index( dflt_int_par[ intBPar4 - intLastParCDAS ] );
-  BPar6 = dflt_int_par[ intBPar6 - intLastParCDAS ];
-  BPar7 = dflt_int_par[ intBPar7 - intLastParCDAS ];
-  MnSSC = dflt_int_par[ intMnSSC - intLastParCDAS ];
-  MnNSC = dflt_int_par[ intMnNSC - intLastParCDAS ];
-  tSPar1 = dflt_int_par[ inttSPar1 - intLastParCDAS ];
-  MaxNrEvls = dflt_int_par[ intMaxNrEvls - intLastParCDAS ];
-  DoEasy = char( dflt_int_par[ intDoEasy - intLastParCDAS ] );
-  WZNorm = char( dflt_int_par[ intWZNorm - intLastParCDAS ] );
-  FrcLstSS = bool( dflt_int_par[ intFrcLstSS - intLastParCDAS ] );
-  TrgtMng = Index( dflt_int_par[ intTrgtMng - intLastParCDAS ] );
-  MPName = dflt_int_par[ intMPName - intLastParCDAS ];
-  MPlvl = dflt_int_par[ intMPlvl - intLastParCDAS ];
-  MxAdd = dflt_int_par[ intQPmp1 - intLastParCDAS ];
-  MxRmv = dflt_int_par[ intQPmp2 - intLastParCDAS ];
-  algo = dflt_int_par[ intOSImp1 - intLastParCDAS ];
-  reduction = dflt_int_par[ intOSImp2 - intLastParCDAS ];
-  threads = dflt_int_par[ intOSImp3 - intLastParCDAS ];
+  BPar1 = Index( get_dflt_int_par( intBPar1 ) );
+  BPar2 = Index( get_dflt_int_par( intBPar2 ) );
+  BPar3 = Index( get_dflt_int_par( intBPar3 ) );
+  BPar4 = Index( get_dflt_int_par( intBPar4 ) );
+  BPar6 = get_dflt_int_par( intBPar6 );
+  BPar7 = get_dflt_int_par( intBPar7 );
+  MnSSC = get_dflt_int_par( intMnSSC );
+  MnNSC = get_dflt_int_par( intMnNSC );
+  tSPar1 = get_dflt_int_par( inttSPar1 );
+  MaxNrEvls = get_dflt_int_par( intMaxNrEvls );
+  DoEasy = char( get_dflt_int_par( intDoEasy ) );
+  WZNorm = char( get_dflt_int_par( intWZNorm ) );
+  FrcLstSS = get_dflt_int_par( intFrcLstSS );
+  TrgtMng = Index( get_dflt_int_par( intTrgtMng ) );
+  MPName = get_dflt_int_par( intMPName );
+  MPlvl = get_dflt_int_par( intMPlvl );
+  MxAdd = get_dflt_int_par( intQPmp1 );
+  MxRmv = get_dflt_int_par( intQPmp2 );
+  algo = get_dflt_int_par( intOSImp1 );
+  reduction = get_dflt_int_par( intOSImp2 );
+  threads = get_dflt_int_par( intOSImp3 );
 
   MaxTime = CDASolver::get_dflt_dbl_par( dblMaxTime );
   RelAcc = CDASolver::get_dflt_dbl_par( dblRelAcc );
   AbsAcc = CDASolver::get_dflt_dbl_par( dblAbsAcc );
   EveryTTm = CDASolver::get_dflt_dbl_par( dblEveryTTm );
-  NZEps = dflt_dbl_par[ dblNZEps - dblLastParCDAS ];
-  tStar = dflt_dbl_par[ dbltStar - dblLastParCDAS ];
-  MinNrEvls = dflt_dbl_par[ dblMinNrEvls - dblLastParCDAS ];
-  m1 = dflt_dbl_par[ dblm1 - dblLastParCDAS ];
-  m2 = dflt_dbl_par[ dblm2 - dblLastParCDAS ];
-  m3 = dflt_dbl_par[ dblm3 - dblLastParCDAS ];
-  mxIncr = dflt_dbl_par[ dblmxIncr - dblLastParCDAS ];
-  mnIncr = dflt_dbl_par[ dblmnIncr - dblLastParCDAS ];
-  mxDecr = dflt_dbl_par[ dblmxDecr - dblLastParCDAS ];
-  mnDecr = dflt_dbl_par[ dblmnDecr - dblLastParCDAS ];
-  tMaior = dflt_dbl_par[ dbltMaior - dblLastParCDAS ];
-  tMinor = dflt_dbl_par[ dbltMinor - dblLastParCDAS ];
-  tInit = dflt_dbl_par[ dbltInit - dblLastParCDAS ];
-  tSPar2 = dflt_dbl_par[ dbltSPar2 - dblLastParCDAS ];
-  tSPar3 = dflt_dbl_par[ dbltSPar3 - dblLastParCDAS ];
-  CtOff = dflt_dbl_par[ dblCtOff - dblLastParCDAS ];
+  NZEps = get_dflt_dbl_par( dblNZEps );
+  tStar = get_dflt_dbl_par( dbltStar );
+  MinNrEvls = get_dflt_dbl_par( dblMinNrEvls );
+  m1 = get_dflt_dbl_par( dblm1 );
+  m2 = get_dflt_dbl_par( dblm2 );
+  m3 = get_dflt_dbl_par( dblm3 );
+  mxIncr = get_dflt_dbl_par( dblmxIncr );
+  mnIncr = get_dflt_dbl_par( dblmnIncr );
+  mxDecr = get_dflt_dbl_par( dblmxDecr );
+  mnDecr = get_dflt_dbl_par( dblmnDecr );
+  tMaior = get_dflt_dbl_par( dbltMaior );
+  tMinor = get_dflt_dbl_par( dbltMinor );
+  tInit = get_dflt_dbl_par( dbltInit );
+  tSPar2 = get_dflt_dbl_par( dbltSPar2 );
+  tSPar3 = get_dflt_dbl_par( dbltSPar3 );
+  CtOff = get_dflt_dbl_par( dblCtOff );
 
   v_events.resize( max_event_number() );
   }
@@ -932,19 +933,37 @@ public:
   *   "almost 0" in the specific sense dictated by this parameter together
   *   with dblZNEps.
   *
-  * - intFrcLstSS [0 == false] If set to true, ensures that all the non-easy
-  *                            components have been evaluated the last time
-  *   on the point that is returned (first) by get_var_solution(). Some
-  *   approaches using BundleSolver may require this because they use some
-  *   other information provided by the compute()-tion process of the
-  *   components that need be "current" with the optimal solution. This may
-  *   happen automatically if the very last iteration that the algorithm
-  *   performs before stopping is a "serious step", but in general this is not
-  *   guaranteed, whence the need for this parameter. Note that setting it to
-  *   true may be expensive as computing all components is; in particular it
-  *   cannot work if the maximum time limit has been exceeded already, and it
-  *   may trigger a kStopTime return status where a kOK would have been
-  *   produced exactly due to the cost of the extra compute()-tions.
+  * - intFrcLstSS [0]: bit-wise encoding that controls two "symmetric" issues
+  *                    about "trusting" input/output state.
+  *     bit 0: if 1, it ensures that all the non-easy components have been
+  *            evaluated the last time on the point that is returned (first)
+  *            by get_var_solution(). Some approaches using BundleSolver may
+  *     require this because they use some other information provided by the
+  *     compute()-tion process of the components that need be "current" with
+  *     the optimal solution. This may happen automatically if the very last
+  *     iteration that the algorithm performs before stopping is a "serious
+  *     step", but in general this is not guaranteed, whence the need for
+  *     this parameter. Note that setting it to 1 may be as expensive as
+  *     computing all components is; in particular it cannot work if the
+  *     maximum time limit has been exceeded already, and it may trigger a
+  *     kStopTime return status where a kOK would have been produced exactly
+  *     due to the cost of the extra compute()-tions.
+  *     bit 1: if 1, it makes it so that the function values stored in a
+  *            BundleSolverState [see] are not trusted when it is put() back
+  *            in BundleSolver. This causes the re-computation of all
+  *     function values at the first iteration before the algorithm can
+  *     declare optimality. this is provided in case the state of the Block
+  *     to which BundleSolver is registered is not the same as that when the
+  *     BundleSolverState was get(), which may happen either if they are
+  *     actually two different (similar, but not identical) Block, or if
+  *     BundleSolver was detached, some changes were effected in the Block
+  *     and then BundleSolver was re-attached. this way of using 
+  *     [BundleSolver]State is explicitly permitted by the definition of
+  *     State, with the provision that the Solver must be able to identify
+  *     somehow the inconsistencies that it can create. since BundleSolver
+  *     has no way to check what had happened to the Block "when it was not
+  *     listening to Modificaion", this setting provides a (crude but
+  *     functional) way to ensure consistency for this use case.
   *
   * - intTrgtMng [0]: bit-wise encoding of several details of the algorithm
   *                   pertaining to how the upper and lower model are used to
@@ -978,8 +997,9 @@ public:
   *              at least one among the bits 0, 1 and 2 is 1.
   *
   * - intMPName [1]: bit-wise encoding of which MPSolver is used:
-  *                  bit 0: 0 = QPPenalty, 1 = OSiMPSolver
-  *                  bit 1: 1 = OsiCpxInterface, 0 = OsiCLPInterface
+  *                  bit 0: 0 = QPPenalty, 1 = OSIMPSolver
+  *                  bit 1: 1 = OsiCpxSolverInterface / OsiGrbSolverInterface,
+  *                             0 = OsiClpInterface
   *                  bit 2: 1 = Quadratic, 0 = BoxStep
   *                  bit 3: 1 = CheckIdentical( true ) is called, 0 = not
   *
@@ -1432,9 +1452,14 @@ public:
 /** @} ---------------------------------------------------------------------*/
 /*---------------------- METHODS FOR READING RESULTS -----------------------*/
 /*--------------------------------------------------------------------------*/
-/** @name Accessing the found solutions (if any) and solution information-
+/** @name Accessing the found solutions (if any) and solution information
  *  @{ */
 
+ /// returns the current number of variables in (all) the C0%Function(s)
+
+ Index get_NumVar( void ) { return( NumVar ); }
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// returns the number of calls to compute() (the current one included)
 
  long get_elapsed_calls( void ) const override { return( SCalls ); }
@@ -1530,40 +1555,95 @@ public:
 
 /*--------------------------------------------------------------------------*/
  /// write the "current" solution
+ /** Write the  "current" optimal solution in the Block. There are two
+  * different pieces of optimal solution:
+  *
+  * - The optimal values of the ColVariable in the Block;
+  *
+  * - If some of the C05Function are LagBFunction and are handled as "easy"
+  *   components, the primal optimal solution of the dual problem that
+  *   BundleSolver is using is actually the dual optimal solution of the
+  *   constraints in the master problem, and the reduced costs of the
+  *   variables, that represent that component; this can be fished out of
+  *   the master problem and written in the Block inside the LagBFunction.
+  *   (via the MILPSolver that is attached to it).
+  *
+  * If \p solc is nullptr, then only the optimal values of the ColVariable
+  * in the Block are written. Otherwise, \p solc can be:
+  *
+  * - a pointer to a
+  *   SimpleConfiguration< std::vector< std::pair< int , int > > >, assumed
+  *   to contain pairs < i , h > such that:
+  *
+  *   = i is the index of an "easy" component of which the dual solution has
+  *     to be written;
+  *
+  *   = h is coded bit-wise, with the first bit (+1) representing if the
+  *     dual variables need be written, and the second bit (+2) if the
+  *     reduced costs need be written;
+  *
+  *   note that indices i *must* be of "easy" components, otherwise an
+  *   exception will be thrown;
+  *
+  * - a pointer to a SimpleConfiguration< int > containing the number h with
+  *   the same meaning in the previous case (coded bit-wise, with the first
+  *   bit (+1) representing if the dual variables need be written, and the
+  *   second bit (+2) if the reduced costs need be written) which is applied
+  *   to *all easy* components.
+  *
+  * IMPORTANT NOTE: getting access to dual variables / reduced costs of any
+  *                 easy component requires access to that component's
+  * description, which is *deleted if not needed* as dictated by intDoEasy.
+  * Hence, if reduced costs are required then ( intDoEasy & 8 ) must be true,
+  * if dual variables are required then *both* ( intDoEasy & 4 ) and
+  * ( intDoEasy & 8 ) must be true [due to the internal working of
+  * OSIMPSolver the information about reduced costs is required when
+  * getting dual variables, please don't ask ...]). */
 
- void get_var_solution( Configuration *solc = nullptr ) override
- {
-  if( ( MaxSol > 1 ) && ( UpFiBest < UpRifFi.back() ) ) {
-   for( Index i = 0 ; i < NumVar ; i++ )
-    LamVcblr[ i ]->set_value( LmbdBst[ i ] );
-   }
-  else
-   for( Index i = 0 ; i < NumVar ; i++ )
-    LamVcblr[ i ]->set_value( Lambda[ i ] );
-  }
+ void get_var_solution( Configuration *solc = nullptr ) override;
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+
+ void get_var_solution_easy_pi( Index k );
+
+ void get_var_solution_easy_rc( Index k );
+
+/*--------------------------------------------------------------------------*/
  /// write the "current" dual solution
- /** Write the  "current" dual optimal solution in the Block. This is the
-  * done by taking the optimal solution of the master problem for each
-  * component and writing is as the "important linearization" of that
-  * component; this is unless the optimal aggregate linearization has been
-  * inserted in the bundle for other reasons (making space in a full bundle),
-  * in which case the coefficients of the "important linearization" of that
-  * component are just < 1 , index of the optimal aggregate linearization >.
+ /** Write the  "current" dual optimal solution in the Block. This is done
+  * in two different ways for "easy" and "not easy" components:
   *
-  *     IMPORTANT NOTE: THIS CURRENTLY ONLY WORKS FOR "HARD" COMPONENTS, AND
-  *     THERE IS NO WAY TO GET THE DUAL OPTIMAL SOLUTION FOR "EASY" ONES.
+  * - for "not easy" ones, the optimal solution of the master problem for 
+  *   that component, which is a set of convex multipliers associated to
+  *   the linearizations currently in the pool, is used for forming the
+  *   "important linearization" of that component and adding them to the
+  *   corresponding linearizations pool; this is unless the optimal
+  *   aggregate linearization has been inserted in the bundle for other 
+  *   reasons (making space in a full bundle), in which case the
+  *   coefficients of the "important linearization" of that component are
+  *   just < 1 , index of the optimal aggregate linearization > (that is,
+  *   this costs nothing);
   *
-  * Doing that is in principle possible, because the dual optimal solution is
-  * indeed computed by the master problem. But taking the solution from the
-  * OSIMPSolver and writing it back in the original Block requires some
-  * support that MILPSolver does not provide, and it's complicated, so it
-  * is not implemented. This will hopefully be cleanly solved when
-  * OSIMPSolver will be rightly consigned to the dustbin of history. */
+  * - for "easy" components, the dual solution for the dual problem that
+  *   BundleSolver is solving is actually the primal optimal solution of
+  *   the master problem for the variables that represent that component;
+  *   this is fished out of the master problem and directly written in the
+  *   Block inside the LagBFunction.
+  *
+  * If \p solc is nullptr, then the solution for all components is written.
+  * Otherwise, \p solc must be a pointer to a 
+  * SimpleConfiguration< std::vector< int > >, assuming to contain the
+  * indices of the components of which the primal solution has to be written.
+  */
 
  void get_dual_solution( Configuration *solc = nullptr ) override;
 
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+
+ void get_dual_solution_easy( Index k );
+
+ void get_dual_solution_hard( Index k );
+ 
 /*--------------------------------------------------------------------------*/
 
  bool new_var_solution( void ) override
@@ -1600,6 +1680,116 @@ public:
   
   bool new_dual_direction( void ) override{ return( false ); }
 */
+
+/** @} ---------------------------------------------------------------------*/
+/*------------ METHODS FOR READING ALGORITHM PROGRESS DATA -----------------*/
+/*--------------------------------------------------------------------------*/
+/** @name Accessing data describing how the algorithm is progressing, useful
+ *  e.g. inside events to trach the algorithm performances or perform
+ *  dynamic parameters adjustments
+ *  @{ */
+
+ /// returns the current value of the crucial t stabilization parameter
+
+ VarValue get_t( void ) { return( t ); }
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ /// returns the current aggregated linearization error
+ /** Returns the value of Sigma, the current aggregated linearization error.
+  *  If the C05Function(s) are computed without errors (with a "faithful
+  *  oracle", i.e., one that thoes not cheat on the lower bounds) then
+  *  Sigma >= 0, and the current aggregated subgradient is a
+  *  Sigma-subgradient at the current point. This justifies why the
+  *  standard stopping condition of BundleSolver roughly speaking reads
+  *
+  *     Sigma is small and the norm of the aggregated subgradient is small
+  *
+  *  (see get_DSTS() and get_DST()) since the optimality condition would
+  *  be "0 is a subgradient at the current point". A crucial issue is how
+  *  to define "small" for the two terms, but this is easy at least for
+  *  Sigma: in fact, if the aggregated subgradient is small, then
+  *
+  *    Sigma <= RelAcc * | current value of Fi |
+  *
+  *  means that the current point is RelAcc-optimal (relative). */
+
+ VarValue get_Sigma( void ) { return( Sigma ); }
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ /// returns the scaled norm of the aggregated subgradient
+ /** Returns D_{tStar}*( z* ), where z* is the aggregated subgradient. In
+  *  the standard proximal stabilization, this is
+  *
+  *       ( tStar / 2 ) || z* ||_2^2
+  *
+  * (see get_DS()). Since z* is a Sigma-subgradient at the current point
+  * (see get_Sigma()), justifies why one of the stopping condition of
+  * BundleSolver is
+  *
+  *      Sigma + D_{tStar}*( z* ) <= RelAcc * | current value of Fi |
+  *
+  * assuming that tStar is a proper upper bound on the maximum possible
+  * step that one could ever take in direction -z* in order to have the
+  * function decrease (a rater big "if"). */
+
+ VarValue get_DSTS( void ) { return( DSTS ); }
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ /// returns the unscaled norm of the aggregated subgradient
+ /** Returns D_{1}*( z* ), where z* is the aggregated subgradient. In
+  *  the standard proximal stabilization, this is || z* ||_2^2 / 2. See
+  *  get_DSTS() and get_Sigma() for how this number enters in the stopping
+  *  conditions of the method. */
+
+ VarValue get_DS( void ) { return( Master ? Master->ReadDStart( 1 ) : 0 ); }
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ /// returns the current estimate of the (un-)optimality of the current point
+ /** Returns the current best estimate of how far from optimality the current
+  *  point is, i.e.,
+  *
+  *    EpsU = Sigma + D_{tStar}*( z* ) / max( | current value of Fi | , 1 )
+  *
+  *  (see get_Sigma() and get_DSTS()). tStar is a proper upper bound on the
+  *  maximum possible step that one could ever take in direction -z* in order
+  *  to have the function decrease (a rater big "if"), then
+  *
+  *    EpsU <= RelAcc
+  *
+  *  should reliably indicate that the current point is RelAcc-optimal
+  *  (relative). */
+
+ VarValue get_EpsU( void ) { return( EpsU ); }
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ /// returns the number of consecutives Serious Steps
+ /** Returns the current number of consecutives Serious Steps; this is > 0
+  *  only if the last iteration has been a Serious Steps, as the counter is
+  *  immediately reset when a Null Step is performed. Note that some
+  *  t-strategies cause the master problem to be re-solved without the
+  *  C05Function(s) being evaluated, these do not count as iterations. */
+
+ Index get_CSSCntr( void ) { return( CSSCntr ); } 
+
+/*--------------------------------------------------------------------------*/
+ /// returns the number of consecutives Null Steps
+ /** Returns the current number of consecutives Null Steps; this is > 0
+  *  only if the last iteration has been a Null Steps, as the counter is
+  *  immediately reset when a Serious Step is performed. Note that some
+  *  t-strategies cause the master problem to be re-solved without the
+  *  C05Function(s) being evaluated, these do not count as iterations. */
+
+ Index get_CNSCntr( void ) { return( CNSCntr ); }
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ /// returns the predicted improvement of the model at the tentative point
+
+ VarValue get_vStar( void ) { return( vStar.back() ); } 
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ /// returns the gorm of the first inserted subgradient in the last iteration
+
+ VarValue get_G1Norm( void ) { return( G1Norm ); }
 
 /** @} ---------------------------------------------------------------------*/
 /*-------------- METHODS FOR READING THE DATA OF THE Solver ----------------*/
@@ -1654,6 +1844,33 @@ public:
 /*--------------------------------------------------------------------------*/
  
  [[nodiscard]] int get_dflt_int_par( idx_type par ) const override {
+  static const std::array< int , 22 > dflt_int_par = {
+    10 ,  // intBPar1
+   100 ,  // intBPar2
+     1 ,  // intBPar3
+     1 ,  // intBPar4
+     0 ,  // intBPar6
+     3 ,  // intBPar7
+     0 ,  // intMnSSC
+     3 ,  // intMnNSC
+    12 ,  // inttSPar1
+     2 ,  // intMaxNrEvls
+     1 ,  // intDoEasy
+     2 ,  // intWZNorm
+     0 ,  // intFrcLstSS
+     0 ,  // intTrgtMng
+     0 ,  // intMPName
+     0 ,  // intMPlvl
+     0 ,  // intQPmp1
+     0 ,  // intQPmp2
+     4 ,  // intOSImp1
+     0 ,  // intOSImp2
+     1 ,  // intOSImp3
+     2    // intRstAlg, default value:
+          // RstAlg = 0  -  reset algorithmic parameters
+          // RstCrr = 1  -  set current point to using values of the Variable
+     };
+
   if( ( par >= intLastParCDAS ) && ( par < intLastBndSlvPar ) )
    return( dflt_int_par[ par - intLastParCDAS ] );
 
@@ -1663,6 +1880,26 @@ public:
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  
  [[nodiscard]] double get_dflt_dbl_par( idx_type par ) const override {
+  static const std::array< double , 17 > dflt_dbl_par = {
+   0 ,      // dblNZEps
+   1e+2 ,   // dbltStar
+   0 ,      // dblMinNrEvls
+   30 ,     // dblBPar5
+   0.01 ,   // dblm1
+   0.99 ,   // dblm2
+   0.99 ,   // dblm3
+   10 ,     // dblmxIncr
+   1.5 ,    // dblmnIncr
+   0.1 ,    // dblmxDecr
+   0.66 ,   // dblmmDecr
+   1e+6 ,   // dbltMaior
+   1e-6,    // dbltMinor
+   1 ,      // dbltInit
+   1e-3 ,   // dbltSPar2
+   0 ,      // dbltSPar3
+   1e-1     // dblCtOff
+   };
+
   if( ( par >= dblLastParCDAS ) && ( par < dblLastBndSlvPar ) )
    return( dflt_dbl_par[ par - dblLastParCDAS ] );
 
@@ -1670,17 +1907,14 @@ public:
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
-/* !! not necessary so far: CDASolver and Solver do not have string
- *    parameters and the default is empty anyway
 
  const std::string & get_dflt_str_par( idx_type par ) const override {
   static std::string __empty;
   if( ( par == strEasyCfg ) || ( par == strHardCfg ) )
    return( __empty );
 
-  return( CDASolver::get_dflt_vint_par( par ) );
+  return( CDASolver::get_dflt_str_par( par ) );
   }
-!!*/
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 /* !! not necessary so far: CDASolver and Solver do not have vector-of-int
@@ -1705,7 +1939,7 @@ public:
   if( par == vstrCmpCfg )
    return( __empty );
 
-  return( CDASolver::get_dflt_vint_par( par ) );
+  return( CDASolver::get_dflt_vstr_par( par ) );
   }
 !!*/
 
@@ -1736,6 +1970,31 @@ public:
 
  [[nodiscard]] idx_type int_par_str2idx( const std::string & name )
   const override {
+  static const std::map< std::string , idx_type > int_pars_map = {
+   { "intBPar1" , BundleSolver::intBPar1  } ,
+   { "intBPar2" , BundleSolver::intBPar2  } ,
+   { "intBPar3" , BundleSolver::intBPar3 } ,
+   { "intBPar4" , BundleSolver::intBPar4 } ,
+   { "intBPar6" , BundleSolver::intBPar6 } ,
+   { "intBPar7" , BundleSolver::intBPar7 } ,
+   { "intMnSSC" , BundleSolver::intMnSSC } ,
+   { "intMnNSC" , BundleSolver::intMnNSC } ,
+   { "inttSPar1" , BundleSolver::inttSPar1 } ,
+   { "intMaxNrEvls" , BundleSolver::intMaxNrEvls } ,
+   { "intDoEasy" , BundleSolver::intDoEasy } ,
+   { "intWZNorm" , BundleSolver::intWZNorm } ,
+   { "intFrcLstSS" , BundleSolver::intFrcLstSS } ,
+   { "intTrgtMng" , BundleSolver::intTrgtMng } ,
+   { "intMPName" , BundleSolver::intMPName } ,
+   { "intMPlvl" , BundleSolver::intMPlvl } ,
+   { "intQPmp1" , BundleSolver::intQPmp1 } ,
+   { "intQPmp2" , BundleSolver::intQPmp2 } ,
+   { "intOSImp1" , BundleSolver::intOSImp1 } ,
+   { "intOSImp2" , BundleSolver::intOSImp2 } ,
+   { "intOSImp3" , BundleSolver::intOSImp3 } ,
+   { "intRstAlg" , BundleSolver::intRstAlg } ,
+   };
+
   const auto it = int_pars_map.find( name );
   if( it != int_pars_map.end() )
    return( it->second );
@@ -1747,6 +2006,26 @@ public:
 
  [[nodiscard]] idx_type dbl_par_str2idx( const std::string & name )
   const override {
+  static const std::map< std::string , idx_type > dbl_pars_map = {
+   { "dblNZEps" , BundleSolver::dblNZEps } ,
+   { "dbltStar" , BundleSolver::dbltStar } ,
+   { "dblMinNrEvls" , BundleSolver::dblMinNrEvls } ,
+   { "dblBPar5" , BundleSolver::dblBPar5 } ,
+   { "dblm1" , BundleSolver::dblm1 } ,
+   { "dblm2" , BundleSolver::dblm2 } ,
+   { "dblm3" , BundleSolver::dblm3 } ,
+   { "dblmxIncr" , BundleSolver::dblmxIncr } ,
+   { "dblmnIncr" , BundleSolver::dblmnIncr } ,
+   { "dblmxDecr" , BundleSolver::dblmxDecr } ,
+   { "dblmnDecr" , BundleSolver::dblmnDecr } ,
+   { "dbltMaior" , BundleSolver::dbltMaior } ,
+   { "dbltMinor" , BundleSolver::dbltMinor } ,
+   { "dbltInit" , BundleSolver::dbltInit } ,
+   { "dbltSPar2" , BundleSolver::dbltSPar2 } ,
+   { "dbltSPar3" , BundleSolver::dbltSPar3 } ,
+   { "dblCtOff" , BundleSolver::dblCtOff }
+   };
+
   const auto it = dbl_pars_map.find( name );
   if( it != dbl_pars_map.end() )
    return( it->second );
@@ -1790,6 +2069,13 @@ public:
 
  [[nodiscard]] const std::string & int_par_idx2str( idx_type idx )
   const override {
+  static const std::array< std::string , 22 > int_pars_str = {
+   "intBPar1" , "intBPar2" , "intBPar3" , "intBPar4" , "intBPar6" ,
+   "intBPar7" , "intMnSSC" , "intMnNSC" , "inttSPar1" , "intMaxNrEvls" ,
+   "intDoEasy" , "intWZNorm" , "intFrcLstSS" , "intTrgtMng" , "intMPName" ,
+   "intMPlvl" , "intQPmp1" , "intQPmp2", "OSImp1" , "OSImp2" , "OSImp3" ,
+   "intRstAlg"  };
+
   if( ( idx >= intLastParCDAS ) && ( idx < intLastBndSlvPar ) )
    return( int_pars_str[ idx - intBPar1 ] );
 
@@ -1800,7 +2086,13 @@ public:
 
  [[nodiscard]] const std::string & dbl_par_idx2str( idx_type idx )
   const override {
-  if( ( idx >= dblLastParCDAS ) && ( idx < dblLastBndSlvPar ) )
+  static const std::array< std::string , 17 > dbl_pars_str = {
+   "dblNZEps" , "dbltStar" , "dblMinNrEvls" , "dblBPar5" , "dblm1" ,
+   "dblm2" , "dblm3" , "dblmxIncr" , "dblmnIncr" , "dblmxDecr" ,
+   "dblmnDecr" , "dbltMaior" , "dbltMinor" , "dbltInit" , "dbltSPar2" ,
+   "dbltSPar3" , "dblCtOff" };
+
+ if( ( idx >= dblLastParCDAS ) && ( idx < dblLastBndSlvPar ) )
    return( dbl_pars_str[ idx - dblLastParCDAS ] );
 
   return( CDASolver::dbl_par_idx2str( idx ) );
@@ -1810,6 +2102,9 @@ public:
 
  [[nodiscard]] const std::string & str_par_idx2str( idx_type idx )
   const override {
+  static const std::array< std::string , 2 > str_pars_str = {
+   "strEasyCfg" , "strHardCfg" };
+
   if( ( idx >= strLastParCDAS ) && ( idx < strLastBndSlvPar ) )
    return( str_pars_str[ idx - strLastParCDAS ] );
 
@@ -2223,7 +2518,7 @@ public:
  void compute_NrmZFctr( void );
 
 /*--------------------------------------------------------------------------*/
- /* Concave functions to be maximised are sneakily turned into convex
+ /** Concave functions to be maximised are sneakily turned into convex
   * functions to be minimized inside by changing the sign of function values
   * and linearizations, but they have to be output with the right sign. */
  
@@ -2232,10 +2527,35 @@ public:
   }
 
 /*--------------------------------------------------------------------------*/
- /* Finds the next component to compute in the inner loop, writes is in
+ /** Finds the next component to compute in the inner loop, writes is in
   * f_wFi; returns false if there is no other component to compute. */
 
  bool FindNext( void );
+
+/*--------------------------------------------------------------------------*/
+ /// method implementing the short-term t-strategies
+ /** The method is called after a SS if inttSPar1 & 1 and after a NS if
+  * tSPar1 & 2 and should return a proposed new value for t using only
+  * information pertaining to the current iteration (typically, the
+  * aggregated subgradient and its linearization error, the newly obtained
+  * subgradient and its linearization error). The base class implements four
+  * simple heuristics chosen on the basis of the bits 6 and 7 of inttSPar1;
+  * see the comments to set_par( inttSPar1 ) and those inside Heuristic1()
+  * to Heuristic4() for details. However, the method is virtual so that
+  * derived classes can implement new ones, typically using the remaining
+  * bits of inttSPar1 (from 8 on) to select them. */
+
+ virtual HpNum Heuristic( Index whch );
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+
+ HpNum Heuristic1( void );
+
+ HpNum Heuristic2( void );
+
+ HpNum Heuristic3( void );
+
+ HpNum Heuristic4( void );
 
 /*--------------------------------------------------------------------------*/
 /*---------------------------- PROTECTED FIELDS  ---------------------------*/
@@ -2292,12 +2612,14 @@ public:
 
  char WZNorm;       ///< how to compute the norm of z*
 
- bool FrcLstSS;     ///< if all components must be computed in the optimum
+ int FrcLstSS;      /**<  bit 0 = 1: all components must be computed in
+		     *               the optimum
+		     *    bit 1 = 1: the State is not to be trusted */
 
  Index TrgtMng;     ///< how targets on components are managed
 
  int MPName;        /**< bit 0 = 0: MP solver == QPPenalty
-		     * bit 0 = 1: MP == OSiMPSolver
+		     * bit 0 = 1: MP == OSIMPSolver
 		     * bit 1 = 1: Cplex, bit 1 = 0 CLP
 		     * bit 2 = 1: Quadratic, bit 2 = 0 BoxStep
 		     * + bit 3 = 1 (+8) = check for duplicates. */
@@ -2559,29 +2881,6 @@ public:
  std::chrono::time_point< std::chrono::system_clock > c_start;
  ///< starting instant of last call to compute()
 
- // static fields - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
- const static std::vector< int > dflt_int_par;
- ///< the (static const) vector of int parameters default values
-
- const static std::vector< double > dflt_dbl_par;
- ///< the (static const) vector of double parameters default values
-
- const static std::vector< std::string > int_pars_str;
- ///< the (static const) vector of int parameters names
-
- const static std::vector< std::string > dbl_pars_str;
- ///< the (static const) vector of double parameters names
-
- const static std::vector< std::string > str_pars_str;
- ///< the (static const) vector of string parameters names
-
- const static std::map< std::string , idx_type > int_pars_map;
-  ///< the (static const) map for int parameters names
-
- const static std::map< std::string , idx_type > dbl_pars_map;
- ///< the (static const) map for double parameters names
-
 /*--------------------------------------------------------------------------*/
 /*--------------------- PRIVATE PART OF THE CLASS --------------------------*/
 /*--------------------------------------------------------------------------*/
@@ -2745,18 +3044,6 @@ class FakeFiOracle : public FiOracle
 /*--------------------------------------------------------------------------*/
 
  void UpdateHeuristicInfo( void );
-
-/*--------------------------------------------------------------------------*/
-
- HpNum Heuristic( Index whch );
-
- HpNum Heuristic1( void );
-
- HpNum Heuristic2( void );
-
- HpNum Heuristic3( void );
-
- HpNum Heuristic4( void );
 
 /*--------------------------------------------------------------------------*/
 
