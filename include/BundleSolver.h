@@ -510,6 +510,20 @@ public:
   vstrCmpCfg = vstrLastParCDAS ,
   ///< parameter for configuring (possibly) each component individually
 
+  vstr_C05_SPAR_Names ,
+  ///< string parameters names that are set differently to each C05Function
+
+  vstr_C05_SPAR_Vals ,
+  ///< baseline values for different string parameters to each C05Function
+
+  vstr_C05_EI_SPAR_Names ,
+  /**< string parameters names that are changed at every iteration and call
+   * differently to each C05Function */
+
+  vstr_C05_EI_SPAR_Vals ,
+  /**< baseline values for string parameters changed at every iteration and
+   * call differently to each C05Function */
+
   vstrLastBndSlvPar ///< first allowed new vector-of-string parameter
                     /**< Convenience value for easily allow derived classes
 		     * to extend the set of vector-of-string parameters. */
@@ -1361,8 +1375,46 @@ public:
   *   is applied. If everything is empty then the component is not
   *   configured (the existing configuration is not changed). Note that it
   *   is still possible to completely reset a component by passing it an
-  *   "empty" ComputeConfig with f_diff == true, which is different from
-  *   no ComputeConfig at all. */
+  *   "empty" ComputeConfig with diff() == true, which is different from
+  *   no ComputeConfig at all.
+  *
+  * - vstr_C05_SPAR_Names [empty]: string parameters names that are set
+  *                                differently to each C05Function when
+  *   BundleSolver is register()-ed to the Block. This parameter works in
+  *   tandem with vstr_C05_SPAR_Vals [see].
+  *
+  * - vstr_C05_SPAR_Vals [empty]: baseline values for string parameters
+  *                               that are set differently to each
+  *   C05Function when BundleSolver is register()-ed to the Block. This
+  *   parameter works in tandem with vstr_C05_SPAR_Vals as follows. They
+  *   must have the same length. Then, for every h = 0, 1, ...,
+  *   n_components() - 1, the parameter vstr_C05_SPAR_Names[ i ] is set to
+  *   value <prefix>"_h"<suffix>, where <prefix> is the first part of
+  *   vstr_C05_SPAR_Vals[ i ] up until the rightmost "." (if any) excluded,
+  *   while <suffix> is the last part of vstr_C05_SPAR_Vals[ i ] from the
+  *   rightmost "." included up untile the end (empty if there is no ".").
+  *   This is geared towards setting different filenames (e.g., log files,
+  *   instance files, ...) to each of the compute() of each C05Function.
+  *
+  * - vstr_C05_EI_SPAR_Names [empty]: string parameters names that are set
+  *                                   differently to each C05Function at
+  *   every iteration (and call). This parameter works in tandem with
+  *   vstr_C05_EI_SPAR_Vals [see].
+  *
+  * - vstr_C05_EI_SPAR_Vals [empty]: baseline values for string parameters
+  *                                  that are set differently to each
+  *   C05Function at every iteration (and call). This parameter works in
+  *   tandem with vstr_C05_EI_SPAR_Vals as follows. They must have the same
+  *   length. Then, for every h = 0, 1, ..., n_components() - 1, at every
+  *   iteration k [see get_elapsed_iterations()] of every call z [see
+  *   get_elapsed_calls()], the parameter vstr_C05_EI_SPAR_Names[ i ] is set
+  *   to value <prefix>"_h_z_k"<suffix>, where <prefix> is the first part of
+  *   vstr_C05_EI_SPAR_Vals[ i ] up until the rightmost "." (if any) excluded,
+  *   while <suffix> is the last part of vstr_C05_EI_SPAR_Vals[ i ] from the
+  *   rightmost "." included up untile the end (empty if there is no ".").
+  *   This is geared towards setting different filenames (e.g., log files,
+  *   instance files, ...) to each of the compute() of each C05Function at
+  *   every iteration (of every call). */
 
  void set_par( idx_type par , std::vector< std::string > && value ) override;
 
@@ -1930,7 +1982,7 @@ public:
 !!*/
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
-/* !! not necessary so far: CDASolver and Solver do not have vector-of-int
+/* !! not necessary so far: CDASolver and Solver do not have vector-of-string
  *    parameters and the default is empty anyway
 
  const std::vector< std::string > & get_dflt_vstr_par( idx_type par )
@@ -2059,8 +2111,17 @@ public:
 
  [[nodiscard]] idx_type vstr_par_str2idx( const std::string & name )
   const override {
-  if( name == "vstrCmpCfg" )
-   return( vstrCmpCfg );
+  static const std::map< std::string , idx_type > vstr_pars_map = {
+   { "vstrCmpCfg" , BundleSolver::vstrCmpCfg } ,
+   { "vstr_C05_SPAR_Names" , BundleSolver::vstr_C05_SPAR_Names } ,
+   { "vstr_C05_SPAR_Vals" , BundleSolver::vstr_C05_SPAR_Vals } ,
+   { "vstr_C05_EI_SPAR_Names" , BundleSolver::vstr_C05_EI_SPAR_Names } ,
+   { "vstr_C05_EI_SPAR_Vals" , BundleSolver::vstr_C05_EI_SPAR_Vals }
+   };
+
+  const auto it = vstr_pars_map.find( name );
+  if( it != vstr_pars_map.end() )
+   return( it->second );
 
   return( CDASolver::vstr_par_str2idx( name ) );
   }
@@ -2126,9 +2187,12 @@ public:
 
  [[nodiscard]] const std::string & vstr_par_idx2str( idx_type idx )
   const override {
-  static const std::string __psname = "vstrCmpCfg";
-  if( idx == vstrCmpCfg )
-   return( __psname );
+  static const std::array< std::string , 5 > vstr_pars_str = { "vstrCmpCfg" ,
+   "vstr_C05_SPAR_Names" , "vstr_C05_SPAR_Vals " , "vstr_C05_EI_SPAR_Names" ,
+   "vstr_C05_EI_SPAR_Vals" };
+
+  if( ( idx >= vstrLastParCDAS ) && ( idx < vstrLastBndSlvPar ) )
+   return( vstr_pars_str[ idx - vstrCmpCfg ] );
 
   return( CDASolver::vstr_par_idx2str( idx ) );
   }
@@ -2637,13 +2701,29 @@ public:
 
  int RstAlgPrm;     ///< reset parameter, bit-wise coded
 
- std::string EasyCfg;  ///< filename for the Block[Solver]Config of easy
+ std::string EasyCfg;
+ ///< filename for the Block[Solver]Config of easy components
 
- std::string HardCfg;  ///< filename for the Block[Solver]Config of non-easy
- 
+ std::string HardCfg;
+ ///< filename for the Block[Solver]Config of non-easy components
+
  std::vector< int > NoEasy;  ///< which components never treat as "easy"
 
  std::vector< std::string > CmpCfg;  ///< individual Configurations
+
+ std::vector< std::string > v_C05_SPAR_Names;
+ ///< string parameters names that are set differently to each C05Function
+
+ std::vector< std::string > v_C05_SPAR_Vals;
+ ///< baseline values for different string parameters to each C05Function
+
+ std::vector< std::string > v_C05_EI_SPAR_Names;
+ /**< string parameters names that are changed at every iteration and call
+  * differently to each C05Function */
+
+ std::vector< std::string > v_C05_EI_SPAR_Vals;
+ /**< baseline values for string parameters changed at every iteration and
+  * call differently to each C05Function */
 
  // generic fields- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -2799,8 +2879,8 @@ public:
   * p = InvItemVcblr[ k ][ i ], if p < vBPar2[ NrFi ], then the linearization
   * with name i in the global pool of h is in the bundle at position p.
   * If p == INF, then there is no linearization with name i in the global
-  * pool of k. If vBPar2[ NrFi ] <= p < INF, then there is a linearization with
-  * name i in the global pool of h, but it is not in the bundle.
+  * pool of k. If vBPar2[ NrFi ] <= p < INF, then there is a linearization
+  * with name i in the global pool of h, but it is not in the bundle.
   *
   * NOTE: THE GLOBAL POOL OF SOME C05Function CAN BE LARGER THAN vBPar2[ k ],
   * BUT ALL ELEMENTS WITH NAME LARGER THAN vBPar2[ k ] ARE NEVER USED OR

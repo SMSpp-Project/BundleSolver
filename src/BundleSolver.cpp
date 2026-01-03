@@ -69,7 +69,7 @@
  * OsiXXXSolverInterface are in general not be available to all users. */
 
 #ifndef WHICH_OSI_QP
- #define WHICH_OSI_QP 1
+ #define WHICH_OSI_QP 2
 #endif
 
 #if WHICH_OSI_QP == 1
@@ -403,6 +403,18 @@ static void chgsign( double * v , Index n )
 {
  for( const auto ev = v + n ; v < ev ; ++v )
   *v = - *v;
+ }
+
+/*--------------------------------------------------------------------------*/
+
+static std::string ps_insert( const std::string & name ,
+			      const std::string & insert )
+{
+ auto pos = name.rfind('.');
+ if( pos != std::string::npos )
+  return( name.substr( 0 , pos ) + insert + name.substr( pos ) );
+ else
+  return( name + insert );
  }
 
 /*--------------------------------------------------------------------------*/
@@ -1543,7 +1555,28 @@ void BundleSolver::set_Block( Block * block )
 
  delete hCC;  // TODO: do not clone() the last time
 
- // allocate memory- - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // set the component-specific string parameters, if any - - - - - - - - - - -
+ //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+ if( ! v_C05_SPAR_Names.empty() ) {
+  if( v_C05_SPAR_Names.size() > v_C05_SPAR_Vals.size() )
+   throw( std::logic_error( "vstr_C05_SPAR_Names.size() > "
+			    "vstr_C05_SPAR_Vals.size()" ) );
+
+  for( Index k = 0 ; k < NrFi ; ++k ) {
+   ComputeConfig Ck;
+   Ck.set_diff( true );
+   Ck.set_relax( true );
+   auto Vit = v_C05_SPAR_Vals.begin();
+   for( const auto & name : v_C05_SPAR_Names )
+    Ck.set_par( std::string( name ) ,
+		ps_insert( *(Vit++) , "_" + std::to_string( k ) ) );
+
+   v_c05f[ k ]->set_ComputeConfig( & Ck );
+   }
+  }
+
+ // allocate memory- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
  t = tInit;
@@ -1972,10 +2005,18 @@ void BundleSolver::set_par( idx_type par , std::vector< int > && value )
 void BundleSolver::set_par( idx_type par ,
 			    std::vector< std::string > && value )
 {
- if( par == vstrCmpCfg )
-  CmpCfg = std::move( value );
- else
-  CDASolver::set_par( par , std::move( value ) );
+ switch( par ) {
+  case( vstrCmpCfg ): CmpCfg = std::move( value ); break;
+  case( vstr_C05_SPAR_Names ):    v_C05_SPAR_Names = std::move( value );
+                                  break;
+  case( vstr_C05_SPAR_Vals ):     v_C05_SPAR_Vals = std::move( value );
+                                  break;
+  case( vstr_C05_EI_SPAR_Names ): v_C05_EI_SPAR_Names = std::move( value );
+                                  break;
+  case( vstr_C05_EI_SPAR_Vals ):  v_C05_EI_SPAR_Vals = std::move( value );
+                                  break;
+  default: CDASolver::set_par( par , std::move( value ) );
+  }
  }
 
 /*--------------------------------------------------------------------------*/
@@ -2266,6 +2307,7 @@ const std::vector< int > & BundleSolver::get_vint_par( idx_type par ) const
   return( NoEasy );
 
  return( CDASolver::get_vint_par( par ) );
+
  }  // end( BundleSolver::get_vint_par )
 
 /*--------------------------------------------------------------------------*/
@@ -2273,10 +2315,16 @@ const std::vector< int > & BundleSolver::get_vint_par( idx_type par ) const
 const std::vector< std::string > & BundleSolver::get_vstr_par( idx_type par )
  const
 {
- if( par == vstrCmpCfg )
-  return( CmpCfg );
+ switch( par ) {
+  case( vstrCmpCfg ):             return( CmpCfg );
+  case( vstr_C05_SPAR_Names ):    return( v_C05_SPAR_Names );
+  case( vstr_C05_SPAR_Vals ):     return( v_C05_SPAR_Vals );
+  case( vstr_C05_EI_SPAR_Names ): return( v_C05_EI_SPAR_Names );
+  case( vstr_C05_EI_SPAR_Vals ):  return( v_C05_EI_SPAR_Vals );
+  }
 
  return( CDASolver::get_vstr_par( par ) );
+
  }  // end( BundleSolver::get_vstr_par )
 
 /*--------------------------------------------------------------------------*/
@@ -3241,7 +3289,8 @@ BundleSolver::Index BundleSolver::InnerLoop( bool extrastep )
 
 bool BundleSolver::FiAndGi( Index wFi , bool getgi )
 {
- // compute and set upper and lower cutoffs and the accuracy- - - - - - - - -
+ // compute and set upper and lower cutoffs and the accuracy - - - - - - - - -
+ //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
  if( f_log && ( LogVerb > 3 ) )
   *f_log << std::endl << "            Fi[ " << wFi;
@@ -3251,7 +3300,8 @@ bool BundleSolver::FiAndGi( Index wFi , bool getgi )
  else
   SetupFiLambda( wFi );
 
- // compute the C05Function and retrieve upper and lower estimates- - - - - -
+ // compute the C05Function and retrieve upper and lower estimates - - - - - -
+ //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
  auto fwFi = v_c05f[ wFi ];
 
@@ -3316,7 +3366,8 @@ bool BundleSolver::FiAndGi( Index wFi , bool getgi )
  // update LwFiLambd1[ wFi ] (and possibly LwFiLambd1[ NrFi ])
  update_LwFiLambd1( wFi , f_convex ? le : - ue );
 
- // get new linearizations- - - - - - - - - - - - - - - - - - - - - - - - - -
+ // get new linearizations - - - - - - - - - - - - - - - - - - - - - - - - - -
+ //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
  return( GetGi( wFi ) );
 
@@ -3329,6 +3380,7 @@ void BundleSolver::SetupFiLambda1( Index wFi )
  auto fwFi = v_c05f[ wFi ];
 
  // start by setting a "time cutoff" with the remaining total time
+ //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  if( MaxTime < INFshift )
   fwFi->set_par( dblMaxTime , MaxTime - get_elapsed_time() );
 
@@ -3336,6 +3388,7 @@ void BundleSolver::SetupFiLambda1( Index wFi )
   return;
 
  // compute upper and lower cutoffs and the accuracy
+ //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  auto UpCutOff = INFshift;
  auto LwCutOff = -INFshift;
 
@@ -3475,6 +3528,29 @@ void BundleSolver::SetupFiLambda1( Index wFi )
   if( f_log && ( LogVerb > 3 ) )
    *f_log << " ~ eps = " << shrt << EpsCurr;
   fwFi->set_par( dblRelAcc , EpsCurr );
+  }
+
+ // set the component-specific string parameters, if any - - - - - - - - - - -
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+ if( ! v_C05_EI_SPAR_Names.empty() ) {
+  if( v_C05_EI_SPAR_Names.size() > v_C05_EI_SPAR_Vals.size() )
+   throw( std::logic_error( "vstr_C05_SPAR_EI_Names.size() > "
+			    "vstr_C05_SPAR_EI_Vals.size()" ) );
+
+  ComputeConfig CwFi;
+  CwFi.set_diff( true );
+  CwFi.set_relax( true );
+  auto Vit = v_C05_EI_SPAR_Vals.begin();
+  for( const auto & name : v_C05_EI_SPAR_Names )
+   CwFi.set_par( std::string( name ) ,
+		 ps_insert( *(Vit++) ,
+			    "_" + std::to_string( wFi ) +
+			    "_" + std::to_string( get_elapsed_calls() ) +
+			    "_" + std::to_string( get_elapsed_iterations() )
+			    ) );
+
+  fwFi->set_ComputeConfig( & CwFi );
   }
  }  // end( BundleSolver::SetupFiLambda1 )
 
@@ -7645,7 +7721,6 @@ void BundleSolverState::serialize( netCDF::NcGroup & group ) const
   v_comp_State[ i ]->serialize( gi );
   }
  }  // end( BundleSolverState::serialize )
-
 
 /*--------------------------------------------------------------------------*/
 /*----------------------- End File BundleSolver.cpp ------------------------*/
