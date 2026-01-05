@@ -1568,9 +1568,14 @@ void BundleSolver::set_Block( Block * block )
    Ck.set_diff( true );
    Ck.set_relax( true );
    auto Vit = v_C05_SPAR_Vals.begin();
-   for( const auto & name : v_C05_SPAR_Names )
-    Ck.set_par( std::string( name ) ,
-		ps_insert( *(Vit++) , "_" + std::to_string( k ) ) );
+   for( const auto & name : v_C05_SPAR_Names ) {
+    auto par = ps_insert( *(Vit++) , "_" + std::to_string( k ) );
+    if( ( name.size() > 4 ) && ( name.substr( 0 , 4 ) == "vstr" ) )
+     Ck.set_par( std::string( name ) ,
+		 std::vector< std::string >( { par } ) );     
+    else
+     Ck.set_par( std::string( name ) , std::move( par ) );
+    }
 
    v_c05f[ k ]->set_ComputeConfig( & Ck );
    }
@@ -3542,13 +3547,17 @@ void BundleSolver::SetupFiLambda1( Index wFi )
   CwFi.set_diff( true );
   CwFi.set_relax( true );
   auto Vit = v_C05_EI_SPAR_Vals.begin();
-  for( const auto & name : v_C05_EI_SPAR_Names )
-   CwFi.set_par( std::string( name ) ,
-		 ps_insert( *(Vit++) ,
-			    "_" + std::to_string( wFi ) +
-			    "_" + std::to_string( get_elapsed_calls() ) +
-			    "_" + std::to_string( get_elapsed_iterations() )
-			    ) );
+  for( const auto & name : v_C05_EI_SPAR_Names ) {
+   auto par = ps_insert( *(Vit++) ,
+			 "_" + std::to_string( wFi ) +
+			 "_" + std::to_string( get_elapsed_calls() ) +
+			 "_" + std::to_string( get_elapsed_iterations() ) );
+   if( ( name.size() > 4 ) && ( name.substr( 0 , 4 ) == "vstr" ) )
+    CwFi.set_par( std::string( name ) ,
+		  std::vector< std::string >( { par } ) );     
+   else
+    CwFi.set_par( std::string( name ) , std::move( par ) );
+   }
 
   fwFi->set_ComputeConfig( & CwFi );
   }

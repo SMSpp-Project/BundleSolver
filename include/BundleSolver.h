@@ -1378,33 +1378,37 @@ public:
   *   "empty" ComputeConfig with diff() == true, which is different from
   *   no ComputeConfig at all.
   *
-  * - vstr_C05_SPAR_Names [empty]: string parameters names that are set
-  *                                differently to each C05Function when
-  *   BundleSolver is register()-ed to the Block. This parameter works in
-  *   tandem with vstr_C05_SPAR_Vals [see].
+  * - vstr_C05_SPAR_Names [empty]: [vector-of-]string parameters names that
+  *                                are set differently to each C05Function
+  *   when BundleSolver is register()-ed to the Block. This parameter works
+  *   in tandem with vstr_C05_SPAR_Vals [see].
   *
-  * - vstr_C05_SPAR_Vals [empty]: baseline values for string parameters
-  *                               that are set differently to each
+  * - vstr_C05_SPAR_Vals [empty]: baseline values for [vector-of-]string
+  *                               parameters that are set differently to each
   *   C05Function when BundleSolver is register()-ed to the Block. This
-  *   parameter works in tandem with vstr_C05_SPAR_Vals as follows. They
+  *   parameter works in tandem with vstr_C05_SPAR_Names as follows. They
   *   must have the same length. Then, for every h = 0, 1, ...,
   *   n_components() - 1, the parameter vstr_C05_SPAR_Names[ i ] is set to
   *   value <prefix>"_h"<suffix>, where <prefix> is the first part of
   *   vstr_C05_SPAR_Vals[ i ] up until the rightmost "." (if any) excluded,
   *   while <suffix> is the last part of vstr_C05_SPAR_Vals[ i ] from the
   *   rightmost "." included up untile the end (empty if there is no ".").
-  *   This is geared towards setting different filenames (e.g., log files,
-  *   instance files, ...) to each of the compute() of each C05Function.
+  *   The parameter is set as a vector-of-string one containing one single
+  *   value if the first 4 characters of vstr_C05_SPAR_Names[ i ] are
+  *   exactly "vstr", and as a single string parameter otherwise. This is
+  *   geared towards setting different filenames (e.g., log files,
+  *   Configuration files, instance files, ...) to each of the compute() of
+  *   each C05Function.
   *
-  * - vstr_C05_EI_SPAR_Names [empty]: string parameters names that are set
-  *                                   differently to each C05Function at
-  *   every iteration (and call). This parameter works in tandem with
-  *   vstr_C05_EI_SPAR_Vals [see].
-  *
-  * - vstr_C05_EI_SPAR_Vals [empty]: baseline values for string parameters
-  *                                  that are set differently to each
+  * - vstr_C05_EI_SPAR_Names [empty]: [vector-of-]string parameters names
+  *                                   that are set differently to each
   *   C05Function at every iteration (and call). This parameter works in
-  *   tandem with vstr_C05_EI_SPAR_Vals as follows. They must have the same
+  *   tandem with vstr_C05_EI_SPAR_Vals [see].
+  *
+  * - vstr_C05_EI_SPAR_Vals [empty]: baseline values for [vector-of-]string
+  *                                  parameters that are set differently to
+  *   each C05Function at every iteration (and call). This parameter works in
+  *   tandem with vstr_C05_EI_SPAR_Names as follows. They must have the same
   *   length. Then, for every h = 0, 1, ..., n_components() - 1, at every
   *   iteration k [see get_elapsed_iterations()] of every call z [see
   *   get_elapsed_calls()], the parameter vstr_C05_EI_SPAR_Names[ i ] is set
@@ -1412,9 +1416,12 @@ public:
   *   vstr_C05_EI_SPAR_Vals[ i ] up until the rightmost "." (if any) excluded,
   *   while <suffix> is the last part of vstr_C05_EI_SPAR_Vals[ i ] from the
   *   rightmost "." included up untile the end (empty if there is no ".").
-  *   This is geared towards setting different filenames (e.g., log files,
-  *   instance files, ...) to each of the compute() of each C05Function at
-  *   every iteration (of every call). */
+  *   The parameter is set as a vector-of-string one containing one single
+  *   value if the first 4 characters of vstr_C05_EI_SPAR_Names[ i ] are
+  *   exactly "vstr", and as a single string parameter otherwise. This is
+  *   geared towards setting different filenames (e.g., log files,
+  *   Configuration files, instance files, ...) to each of the compute() of
+  *   each C05Function at every iteration (of every call). */
 
  void set_par( idx_type par , std::vector< std::string > && value ) override;
 
