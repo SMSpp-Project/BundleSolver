@@ -2348,6 +2348,11 @@ public:
  bool FiAndGi( Index wFi , bool getgi = true );
 
 /*--------------------------------------------------------------------------*/
+ // Set the component-specific string parameters, if any
+
+ void SetupFiStrPar( Index wFi );
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /* Prepares component wFi for computation on Lambda1 by setting the
   * thresholds and accuracy. */
 

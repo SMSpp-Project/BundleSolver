@@ -3380,19 +3380,56 @@ bool BundleSolver::FiAndGi( Index wFi , bool getgi )
 
 /*--------------------------------------------------------------------------*/
 
+void BundleSolver::SetupFiStrPar( Index wFi )
+{
+ // set the component-specific string parameters
+
+ if( v_C05_EI_SPAR_Names.empty() )  // ... if any
+  return;
+
+ if( v_C05_EI_SPAR_Names.size() > v_C05_EI_SPAR_Vals.size() )
+  throw( std::logic_error( "vstr_C05_SPAR_EI_Names.size() > "
+			   "vstr_C05_SPAR_EI_Vals.size()" ) );
+
+ ComputeConfig CwFi;
+ CwFi.set_diff( true );
+ CwFi.set_relax( true );
+ auto Vit = v_C05_EI_SPAR_Vals.begin();
+ for( const auto & name : v_C05_EI_SPAR_Names ) {
+  auto par = ps_insert( *(Vit++) ,
+			"_" + std::to_string( wFi ) +
+			"_" + std::to_string( get_elapsed_calls() ) +
+			"_" + std::to_string( get_elapsed_iterations() ) );
+  if( ( name.size() > 4 ) && ( name.substr( 0 , 4 ) == "vstr" ) )
+   CwFi.set_par( std::string( name ) ,
+		 std::vector< std::string >( { par } ) );     
+  else
+   CwFi.set_par( std::string( name ) , std::move( par ) );
+  }
+
+ v_c05f[ wFi ]->set_ComputeConfig( & CwFi );
+
+ }  // end( BundleSolver::SetupFiStrPar )
+
+/*--------------------------------------------------------------------------*/
+
 void BundleSolver::SetupFiLambda1( Index wFi )
 {
  auto fwFi = v_c05f[ wFi ];
 
- // start by setting a "time cutoff" with the remaining total time
+ // start by setting a "time cutoff" with the remaining total time - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  if( MaxTime < INFshift )
   fwFi->set_par( dblMaxTime , MaxTime - get_elapsed_time() );
 
- if( ! ( TrgtMng & 15 ) )
-  return;
+ // set the component-specific string parameters, if any - - - - - - - - - - -
+ //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ SetupFiStrPar( wFi );
+ 
+ if( ! ( TrgtMng & 15 ) )  // if target management is not active
+  return;                  // all done
 
- // compute upper and lower cutoffs and the accuracy
+ // compute upper and lower cutoffs and the accuracy - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  auto UpCutOff = INFshift;
  auto LwCutOff = -INFshift;
@@ -3535,32 +3572,6 @@ void BundleSolver::SetupFiLambda1( Index wFi )
   fwFi->set_par( dblRelAcc , EpsCurr );
   }
 
- // set the component-specific string parameters, if any - - - - - - - - - - -
- // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
- if( ! v_C05_EI_SPAR_Names.empty() ) {
-  if( v_C05_EI_SPAR_Names.size() > v_C05_EI_SPAR_Vals.size() )
-   throw( std::logic_error( "vstr_C05_SPAR_EI_Names.size() > "
-			    "vstr_C05_SPAR_EI_Vals.size()" ) );
-
-  ComputeConfig CwFi;
-  CwFi.set_diff( true );
-  CwFi.set_relax( true );
-  auto Vit = v_C05_EI_SPAR_Vals.begin();
-  for( const auto & name : v_C05_EI_SPAR_Names ) {
-   auto par = ps_insert( *(Vit++) ,
-			 "_" + std::to_string( wFi ) +
-			 "_" + std::to_string( get_elapsed_calls() ) +
-			 "_" + std::to_string( get_elapsed_iterations() ) );
-   if( ( name.size() > 4 ) && ( name.substr( 0 , 4 ) == "vstr" ) )
-    CwFi.set_par( std::string( name ) ,
-		  std::vector< std::string >( { par } ) );     
-   else
-    CwFi.set_par( std::string( name ) , std::move( par ) );
-   }
-
-  fwFi->set_ComputeConfig( & CwFi );
-  }
  }  // end( BundleSolver::SetupFiLambda1 )
 
 /*--------------------------------------------------------------------------*/
@@ -3569,12 +3580,17 @@ void BundleSolver::SetupFiLambda( Index wFi )
 {
  auto fwFi = v_c05f[ wFi ];
 
- // start by setting a "time cutoff" with the remaining total time
+ // start by setting a "time cutoff" with the remaining total time - - - - - -
+ //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  if( MaxTime < INFshift )
   fwFi->set_par( dblMaxTime , MaxTime - get_elapsed_time() );
 
- if( ! ( TrgtMng & 15 ) )
-  return;
+ // set the component-specific string parameters, if any - - - - - - - - - - -
+ //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ SetupFiStrPar( wFi );
+ 
+ if( ! ( TrgtMng & 15 ) )  // if target management is not active
+  return;                  // all done
 
  // compute upper and lower cutoffs and the accuracy- - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -4088,8 +4104,14 @@ void BundleSolver::Log1( void )
 
  *f_log << std::endl << "{" << SCalls << "-" << ParIter << "-"
 	<< NrItems.back() << "-" << fixd << get_elapsed_time() << "} t = "
-	<< shrt << t << " ~ D*_1( z* ) = " << Master->ReadDStart( 1 )
-	<< " ~ Sigma = " << Sigma << std::endl << "           ";
+	<< shrt << t;
+
+ if( ( tStar > 0 ) || ( NrmZFctr == INFshift ) )
+  *f_log << " ~ D*_1( z* ) = " << Master->ReadDStart( 1 );
+ else
+  *f_log << " ~ || z* || = " << NrmZ / NrmZFctr;
+  
+ *f_log << " ~ Sigma = " << Sigma << std::endl << "           ";
 
  if( UpFiLmb.back() == INFshift )
   *f_log << " Fi undefined";
