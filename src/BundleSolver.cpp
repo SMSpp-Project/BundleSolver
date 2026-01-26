@@ -69,7 +69,7 @@
  * OsiXXXSolverInterface are in general not be available to all users. */
 
 #ifndef WHICH_OSI_QP
- #define WHICH_OSI_QP 2
+ #define WHICH_OSI_QP 1
 #endif
 
 #if WHICH_OSI_QP == 1
