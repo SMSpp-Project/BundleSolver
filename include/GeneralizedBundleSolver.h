@@ -454,7 +454,7 @@ public:
 
   dbltSPar3 ,  ///< numerical parameter for "small" heuristic-based t changes
 
-  dblCtOff ,   ///< cut-off value for QPPenaltyMP solver only
+  dblCtOff ,   ///< cut-off value for QPPenaltyMP solver only TBD (should go away)
 
   dblLastBndSlvPar ///< first allowed new double parameter for derived classes
                    /**< Convenience value for easily allow derived classes
@@ -599,7 +599,7 @@ public:
   tInit = get_dflt_dbl_par( dbltInit );
   tSPar2 = get_dflt_dbl_par( dbltSPar2 );
   tSPar3 = get_dflt_dbl_par( dbltSPar3 );
-  CtOff = get_dflt_dbl_par( dblCtOff );
+  //CtOff = get_dflt_dbl_par( dblCtOff ); // TBD
 
   v_events.resize( max_event_number() );
   }
@@ -1587,6 +1587,7 @@ public:
  /** Returns the best know global upper bound of the function. If the 
   *  objective function is concave, this is a true UB, otherwise the best 
   *  solution found so far is returned. */
+
  VarValue get_ub( void ) override {
   if( f_convex )
    if( ( MaxSol > 1 ) && ( UpFiBest < UpFiLmb.back() ) )
@@ -1597,6 +1598,7 @@ public:
    if( f_global_LB > - INFshift )
     return( - f_global_LB + constant_value );
 
+   // if UpperBound is not conditional (see Block.h:2728) then return it
    return( TrueLB ? - LowerBound.back() + constant_value : INFshift );
    }
   }
@@ -1628,7 +1630,7 @@ public:
   }
 
 /*--------------------------------------------------------------------------*/
- /// write the "current" solution
+ /// write the "current" solution TBD
  /** Write the  "current" optimal solution in the Block. There are two
   * different pieces of optimal solution:
   *
@@ -1759,7 +1761,7 @@ public:
 /*------------ METHODS FOR READING ALGORITHM PROGRESS DATA -----------------*/
 /*--------------------------------------------------------------------------*/
 /** @name Accessing data describing how the algorithm is progressing, useful
- *  e.g. inside events to trach the algorithm performances or perform
+ *  e.g. inside events to track the algorithm performances or perform
  *  dynamic parameters adjustments
  *  @{ */
 
@@ -1861,7 +1863,7 @@ public:
  VarValue get_vStar( void ) { return( vStar.back() ); } 
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
- /// returns the gorm of the first inserted subgradient in the last iteration
+ /// returns the norm of the first inserted subgradient in the last iteration
 
  VarValue get_G1Norm( void ) { return( G1Norm ); }
 
@@ -1933,13 +1935,13 @@ public:
      2 ,  // intWZNorm
      0 ,  // intFrcLstSS
      0 ,  // intTrgtMng
-     0 ,  // intMPName
-     0 ,  // intMPlvl
-     0 ,  // intQPmp1
-     0 ,  // intQPmp2
-     4 ,  // intOSImp1
-     0 ,  // intOSImp2
-     1 ,  // intOSImp3
+     0 ,  // intMPName TBD
+     0 ,  // intMPlvl 
+     0 ,  // intQPmp1 TBD
+     0 ,  // intQPmp2 TBD
+     4 ,  // intOSImp1 TBD
+     0 ,  // intOSImp2 TBD
+     1 ,  // intOSImp3 TBD
      2    // intRstAlg, default value:
           // RstAlg = 0  -  reset algorithmic parameters
           // RstCrr = 1  -  set current point to using values of the Variable
@@ -1971,7 +1973,7 @@ public:
    1 ,      // dbltInit
    1e-3 ,   // dbltSPar2
    0 ,      // dbltSPar3
-   1e-1     // dblCtOff
+   1e-1     // dblCtOff TBD
    };
 
   if( ( par >= dblLastParCDAS ) && ( par < dblLastBndSlvPar ) )
@@ -2059,13 +2061,13 @@ public:
    { "intWZNorm" , BundleSolver::intWZNorm } ,
    { "intFrcLstSS" , BundleSolver::intFrcLstSS } ,
    { "intTrgtMng" , BundleSolver::intTrgtMng } ,
-   { "intMPName" , BundleSolver::intMPName } ,
-   { "intMPlvl" , BundleSolver::intMPlvl } ,
-   { "intQPmp1" , BundleSolver::intQPmp1 } ,
-   { "intQPmp2" , BundleSolver::intQPmp2 } ,
-   { "intOSImp1" , BundleSolver::intOSImp1 } ,
-   { "intOSImp2" , BundleSolver::intOSImp2 } ,
-   { "intOSImp3" , BundleSolver::intOSImp3 } ,
+   { "intMPName" , BundleSolver::intMPName } , // TBD
+   { "intMPlvl" , BundleSolver::intMPlvl } , 
+   { "intQPmp1" , BundleSolver::intQPmp1 } , // TBD
+   { "intQPmp2" , BundleSolver::intQPmp2 } , // TBD
+   { "intOSImp1" , BundleSolver::intOSImp1 } , // TBD
+   { "intOSImp2" , BundleSolver::intOSImp2 } , // TBD
+   { "intOSImp3" , BundleSolver::intOSImp3 } , // TBD
    { "intRstAlg" , BundleSolver::intRstAlg } ,
    };
 
@@ -2097,7 +2099,7 @@ public:
    { "dbltInit" , BundleSolver::dbltInit } ,
    { "dbltSPar2" , BundleSolver::dbltSPar2 } ,
    { "dbltSPar3" , BundleSolver::dbltSPar3 } ,
-   { "dblCtOff" , BundleSolver::dblCtOff }
+   { "dblCtOff" , BundleSolver::dblCtOff } // TBD
    };
 
   const auto it = dbl_pars_map.find( name );
@@ -2157,7 +2159,7 @@ public:
    "intBPar7" , "intMnSSC" , "intMnNSC" , "inttSPar1" , "intMaxNrEvls" ,
    "intDoEasy" , "intWZNorm" , "intFrcLstSS" , "intTrgtMng" , "intMPName" ,
    "intMPlvl" , "intQPmp1" , "intQPmp2", "OSImp1" , "OSImp2" , "OSImp3" ,
-   "intRstAlg"  };
+   "intRstAlg"  }; // TBD
 
   if( ( idx >= intLastParCDAS ) && ( idx < intLastBndSlvPar ) )
    return( int_pars_str[ idx - intBPar1 ] );
@@ -2173,7 +2175,7 @@ public:
    "dblNZEps" , "dbltStar" , "dblMinNrEvls" , "dblBPar5" , "dblm1" ,
    "dblm2" , "dblm3" , "dblmxIncr" , "dblmnIncr" , "dblmxDecr" ,
    "dblmnDecr" , "dbltMaior" , "dbltMinor" , "dbltInit" , "dbltSPar2" ,
-   "dbltSPar3" , "dblCtOff" };
+   "dbltSPar3" , "dblCtOff" }; // TBD
 
  if( ( idx >= dblLastParCDAS ) && ( idx < dblLastBndSlvPar ) )
    return( dbl_pars_str[ idx - dblLastParCDAS ] );
@@ -2709,20 +2711,21 @@ public:
 
  Index TrgtMng;     ///< how targets on components are managed
 
+ // TBD
  int MPName;        /**< bit 0 = 0: MP solver == QPPenalty
 		     * bit 0 = 1: MP == OSIMPSolver
 		     * bit 1 = 1: Cplex, bit 1 = 0 CLP
 		     * bit 2 = 1: Quadratic, bit 2 = 0 BoxStep
 		     * + bit 3 = 1 (+8) = check for duplicates. */
 
- Index MxAdd;       ///< max variables added per iteration in QPPenaltyMP
- Index MxRmv;       ///< max variables added per iteration in QPPenaltyMP
+ Index MxAdd;       ///< max variables added per iteration in QPPenaltyMP // TBD
+ Index MxRmv;       ///< max variables added per iteration in QPPenaltyMP // TBD
 
- double CtOff;      ///< "break" value for the pricing in MinQuad
+ double CtOff;      ///< "break" value for the pricing in MinQuad // TBD
  
- Index algo;        ///< algorithm type ( for OSIMPSolver only )
- Index reduction;   ///< pre-processing (reduction) ( for OSIMPSolver only )
- Index threads;     ///< number of threads ( for OSIMPSolver only )
+ Index algo;        ///< algorithm type ( for OSIMPSolver only ) // TBD
+ Index reduction;   ///< pre-processing (reduction) ( for OSIMPSolver only ) // TBD
+ Index threads;     ///< number of threads ( for OSIMPSolver only ) // TBD
 
  Index MPlvl;       ///< log verbosity of master problem
 
@@ -2945,7 +2948,7 @@ public:
 
  bool f_convex;          ///< true if all objectives are convex
  
- MPSolver * Master;      ///< (pointer to) the Master Problem Solver
+ MPSolver * Master;      ///< (pointer to) the Master Problem Solver // TBD
 
  std::vector< ColVariable * > LamVcblr;  ///< map Lambda -> ColVariable
 
@@ -3004,7 +3007,7 @@ public:
 /** FakeFiOracle implements the part of the FiOracle interface that is
  * strictly necessary to use a MPSolver inside BundleSolver. This hack will
  * one day be replaced with a native implementation of the master problem
- * solver, but until then, there you go. */
+ * solver, but until then, there you go. */ // TBD All this should go away
 
 class FakeFiOracle : public FiOracle
 {
@@ -3246,7 +3249,7 @@ class FakeFiOracle : public FiOracle
 
  Index aBP3;       // current max number of items to be fetched
 
- FakeFiOracle FakeFi;  ///< the FakeFiOracle object
+ FakeFiOracle FakeFi;  ///< the FakeFiOracle object // TBD
 
 /*--------------------------------------------------------------------------*/
 
