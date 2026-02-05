@@ -2266,6 +2266,136 @@ public:
  using Vec_Bool = std::vector< bool >;      ///< a std::vector of bool
 
 /*--------------------------------------------------------------------------*/
+/*------------------------- CLASS FakeFiOracle  ----------------------------*/
+/*--------------------------------------------------------------------------*/
+/*--------------------------- GENERAL NOTES --------------------------------*/
+/*--------------------------------------------------------------------------*/
+/** FakeFiOracle implements the part of the FiOracle interface that is
+ * strictly necessary to use a MPSolver inside BundleSolver. This hack will
+ * one day be replaced with a native implementation of the master problem
+ * solver, but until then, there you go. */
+
+class FakeFiOracle : public FiOracle
+{
+
+/*----------------------- PUBLIC PART OF THE CLASS -------------------------*/
+
+ public:
+
+/*--------------------- PUBLIC METHODS OF THE CLASS ------------------------*/
+/*--------------------------------------------------------------------------*/
+/*---------------------------- CONSTRUCTOR ---------------------------------*/
+/** Constructor of the class: takes the pointer to the BundleSolver it has
+ * to "serve". */
+
+ FakeFiOracle( BundleSolver *solver ) : FiOracle() {
+  bslv = solver;
+  }
+
+/*-------------------------- OTHER INITIALIZATIONS -------------------------*/
+
+ void SetNDOSolver( NDOSolver *NwSlvr = 0 ) override {
+  throw( std::logic_error( "this method cannot be called" ) );
+  }
+
+/*--------------------------------------------------------------------------*/
+
+ void SetFiLog( std::ostream * outs = 0 , const char lvl = 0 ) override {
+  throw( std::logic_error( "this method cannot be called" ) );
+  }
+
+/*--------------------------------------------------------------------------*/
+
+ void SetFiTime( const bool TimeIt = true ) override {
+  throw( std::logic_error( "this method cannot be called" ) );
+  }
+
+/*--------------------------------------------------------------------------*/
+
+ void SetMaxName( cIndex MxNme = 0 ) override {
+  throw( std::logic_error( "this method cannot be called" ) );
+  }
+
+/*-------------- METHODS FOR READING THE DATA OF THE PROBLEM ---------------*/
+/// get the number of Variable
+/** Variable cannot be changed. This means that is used the default
+ *  implementation of GetMaxNumVar(). The maximum number of variables is
+ *  equal to the current number of variable*/
+
+ Index GetNumVar( void ) const override;
+
+/*--------------------------------------------------------------------------*/
+
+ Index GetNrFi( void ) const override;
+
+/*--------------------------------------------------------------------------*/
+
+ Index GetMaxName( void ) const override;
+
+/*--------------------------------------------------------------------------*/
+
+ bool GetUC( cIndex i ) override;
+
+/*--------------------------------------------------------------------------*/
+
+ LMNum GetUB( cIndex i ) override;
+
+/*--------------------------------------------------------------------------*/
+
+ Index GetBNC( cIndex wFi ) override;
+
+/*--------------------------------------------------------------------------*/
+
+ Index GetBNR( cIndex wFi ) override;
+
+/*--------------------------------------------------------------------------*/
+
+ Index GetBNZ( cIndex wFi ) override;
+
+/*--------------------------------------------------------------------------*/
+
+ void GetBDesc( cIndex wFi , int *Bbeg , int *Bind , double *Bval ,
+		double *lhs , double *rhs , double *cst ,
+		double *lbd , double *ubd ) override;
+
+/*--------------------------------------------------------------------------*/
+
+ Index GetANZ( cIndex wFi , cIndex strt = 0 , Index stp = Inf< Index >() )
+  override;
+
+/*--------------------------------------------------------------------------*/
+
+ void GetADesc( cIndex wFi , int *Abeg , int *Aind , double *Aval ,
+		cIndex strt = 0 , Index stp = Inf< Index >() ) override;
+
+/*--------------------------------------------------------------------------*/
+
+ HpNum Fi( cIndex wFi = Inf< Index >() ) override {
+  throw( std::logic_error( "this method cannot be called" ) );
+  }
+
+/*------------- METHODS FOR READING SUBGRADIENTS / CONSTRAINTS -------------*/
+
+ bool NewGi( cIndex wFi = Inf< Index >() ) override { return( true ); }
+
+/*--------------------------------------------------------------------------*/
+
+ Index GetGi( SgRow SubG , cIndex_Set &SGBse , cIndex Name = Inf< Index >() ,
+	      cIndex strt = 0 , Index stp = Inf< Index >() ) override;
+
+/*------------------------------ DESTRUCTOR --------------------------------*/
+
+ virtual ~FakeFiOracle() { }
+
+/*-------------------- PROTECTED PART OF THE CLASS -------------------------*/
+
+ protected:
+
+ BundleSolver * bslv;  ///< the BundleSolver that I "serve"
+
+ };  // end( class FakeFiOracle )
+
+/*--------------------------------------------------------------------------*/
 /*-------------------------- PROTECTED METHODS -----------------------------*/
 /*--------------------------------------------------------------------------*/
 
@@ -2973,6 +3103,10 @@ public:
  std::chrono::time_point< std::chrono::system_clock > c_start;
  ///< starting instant of last call to compute()
 
+ // the FakeFiOracle object - - - - - - - - - - - - - - - - - - - - - - - - -
+
+ FakeFiOracle FakeFi;  ///< the FakeFiOracle object
+
 /*--------------------------------------------------------------------------*/
 /*--------------------- PRIVATE PART OF THE CLASS --------------------------*/
 /*--------------------------------------------------------------------------*/
@@ -2982,135 +3116,6 @@ public:
 /*--------------------------------------------------------------------------*/
 /*--------------------------- PRIVATE TYPES --------------------------------*/
 /*--------------------------------------------------------------------------*/
-/*------------------------- CLASS FakeFiOracle  ----------------------------*/
-/*--------------------------------------------------------------------------*/
-/*--------------------------- GENERAL NOTES --------------------------------*/
-/*--------------------------------------------------------------------------*/
-/** FakeFiOracle implements the part of the FiOracle interface that is
- * strictly necessary to use a MPSolver inside BundleSolver. This hack will
- * one day be replaced with a native implementation of the master problem
- * solver, but until then, there you go. */
-
-class FakeFiOracle : public FiOracle
-{
-
-/*----------------------- PUBLIC PART OF THE CLASS -------------------------*/
-
- public:
-
-/*--------------------- PUBLIC METHODS OF THE CLASS ------------------------*/
-/*--------------------------------------------------------------------------*/
-/*---------------------------- CONSTRUCTOR ---------------------------------*/
-/** Constructor of the class: takes the pointer to the BundleSolver it has
- * to "serve". */
-
- FakeFiOracle( BundleSolver *solver ) : FiOracle() {
-  bslv = solver;
-  }
-
-/*-------------------------- OTHER INITIALIZATIONS -------------------------*/
-
- void SetNDOSolver( NDOSolver *NwSlvr = 0 ) override {
-  throw( std::logic_error( "this method cannot be called" ) );
-  }
-
-/*--------------------------------------------------------------------------*/
-
- void SetFiLog( std::ostream * outs = 0 , const char lvl = 0 ) override {
-  throw( std::logic_error( "this method cannot be called" ) );
-  }
-
-/*--------------------------------------------------------------------------*/
-
- void SetFiTime( const bool TimeIt = true ) override {
-  throw( std::logic_error( "this method cannot be called" ) );
-  }
-
-/*--------------------------------------------------------------------------*/
-
- void SetMaxName( cIndex MxNme = 0 ) override {
-  throw( std::logic_error( "this method cannot be called" ) );
-  }
-
-/*-------------- METHODS FOR READING THE DATA OF THE PROBLEM ---------------*/
-/// get the number of Variable
-/** Variable cannot be changed. This means that is used the default
- *  implementation of GetMaxNumVar(). The maximum number of variables is
- *  equal to the current number of variable*/
-
- Index GetNumVar( void ) const override;
-
-/*--------------------------------------------------------------------------*/
-
- Index GetNrFi( void ) const override;
-
-/*--------------------------------------------------------------------------*/
-
- Index GetMaxName( void ) const override;
-
-/*--------------------------------------------------------------------------*/
-
- bool GetUC( cIndex i ) override;
-
-/*--------------------------------------------------------------------------*/
-
- LMNum GetUB( cIndex i ) override;
-
-/*--------------------------------------------------------------------------*/
-
- Index GetBNC( cIndex wFi ) override;
-
-/*--------------------------------------------------------------------------*/
-
- Index GetBNR( cIndex wFi ) override;
-
-/*--------------------------------------------------------------------------*/
-
- Index GetBNZ( cIndex wFi ) override;
-
-/*--------------------------------------------------------------------------*/
-
- void GetBDesc( cIndex wFi , int *Bbeg , int *Bind , double *Bval ,
-		double *lhs , double *rhs , double *cst ,
-		double *lbd , double *ubd ) override;
-
-/*--------------------------------------------------------------------------*/
-
- Index GetANZ( cIndex wFi , cIndex strt = 0 , Index stp = Inf< Index >() )
-  override;
-
-/*--------------------------------------------------------------------------*/
-
- void GetADesc( cIndex wFi , int *Abeg , int *Aind , double *Aval ,
-		cIndex strt = 0 , Index stp = Inf< Index >() ) override;
-
-/*--------------------------------------------------------------------------*/
-
- HpNum Fi( cIndex wFi = Inf< Index >() ) override {
-  throw( std::logic_error( "this method cannot be called" ) );
-  }
-
-/*------------- METHODS FOR READING SUBGRADIENTS / CONSTRAINTS -------------*/
-
- bool NewGi( cIndex wFi = Inf< Index >() ) override { return( true ); }
-
-/*--------------------------------------------------------------------------*/
-
- Index GetGi( SgRow SubG , cIndex_Set &SGBse , cIndex Name = Inf< Index >() ,
-	      cIndex strt = 0 , Index stp = Inf< Index >() ) override;
-
-/*------------------------------ DESTRUCTOR --------------------------------*/
-
- virtual ~FakeFiOracle() { }
-
-/*-------------------- PROTECTED PART OF THE CLASS -------------------------*/
-
- protected:
-
- BundleSolver * bslv;  ///< the BundleSolver that I "serve"
-
- };  // end( class FakeFiOracle )
-
 /*--------------------------------------------------------------------------*/
 /*-------------------------- PRIVATE METHODS -------------------------------*/
 /*--------------------------------------------------------------------------*/
@@ -3230,8 +3235,6 @@ class FakeFiOracle : public FiOracle
 /*--------------------------------------------------------------------------*/
 
  Index aBP3;       // current max number of items to be fetched
-
- FakeFiOracle FakeFi;  ///< the FakeFiOracle object
 
 /*--------------------------------------------------------------------------*/
 
