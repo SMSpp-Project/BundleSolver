@@ -59,8 +59,8 @@ endif ()
 
 # Set the WHICH_OSI_QP macro according to these following priorities:
 # - use the given WHICH_OSI_QP in input as CMake option, if any
-# - use Gurobi, i.e., 1, if available
-# - use Cplex, i.e., 2, if available
+# - use Cplex, i.e., 1, if available
+# - use Gurobi, i.e., 2, if available
 # - otherwise, use Clp
 
 # Define a temporary variable to store the value of WHICH_OSI_QP

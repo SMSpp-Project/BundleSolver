@@ -109,7 +109,7 @@
 #define CHECK_BAD_F 0
 /* Bundle methods are supposed to work on convex functions. Technically,
  * this boils down to the fact that each (eps-)subgradient produced by
- * each orcale must be a linear lower approximation of the corresponding
+ * each oracle must be a linear lower approximation of the corresponding
  * function on all the space. This is immediately tested right away for the
  * current stability centre Lambda by computing the linearization error of
  * the subgradient (for the corresponding component) w.r.t. that point. If
@@ -126,7 +126,7 @@
  *
  * then no negative linearization error should ever appear. Sometimes this is
  * not the case. In Lagrangian optimization, for instance, some oracles may
- * not solve the Lagrangian subproblem exactly and they may not be capable
+ * not solve the Lagrangian subproblem exactly, and they may not be capable
  * (or willing) to compute correct upper/lower bounds on the objective value
  * so as to correctly declare the subgradient as an eps-one and provide a
  * correct estimate of the eps; rather, these "cheating" oracles may just
@@ -141,9 +141,9 @@
  * errors by detecting negative Sigma and performing "noise reduction steps"
  * to try to make them go away. However, in general one may expect that, for
  * some applications, this should never happen as the functions are convex
- * and the oracles should be "faithful". Hence, appearence of negative
+ * and the oracles should be "faithful". Hence, appearance of negative
  * linearization and especially negative Sigma, would be a sign that the
- * oracles are not behaving as expected. This macro, coded bitwose, causes
+ * oracles are not behaving as expected. This macro, coded bitwise, causes
  * checks on negative linearization errors and/or negative Sigma to be
  * performed and warnings to be printed on std::cerr if "negative enough"
  * values are found. The exact coding is:
@@ -154,7 +154,7 @@
  * - CHECK_BAD_F & 2 == checks the sign of any linearization error of any
  *                      new subgradient w.r.t. the current stability centre
  *                      Lambda as soon as the subgradient is extracted from 
- *                      the corresponding oracle; the check is disable at
+ *                      the corresponding oracle; the check is disabled at
  *                      the first iteration and in general whenever the
  *                      reference value of the corresponding component is
  *                      undefined, as in this case linearization errors are
