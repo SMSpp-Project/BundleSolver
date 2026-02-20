@@ -154,6 +154,8 @@
 // #include "MPSolver.h"
 // #include "NDOSlver.h"
 
+#include "MasterProblemBlock.h" // NEW
+
 /*--------------------------------------------------------------------------*/
 /*-------------------------- NAMESPACE & USING -----------------------------*/
 /*--------------------------------------------------------------------------*/
@@ -2766,7 +2768,7 @@ public:
  Index ParIter;     ///< number of iterations in this call to compute() 
 
  std::vector< MILPSolver * > IsEasy;
- ///< MILPSolver used to read the easy components (non-nullptr iff k is easy)
+ ///< MILPSolver used to read the easy components (non-nullptr iff k is easy) TBD (Should go away)
 
  Index NrEasy;      ///< number of "easy" component of Fi
 
@@ -2948,7 +2950,7 @@ public:
 
  bool f_convex;          ///< true if all objectives are convex
  
- MPSolver * Master;      ///< (pointer to) the Master Problem Solver // TBD
+ MPBlock * Master;      ///< (pointer to) the Master Problem Block // NEW
 
  std::vector< ColVariable * > LamVcblr;  ///< map Lambda -> ColVariable
 
