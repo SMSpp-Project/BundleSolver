@@ -52,15 +52,28 @@ include $(MILPSSDR)/makefile-s
 # include the makefile requiring all external modules in input
 include $(BNDSLVSDR)/makefile
 
+
+# define input macros for libTorch library makefile, then include it
+include $(BNDSLVSDR)/../extlib/makefile-libTorch
+
+
 # macros to be exported - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 # append external stuff defined in the other makefiles to BNDSLVOBJ,
 # BNDSLVINC and BNDSLVH, thus the := assignment has to be used (use GNU make)
 BNDSLVOBJ := $(BNDSLVOBJ) $(MILPSOBJ) $(libNDOOBJ)
-BNDSLVINC := $(BNDSLVINC) $(MILPSINC) $(libNDOINC)
+BNDSLVINC := $(BNDSLVINC) $(MILPSINC) $(libNDOINC) $(libTorchINC) $(libTorchINCAPI)
 BNDSLVH := $(BNDSLVH) $(MILPSH) $(libNDOH) 
 
 # external libraries for BundleSolver
-BNDSLVLIB = $(libNDOLIB) $(MILPSLIB)
+BNDSLVLIB = $(libNDOLIB) $(MILPSLIB) $(libTorchLIB) \
+       -Wl,--start-group \
+         -ltorch \
+         -ltorch_cpu \
+         -ltorch_global_deps \
+         -lc10 \
+       -Wl,--end-group \
+       -ldl -pthread -lrt \
+       -Wl,-rpath,$(libTorchLIB)
 
 ########################### End of makefile-s ################################
