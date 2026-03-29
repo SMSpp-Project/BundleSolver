@@ -42,10 +42,10 @@ find_package(BZip2 REQUIRED QUIET)
 # https://github.com/conda-forge/coin-or-utils-feedstock/blob/main/recipe/build.sh#L12
 if (WIN32 AND DEFINED ENV{LIBRARY_PREFIX})
     find_library(MKL_RT_LIBRARY
-                 NAMES mkl_rt
-                 PATHS $ENV{LIBRARY_PREFIX}/lib
-                 NO_DEFAULT_PATH
-                 DOC "MKL_RT library.")
+            NAMES mkl_rt
+            PATHS $ENV{LIBRARY_PREFIX}/lib
+            NO_DEFAULT_PATH
+            DOC "MKL_RT library.")
 endif ()
 
 # Check if already in cache
@@ -55,16 +55,16 @@ else ()
 
     # ----- Find the headers ------------------------------------------------ #
     find_path(CoinUtils_INCLUDE_DIR
-              NAMES CoinUtilsConfig.h
-              PATHS ${CoinUtils_ROOT}/include
-              PATH_SUFFIXES coin coinutils/coin coin-or
-              DOC "CoinUtils include directory.")
+            NAMES CoinUtilsConfig.h
+            PATHS ${CoinUtils_ROOT}/include
+            PATH_SUFFIXES coin coinutils/coin coin-or
+            DOC "CoinUtils include directory.")
 
     # ----- Find the library ------------------------------------------------ #
     find_library(CoinUtils_LIBRARY
-                 NAMES CoinUtils
-                 PATHS ${CoinUtils_ROOT}/lib
-                 DOC "CoinUtils library.")
+            NAMES CoinUtils
+            PATHS ${CoinUtils_ROOT}/lib
+            DOC "CoinUtils library.")
 
     # ----- Parse the version ----------------------------------------------- #
     if (CoinUtils_INCLUDE_DIR)
@@ -116,7 +116,7 @@ endif ()
 # Variables marked as advanced are not displayed in CMake GUIs, see:
 # https://cmake.org/cmake/help/latest/command/mark_as_advanced.html
 mark_as_advanced(CoinUtils_INCLUDE_DIR
-                 CoinUtils_LIBRARY
-                 CoinUtils_VERSION)
+        CoinUtils_LIBRARY
+        CoinUtils_VERSION)
 
 # --------------------------------------------------------------------------- #
