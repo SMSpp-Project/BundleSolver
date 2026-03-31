@@ -79,7 +79,9 @@ if (NOT CoinUtils_FOUND)
     if (WIN32)
         find_file(CoinUtils_DLL
                 NAMES CoinUtils.dll libCoinUtils.dll CoinUtils-0.dll
-                PATHS ${CoinUtils_ROOT}/bin
+                PATHS
+                ${CoinUtils_ROOT}/bin
+                $ENV{LIBRARY_BIN}
                 DOC "CoinUtils runtime DLL.")
     endif ()
 

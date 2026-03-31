@@ -58,7 +58,9 @@ find_library(Clp_LIBRARY
 if (WIN32)
     find_file(Clp_DLL
             NAMES Clp.dll libClp.dll Clp-0.dll
-            PATHS ${Clp_ROOT}/bin
+            PATHS
+            ${Clp_ROOT}/bin
+            $ENV{LIBRARY_BIN}
             DOC "Clp runtime DLL.")
 endif ()
 
@@ -77,7 +79,9 @@ find_library(Clp_ClpSolver_LIBRARY
 if (WIN32)
     find_file(Clp_ClpSolver_DLL
             NAMES ClpSolver.dll libClpSolver.dll ClpSolver-0.dll
-            PATHS ${Clp_ROOT}/bin
+            PATHS
+            ${Clp_ROOT}/bin
+            $ENV{LIBRARY_BIN}
             DOC "ClpSolver runtime DLL.")
 endif ()
 
@@ -106,7 +110,9 @@ find_library(Clp_OsiClp_LIBRARY
 if (WIN32)
     find_file(Clp_OsiClp_DLL
             NAMES OsiClp.dll libOsiClp.dll OsiClp-0.dll
-            PATHS ${Clp_ROOT}/bin
+            PATHS
+            ${Clp_ROOT}/bin
+            $ENV{LIBRARY_BIN}
             DOC "OsiClp runtime DLL.")
 endif ()
 

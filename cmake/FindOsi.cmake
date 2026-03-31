@@ -60,7 +60,9 @@ find_library(Osi_LIBRARY
 if (WIN32)
     find_file(Osi_DLL
             NAMES Osi.dll libOsi.dll Osi-0.dll
-            PATHS ${Osi_ROOT}/bin
+            PATHS
+            ${Osi_ROOT}/bin
+            $ENV{LIBRARY_BIN}
             DOC "Osi runtime DLL.")
 endif ()
 
@@ -80,7 +82,9 @@ if (CPLEX_FOUND)
     if (WIN32)
         find_file(Osi_OsiCpx_DLL
                 NAMES OsiCpx.dll libOsiCpx.dll OsiCpx-0.dll
-                PATHS ${Osi_ROOT}/bin
+                PATHS
+                ${Osi_ROOT}/bin
+                $ENV{LIBRARY_BIN}
                 DOC "OsiCpx runtime DLL.")
     endif ()
 
@@ -111,7 +115,9 @@ if (GUROBI_FOUND)
     if (WIN32)
         find_file(Osi_OsiGrb_DLL
                 NAMES OsiGrb.dll libOsiGrb.dll OsiGrb-0.dll
-                PATHS ${Osi_ROOT}/bin
+                PATHS
+                ${Osi_ROOT}/bin
+                $ENV{LIBRARY_BIN}
                 DOC "OsiGrb runtime DLL.")
     endif ()
 
