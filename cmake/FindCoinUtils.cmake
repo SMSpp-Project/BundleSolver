@@ -17,6 +17,7 @@
 #                                                                             #
 #        CoinUtils_INCLUDE_DIR   - Directory containing headers               #
 #        CoinUtils_LIBRARY       - The found library                          #
+#        CoinUtils_DLL           - The found runtime DLL (Windows only)       #
 #                                                                             #
 #    This module can read a search path from the variable:                    #
 #                                                                             #
@@ -40,18 +41,26 @@ find_package(BZip2 REQUIRED QUIET)
 
 # Conda coin-or-utils package links MKL BLAS library
 # https://github.com/conda-forge/coin-or-utils-feedstock/blob/main/recipe/build.sh#L12
-if (WIN32 AND DEFINED ENV{LIBRARY_PREFIX})
+if (WIN32 AND DEFINED ENV{CONDA_BUILD})
     find_library(MKL_RT_LIBRARY
             NAMES mkl_rt
-            PATHS $ENV{LIBRARY_PREFIX}/lib
+            PATHS $ENV{LIBRARY_LIB}
             NO_DEFAULT_PATH
             DOC "MKL_RT library.")
 endif ()
 
 # Check if already in cache
-if (CoinUtils_INCLUDE_DIR AND CoinUtils_LIBRARY)
-    set(CoinUtils_FOUND TRUE)
+if (WIN32)
+    if (CoinUtils_INCLUDE_DIR AND CoinUtils_LIBRARY AND CoinUtils_DLL)
+        set(CoinUtils_FOUND TRUE)
+    endif ()
 else ()
+    if (CoinUtils_INCLUDE_DIR AND CoinUtils_LIBRARY)
+        set(CoinUtils_FOUND TRUE)
+    endif ()
+endif ()
+
+if (NOT CoinUtils_FOUND)
 
     # ----- Find the headers ------------------------------------------------ #
     find_path(CoinUtils_INCLUDE_DIR
@@ -65,6 +74,14 @@ else ()
             NAMES CoinUtils
             PATHS ${CoinUtils_ROOT}/lib
             DOC "CoinUtils library.")
+
+    # ----- Find the runtime DLL on Windows --------------------------------- #
+    if (WIN32)
+        find_file(CoinUtils_DLL
+                NAMES CoinUtils.dll libCoinUtils.dll CoinUtils-0.dll
+                PATHS ${CoinUtils_ROOT}/bin
+                DOC "CoinUtils runtime DLL.")
+    endif ()
 
     # ----- Parse the version ----------------------------------------------- #
     if (CoinUtils_INCLUDE_DIR)
@@ -89,10 +106,17 @@ else ()
     # REQUIRED_VARS are set.
     # REQUIRED_VARS should be cache entries and not output variables. See:
     # https://cmake.org/cmake/help/latest/module/FindPackageHandleStandardArgs.html
-    find_package_handle_standard_args(
-            CoinUtils
-            REQUIRED_VARS CoinUtils_LIBRARY CoinUtils_INCLUDE_DIR
-            VERSION_VAR CoinUtils_VERSION)
+    if (WIN32)
+        find_package_handle_standard_args(
+                CoinUtils
+                REQUIRED_VARS CoinUtils_LIBRARY CoinUtils_DLL CoinUtils_INCLUDE_DIR
+                VERSION_VAR CoinUtils_VERSION)
+    else ()
+        find_package_handle_standard_args(
+                CoinUtils
+                REQUIRED_VARS CoinUtils_LIBRARY CoinUtils_INCLUDE_DIR
+                VERSION_VAR CoinUtils_VERSION)
+    endif ()
 endif ()
 
 # ----- Export the target --------------------------------------------------- #
@@ -101,11 +125,21 @@ if (CoinUtils_FOUND)
     set(CoinUtils_LIBRARIES ${CoinUtils_LIBRARY})
 
     if (NOT TARGET Coin::CoinUtils)
-        add_library(Coin::CoinUtils UNKNOWN IMPORTED)
-        set_target_properties(
-                Coin::CoinUtils PROPERTIES
-                IMPORTED_LOCATION ${CoinUtils_LIBRARY}
-                INTERFACE_INCLUDE_DIRECTORIES ${CoinUtils_INCLUDE_DIRS})
+        if (WIN32)
+            add_library(Coin::CoinUtils SHARED IMPORTED)
+            set_target_properties(
+                    Coin::CoinUtils PROPERTIES
+                    IMPORTED_IMPLIB "${CoinUtils_LIBRARY}"
+                    IMPORTED_LOCATION "${CoinUtils_DLL}"
+                    INTERFACE_INCLUDE_DIRECTORIES "${CoinUtils_INCLUDE_DIRS}")
+        else ()
+            add_library(Coin::CoinUtils UNKNOWN IMPORTED)
+            set_target_properties(
+                    Coin::CoinUtils PROPERTIES
+                    IMPORTED_LOCATION "${CoinUtils_LIBRARY}"
+                    INTERFACE_INCLUDE_DIRECTORIES "${CoinUtils_INCLUDE_DIRS}")
+        endif ()
+
         target_link_libraries(Coin::CoinUtils INTERFACE "BZip2::BZip2")
         if (MKL_RT_LIBRARY)
             target_link_libraries(Coin::CoinUtils INTERFACE ${MKL_RT_LIBRARY})
@@ -115,8 +149,15 @@ endif ()
 
 # Variables marked as advanced are not displayed in CMake GUIs, see:
 # https://cmake.org/cmake/help/latest/command/mark_as_advanced.html
-mark_as_advanced(CoinUtils_INCLUDE_DIR
-        CoinUtils_LIBRARY
-        CoinUtils_VERSION)
+if (WIN32)
+    mark_as_advanced(CoinUtils_INCLUDE_DIR
+            CoinUtils_LIBRARY
+            CoinUtils_DLL
+            CoinUtils_VERSION)
+else ()
+    mark_as_advanced(CoinUtils_INCLUDE_DIR
+            CoinUtils_LIBRARY
+            CoinUtils_VERSION)
+endif ()
 
 # --------------------------------------------------------------------------- #

@@ -17,6 +17,7 @@
 #                                                                             #
 #        Clp_INCLUDE_DIR   - Directory containing headers                     #
 #        Clp_LIBRARY       - The found library                                #
+#        Clp_DLL           - The found runtime DLL (Windows only)             #
 #                                                                             #
 #    This module can read a search path from the variable:                    #
 #                                                                             #
@@ -53,6 +54,14 @@ find_library(Clp_LIBRARY
         PATHS ${Clp_ROOT}/lib
         DOC "Clp library.")
 
+# ----- Find the runtime DLL on Windows ------------------------------------ #
+if (WIN32)
+    find_file(Clp_DLL
+            NAMES Clp.dll libClp.dll Clp-0.dll
+            PATHS ${Clp_ROOT}/bin
+            DOC "Clp runtime DLL.")
+endif ()
+
 # ----- ClpSolver component ------------------------------------------------- #
 find_path(Clp_ClpSolver_INCLUDE_DIR
         NAMES ClpSolve.hpp
@@ -65,8 +74,21 @@ find_library(Clp_ClpSolver_LIBRARY
         PATHS ${Clp_ROOT}/lib
         DOC "ClpSolver library.")
 
-if (Clp_ClpSolver_INCLUDE_DIR AND Clp_ClpSolver_LIBRARY)
-    set(Clp_ClpSolver_FOUND TRUE)
+if (WIN32)
+    find_file(Clp_ClpSolver_DLL
+            NAMES ClpSolver.dll libClpSolver.dll ClpSolver-0.dll
+            PATHS ${Clp_ROOT}/bin
+            DOC "ClpSolver runtime DLL.")
+endif ()
+
+if (WIN32)
+    if (Clp_ClpSolver_INCLUDE_DIR AND Clp_ClpSolver_LIBRARY AND Clp_ClpSolver_DLL)
+        set(Clp_ClpSolver_FOUND TRUE)
+    endif ()
+else ()
+    if (Clp_ClpSolver_INCLUDE_DIR AND Clp_ClpSolver_LIBRARY)
+        set(Clp_ClpSolver_FOUND TRUE)
+    endif ()
 endif ()
 
 # ----- OsiClp component ---------------------------------------------------- #
@@ -81,8 +103,21 @@ find_library(Clp_OsiClp_LIBRARY
         PATHS ${Clp_ROOT}/lib
         DOC "OsiClp library.")
 
-if (Clp_OsiClp_INCLUDE_DIR AND Clp_OsiClp_LIBRARY)
-    set(Clp_OsiClp_FOUND TRUE)
+if (WIN32)
+    find_file(Clp_OsiClp_DLL
+            NAMES OsiClp.dll libOsiClp.dll OsiClp-0.dll
+            PATHS ${Clp_ROOT}/bin
+            DOC "OsiClp runtime DLL.")
+endif ()
+
+if (WIN32)
+    if (Clp_OsiClp_INCLUDE_DIR AND Clp_OsiClp_LIBRARY AND Clp_OsiClp_DLL)
+        set(Clp_OsiClp_FOUND TRUE)
+    endif ()
+else ()
+    if (Clp_OsiClp_INCLUDE_DIR AND Clp_OsiClp_LIBRARY)
+        set(Clp_OsiClp_FOUND TRUE)
+    endif ()
 endif ()
 
 # ----- Parse the version --------------------------------------------------- #
@@ -108,11 +143,19 @@ endif ()
 # REQUIRED_VARS are set.
 # REQUIRED_VARS should be cache entries and not output variables. See:
 # https://cmake.org/cmake/help/latest/module/FindPackageHandleStandardArgs.html
-find_package_handle_standard_args(
-        Clp
-        REQUIRED_VARS Clp_LIBRARY Clp_INCLUDE_DIR
-        VERSION_VAR Clp_VERSION
-        HANDLE_COMPONENTS)
+if (WIN32)
+    find_package_handle_standard_args(
+            Clp
+            REQUIRED_VARS Clp_LIBRARY Clp_DLL Clp_INCLUDE_DIR
+            VERSION_VAR Clp_VERSION
+            HANDLE_COMPONENTS)
+else ()
+    find_package_handle_standard_args(
+            Clp
+            REQUIRED_VARS Clp_LIBRARY Clp_INCLUDE_DIR
+            VERSION_VAR Clp_VERSION
+            HANDLE_COMPONENTS)
+endif ()
 
 # ----- Export the targets -------------------------------------------------- #
 if (Clp_FOUND)
@@ -120,11 +163,20 @@ if (Clp_FOUND)
     set(Clp_LIBRARIES ${Clp_LIBRARY})
 
     if (NOT TARGET Coin::Clp)
-        add_library(Coin::Clp UNKNOWN IMPORTED)
-        set_target_properties(
-                Coin::Clp PROPERTIES
-                IMPORTED_LOCATION ${Clp_LIBRARY}
-                INTERFACE_INCLUDE_DIRECTORIES ${Clp_INCLUDE_DIRS})
+        if (WIN32)
+            add_library(Coin::Clp SHARED IMPORTED)
+            set_target_properties(
+                    Coin::Clp PROPERTIES
+                    IMPORTED_IMPLIB "${Clp_LIBRARY}"
+                    IMPORTED_LOCATION "${Clp_DLL}"
+                    INTERFACE_INCLUDE_DIRECTORIES "${Clp_INCLUDE_DIRS}")
+        else ()
+            add_library(Coin::Clp UNKNOWN IMPORTED)
+            set_target_properties(
+                    Coin::Clp PROPERTIES
+                    IMPORTED_LOCATION "${Clp_LIBRARY}"
+                    INTERFACE_INCLUDE_DIRECTORIES "${Clp_INCLUDE_DIRS}")
+        endif ()
     endif ()
 endif ()
 
@@ -133,12 +185,22 @@ if (Clp_ClpSolver_FOUND)
     set(Clp_ClpSolver_LIBRARIES ${Clp_ClpSolver_LIBRARY})
 
     if (NOT TARGET Coin::ClpSolver)
-        add_library(Coin::ClpSolver UNKNOWN IMPORTED)
-        set_target_properties(
-                Coin::ClpSolver PROPERTIES
-                IMPORTED_LOCATION ${Clp_ClpSolver_LIBRARY}
-                INTERFACE_INCLUDE_DIRECTORIES ${Clp_ClpSolver_INCLUDE_DIRS}
-                INTERFACE_LINK_LIBRARIES "Coin::Clp")
+        if (WIN32)
+            add_library(Coin::ClpSolver SHARED IMPORTED)
+            set_target_properties(
+                    Coin::ClpSolver PROPERTIES
+                    IMPORTED_IMPLIB "${Clp_ClpSolver_LIBRARY}"
+                    IMPORTED_LOCATION "${Clp_ClpSolver_DLL}"
+                    INTERFACE_INCLUDE_DIRECTORIES "${Clp_ClpSolver_INCLUDE_DIRS}"
+                    INTERFACE_LINK_LIBRARIES "Coin::Clp")
+        else ()
+            add_library(Coin::ClpSolver UNKNOWN IMPORTED)
+            set_target_properties(
+                    Coin::ClpSolver PROPERTIES
+                    IMPORTED_LOCATION "${Clp_ClpSolver_LIBRARY}"
+                    INTERFACE_INCLUDE_DIRECTORIES "${Clp_ClpSolver_INCLUDE_DIRS}"
+                    INTERFACE_LINK_LIBRARIES "Coin::Clp")
+        endif ()
     endif ()
 endif ()
 
@@ -147,19 +209,36 @@ if (Clp_OsiClp_FOUND)
     set(Clp_OsiClp_LIBRARIES ${Clp_OsiClp_LIBRARY})
 
     if (NOT TARGET Coin::OsiClp)
-        add_library(Coin::OsiClp UNKNOWN IMPORTED)
-        set_target_properties(
-                Coin::OsiClp PROPERTIES
-                IMPORTED_LOCATION ${Clp_OsiClp_LIBRARY}
-                INTERFACE_INCLUDE_DIRECTORIES ${Clp_OsiClp_INCLUDE_DIRS}
-                INTERFACE_LINK_LIBRARIES "Coin::Clp;Coin::Osi")
+        if (WIN32)
+            add_library(Coin::OsiClp SHARED IMPORTED)
+            set_target_properties(
+                    Coin::OsiClp PROPERTIES
+                    IMPORTED_IMPLIB "${Clp_OsiClp_LIBRARY}"
+                    IMPORTED_LOCATION "${Clp_OsiClp_DLL}"
+                    INTERFACE_INCLUDE_DIRECTORIES "${Clp_OsiClp_INCLUDE_DIRS}"
+                    INTERFACE_LINK_LIBRARIES "Coin::Clp;Coin::Osi")
+        else ()
+            add_library(Coin::OsiClp UNKNOWN IMPORTED)
+            set_target_properties(
+                    Coin::OsiClp PROPERTIES
+                    IMPORTED_LOCATION "${Clp_OsiClp_LIBRARY}"
+                    INTERFACE_INCLUDE_DIRECTORIES "${Clp_OsiClp_INCLUDE_DIRS}"
+                    INTERFACE_LINK_LIBRARIES "Coin::Clp;Coin::Osi")
+        endif ()
     endif ()
 endif ()
 
 # Variables marked as advanced are not displayed in CMake GUIs, see:
 # https://cmake.org/cmake/help/latest/command/mark_as_advanced.html
-mark_as_advanced(Clp_INCLUDE_DIR Clp_ClpSolver_INCLUDE_DIR Clp_OsiClp_INCLUDE_DIR
-        Clp_LIBRARY Clp_ClpSolver_LIBRARY Clp_OsiClp_LIBRARY
-        Clp_VERSION)
+if (WIN32)
+    mark_as_advanced(Clp_INCLUDE_DIR Clp_ClpSolver_INCLUDE_DIR Clp_OsiClp_INCLUDE_DIR
+            Clp_LIBRARY Clp_ClpSolver_LIBRARY Clp_OsiClp_LIBRARY
+            Clp_DLL Clp_ClpSolver_DLL Clp_OsiClp_DLL
+            Clp_VERSION)
+else ()
+    mark_as_advanced(Clp_INCLUDE_DIR Clp_ClpSolver_INCLUDE_DIR Clp_OsiClp_INCLUDE_DIR
+            Clp_LIBRARY Clp_ClpSolver_LIBRARY Clp_OsiClp_LIBRARY
+            Clp_VERSION)
+endif ()
 
 # --------------------------------------------------------------------------- #
