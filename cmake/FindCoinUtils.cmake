@@ -87,6 +87,38 @@ if (WIN32)
                 $ENV{LIBRARY_BIN}
                 NO_DEFAULT_PATH
                 DOC "LAPACK runtime DLL.")
+
+        find_library(SMSPP_OPENBLAS_LIBRARY
+                NAMES openblas libopenblas
+                PATHS
+                ${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/lib
+                $ENV{LIBRARY_LIB}
+                NO_DEFAULT_PATH
+                DOC "OpenBLAS library.")
+
+        find_file(SMSPP_OPENBLAS_DLL
+                NAMES openblas.dll libopenblas.dll
+                PATHS
+                ${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/bin
+                $ENV{LIBRARY_BIN}
+                NO_DEFAULT_PATH
+                DOC "OpenBLAS runtime DLL.")
+
+        find_file(SMSPP_GFORTRAN_DLL
+                NAMES libgfortran-5.dll
+                PATHS
+                ${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/bin
+                $ENV{LIBRARY_BIN}
+                NO_DEFAULT_PATH
+                DOC "libgfortran runtime DLL.")
+
+        find_file(SMSPP_LIBGCC_DLL
+                NAMES libgcc_s_seh-1.dll
+                PATHS
+                ${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/bin
+                $ENV{LIBRARY_BIN}
+                NO_DEFAULT_PATH
+                DOC "libgcc_s_seh runtime DLL.")
     endif ()
 endif ()
 
@@ -174,12 +206,35 @@ if (WIN32)
     endif ()
 
     if (NOT DEFINED ENV{CONDA_BUILD})
+        if (SMSPP_OPENBLAS_LIBRARY AND SMSPP_OPENBLAS_DLL AND NOT TARGET SMS++::OpenBLAS)
+            add_library(SMS++::OpenBLAS SHARED IMPORTED)
+            set_target_properties(
+                    SMS++::OpenBLAS PROPERTIES
+                    IMPORTED_IMPLIB "${SMSPP_OPENBLAS_LIBRARY}"
+                    IMPORTED_LOCATION "${SMSPP_OPENBLAS_DLL}")
+        endif ()
+
         if (SMSPP_LAPACK_LIBRARY AND SMSPP_LAPACK_DLL AND NOT TARGET SMS++::LAPACK)
             add_library(SMS++::LAPACK SHARED IMPORTED)
             set_target_properties(
                     SMS++::LAPACK PROPERTIES
                     IMPORTED_IMPLIB "${SMSPP_LAPACK_LIBRARY}"
-                    IMPORTED_LOCATION "${SMSPP_LAPACK_DLL}")
+                    IMPORTED_LOCATION "${SMSPP_LAPACK_DLL}"
+                    INTERFACE_LINK_LIBRARIES "SMS++::OpenBLAS")
+        endif ()
+
+        if (SMSPP_GFORTRAN_DLL AND NOT TARGET SMS++::gfortran)
+            add_library(SMS++::gfortran SHARED IMPORTED)
+            set_target_properties(
+                    SMS++::gfortran PROPERTIES
+                    IMPORTED_LOCATION "${SMSPP_GFORTRAN_DLL}")
+        endif ()
+
+        if (SMSPP_LIBGCC_DLL AND NOT TARGET SMS++::libgcc)
+            add_library(SMS++::libgcc SHARED IMPORTED)
+            set_target_properties(
+                    SMS++::libgcc PROPERTIES
+                    IMPORTED_LOCATION "${SMSPP_LIBGCC_DLL}")
         endif ()
     endif ()
 endif ()
@@ -222,6 +277,14 @@ if (CoinUtils_FOUND)
                 elseif (TARGET LAPACK::LAPACK)
                     target_link_libraries(Coin::CoinUtils INTERFACE LAPACK::LAPACK)
                 endif ()
+
+                if (TARGET SMS++::gfortran)
+                    target_link_libraries(Coin::CoinUtils INTERFACE SMS++::gfortran)
+                endif ()
+
+                if (TARGET SMS++::libgcc)
+                    target_link_libraries(Coin::CoinUtils INTERFACE SMS++::libgcc)
+                endif ()
             endif ()
         else ()
             target_link_libraries(Coin::CoinUtils INTERFACE "BZip2::BZip2")
@@ -243,6 +306,10 @@ if (WIN32)
             SMSPP_BZIP2_DLL
             SMSPP_LAPACK_LIBRARY
             SMSPP_LAPACK_DLL
+            SMSPP_OPENBLAS_LIBRARY
+            SMSPP_OPENBLAS_DLL
+            SMSPP_GFORTRAN_DLL
+            SMSPP_LIBGCC_DLL
             MKL_RT_LIBRARY)
 else ()
     mark_as_advanced(CoinUtils_INCLUDE_DIR
