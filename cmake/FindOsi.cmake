@@ -17,7 +17,6 @@
 #                                                                             #
 #        Osi_INCLUDE_DIR   - Directory containing headers                     #
 #        Osi_LIBRARY       - The found library                                #
-#        Osi_DLL           - The found runtime DLL (Windows only)             #
 #                                                                             #
 #    This module can read a search path from the variable:                    #
 #                                                                             #
@@ -56,17 +55,6 @@ find_library(Osi_LIBRARY
         PATHS ${Osi_ROOT}/lib
         DOC "Osi library.")
 
-# ----- Find the runtime DLL on Windows ------------------------------------ #
-if (WIN32)
-    find_file(Osi_DLL
-            NAMES Osi.dll libOsi.dll Osi-0.dll
-            PATHS
-            ${Osi_ROOT}/bin
-            ${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/bin
-            $ENV{LIBRARY_BIN}
-            DOC "Osi runtime DLL.")
-endif ()
-
 # ----- OsiCpx component ---------------------------------------------------- #
 if (CPLEX_FOUND)
     find_path(Osi_OsiCpx_INCLUDE_DIR
@@ -80,24 +68,8 @@ if (CPLEX_FOUND)
             PATHS ${Osi_ROOT}/lib
             DOC "OsiCpx library.")
 
-    if (WIN32)
-        find_file(Osi_OsiCpx_DLL
-                NAMES OsiCpx.dll libOsiCpx.dll OsiCpx-0.dll
-                PATHS
-                ${Osi_ROOT}/bin
-                ${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/bin
-                $ENV{LIBRARY_BIN}
-                DOC "OsiCpx runtime DLL.")
-    endif ()
-
-    if (WIN32)
-        if (Osi_OsiCpx_INCLUDE_DIR AND Osi_OsiCpx_LIBRARY AND Osi_OsiCpx_DLL)
-            set(Osi_OsiCpx_FOUND TRUE)
-        endif ()
-    else ()
-        if (Osi_OsiCpx_INCLUDE_DIR AND Osi_OsiCpx_LIBRARY)
-            set(Osi_OsiCpx_FOUND TRUE)
-        endif ()
+    if (Osi_OsiCpx_INCLUDE_DIR AND Osi_OsiCpx_LIBRARY)
+        set(Osi_OsiCpx_FOUND TRUE)
     endif ()
 endif ()
 
@@ -114,24 +86,8 @@ if (GUROBI_FOUND)
             PATHS ${Osi_ROOT}/lib
             DOC "OsiGrb library.")
 
-    if (WIN32)
-        find_file(Osi_OsiGrb_DLL
-                NAMES OsiGrb.dll libOsiGrb.dll OsiGrb-0.dll
-                PATHS
-                ${Osi_ROOT}/bin
-                ${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/bin
-                $ENV{LIBRARY_BIN}
-                DOC "OsiGrb runtime DLL.")
-    endif ()
-
-    if (WIN32)
-        if (Osi_OsiGrb_INCLUDE_DIR AND Osi_OsiGrb_LIBRARY AND Osi_OsiGrb_DLL)
-            set(Osi_OsiGrb_FOUND TRUE)
-        endif ()
-    else ()
-        if (Osi_OsiGrb_INCLUDE_DIR AND Osi_OsiGrb_LIBRARY)
-            set(Osi_OsiGrb_FOUND TRUE)
-        endif ()
+    if (Osi_OsiGrb_INCLUDE_DIR AND Osi_OsiGrb_LIBRARY)
+        set(Osi_OsiGrb_FOUND TRUE)
     endif ()
 endif ()
 
@@ -158,19 +114,11 @@ endif ()
 # REQUIRED_VARS are set.
 # REQUIRED_VARS should be cache entries and not output variables. See:
 # https://cmake.org/cmake/help/latest/module/FindPackageHandleStandardArgs.html
-if (WIN32)
-    find_package_handle_standard_args(
-            Osi
-            REQUIRED_VARS Osi_LIBRARY Osi_DLL Osi_INCLUDE_DIR
-            VERSION_VAR Osi_VERSION
-            HANDLE_COMPONENTS)
-else ()
-    find_package_handle_standard_args(
-            Osi
-            REQUIRED_VARS Osi_LIBRARY Osi_INCLUDE_DIR
-            VERSION_VAR Osi_VERSION
-            HANDLE_COMPONENTS)
-endif ()
+find_package_handle_standard_args(
+        Osi
+        REQUIRED_VARS Osi_LIBRARY Osi_INCLUDE_DIR
+        VERSION_VAR Osi_VERSION
+        HANDLE_COMPONENTS)
 
 # ----- Export the targets -------------------------------------------------- #
 if (Osi_FOUND)
@@ -178,22 +126,12 @@ if (Osi_FOUND)
     set(Osi_LIBRARIES ${Osi_LIBRARY})
 
     if (NOT TARGET Coin::Osi)
-        if (WIN32)
-            add_library(Coin::Osi SHARED IMPORTED)
-            set_target_properties(
-                    Coin::Osi PROPERTIES
-                    IMPORTED_IMPLIB "${Osi_LIBRARY}"
-                    IMPORTED_LOCATION "${Osi_DLL}"
-                    INTERFACE_INCLUDE_DIRECTORIES "${Osi_INCLUDE_DIRS}"
-                    INTERFACE_LINK_LIBRARIES "Coin::CoinUtils")
-        else ()
-            add_library(Coin::Osi UNKNOWN IMPORTED)
-            set_target_properties(
-                    Coin::Osi PROPERTIES
-                    IMPORTED_LOCATION "${Osi_LIBRARY}"
-                    INTERFACE_INCLUDE_DIRECTORIES "${Osi_INCLUDE_DIRS}"
-                    INTERFACE_LINK_LIBRARIES "Coin::CoinUtils")
-        endif ()
+        add_library(Coin::Osi UNKNOWN IMPORTED)
+        set_target_properties(
+                Coin::Osi PROPERTIES
+                IMPORTED_LOCATION ${Osi_LIBRARY}
+                INTERFACE_INCLUDE_DIRECTORIES ${Osi_INCLUDE_DIRS}
+                INTERFACE_LINK_LIBRARIES "Coin::CoinUtils")
     endif ()
 endif ()
 
@@ -202,22 +140,12 @@ if (Osi_OsiCpx_FOUND)
     set(Osi_OsiCpx_LIBRARIES ${Osi_OsiCpx_LIBRARY})
 
     if (NOT TARGET Coin::OsiCpx)
-        if (WIN32)
-            add_library(Coin::OsiCpx SHARED IMPORTED)
-            set_target_properties(
-                    Coin::OsiCpx PROPERTIES
-                    IMPORTED_IMPLIB "${Osi_OsiCpx_LIBRARY}"
-                    IMPORTED_LOCATION "${Osi_OsiCpx_DLL}"
-                    INTERFACE_INCLUDE_DIRECTORIES "${Osi_OsiCpx_INCLUDE_DIRS}"
-                    INTERFACE_LINK_LIBRARIES "Coin::Osi;CPLEX::Cplex")
-        else ()
-            add_library(Coin::OsiCpx UNKNOWN IMPORTED)
-            set_target_properties(
-                    Coin::OsiCpx PROPERTIES
-                    IMPORTED_LOCATION "${Osi_OsiCpx_LIBRARY}"
-                    INTERFACE_INCLUDE_DIRECTORIES "${Osi_OsiCpx_INCLUDE_DIRS}"
-                    INTERFACE_LINK_LIBRARIES "Coin::Osi;CPLEX::Cplex")
-        endif ()
+        add_library(Coin::OsiCpx UNKNOWN IMPORTED)
+        set_target_properties(
+                Coin::OsiCpx PROPERTIES
+                IMPORTED_LOCATION ${Osi_OsiCpx_LIBRARY}
+                INTERFACE_INCLUDE_DIRECTORIES ${Osi_OsiCpx_INCLUDE_DIRS}
+                INTERFACE_LINK_LIBRARIES "Coin::Osi;CPLEX::Cplex")
     endif ()
 endif ()
 
@@ -226,36 +154,19 @@ if (Osi_OsiGrb_FOUND)
     set(Osi_OsiGrb_LIBRARIES ${Osi_OsiGrb_LIBRARY})
 
     if (NOT TARGET Coin::OsiGrb)
-        if (WIN32)
-            add_library(Coin::OsiGrb SHARED IMPORTED)
-            set_target_properties(
-                    Coin::OsiGrb PROPERTIES
-                    IMPORTED_IMPLIB "${Osi_OsiGrb_LIBRARY}"
-                    IMPORTED_LOCATION "${Osi_OsiGrb_DLL}"
-                    INTERFACE_INCLUDE_DIRECTORIES "${Osi_OsiGrb_INCLUDE_DIRS}"
-                    INTERFACE_LINK_LIBRARIES "Coin::Osi;GUROBI::Gurobi")
-        else ()
-            add_library(Coin::OsiGrb UNKNOWN IMPORTED)
-            set_target_properties(
-                    Coin::OsiGrb PROPERTIES
-                    IMPORTED_LOCATION "${Osi_OsiGrb_LIBRARY}"
-                    INTERFACE_INCLUDE_DIRECTORIES "${Osi_OsiGrb_INCLUDE_DIRS}"
-                    INTERFACE_LINK_LIBRARIES "Coin::Osi;GUROBI::Gurobi")
-        endif ()
+        add_library(Coin::OsiGrb UNKNOWN IMPORTED)
+        set_target_properties(
+                Coin::OsiGrb PROPERTIES
+                IMPORTED_LOCATION ${Osi_OsiGrb_LIBRARY}
+                INTERFACE_INCLUDE_DIRECTORIES ${Osi_OsiGrb_INCLUDE_DIRS}
+                INTERFACE_LINK_LIBRARIES "Coin::Osi;GUROBI::Gurobi")
     endif ()
 endif ()
 
 # Variables marked as advanced are not displayed in CMake GUIs, see:
 # https://cmake.org/cmake/help/latest/command/mark_as_advanced.html
-if (WIN32)
-    mark_as_advanced(Osi_INCLUDE_DIR Osi_OsiCpx_INCLUDE_DIR Osi_OsiGrb_INCLUDE_DIR
-            Osi_LIBRARY Osi_OsiCpx_LIBRARY Osi_OsiGrb_LIBRARY
-            Osi_DLL Osi_OsiCpx_DLL Osi_OsiGrb_DLL
-            Osi_VERSION)
-else ()
-    mark_as_advanced(Osi_INCLUDE_DIR Osi_OsiCpx_INCLUDE_DIR Osi_OsiGrb_INCLUDE_DIR
-            Osi_LIBRARY Osi_OsiCpx_LIBRARY Osi_OsiGrb_LIBRARY
-            Osi_VERSION)
-endif ()
+mark_as_advanced(Osi_INCLUDE_DIR Osi_OsiCpx_INCLUDE_DIR Osi_OsiGrb_INCLUDE_DIR
+        Osi_LIBRARY Osi_OsiCpx_LIBRARY Osi_OsiGrb_LIBRARY
+        Osi_VERSION)
 
 # --------------------------------------------------------------------------- #
