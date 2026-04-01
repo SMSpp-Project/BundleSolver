@@ -62,6 +62,7 @@ if (WIN32)
             NAMES Osi.dll libOsi.dll Osi-0.dll
             PATHS
             ${Osi_ROOT}/bin
+            ${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/bin
             $ENV{LIBRARY_BIN}
             DOC "Osi runtime DLL.")
 endif ()
@@ -84,6 +85,7 @@ if (CPLEX_FOUND)
                 NAMES OsiCpx.dll libOsiCpx.dll OsiCpx-0.dll
                 PATHS
                 ${Osi_ROOT}/bin
+                ${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/bin
                 $ENV{LIBRARY_BIN}
                 DOC "OsiCpx runtime DLL.")
     endif ()
@@ -117,6 +119,7 @@ if (GUROBI_FOUND)
                 NAMES OsiGrb.dll libOsiGrb.dll OsiGrb-0.dll
                 PATHS
                 ${Osi_ROOT}/bin
+                ${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/bin
                 $ENV{LIBRARY_BIN}
                 DOC "OsiGrb runtime DLL.")
     endif ()

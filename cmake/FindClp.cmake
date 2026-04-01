@@ -60,6 +60,7 @@ if (WIN32)
             NAMES Clp.dll libClp.dll Clp-0.dll
             PATHS
             ${Clp_ROOT}/bin
+            ${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/bin
             $ENV{LIBRARY_BIN}
             DOC "Clp runtime DLL.")
 endif ()
@@ -81,6 +82,7 @@ if (WIN32)
             NAMES ClpSolver.dll libClpSolver.dll ClpSolver-0.dll
             PATHS
             ${Clp_ROOT}/bin
+            ${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/bin
             $ENV{LIBRARY_BIN}
             DOC "ClpSolver runtime DLL.")
 endif ()
@@ -112,6 +114,7 @@ if (WIN32)
             NAMES OsiClp.dll libOsiClp.dll OsiClp-0.dll
             PATHS
             ${Clp_ROOT}/bin
+            ${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/bin
             $ENV{LIBRARY_BIN}
             DOC "OsiClp runtime DLL.")
 endif ()

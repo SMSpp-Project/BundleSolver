@@ -81,6 +81,7 @@ if (NOT CoinUtils_FOUND)
                 NAMES CoinUtils.dll libCoinUtils.dll CoinUtils-0.dll
                 PATHS
                 ${CoinUtils_ROOT}/bin
+                ${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/bin
                 $ENV{LIBRARY_BIN}
                 DOC "CoinUtils runtime DLL.")
     endif ()
