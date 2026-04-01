@@ -39,6 +39,10 @@ include(FindPackageHandleStandardArgs)
 # ----- Requirements -------------------------------------------------------- #
 find_package(BZip2 REQUIRED QUIET)
 
+if (NOT (WIN32 AND DEFINED ENV{CONDA_BUILD}))
+    find_package(LAPACK REQUIRED QUIET)
+endif ()
+
 # Conda coin-or-utils package links MKL BLAS library
 # https://github.com/conda-forge/coin-or-utils-feedstock/blob/main/recipe/build.sh#L12
 if (WIN32 AND DEFINED ENV{CONDA_BUILD})
@@ -47,6 +51,43 @@ if (WIN32 AND DEFINED ENV{CONDA_BUILD})
             PATHS $ENV{LIBRARY_LIB}
             NO_DEFAULT_PATH
             DOC "MKL_RT library.")
+endif ()
+
+# ----- Runtime dependency helpers on Windows ------------------------------- #
+if (WIN32)
+    find_library(SMSPP_BZIP2_LIBRARY
+            NAMES bz2
+            PATHS
+            ${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/lib
+            $ENV{LIBRARY_LIB}
+            NO_DEFAULT_PATH
+            DOC "BZip2 library.")
+
+    find_file(SMSPP_BZIP2_DLL
+            NAMES bz2.dll libbz2.dll
+            PATHS
+            ${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/bin
+            $ENV{LIBRARY_BIN}
+            NO_DEFAULT_PATH
+            DOC "BZip2 runtime DLL.")
+
+    if (NOT DEFINED ENV{CONDA_BUILD})
+        find_library(SMSPP_LAPACK_LIBRARY
+                NAMES lapack liblapack
+                PATHS
+                ${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/lib
+                $ENV{LIBRARY_LIB}
+                NO_DEFAULT_PATH
+                DOC "LAPACK library.")
+
+        find_file(SMSPP_LAPACK_DLL
+                NAMES liblapack.dll lapack.dll
+                PATHS
+                ${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/bin
+                $ENV{LIBRARY_BIN}
+                NO_DEFAULT_PATH
+                DOC "LAPACK runtime DLL.")
+    endif ()
 endif ()
 
 # Check if already in cache
@@ -122,6 +163,27 @@ if (NOT CoinUtils_FOUND)
     endif ()
 endif ()
 
+# ----- Export helper targets for runtime deps on Windows ------------------- #
+if (WIN32)
+    if (SMSPP_BZIP2_LIBRARY AND SMSPP_BZIP2_DLL AND NOT TARGET SMS++::BZip2)
+        add_library(SMS++::BZip2 SHARED IMPORTED)
+        set_target_properties(
+                SMS++::BZip2 PROPERTIES
+                IMPORTED_IMPLIB "${SMSPP_BZIP2_LIBRARY}"
+                IMPORTED_LOCATION "${SMSPP_BZIP2_DLL}")
+    endif ()
+
+    if (NOT DEFINED ENV{CONDA_BUILD})
+        if (SMSPP_LAPACK_LIBRARY AND SMSPP_LAPACK_DLL AND NOT TARGET SMS++::LAPACK)
+            add_library(SMS++::LAPACK SHARED IMPORTED)
+            set_target_properties(
+                    SMS++::LAPACK PROPERTIES
+                    IMPORTED_IMPLIB "${SMSPP_LAPACK_LIBRARY}"
+                    IMPORTED_LOCATION "${SMSPP_LAPACK_DLL}")
+        endif ()
+    endif ()
+endif ()
+
 # ----- Export the target --------------------------------------------------- #
 if (CoinUtils_FOUND)
     set(CoinUtils_INCLUDE_DIRS ${CoinUtils_INCLUDE_DIR})
@@ -143,9 +205,29 @@ if (CoinUtils_FOUND)
                     INTERFACE_INCLUDE_DIRECTORIES "${CoinUtils_INCLUDE_DIRS}")
         endif ()
 
-        target_link_libraries(Coin::CoinUtils INTERFACE "BZip2::BZip2")
-        if (MKL_RT_LIBRARY)
-            target_link_libraries(Coin::CoinUtils INTERFACE ${MKL_RT_LIBRARY})
+        if (WIN32)
+            if (TARGET SMS++::BZip2)
+                target_link_libraries(Coin::CoinUtils INTERFACE SMS++::BZip2)
+            else ()
+                target_link_libraries(Coin::CoinUtils INTERFACE "BZip2::BZip2")
+            endif ()
+
+            if (DEFINED ENV{CONDA_BUILD})
+                if (MKL_RT_LIBRARY)
+                    target_link_libraries(Coin::CoinUtils INTERFACE ${MKL_RT_LIBRARY})
+                endif ()
+            else ()
+                if (TARGET SMS++::LAPACK)
+                    target_link_libraries(Coin::CoinUtils INTERFACE SMS++::LAPACK)
+                elseif (TARGET LAPACK::LAPACK)
+                    target_link_libraries(Coin::CoinUtils INTERFACE LAPACK::LAPACK)
+                endif ()
+            endif ()
+        else ()
+            target_link_libraries(Coin::CoinUtils INTERFACE "BZip2::BZip2")
+            if (TARGET LAPACK::LAPACK)
+                target_link_libraries(Coin::CoinUtils INTERFACE LAPACK::LAPACK)
+            endif ()
         endif ()
     endif ()
 endif ()
@@ -156,7 +238,12 @@ if (WIN32)
     mark_as_advanced(CoinUtils_INCLUDE_DIR
             CoinUtils_LIBRARY
             CoinUtils_DLL
-            CoinUtils_VERSION)
+            CoinUtils_VERSION
+            SMSPP_BZIP2_LIBRARY
+            SMSPP_BZIP2_DLL
+            SMSPP_LAPACK_LIBRARY
+            SMSPP_LAPACK_DLL
+            MKL_RT_LIBRARY)
 else ()
     mark_as_advanced(CoinUtils_INCLUDE_DIR
             CoinUtils_LIBRARY
