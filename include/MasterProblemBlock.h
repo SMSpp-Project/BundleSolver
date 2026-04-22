@@ -157,7 +157,7 @@ namespace SMSpp_di_unipi_it
 /*--------------------------------------------------------------------------*/
 //TBD
 
- class MasterProblemBlock : {
+ class MasterProblemBlock : public Block {
 
 /*--------------------------------------------------------------------------*/
 /*----------------------- PUBLIC PART OF THE CLASS -------------------------*/
@@ -230,12 +230,17 @@ public:
  /// constructor: ensure every field is initialized
 
  /** Default constructor */
-  MasterProblemBlock() = default;
+  MasterProblemBlock( void ) : NoEasyCmps( 0 ) , NoHardCmps( 0 )
+  { }
 
 /*--------------------------------------------------------------------------*/
  /// destructor
 
-  virtual ~MasterProblemBlock() {  }
+ virtual ~MasterProblemBlock( ) {  }
+
+/*--------------------------------------------------------------------------*/
+ /// destructor  
+ void clear();
 
 /** @} ---------------------------------------------------------------------*/
 /*-------------------------- OTHER INITIALIZATIONS -------------------------*/
@@ -243,6 +248,105 @@ public:
 /** @name Other initializations TBD
  *
  *  @{ */
+
+/** Provides the MPBlock with basic information about the "size" of the
+ * Master problem:
+ *
+ * - MxBSz is the maximum number of different items (subgradients and
+ *   constraints) that can be managed by the class, i.e. the maximum size of
+ *   the bundle: the protected field MaxBSize is offered by  the base class
+ *   to store this information;
+ *
+ * - NVars is the number of variables in in the Primal Master Problem (PMP).
+ *   The protected field NumVars is offered by the base class to store this 
+ *   information. \note in the current implementation the number of variables 
+ *   canno't change. Hence, this number is also equal to the maximum length of 
+ *   any item.
+ *
+ * - NrFi is the number of "components". The function Fi to be 
+ *   minimized may be "decomposable", i.e., the sum of k functions; 
+ *   in this case, its model Fi_{B,Lambda} is usually decomposable as well 
+ *   (for instance, the Cutting Plane model is). For decomposable functions, 
+ *   it is possible (although not necessary) to keep k "separate bundles", 
+ *   each one describing a model Fi[ k ]_{B,Lambda} of each component Fi[ k ] 
+ *   of Fi, which may be beneficial to improve the "exactness" of the model.
+ *   Special support is offered for the case when one of the components is a 
+ *   linear function, by considering it as the "0-th component" of Fi [see
+ *   ReadFiBLambda() and SetItem() and GetItem()].
+ * 
+ * - NrFiEasy is the number of "easy components". A special treatment is 
+ *   given to the case where some of the components actually are Lagrangian 
+ *   subproblem where the domain is an "easy" polyhedron", see
+ *
+ *      A. Frangioni, E. Gorgone "Generalized Bundle Methods for Sum-Functions
+ *      with ``Easy'' Components: Applications to Multicommodity Network Design"
+ *      Mathematical Programming 145(1), 133 – 161, 2014
+ * 
+ *   available at
+ *
+ *     \link
+ *     http://www.di.unipi.it/~frangio/abstracts.html#MP11c
+ *     \endlink
+ *  
+ *   for further details.
+ * 
+ * TBD from here
+ * \note "easy" components of Fi() have basically to be dealt with by the
+ *   MPSolver, by inserting their description in the Master Problem;
+ *	 if this is not possible, the Master Problem has to signal it (e.g.
+ *	 by throwing an exception) because the Bundle algorithm relies on
+ *	 this and the FiOracle is not going to provide "ordinary" black-box
+ *	 information (function values, subgradients, ...) for these
+ *	 components.
+ *
+ * \note *Important*: "easy" components of Fi() in the Master Problem are
+ *       *not* translated *by value* (but they are by argument), meaning that
+ *	 the function that is included in the MP is
+ *
+ *	   Fi_{Lambda}[ k ]( d ) = Fi[ k ]( Lambda + d )
+ *
+ *	 and *not*
+ *
+ *	   Fi_{Lambda}[ k ]( d ) = Fi[ k ]( Lambda + d ) - Fi[ k ]( Lambda )
+ *
+ *	 as one would expect by analogy with the ordinary "difficult"
+ *	 components. This is done to spare the Bundle algorithm with the
+ *	 need to compute Fi[ k ]( Lambda ) for all "easy" components k and
+ *	 each current point Lambda, which may be problematic especially for
+ *	 the *initial* current point---consider the case where Lambda *is
+ *	 not feasible*, so Fi[ k ]( Lambda ) = +INF! However, the value of
+ *	 Fi[ k ] is actually computed by the MPSolver at Lambda + d* (d*
+ *	 being the optimal solution of the Primal MP), so the value of
+ *	 Fi[ k ] is known for the current point at least after every Serious
+ *	 Step with step 1 along d*. Yet, this choice has some impact on the
+ *	 "output" methods [see ReadFiBLambda() and ReadSigma() below].
+ *
+ * This method can be called more than once to modify the settings, but expect
+ * the implementation to be quite expensive in time and/or memory. There are
+ *  essentially three different ways for calling SetDim():
+ *
+ * - SetDim( 0 , ... ) makes the MPSolver to deallocate all its memory and to
+ *   quietly wait for new instructions.
+ *
+ * - SetDim( n , 0 , ASV ) with n != 0 sets the max bundle size to n and
+ *   activate/deactivate the Active Set Mechanism without changing anything
+ *   else. The existing items in the bundle (if any) are all kept if n is
+ *   larger than the previous setting, but a smaller value will force deletion
+ *   of all the items with "name" [see [Get/Set]Item() and RmvItem() below]
+ *   greater than or equal to n. Also, if the active set technique is
+ *   initialized (ASV == true while it was false previously), the set of
+ *   "active" variables is set to be *empty*.
+ *
+ * - SetDim( n , Orcl , ASV ) with n != 0 and Orcl != 0 discards all the
+ *   previous settings and re-allocates everything; all the existing items in
+ *   the bundle are lost. Note that such a call also resets every parameter
+ *   of the algorithm, such as the starting point (which is set to 0).
+ *
+ * In general, calling this method with a non-empty bundle could be costly, so
+ * if the items are to be discarded anyway, this should be done *before* the
+ * call to SetDim() [see RmvItems() below]. */
+
+ void SetDim( int MxBSz , int NVars , int NrFi , int NrFiEasy );
 
 /*--------------------------------------------------------------------------*/
  /// set the int parameters of MasterProblemBlock
@@ -497,7 +601,27 @@ public:
 /*--------------------------------------------------------------------------*/
 
  // algorithmic parameters - - - - - - - - - - - - - - - - - - - - - - - - - -
- // TBD
+
+ int MaxBSize; // maximum bundle size
+
+ int MaxSGLen; // maximum subgradient length
+
+ /* This is the Solver that will be responsable of reading each Sub-Block and 
+  * provide the physical representation of the problem (e.g. any *MILPSolver).
+ */
+ CDASolver InnerSolver; 
+
+ int NoEasyCmps; // Number of easy components
+
+ int NoHardCmps; // Number of easy components
+
+ /* List of sub-blocks identified to be easy components.
+ */
+ std::vector< Block* > EasyCmps;
+
+ /* List of sub-blocks to be treated as hard components.
+ */
+ std::vector< Block* > HardCmps; 
 
 /*--------------------------------------------------------------------------*/
 /*--------------------- PRIVATE PART OF THE CLASS --------------------------*/

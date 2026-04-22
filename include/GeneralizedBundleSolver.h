@@ -549,7 +549,7 @@ public:
   f_global_LB( -INFshift ) , t( 0 ) , Prevt( 0 ) , Sigma( 0 ) , DSTS( 0 ) ,
   DeltaFi( 0 ) , EpsU( 0 ) , CSSCntr( 0 ) , CNSCntr( 0 ) , TrueLB( false ) ,
   SSDone( true ) , f_wFi( 0 ) , f_lf( nullptr ) , f_convex( true ) ,
-  Master( nullptr ) , UpTrgt( 0 ) , LwTrgt( 0 ) , RifeqFi( false ) ,
+  MasterPB( nullptr ) , UpTrgt( 0 ) , LwTrgt( 0 ) , RifeqFi( false ) ,
   CmptdinL( false ) , UpFiBest( INFshift ) , UpFiLmb1def( 0 ) ,
   LwFiLmb1def( 0 ) , UpFiLmbdef( 0 ) , LwFiLmbdef( 0 ) , Fi0Lmb( 0 ) ,
   Fi0Lmb1( 0 ) , DST( 0 ) , NrmD( 0 ) , NrmZ( 0 ) , NrmZFctr( 1 ) ,
@@ -2950,7 +2950,7 @@ public:
 
  bool f_convex;          ///< true if all objectives are convex
  
- MPBlock * Master;      ///< (pointer to) the Master Problem Block // NEW
+ MasterProblemBlock * MasterPB;      ///< (pointer to) the Master Problem Block // NEW
 
  std::vector< ColVariable * > LamVcblr;  ///< map Lambda -> ColVariable
 
