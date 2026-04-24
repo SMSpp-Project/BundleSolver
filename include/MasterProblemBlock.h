@@ -349,6 +349,32 @@ public:
  void SetDim( int MxBSz , int NVars , int NrFi , int NrFiEasy );
 
 /*--------------------------------------------------------------------------*/
+ /// set the Solver of MasterProblemBlock
+ /** This method let MasterProblemBlock register its own Solver. This method
+  *  expect that solv_cfg_filename corresponds to an appropriate 
+  *  BlockSolverConfig *. If empty, MasterProblemBlock will attempt to use 
+  *  a default Solver (i.e. GRBMILPSolver).
+  * 
+  * \note: if Gurobi is not properly installed on the private machine and 
+  *        no Solver is provided, this will end up in an error.
+  * 
+  */
+void register_Solver( std::string && solv_cfg_filename );
+
+/*--------------------------------------------------------------------------*/
+ /// prepare the default Solver of MasterProblemBlock
+ /** This method is used only when a BlockSolverConfiguration is not 
+  *  provided for setting the inner Solver of the class. The method outputs
+  *  a simple BlockSolverConfig specifying GRBMILPSolver as inner Solver
+  *  of the class.
+  * 
+  * \note: if Gurobi is not properly installed on the private machine and 
+  *        no Solver is provided, this will end up in an error.
+  * 
+  */
+BlockSolverConfig * use_default_Solver( void );
+
+/*--------------------------------------------------------------------------*/
  /// set the int parameters of MasterProblemBlock
  /** Set the int parameters specific of MasterProblemBlock, together with the
   * parameters of ? that MasterProblemBlock actually "listens to":

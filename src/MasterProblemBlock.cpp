@@ -10,6 +10,7 @@
 #include <ostream>
 #include <string>
 #include <vector>
+#include <sstream>
 
 namespace SMSpp_di_unipi_it
 {
@@ -49,6 +50,51 @@ void MasterProblemBlock::SetDim( int MxBSz , int NVars ,
  
  //TBD
 }
+
+/*--------------------------------------------------------------------------*/
+
+void MasterProblemBlock::register_Solver( std::string && solv_cfg_filename )
+{
+ // Check if a configuration file has been provided for the internal solver
+ // of MPBlock
+ BlockSolverConfig * MPBSC = nullptr;
+ if( ! solv_cfg_filename.empty() ) {
+  auto cfg = Configuration::deserialize( solv_cfg_filename );
+  if( ! ( MPBSC = dynamic_cast< BlockSolverConfig * >( cfg ) ) ){
+   delete cfg;
+   
+   // throw an error because the Configuration file is not a BlockSolverConfig
+   throw( std::invalid_argument( "The provided Configuration file for the "
+            "solver of the MaterProblemBlock is not a BlockSolverConfig" ) );
+  }
+ }
+ else{
+  BLOG( 1 , std::endl << " Warning: a Configuration file for the inner Solver "
+    "of the Master Problem Block has not been provided. Using the default "
+    "GRBMILPSolver." );
+
+  MPBSC = use_default_Solver();
+ }
+
+ // Set the Solver in the Master Problem Block
+ MPBSC->apply( this ); 
+
+ MPBSC->clear();
+ 
+} // end( MasterProblemBlock::register_Solver )
+
+/*--------------------------------------------------------------------------*/
+
+BlockSolverConfig * MasterProblemBlock::use_default_Solver( void )
+{
+ // prepare the istream for the BlockSolverConfig
+ std::istringstream input(
+    "1 1 GRBMILPSolver 1 ComputeConfig 1 0 0 0 0 0 0 *" );
+
+ // Generate the simple BlockSolverConfig
+ return new BlockSolverConfig(input);
+
+} // end( MasterProblemBlock::use_default_Solver )
 
 /*--------------------------------------------------------------------------*/
 /*--------------------------- set parameters -------------------------------*/
@@ -160,3 +206,20 @@ const std::vector< std::string > & MasterProblemBlock::get_vstr_par(
 }
 
 }  // end( namespace SMSpp_di_unipi_it )
+
+
+
+ std::istringstream input(R"(1
+    1
+    GRBMILPSolver
+    1
+    ComputeConfig
+    1
+    0
+    0
+    0
+    0
+    0
+    0
+    *
+    )");
