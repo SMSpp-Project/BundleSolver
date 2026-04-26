@@ -1,5 +1,5 @@
 /*--------------------------------------------------------------------------*/
-/*-------------------- File MasterProblemBlock.cpp -------------------------*/
+/*-------------------- File MasterProblemBlock.cpp ------------------------*/
 /*--------------------------------------------------------------------------*/
 
 #include "MasterProblemBlock.h"
@@ -41,8 +41,6 @@ void MasterProblemBlock::clear()
 
  EasyCmps.clear();
  HardCmps.clear();
-
- InnerSolver = CDASolver{};
 }
 
 void MasterProblemBlock::SetDim( int MxBSz , int NVars , 
@@ -53,7 +51,7 @@ void MasterProblemBlock::SetDim( int MxBSz , int NVars ,
 
 /*--------------------------------------------------------------------------*/
 
-void MasterProblemBlock::register_Solver( std::string && solv_cfg_filename )
+void MasterProblemBlock::register_Solver( std::string solv_cfg_filename )
 {
  // Check if a configuration file has been provided for the internal solver
  // of MPBlock
@@ -80,7 +78,7 @@ void MasterProblemBlock::register_Solver( std::string && solv_cfg_filename )
  MPBSC->apply( this ); 
 
  MPBSC->clear();
- 
+
 } // end( MasterProblemBlock::register_Solver )
 
 /*--------------------------------------------------------------------------*/
@@ -95,6 +93,10 @@ BlockSolverConfig * MasterProblemBlock::use_default_Solver( void )
  return new BlockSolverConfig(input);
 
 } // end( MasterProblemBlock::use_default_Solver )
+
+/*--------------------------------------------------------------------------*/
+
+
 
 /*--------------------------------------------------------------------------*/
 /*--------------------------- set parameters -------------------------------*/
@@ -206,20 +208,3 @@ const std::vector< std::string > & MasterProblemBlock::get_vstr_par(
 }
 
 }  // end( namespace SMSpp_di_unipi_it )
-
-
-
- std::istringstream input(R"(1
-    1
-    GRBMILPSolver
-    1
-    ComputeConfig
-    1
-    0
-    0
-    0
-    0
-    0
-    0
-    *
-    )");
