@@ -224,6 +224,15 @@ static inline std::ostream & shrt( std::ostream & os ) {
  }
 
 /*--------------------------------------------------------------------------*/
+// set precision for short floats (4 digits) in scientific notation
+
+static inline std::ostream & shrt4( std::ostream & os ) {
+ os.setf( std::ios::scientific , std::ios::floatfield );
+ os << setprecision( 4 );
+ return( os );
+ }
+
+/*--------------------------------------------------------------------------*/
 // set precision for short floats (4 digits) in fixed notation
 
 static inline std::ostream & fixd( std::ostream & os ) {
@@ -5766,6 +5775,13 @@ void BundleSolver::process_outstanding_Modification( void )
 
  f_mod_lock.clear( std::memory_order_release );  // release lock
 
+ #ifndef NDEBUG
+  // high-verbosity diagnostic (LogVerb >= 7): account for every time the
+  // Modification queue is drained, and how many Modification are in flight
+  BLOG( 6 , std::endl << "process_outstanding_Modification: "
+                      << v_mod_tmp.size() << " Modification(s)" );
+ #endif
+
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // the 1st loop is made in reverse, from the latest Modification to the
  // earlies, and does the following:
@@ -7210,20 +7226,24 @@ void BundleSolver::CheckAlpha( void )
 						     ItemVcblr[ i ].second );
    if( ! f_convex )
     chgsign( G.data() , NumVar );
-   HpNum tAi = rs( v_c05f[ ItemVcblr[ i ].first
+   HpNum lin_cst = rs( v_c05f[ ItemVcblr[ i ].first
 			   ]->get_linearization_constant(
 						   ItemVcblr[ i ].second ) );
-   tAi = UpRifFi[ ItemVcblr[ i ].first ] - tAi -
-                         std::inner_product( Lambda.begin() , Lambda.end() ,
-					     G.begin() , double( 0 ) );
+   HpNum dotLG = std::inner_product( Lambda.begin() , Lambda.end() ,
+				     G.begin() , double( 0 ) );
+   HpNum ref = UpRifFi[ ItemVcblr[ i ].first ];
+   HpNum tAi = ref - lin_cst - dotLG;
 
    if( std::abs( tAi - tA[ i ] ) >= eps *
        std::max( std::max( std::abs( tAi ) ,
 			   std::abs( UpRifFi[ ItemVcblr[ i ].first ] ) ) ,
 		 double( 1 ) ) )
     *wlog << std::endl << "Alfa[ " << i << " ]: F = " << tAi << " ~ M = "
-	  << tA[ i ];
-    }
+	  << tA[ i ] << " (F-M = " << shrt4 << ( tAi - tA[ i ] ) << def << ")"
+	  << " | k=" << ItemVcblr[ i ].first
+	  << " UpRifFi=" << shrt4 << ref
+	  << " lin_const=" << lin_cst << " <L,G>=" << dotLG << def;
+   }
 
  }  // end( BundleSolver::CheckAlpha )
 
