@@ -476,6 +476,9 @@ public:
 
   strHardCfg ,                   ///< string name for not-easy Configurations
 
+  strMPBSolverCfg ,                 ///< string name for Configuration of the
+                                 ///  solver associated with the MPBlock   
+
   strLastBndSlvPar ///< first allowed new string parameter for derived classes
                    /**< Convenience value for easily allow derived classes
 		    * to extend the set of string algorithmic parameters. */
@@ -1334,7 +1337,20 @@ public:
   *   then set to each of the non-easy components of the problem (via a call
   *   to set_ComputeConfig) at the time in which the BundleSolver is
   *   registered to the Block; if strHardCfg is empty or deserialize()
-  *   returns nullptr, then set_ComputeConfig() is not called. */
+  *   returns nullptr, then set_ComputeConfig() is not called. 
+  * 
+  * - strMPBSolverCfg [empty]: filename from where the Configuration of the solver
+  *                         associated with the MasterProblemBlock is taken. 
+  *   If not empty, strMPBSolverCfg must be a filename from wich a
+  *   BlockSolverConfiguration is loaded via a call to 
+  *   Configuration::deserialize( const std::string ); the BlockSolverConfiguration
+  *   is then used to identify which solver should be attached to the Master Problem
+  *   Block at the time in which the BundleSolver is registered to the Block; 
+  *   if strEasyCfg is empty or deserialize() returns nullptr, then a simple 
+  *   GRBMILPSolver will be used. 
+  *   \note if Gurobi is not available on the current machine, the default choice 
+  *   will result in an error. Hence, we stronlgy encourage to properly set 
+  *   the Configuration file with the available solver. */
   
  void set_par( idx_type par , std::string && value ) override;
 
@@ -1988,7 +2004,8 @@ public:
 
  const std::string & get_dflt_str_par( idx_type par ) const override {
   static std::string __empty;
-  if( ( par == strEasyCfg ) || ( par == strHardCfg ) )
+  if( ( par == strEasyCfg ) || ( par == strHardCfg ) || 
+        ( par == strMPBSolverCfg ) )
    return( __empty );
 
   return( CDASolver::get_dflt_str_par( par ) );
@@ -2119,6 +2136,8 @@ public:
    return( strEasyCfg );
   if( name == "strHardCfg" )
    return( strHardCfg );
+  if( name == "strMPBSolverCfg" )
+   return( strMPBSolver );
 
   return( CDASolver::str_par_str2idx( name ) );
   }
@@ -2189,8 +2208,8 @@ public:
 
  [[nodiscard]] const std::string & str_par_idx2str( idx_type idx )
   const override {
-  static const std::array< std::string , 2 > str_pars_str = {
-   "strEasyCfg" , "strHardCfg" };
+  static const std::array< std::string , 3 > str_pars_str = {
+   "strEasyCfg" , "strHardCfg" , "strMPBSolverCfg" };
 
   if( ( idx >= strLastParCDAS ) && ( idx < strLastBndSlvPar ) )
    return( str_pars_str[ idx - strLastParCDAS ] );
@@ -2738,6 +2757,9 @@ public:
 
  std::string HardCfg;
  ///< filename for the Block[Solver]Config of non-easy components
+
+ std::string MPBSolverCfg;
+ ///< filename for the SolverConfig of the Solver to be used in the MPBlock
 
  std::vector< int > NoEasy;  ///< which components never treat as "easy"
 

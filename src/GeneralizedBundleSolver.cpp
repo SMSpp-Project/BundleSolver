@@ -238,6 +238,15 @@ static inline std::ostream & fixd( std::ostream & os ) {
  }
 
 /*--------------------------------------------------------------------------*/
+// set precision for short floats (4 digits) in scientific notation
+
+static inline std::ostream & shrt4( std::ostream & os ) {
+ os.setf( std::ios::scientific , std::ios::floatfield );
+ os << setprecision( 4 );
+ return( os );
+ }
+
+/*--------------------------------------------------------------------------*/
 // cleanly print +/-INF
 
 static inline void pval( std::ostream & os , double val ) {
@@ -1136,6 +1145,16 @@ void GeneralizedBundleSolver::set_Block( Block * block )
  if( ! f_Block )  // that was actually clearing the Block
   return;         // all done
 
+ /* Immediately initialize the MasterProblemBlock. This is needed because
+  * in this phase two things will happen involving MPB:
+  *   - it will populate the structure needed for the master problem 
+  *     using all the information coming from the Block;
+  *   - it will silently register itself as father of the easy components. 
+  *     This is needed because MPB will have to respond to all the 
+  *     Modifications affecting such components, and hence must be informed.
+ .*/
+ InitMPB();
+
  // lock the Block - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -1188,6 +1207,12 @@ void GeneralizedBundleSolver::set_Block( Block * block )
 				 ) );
   v_c05f.push_back( c05f );
   f_lf = nullptr;
+
+  // Create the first type of MP. Here it should be enough to register the Block
+  // as a sub-block of the MPBlock. Then, when loaded by the inner solver, 
+  // the Master Problem should be created.
+  MPBlock->set_type( 0 ); // tell MPB the type of the problem
+  MPBlock->add_nested_Block( f_Block );
   }
  else {  // there are sub-Block
   // the objective function of the block must be a LinearFunction- - - - - - -
@@ -1199,8 +1224,11 @@ void GeneralizedBundleSolver::set_Block( Block * block )
    if( ! obj )
     throw( std::logic_error( "the objective is not a real function" ) );
 
-   if( ! obj->get_function() ) // the FRealObjective has no Function
+   if( ! obj->get_function() ){ // the FRealObjective has no Function
     f_lf = nullptr;
+    
+    // Create the second type of MP with no linear function
+    MPBlock->create_type1_problem( );
    else {
     f_lf = dynamic_cast< LinearFunction * >( obj->get_function() );
     if( ! f_lf )
@@ -1208,6 +1236,9 @@ void GeneralizedBundleSolver::set_Block( Block * block )
 
     if( ! f_lf->get_num_active_var() )  // the LinearFunction has no Variable
      f_lf = nullptr;
+
+    // Create the second type of MP possibly with a linear function
+    MPBlock->create_type1_problem( f_lf );
     }
    }
 
@@ -1260,6 +1291,15 @@ void GeneralizedBundleSolver::set_Block( Block * block )
 
    if( sb[ i ]->get_dynamic_constraints().size() )
     throw( std::logic_error( "dynamic Constraint are not allowed" ) );
+
+   // Here we silently steal each sub-block from the true father and we 
+   // define as new father the MasterProblemBlock. This is needed to correctly
+   // construct the problem and to deal with Modifications of easy components.
+   sb[ i ]->set_f_Block( MPBlock );
+
+   // And now we register each sub-block also as sub-block of MPB
+   //TBD
+
    }  // end( for each sub-Block )
   }  // end( there are sub-Block )
 
@@ -1393,7 +1433,7 @@ void GeneralizedBundleSolver::set_Block( Block * block )
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
  NrEasy = 0;
- //if( DoEasy & 1 ) { we always treat differently easy components
+ if( DoEasy & 1 ) { 
  // retrieve the ComputeConfig for the "easy" components, if any
  ComputeConfig * eCC = nullptr;
  if( ! EasyCfg.empty() ) {
@@ -1437,6 +1477,7 @@ void GeneralizedBundleSolver::set_Block( Block * block )
       // done by [MILP]Solver::set_Block(); note that this calls set_Block()
       // again, which is why it is important that [MILP]Solver::set_Block()
       // check that the Block is the same and ignores it
+      // TBD
       if( DoEasy & ~1 )
        LagB->get_inner_block()->register_Solver( MILPs );
       }
@@ -1644,10 +1685,6 @@ void GeneralizedBundleSolver::set_Block( Block * block )
  // initialize the MasterProblemBlock - - - - - - - - - - - - - -  - - - - - -
  // - - - -  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- if( MasterPB )        // a MPBlock is set already
-  MasterPB.clear();  // clear all its internal state
- else {              // a MPSolver is not set yet, create it now
-  MasterPB = MasterProblemBlock();
   /*#if( ! USE_MPTESTER )
    if( MPName & 1 ) {  // the MPSolver is a OSIMPSolver
   #endif
@@ -1700,11 +1737,11 @@ void GeneralizedBundleSolver::set_Block( Block * block )
     #else
      Master = qp;
     }
-    #endif*/
-  }
+    #endif
+  }*/
 
  // Initialize the MPB with the true elements
- InitMPB();
+ AddDimMPB();
 
  // cleanup MILPSolver data- - - - - - - - - - - - - - - - - - - - - - - - - -
  // - - - -  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -2004,6 +2041,9 @@ void BundleSolver::set_par( idx_type par , std::string && value )
    break;
   case( strHardCfg ):
    HardCfg = std::move( value );
+   break;
+  case( strMPBSolverCfg ):
+   MPBSolverCfg = std::move( value );
    break;
   default:
    CDASolver::set_par( par , std::move( value ) );
@@ -2313,9 +2353,10 @@ double BundleSolver::get_dbl_par( idx_type par ) const
 const std::string & BundleSolver::get_str_par( idx_type par ) const
 {
  switch( par ) {
-  case( strEasyCfg ):   return( EasyCfg );
-  case( strHardCfg ):   return( HardCfg );
-  default:              return( CDASolver::get_str_par( par ) );
+  case( strEasyCfg ):       return( EasyCfg );
+  case( strHardCfg ):       return( HardCfg );
+  case( strMPBSolverCfg ):  return( MPBSolverCfg );
+  default:                  return( CDASolver::get_str_par( par ) );
   }
  }  // end( BundleSolver::get_str_par )
 
@@ -4545,6 +4586,20 @@ HpNum BundleSolver::Heuristic4( void )
 
 void BundleSolver::InitMPB( void )
 {
+ // initialize the MasterProblemBlock - - - - - - - - - - - - - -  - - - - - -
+ // - - - -  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+ if( MasterPB )      // a MPBlock is set already
+  MasterPB.clear();  // clear all its internal state
+ else              // a MPSolver is not set yet, create it now
+  MasterPB = MasterProblemBlock();
+
+ // Provide the MPB with the configuration filename for the inner solver
+ MPBSC->register_Solver( MPBSolverCfg );
+} // end( BundleSolver::InitMPB )
+
+//TBD
+
  // set the size- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
  MasterPB->SetDim( vBPar2.back()  );
@@ -5780,6 +5835,14 @@ void BundleSolver::process_outstanding_Modification( void )
  v_mod.clear();
 
  f_mod_lock.clear( std::memory_order_release );  // release lock
+
+  #ifndef NDEBUG
+  // high-verbosity diagnostic (LogVerb >= 7): account for every time the
+  // Modification queue is drained, and how many Modification are in flight
+  BLOG( 6 , std::endl << "process_outstanding_Modification: "
+                      << v_mod_tmp.size() << " Modification(s)" );
+ #endif
+
 
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // the 1st loop is made in reverse, from the latest Modification to the
@@ -7225,19 +7288,24 @@ void BundleSolver::CheckAlpha( void )
 						     ItemVcblr[ i ].second );
    if( ! f_convex )
     chgsign( G.data() , NumVar );
-   HpNum tAi = rs( v_c05f[ ItemVcblr[ i ].first
+   HpNum lin_cst = rs( v_c05f[ ItemVcblr[ i ].first
 			   ]->get_linearization_constant(
 						   ItemVcblr[ i ].second ) );
-   tAi = UpRifFi[ ItemVcblr[ i ].first ] - tAi -
-                         std::inner_product( Lambda.begin() , Lambda.end() ,
-					     G.begin() , double( 0 ) );
+   HpNum dotLG = std::inner_product( Lambda.begin() , Lambda.end() ,
+				     G.begin() , double( 0 ) );
+   HpNum ref = UpRifFi[ ItemVcblr[ i ].first ];
+   HpNum tAi = ref - lin_cst - dotLG;
+
 
    if( std::abs( tAi - tA[ i ] ) >= eps *
        std::max( std::max( std::abs( tAi ) ,
 			   std::abs( UpRifFi[ ItemVcblr[ i ].first ] ) ) ,
 		 double( 1 ) ) )
     *wlog << std::endl << "Alfa[ " << i << " ]: F = " << tAi << " ~ M = "
-	  << tA[ i ];
+	  << tA[ i ] << " (F-M = " << shrt4 << ( tAi - tA[ i ] ) << def << ")"
+	  << " | k=" << ItemVcblr[ i ].first
+	  << " UpRifFi=" << shrt4 << ref
+	  << " lin_const=" << lin_cst << " <L,G>=" << dotLG << def;
     }
 
  }  // end( BundleSolver::CheckAlpha )
