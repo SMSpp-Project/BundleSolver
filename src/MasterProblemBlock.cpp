@@ -96,7 +96,92 @@ BlockSolverConfig * MasterProblemBlock::use_default_Solver( void )
 
 /*--------------------------------------------------------------------------*/
 
+void MasterProblemBlock::CreateEmptyMP( stabilization_type Stbl ,  )
+{
+ // Clear all the data structures
+ clear();
 
+ // Set the type of stabilization to be used for the MP
+ StblType = Stbl;
+
+ // Set number of variables
+
+ // Generate the static variables
+
+ // Firstly we add the non-negative "dual" multiplier corresponding to the 
+ // model, global lower bound and level constraints.
+ auto Var_lambda = new ColVariable( this );
+ auto Var_r = new ColVariable( this );
+ auto Var_omega = new ColVariable( this );
+
+ Var_lambda.is_positive( true );
+ Var_r.is_positive( true );
+
+ // Here we have to check if the level stabilization is currently being
+ // used. If not, the dual multiplier is simply fixed to be 0.
+ if( Stbl == kLevel || Stbl == kDoublyStabilized )
+  Var_omega.is_positive( true );
+ else{
+  Var_omega.is_fixed( true );
+  Var_omega.set_value( 0 );
+ }
+
+ // Add the variables to the block
+ add_static_variable( Var_lambda, "lambda" );
+ add_static_variable( Var_r, "r" );
+ add_static_variable( Var_omega, "omega" );
+
+ // Generate the static constraints
+
+ // The first constraint regards the bounds on the model, involving 
+ // the level constraint and the global lower model, i.e. 
+ // \lambda + r - \omega = 1
+
+ // Define pairs of (var, coefficient)
+ v_coeff_pair lin_terms = {
+  { Var_lambda , 1},
+  { Var_r , 1},
+  { Var_omega , 1}
+ };
+
+ // Create the constraint as an equality one
+ auto first_cons = new FRowConstraint( this , 1 , 1 , 
+                        new LinearFunction( lin_terms ) );
+
+ // Add it to the Block
+ add_static_constraint( first_cons , "global_bounds" );
+
+ // Generate the dynamic constraints (?)
+
+ // Start generating the objective function to be maximized
+ Objective * MPOF = Objective( this );
+
+ // Set the problem as a maximization one
+ MPOF->set_sense( eMax ); // eMax = 1
+}
+
+/*--------------------------------------------------------------------------*/
+
+void MasterProblemBlock::load_problem( void )
+{
+ // Check if any solver has been registered to the Block
+ auto solvers_list = this->get_registered_solvers();
+ if( solvers_list.empty() )
+   throw( std::logic_error(
+	      "No solver has been registered to the Master Problem Block" ) );
+ else{
+   for( auto solver : *solvers_list ){
+    // Load in the Solver the representation of the Master Problem using all 
+    // the registered sub-blocks
+    solver->load_problem();
+
+    // Now if there are easy components, we have to separately manage them.
+    if( NoEasyCmps > 0 ){
+      // TBD
+    }
+   }
+ }
+}
 
 /*--------------------------------------------------------------------------*/
 /*--------------------------- set parameters -------------------------------*/

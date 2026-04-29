@@ -191,10 +191,25 @@ public:
 /*---------------------------- PUBLIC TYPES --------------------------------*/
 /*--------------------------------------------------------------------------*/
 /** @name Public Types
- *
- * "Import" basic types from Function, C05Function.
- *
-*  @{ */
+ * @{ */
+
+ /// Definition of the possible type of stabilization
+ /** The enum stabilization_type defines all possible "types" of stabilization
+  *  that can be inserted into the Master Problem. Currently, 
+  *  MasterProblemBlock supports 3 types of stabilization:
+  *
+  *  - Proximal;
+  *
+  *  - Level;
+  *
+  *  - Doubly-Stabilized. */
+
+ typedef enum {
+  kProximal         =  0 ,  ///< proximal
+  kLevel            =  1 ,  ///< level
+  kDoublyStabilized =  2    ///< doubly-stabilized
+  } stabilization_type;
+
 /*----------------------------- CONSTANTS ----------------------------------*/
 
 
@@ -207,7 +222,8 @@ public:
  /// constructor: ensure every field is initialized
 
  /** Default constructor */
-  MasterProblemBlock( void ) : NoEasyCmps( 0 ) , NoHardCmps( 0 ) 
+  MasterProblemBlock( void ) : NoEasyCmps( 0 ) , NoHardCmps( 0 ) , 
+    StblType( kDoublyStabilized ) , 
   { }
 
 /*--------------------------------------------------------------------------*/
@@ -366,13 +382,22 @@ void MasterProblemBlock::set_problem_type( int type )
 { ProbType = type; } 
 
 /*--------------------------------------------------------------------------*/
- /// Create the Master Problem when sub-blocks are present
- /** This method creates the type 2 master problem. The argument could
-  *  be also absent, in which case no linear function will be considered in 
-  *  the MP objective. TBD
+ /// Initialize the empy Master Problem
+ /** This method TBD
   * 
   */
-void create_type2_problem( LinearFunction * lin_function = nullptr );
+void CreateEmptyMP( stabilization_type Stbl ,  );
+
+/*--------------------------------------------------------------------------*/
+ /// Load the probelm into the Block
+ /** This method tells the registered solver to load the master problem. 
+  *  If the problem type is 0, then a simple Solver->load_problem() is enough
+  *  to upload information from the unique sub-block. Otherwise, we have to
+  *  distinguish on where information is coming from (i.e. an hard or easy
+  *  component). TBD
+  * 
+  */
+void load_problem( void );
 
 /*--------------------------------------------------------------------------*/
  /// set the int parameters of MasterProblemBlock
@@ -629,6 +654,8 @@ void create_type2_problem( LinearFunction * lin_function = nullptr );
  // algorithmic parameters - - - - - - - - - - - - - - - - - - - - - - - - - -
 
  bool ProbType; // type of problem
+
+ stabilization_type StblType; // type of stabilization
 
  int MaxBSize; // maximum bundle size
 

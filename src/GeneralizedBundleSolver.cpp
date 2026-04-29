@@ -1145,7 +1145,7 @@ void GeneralizedBundleSolver::set_Block( Block * block )
  if( ! f_Block )  // that was actually clearing the Block
   return;         // all done
 
- /* Immediately initialize the MasterProblemBlock. This is needed because
+ /* Immediately create the MasterProblemBlock. This is needed because
   * in this phase two things will happen involving MPB:
   *   - it will populate the structure needed for the master problem 
   *     using all the information coming from the Block;
@@ -1153,7 +1153,7 @@ void GeneralizedBundleSolver::set_Block( Block * block )
   *     This is needed because MPB will have to respond to all the 
   *     Modifications affecting such components, and hence must be informed.
  .*/
- InitMPB();
+ CreateMPB();
 
  // lock the Block - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1208,11 +1208,7 @@ void GeneralizedBundleSolver::set_Block( Block * block )
   v_c05f.push_back( c05f );
   f_lf = nullptr;
 
-  // Create the first type of MP. Here it should be enough to register the Block
-  // as a sub-block of the MPBlock. Then, when loaded by the inner solver, 
-  // the Master Problem should be created.
   MPBlock->set_type( 0 ); // tell MPB the type of the problem
-  MPBlock->add_nested_Block( f_Block );
   }
  else {  // there are sub-Block
   // the objective function of the block must be a LinearFunction- - - - - - -
@@ -1291,16 +1287,9 @@ void GeneralizedBundleSolver::set_Block( Block * block )
 
    if( sb[ i ]->get_dynamic_constraints().size() )
     throw( std::logic_error( "dynamic Constraint are not allowed" ) );
-
-   // Here we silently steal each sub-block from the true father and we 
-   // define as new father the MasterProblemBlock. This is needed to correctly
-   // construct the problem and to deal with Modifications of easy components.
-   sb[ i ]->set_f_Block( MPBlock );
-
-   // And now we register each sub-block also as sub-block of MPB
-   //TBD
-
    }  // end( for each sub-Block )
+   
+   MPBlock->set_type( 1 ); // tell MPB the type of the problem
   }  // end( there are sub-Block )
 
  // the set of "active" Variable in all Function must be the same- - - - - - -
@@ -1442,12 +1431,11 @@ void GeneralizedBundleSolver::set_Block( Block * block )
    delete cfg;
   }
 
- IsEasy.resize( NrFi , nullptr );
+ IsEasy.resize( NrFi , 0 );
  auto NEit = NoEasy.begin();
  for( Index k = 0 ; k < NrFi ; ++k ) {
   // check if component k is marked as being forbidden to be easy (this
   // assumes NoEasy ordered in increasing sense and without duplications)
-  // TBD: do we need this?
   if( ( NEit != NoEasy.end() ) && ( Index( *NEit ) == k ) ) {
    ++NEit;
    continue;
@@ -1460,18 +1448,21 @@ void GeneralizedBundleSolver::set_Block( Block * block )
      // do this by trying to register the MILPSolver to the inner Block; if
      // the operation succeeds than the component may be easy (provided that
      // also all variables are continuous), otherwise it surely is not,
-     // which is captured by the fact that exception is thrown; note that
-     // [MILP]Solver::set_Block() does *not* call Block::register_Solver(),
-     // which therefore may have to be done later
+     // which is captured by the fact that exception is thrown.
+     // Note that the MILPSolver constructed here is used just for performing
+     // a check, and will be destroyed immediately afterwards. The inner block
+     // will instead be registered to the MPB later, and will use its solver
+     // in following stages.
      MILPs->set_Block( LagB->get_inner_block() );
      // the component is easy only if all variables are continuous
      if( ! MILPs->get_num_integer_vars() ) {
-      IsEasy[ k ] = MILPs;
+      IsEasy[ k ] = 1;
       ++NrEasy;
 
-      // this is done since OSIMPSolver does not deal with constant term
+      // this is done since OSIMPSolver does not deal with constant term TBD: CHECK IF WE CAN ALLOW THIS IN MPB
       constant_value += LagB->get_constant_term();
 
+      /* NOT NEEDED ANYMORE 
       // if dynamic updating of the easy component is allowed for any piece
       // of data, register the MILPSolver with the inner Block, as this is not
       // done by [MILP]Solver::set_Block(); note that this calls set_Block()
@@ -1479,47 +1470,45 @@ void GeneralizedBundleSolver::set_Block( Block * block )
       // check that the Block is the same and ignores it
       // TBD
       if( DoEasy & ~1 )
-       LagB->get_inner_block()->register_Solver( MILPs );
+       LagB->get_inner_block()->register_Solver( MILPs ); */
       }
-     else  // everything is linear, but there are integer variables
-      delete MILPs;
-     }
-    catch( ... ) {  // exception means that something nonlinear is there
-     delete MILPs;
-     }
     }
+  // In any case, delete the temporary MILPSolver 
+  delete MILPs;
+  }
+ }
+
+ if( ! NrEasy )
+  IsEasy.clear();
+ else {
+  if( NrEasy == NrFi )
+   throw( std::logic_error(
+	  "BundleSolver: all components are easy, this is no supported" ) );
+   
+ // ComputeConfig-ure the easy components
+ if( eCC || ( ! CmpCfg.empty() ) )
+  for( Index k = 0 ; k < NrFi ; ++k ) {
+   if( ! IsEasy[ k ] )
+    continue;
+
+   ComputeConfig * cfg = nullptr;
+   if( ( k < Index( CmpCfg.size() ) ) && ( ! CmpCfg[ k ].empty() ) ) {
+    auto tcfg = Configuration::deserialize( CmpCfg[ k ] );
+    if( ! ( cfg = dynamic_cast< ComputeConfig * >( tcfg ) ) )
+      delete tcfg;
    }
 
-  if( ! NrEasy )
-   IsEasy.clear();
-  else {
-   if( NrEasy == NrFi )
-    throw( std::logic_error(
-	   "BundleSolver: all components are easy, this is no supported" ) );
-   
-   // ComputeConfig-ure the easy components
-   if( eCC || ( ! CmpCfg.empty() ) )
-    for( Index k = 0 ; k < NrFi ; ++k ) {
-     if( ! IsEasy[ k ] )
-      continue;
+   if( ( ! cfg ) && eCC )
+    cfg = eCC->clone();
 
-     ComputeConfig * cfg = nullptr;
-     if( ( k < Index( CmpCfg.size() ) ) && ( ! CmpCfg[ k ].empty() ) ) {
-      auto tcfg = Configuration::deserialize( CmpCfg[ k ] );
-      if( ! ( cfg = dynamic_cast< ComputeConfig * >( tcfg ) ) )
-       delete tcfg;
-      }
+   if( cfg )
+    v_c05f[ k ]->set_ComputeConfig( cfg );
+  }
 
-     if( ( ! cfg ) && eCC )
-      cfg = eCC->clone();
-
-     if( cfg )
-      v_c05f[ k ]->set_ComputeConfig( cfg );
-     }
-
-   // if easy components can be dynamically changed, attach a FakeSolver to
-   // the inner Block of each LagBFunction to record the changes
-   if( DoEasy & ~1 ) {
+ // if easy components can be dynamically changed, attach a FakeSolver to
+ // the inner Block of each LagBFunction to record the changes
+ // THIS SHOULD NOT BE NEEDED I THINK
+ /*if( DoEasy & ~1 ) {
     v_FakeSolver.resize( NrEasy );
     auto FSit = v_FakeSolver.begin();
     for( Index k = 0 ; k < NrFi ; ++k )
@@ -1528,12 +1517,12 @@ void GeneralizedBundleSolver::set_Block( Block * block )
       *FSit = new FakeSolver();
       LagB->get_inner_block()->register_Solver( *(FSit++) );
       }
-    }
-   }
+    }*/
+ }
 
-  delete eCC;  // TODO: do not clone() the last time
+ delete eCC;  // TODO: do not clone() the last time
 
-  }  // end( if( DoEasy ) )
+ }  // end( if( DoEasy ) )
 
  // configure all non-easy components- - - - - - - - - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1740,8 +1729,8 @@ void GeneralizedBundleSolver::set_Block( Block * block )
     #endif
   }*/
 
- // Initialize the MPB with the true elements
- AddDimMPB();
+ // Load the problem in MasterProblemBlock
+ MPBlock->load_problem();
 
  // cleanup MILPSolver data- - - - - - - - - - - - - - - - - - - - - - - - - -
  // - - - -  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1894,6 +1883,7 @@ void BundleSolver::set_par( idx_type par , int value )
    MPName = value;
    break;
   case( intMPlvl ): MPlvl = value; break;
+  case( intMPStbl ): MPStbl = value; break;
   case( intQPmp1 ): MxAdd = value; break;
   case( intQPmp2 ): MxRmv = value; break;
   case( intOSImp1 ):
@@ -2308,6 +2298,7 @@ int BundleSolver::get_int_par( idx_type par ) const
   case( intTrgtMng ):   return( TrgtMng );
   case( intMPName ):    return( MPName );
   case( intMPlvl ):     return( MPlvl );
+  case( intMPStbl ):    return( MPStbl );
   case( intQPmp1 ):     return( CtOff );
   case( intQPmp2 ):     return( MxRmv );
   case( intOSImp1 ):    return( algo );
@@ -4584,7 +4575,7 @@ HpNum BundleSolver::Heuristic4( void )
 /*-------------------------- PRIVATE METHODS -------------------------------*/
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::InitMPB( void )
+void GeneralizedBundleSolver::CreateMPB( void )
 {
  // initialize the MasterProblemBlock - - - - - - - - - - - - - -  - - - - - -
  // - - - -  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -4595,14 +4586,18 @@ void BundleSolver::InitMPB( void )
   MasterPB = MasterProblemBlock();
 
  // Provide the MPB with the configuration filename for the inner solver
- MPBSC->register_Solver( MPBSolverCfg );
-} // end( BundleSolver::InitMPB )
+ MasterPB->register_Solver( MPBSolverCfg );
+} // end( GeneralizedBundleSolver::CreateMPB )
 
-//TBD
+/*--------------------------------------------------------------------------*/
 
- // set the size- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+void GeneralizedBundleSolver::InitMPB( void )
+{
+ // initialize the MasterProblemBlock - - - - - - - - - - - - - -  - - - - - -
+ // - - - -  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- MasterPB->SetDim( vBPar2.back()  );
+ // Generate all the structures needed for the Master Problem- - - - - - - - -
+ MasterPB->CreateEmptyMP( MPStbl , );
 
  // MinQuad requires a "high" accuracy to work (1e-12) while standard solvers
  // do not, and in fact may complain if such a tight accuracy is set

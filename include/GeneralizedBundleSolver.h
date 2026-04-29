@@ -397,6 +397,8 @@ public:
 
  intMPlvl ,  ///< log verbosity of Master Problem 
 
+ intMPStbl ,  ///< type of stabilization for the master problem
+
  intQPmp1 ,  ///< MxAdd parameter for QPPenaltyMP solver only TBD (should go away)
 
  intQPmp2 ,  ///< MxRmv parameter for QPPenaltyMP solver only TBD (should go away)
@@ -579,6 +581,7 @@ public:
   TrgtMng = Index( get_dflt_int_par( intTrgtMng ) );
   // MPName = get_dflt_int_par( intMPName ); TBD (should go away)
   MPlvl = get_dflt_int_par( intMPlvl );
+  MPStbl = get_dflt_int_par( intMPStbl );
   // MxAdd = get_dflt_int_par( intQPmp1 ); TBD (should go away)
   // MxRmv = get_dflt_int_par( intQPmp2 );
   // algo = get_dflt_int_par( intOSImp1 );
@@ -1029,6 +1032,10 @@ public:
   *                  bit 3: 1 = CheckIdentical( true ) is called, 0 = not
   *
   * - intMPlvl [0]: log verbosity of Master Problem solver
+  * 
+  * - intMPStbl [0]: type of stabilization to be used for the Master Problem.
+  *                  Please see [MasterProblemBlock.h:207] for the currently
+  *                  implemented stabilization type.
   *
   * - intQPmp1 [0]: MxAdd parameter ( for QPPenaltyMP solver only )
   *
@@ -1954,7 +1961,8 @@ public:
      0 ,  // intFrcLstSS
      0 ,  // intTrgtMng
      0 ,  // intMPName TBD
-     0 ,  // intMPlvl 
+     0 ,  // intMPlvl
+     2 ,  // intMPStbl (default value is DoublyStabilized)
      0 ,  // intQPmp1 TBD
      0 ,  // intQPmp2 TBD
      4 ,  // intOSImp1 TBD
@@ -2081,7 +2089,8 @@ public:
    { "intFrcLstSS" , BundleSolver::intFrcLstSS } ,
    { "intTrgtMng" , BundleSolver::intTrgtMng } ,
    { "intMPName" , BundleSolver::intMPName } , // TBD
-   { "intMPlvl" , BundleSolver::intMPlvl } , 
+   { "intMPlvl" , BundleSolver::intMPlvl } ,
+   { "intMPStbl" , BundleSolver::intMPStbl } ,  
    { "intQPmp1" , BundleSolver::intQPmp1 } , // TBD
    { "intQPmp2" , BundleSolver::intQPmp2 } , // TBD
    { "intOSImp1" , BundleSolver::intOSImp1 } , // TBD
@@ -2179,8 +2188,8 @@ public:
    "intBPar1" , "intBPar2" , "intBPar3" , "intBPar4" , "intBPar6" ,
    "intBPar7" , "intMnSSC" , "intMnNSC" , "inttSPar1" , "intMaxNrEvls" ,
    "intDoEasy" , "intWZNorm" , "intFrcLstSS" , "intTrgtMng" , "intMPName" ,
-   "intMPlvl" , "intQPmp1" , "intQPmp2", "OSImp1" , "OSImp2" , "OSImp3" ,
-   "intRstAlg"  }; // TBD
+   "intMPlvl" , "intMPStbl" , "intQPmp1" , "intQPmp2", "OSImp1" , "OSImp2" ,
+   "OSImp3" , "intRstAlg"  }; // TBD
 
   if( ( idx >= intLastParCDAS ) && ( idx < intLastBndSlvPar ) )
    return( int_pars_str[ idx - intBPar1 ] );
@@ -2750,6 +2759,8 @@ public:
 
  Index MPlvl;       ///< log verbosity of master problem
 
+ stabilization_type MPStbl;  ///< type of stabilization for the master problem
+
  int RstAlgPrm;     ///< reset parameter, bit-wise coded
 
  std::string EasyCfg;
@@ -2789,8 +2800,8 @@ public:
  Index SCalls;      ///< number of calls to compute() (the current included)
  Index ParIter;     ///< number of iterations in this call to compute() 
 
- std::vector< MILPSolver * > IsEasy;
- ///< MILPSolver used to read the easy components (non-nullptr iff k is easy) TBD (Should go away)
+ std::vector< bool > IsEasy; 
+ ///< true if the component k has found to be easy
 
  Index NrEasy;      ///< number of "easy" component of Fi
 
@@ -3157,7 +3168,11 @@ class FakeFiOracle : public FiOracle
 /*-------------------------- PRIVATE METHODS -------------------------------*/
 /*--------------------------------------------------------------------------*/
 
- void InitMP( void );
+ void CreateMPB( void );
+
+/*--------------------------------------------------------------------------*/
+
+ void InitMPB( void );
 
 /*--------------------------------------------------------------------------*/
 
