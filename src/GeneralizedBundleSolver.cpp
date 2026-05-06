@@ -501,7 +501,7 @@ int BundleSolver::compute( bool changedvars )
 
   // if there are "easy" components and changing them is supported, process
   // the corresponding Modification (stored it v_FakeSolver)
-  if( NrEasy && ( DoEasy & ~1 ) )
+  if( NrEasy && ( DoEasy & ~1 ) ) //TODO
    process_outstanding_easy_Modification();
 
   // process any other Modification
@@ -1207,8 +1207,6 @@ void GeneralizedBundleSolver::set_Block( Block * block )
 				 ) );
   v_c05f.push_back( c05f );
   f_lf = nullptr;
-
-  MPBlock->set_type( 0 ); // tell MPB the type of the problem
   }
  else {  // there are sub-Block
   // the objective function of the block must be a LinearFunction- - - - - - -
@@ -1223,8 +1221,6 @@ void GeneralizedBundleSolver::set_Block( Block * block )
    if( ! obj->get_function() ){ // the FRealObjective has no Function
     f_lf = nullptr;
     
-    // Create the second type of MP with no linear function
-    MPBlock->create_type1_problem( );
    else {
     f_lf = dynamic_cast< LinearFunction * >( obj->get_function() );
     if( ! f_lf )
@@ -1233,8 +1229,6 @@ void GeneralizedBundleSolver::set_Block( Block * block )
     if( ! f_lf->get_num_active_var() )  // the LinearFunction has no Variable
      f_lf = nullptr;
 
-    // Create the second type of MP possibly with a linear function
-    MPBlock->create_type1_problem( f_lf );
     }
    }
 
@@ -1288,8 +1282,6 @@ void GeneralizedBundleSolver::set_Block( Block * block )
    if( sb[ i ]->get_dynamic_constraints().size() )
     throw( std::logic_error( "dynamic Constraint are not allowed" ) );
    }  // end( for each sub-Block )
-   
-   MPBlock->set_type( 1 ); // tell MPB the type of the problem
   }  // end( there are sub-Block )
 
  // the set of "active" Variable in all Function must be the same- - - - - - -
@@ -1422,7 +1414,7 @@ void GeneralizedBundleSolver::set_Block( Block * block )
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
  NrEasy = 0;
- if( DoEasy & 1 ) { 
+ if( DoEasy ) { 
  // retrieve the ComputeConfig for the "easy" components, if any
  ComputeConfig * eCC = nullptr;
  if( ! EasyCfg.empty() ) {
@@ -1730,10 +1722,10 @@ void GeneralizedBundleSolver::set_Block( Block * block )
   }*/
 
  // Load the problem in MasterProblemBlock
- MPBlock->load_problem();
+ InitMPB();
 
- // cleanup MILPSolver data- - - - - - - - - - - - - - - - - - - - - - - - - -
- // - - - -  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // cleanup MILPSolver data-TBD- - - - - - - - - - - - - - - - - - - - - -
+ // - - - -  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
  // now that the MPSolver has read all the information it needs out of the
  // MILPSolver, cleanup all un-necessary data; note that clear_problem() tells
  // which data to delete with exactly the same bit mapping as DoEasy tells
@@ -1865,7 +1857,7 @@ void BundleSolver::set_par( idx_type par , int value )
   case( intMnNSC ): MnNSC = value; break;
   case( inttSPar1 ): tSPar1 = value; break;
   case( intMaxNrEvls ): MaxNrEvls = value; break;
-  case( intDoEasy ): DoEasy = char( value & 15 ); break;
+  case( intDoEasy ): DoEasy = value; break;
   case( intWZNorm ):
    if( WZNorm != char( value ) ) {
     WZNorm = char( value );
@@ -1884,6 +1876,7 @@ void BundleSolver::set_par( idx_type par , int value )
    break;
   case( intMPlvl ): MPlvl = value; break;
   case( intMPStbl ): MPStbl = value; break;
+  case( intMPPrimal ): IsMPPrimal = value; break;
   case( intQPmp1 ): MxAdd = value; break;
   case( intQPmp2 ): MxRmv = value; break;
   case( intOSImp1 ):
@@ -2140,7 +2133,7 @@ void BundleSolver::get_var_solution( Configuration *solc )
 
 void BundleSolver::get_var_solution_easy_pi( Index k )
 {
- if( ! ( ( DoEasy & 12 ) == 12 ) )
+ if( ! ( ( DoEasy & 12 ) == 12 ) ) // TBD
   throw( std::logic_error(
 	      "intDoEasy & 12 == 12 required to get easy components pi" ) );
  
@@ -2160,7 +2153,7 @@ void BundleSolver::get_var_solution_easy_pi( Index k )
 
 void BundleSolver::get_var_solution_easy_rc( Index k )
 {
- if( ! ( DoEasy & 8 ) )
+ if( ! ( DoEasy & 8 ) ) //TBD
   throw( std::logic_error( "intDoEasy & 8 required to get easy components rc"
 			   ) );
 
@@ -2299,6 +2292,7 @@ int BundleSolver::get_int_par( idx_type par ) const
   case( intMPName ):    return( MPName );
   case( intMPlvl ):     return( MPlvl );
   case( intMPStbl ):    return( MPStbl );
+  case( intMPPrimal ):  return( isMPPrimal );
   case( intQPmp1 ):     return( CtOff );
   case( intQPmp2 ):     return( MxRmv );
   case( intOSImp1 ):    return( algo );
@@ -4596,8 +4590,30 @@ void GeneralizedBundleSolver::InitMPB( void )
  // initialize the MasterProblemBlock - - - - - - - - - - - - - -  - - - - - -
  // - - - -  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
+ /* Here we select if the primal or dual version of the Master problem should
+  * be initialized.
+  * NOTE: if we treat differently easy components and there are easy 
+  * components in the model, then we are obliged to use the dual 
+  * representation. */
+ if( IsMPPrimal ){
+  // Create the primal version of the MP
+  if( DoEasy && NrEasy > 0 ){
+    BLOG( 1 , std::endl << "Warning: IsMPPrimal parameter is set to 1 but "
+          "DoEasy is 1 and NrEasy is " << std::string( NrEasy ) << ". "
+          "The dual version of the Master Problem will be used." );
+    MasterPB->initializeDualVersion( MPStbl , NrFi , DoEasy , NrEasy , 
+                                      IsEasy );
+  }
+  else
+    MasterPB->initializePrimalVersion( MPStbl , NrFi ):
+ }
+ else{
+  // Create the dual version of the MP
+  MasterPB->initializeDualVersion();
+ }
+
  // Generate all the structures needed for the Master Problem- - - - - - - - -
- MasterPB->CreateEmptyMP( MPStbl , );
+ MasterPB->CreateEmptyMP( MPStbl , NrFi , DoEasy , NrEasy , IsEasy );
 
  // MinQuad requires a "high" accuracy to work (1e-12) while standard solvers
  // do not, and in fact may complain if such a tight accuracy is set
@@ -5066,7 +5082,7 @@ void BundleSolver::guts_of_destructor( void )
  InvItemVcblr.clear();
  vBPar2.clear();
 
- if( NrEasy ) {  // if there are "easy" components, delete the MILPSolver
+ if( NrEasy ) {  // if there are "easy" components, delete the MILPSolver TBD
   if( DoEasy & ~1 ) {
    // if easy components can be changed, before doing this unregister the
    // MILPSolver from the inner Block (since it is registered there);

@@ -96,17 +96,39 @@ BlockSolverConfig * MasterProblemBlock::use_default_Solver( void )
 
 /*--------------------------------------------------------------------------*/
 
-void MasterProblemBlock::CreateEmptyMP( stabilization_type Stbl ,  )
+void MasterProblemBlock::CreateEmptyMP( stabilization_type Stbl , int NoCmps,
+  int DoEasyCmp, int NoEasy , std::vector< Bool > IsEasy , )
 {
  // Clear all the data structures
  clear();
 
- // Set the type of stabilization to be used for the MP
+ // Set the class specific fields
  StblType = Stbl;
+ NoTotCmps = NoCmps;
+ DoEasy = DoEasyCmp;
+ NoEasyCmps = NoEasy;
+ IsEasyCmp = IsEasy;
+
+ // Immediately check if we treat differentl. In this case the MP
+ // will be initialized in its primal version. Otherwise, the dual one will 
+ // be used
+ if( NoEasyCmps == 0 )
+  CreatePrimalMP();
+ else
+  CreateDualMP();
+
+} // end( MasterProblemBlock::CreateEmptyMP )
+
+/*--------------------------------------------------------------------------*/
+
+void MasterProblemBlock::CreateDualMP( )
+{
+ // Generate the dual
 
  // Set number of variables
 
- // Generate the static variables
+ // Generate the static variables - - - - - - - - - - - - - - - - - -
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
  // Firstly we add the non-negative "dual" multiplier corresponding to the 
  // model, global lower bound and level constraints.
@@ -126,12 +148,23 @@ void MasterProblemBlock::CreateEmptyMP( stabilization_type Stbl ,  )
   Var_omega.set_value( 0 );
  }
 
- // Add the variables to the block
+ // Add the static variables to the block
  add_static_variable( Var_lambda, "lambda" );
  add_static_variable( Var_r, "r" );
  add_static_variable( Var_omega, "omega" );
 
- // Generate the static constraints
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // Now we introduce the static variables γ^k associated with the
+ // lower bounds on each hard component. Note that if LB^k = -∞,
+ // then the dual objective function will force γ^k = 0.
+ // We add them as a group of static variables having dimension 
+ // NoHardCmps = NoTotCmps - NoEasyCmps.
+ for( k = 0 ; k < NoTotCmps - NoEasyCmps ; k ++ ){
+  auto Var_lambda = new ColVariable( this );
+ }
+
+ // Generate the static constraints - - - - - - - - - - - - - - - - - 
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
 
  // The first constraint regards the bounds on the model, involving 
  // the level constraint and the global lower model, i.e. 
@@ -144,12 +177,33 @@ void MasterProblemBlock::CreateEmptyMP( stabilization_type Stbl ,  )
   { Var_omega , 1}
  };
 
- // Create the constraint as an equality one
+ // Create the constraint as an equality one with fixed RHS = LHS = 1
+ // and add it to the block
  auto first_cons = new FRowConstraint( this , 1 , 1 , 
                         new LinearFunction( lin_terms ) );
-
- // Add it to the Block
  add_static_constraint( first_cons , "global_bounds" );
+
+ // add the component-specific rows - - - - - - - - - - - - - - - - - 
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+
+ // NOTE: The easy component constraints 
+ //   u^k E^k + λ e^k = 0, ∀k ∈ E ,
+ // are not added at this level, as they should be already contained 
+ // in the inner block of each LagbFunction, which is registered as
+ // a sub-block of MPB. Hence, each solver will specifically construct
+ // them when loading the sub-blocks.
+
+ // add the hard-component rows - - - - - - - - - - - - - - - - - - - 
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ for( int k = 0 ; k < NoTotCmps ; k++ ){
+  if( ! IsEasyCmp[ k ] ){
+    // Hard component
+
+    // For the k-th hard component we just have to add the simplex 
+    // constraint:   λ = \sum_{i ∈ β^k_SG} θ_i^k + γ^k
+
+  }
+ }
 
  // Generate the dynamic constraints (?)
 

@@ -399,6 +399,8 @@ public:
 
  intMPStbl ,  ///< type of stabilization for the master problem
 
+ intMPPrimal ,  ///< whether the MP will be initialized in its primal or dual form
+
  intQPmp1 ,  ///< MxAdd parameter for QPPenaltyMP solver only TBD (should go away)
 
  intQPmp2 ,  ///< MxRmv parameter for QPPenaltyMP solver only TBD (should go away)
@@ -500,7 +502,7 @@ public:
    * 0, ..., total number of components - 1, ordered in increasing sense and
    * therefore not repeated) of the components of the problem that must not
    * be treated as "easy" even if they could. This clearly only applies if
-   * intDoEasy & 1 == 1, for otherwise no component is ever treated as "easy".
+   * intDoEasy == 1, for otherwise no component is ever treated as "easy".
    */
 
   vintLastBndSlvPar ///< first allowed new vector-of-int parameter
@@ -575,13 +577,14 @@ public:
   MnNSC = get_dflt_int_par( intMnNSC );
   tSPar1 = get_dflt_int_par( inttSPar1 );
   MaxNrEvls = get_dflt_int_par( intMaxNrEvls );
-  DoEasy = char( get_dflt_int_par( intDoEasy ) );
+  DoEasy = get_dflt_int_par( intDoEasy );
   WZNorm = char( get_dflt_int_par( intWZNorm ) );
   FrcLstSS = get_dflt_int_par( intFrcLstSS );
   TrgtMng = Index( get_dflt_int_par( intTrgtMng ) );
   // MPName = get_dflt_int_par( intMPName ); TBD (should go away)
   MPlvl = get_dflt_int_par( intMPlvl );
   MPStbl = get_dflt_int_par( intMPStbl );
+  IsMPPrimal = get_dflt_int_par( intMPPrimal );
   // MxAdd = get_dflt_int_par( intQPmp1 ); TBD (should go away)
   // MxRmv = get_dflt_int_par( intQPmp2 );
   // algo = get_dflt_int_par( intOSImp1 );
@@ -884,37 +887,19 @@ public:
   *   is the limit on how many times this will be attempted (for each
   *   non-easy C05Function) before giving up for good
   *
-  * - intDoEasy [1]: this parameter is coded bit-wise and controls whether
+  * - intDoEasy [1]: this boolean parameter controls whether
   *                  BundleSolver uses the "easy components" approach on
   *   components that allow it (LagBFunction with linear constraints,
-  *   objective and continuous variables only), and whether it retains the
-  *   information necessary to handle dynamic changes to (a part of) the data
-  *   of each "easy component".
+  *   objective and continuous variables only).
   *
-  *   If the bit 0 is 0, then all components are treated as "hard" even if
-  *   they could be treated as "easy"; all the other bits are then ignored.
-  *   Note, however, that in this case BundleSolver will require a functioning
-  *   Solver to be registered to the inner Block of the LagBFunction to work
-  *   (because it will compute() the LagBFunction, and the Solver is needed
-  *   for that).
+  *   If it is 0, then all components are treated as "hard" even if
+  *   they could be treated as "easy". If it is 1, then all "easy" 
+  *   components are treated as such.
   *
-  *   If the bit 0 is 1, then all "easy" components are treated as such.
-  *   Furthermore, the following three bits, if 1, instruct BundleSolver to
-  *   keep information (in the MILPSolver used to represent the "easy"
-  *   component) that allows different parts of the easy components to be
-  *   changed during the course of the optimization and the BundleSolver to
-  *   properly react to these changes, with the following encoding:
-  *
-  *      - bit 1 (+ 2): allow changes in the objective function
-  *      - bit 2 (+ 4): allow changes in the lhs/rhs of the constraints
-  *      - bit 3 (+ 8): allow changes in the lb/ub of the variables
-  *
-  *   If the corresponding bit is set to 0, then the corresponding changes in
-  *   the "easy" component will result in an exception being thrown. The
-  *   default value correspond to "static easy components", i.e., they are
-  *   considered but they cannot be changed.
-  * 
-  *   TBD, here we should avoid all these specifications thanks to the new MPS
+  *   NOTE: In a previous version intDoEasy controlled also which structures
+  *   were allowed to change in an esy component. With the use of MPBlock
+  *   this is not necessary anymore, as the latter allows for changes in
+  *   any part of the structure of easy components.
   *
   * - intWZNorm [2]: Proving that some point Lambda is epsilon-optimal for a
   *                  NonDifferentiable Optimization problem involves finding
@@ -1036,6 +1021,13 @@ public:
   * - intMPStbl [0]: type of stabilization to be used for the Master Problem.
   *                  Please see [MasterProblemBlock.h:207] for the currently
   *                  implemented stabilization type.
+  * 
+  * - intMPPrimal [0]: tells which formulation should be used for the Master 
+  *                    Problem. If 1 then the primal version of the MP will be
+  *                    initialized, otherwise MasterProblemBlock will use the 
+  *                    dual one. Note that if the parameter DoEasy is set to 1
+  *                    and there are easy components, then the only possibility
+  *                    is to solve the dual representation.
   *
   * - intQPmp1 [0]: MxAdd parameter ( for QPPenaltyMP solver only )
   *
@@ -1371,7 +1363,7 @@ public:
   *                       indices (numbers in 0, ..., total number of
   *   components - 1, ordered in increasing sense and therefore not repeated)
   *   of the components of the problem that must not be treated as "easy"
-  *   even if they could. This clearly only applies if intDoEasy & 1 == 1,
+  *   even if they could. This clearly only applies if intDoEasy == 1,
   *   for otherwise no component is ever treated as "easy". The ordering of
   *   the components is as follows: if the Block only has a C05Function as
   *   Objective and no sub-Block then that it is component 0, otherwise the
@@ -1699,7 +1691,7 @@ public:
   * if dual variables are required then *both* ( intDoEasy & 4 ) and
   * ( intDoEasy & 8 ) must be true [due to the internal working of
   * OSIMPSolver the information about reduced costs is required when
-  * getting dual variables, please don't ask ...]). */
+  * getting dual variables, please don't ask ...]). TO DO */ 
 
  void get_var_solution( Configuration *solc = nullptr ) override;
 
@@ -1963,6 +1955,7 @@ public:
      0 ,  // intMPName TBD
      0 ,  // intMPlvl
      2 ,  // intMPStbl (default value is DoublyStabilized)
+     0 ,  // intMPPrimal (default value is dual)
      0 ,  // intQPmp1 TBD
      0 ,  // intQPmp2 TBD
      4 ,  // intOSImp1 TBD
@@ -2090,7 +2083,8 @@ public:
    { "intTrgtMng" , BundleSolver::intTrgtMng } ,
    { "intMPName" , BundleSolver::intMPName } , // TBD
    { "intMPlvl" , BundleSolver::intMPlvl } ,
-   { "intMPStbl" , BundleSolver::intMPStbl } ,  
+   { "intMPStbl" , BundleSolver::intMPStbl } ,
+   { "intMPPrimal" , BundleSolver::intMPPrimal } ,    
    { "intQPmp1" , BundleSolver::intQPmp1 } , // TBD
    { "intQPmp2" , BundleSolver::intQPmp2 } , // TBD
    { "intOSImp1" , BundleSolver::intOSImp1 } , // TBD
@@ -2188,8 +2182,8 @@ public:
    "intBPar1" , "intBPar2" , "intBPar3" , "intBPar4" , "intBPar6" ,
    "intBPar7" , "intMnSSC" , "intMnNSC" , "inttSPar1" , "intMaxNrEvls" ,
    "intDoEasy" , "intWZNorm" , "intFrcLstSS" , "intTrgtMng" , "intMPName" ,
-   "intMPlvl" , "intMPStbl" , "intQPmp1" , "intQPmp2", "OSImp1" , "OSImp2" ,
-   "OSImp3" , "intRstAlg"  }; // TBD
+   "intMPlvl" , "intMPStbl" , "intMPPrimal" , "intQPmp1" , "intQPmp2",
+   "OSImp1" , "OSImp2" , "OSImp3" , "intRstAlg"  }; // TBD
 
   if( ( idx >= intLastParCDAS ) && ( idx < intLastBndSlvPar ) )
    return( int_pars_str[ idx - intBPar1 ] );
@@ -2731,7 +2725,7 @@ public:
  double tSPar2;     ///< double parameter for long-term t-strategy
  double tSPar3;     ///< double parameter for small heuristic t changes
 
- char DoEasy;       ///< if and how "easy" components are managed
+ bool DoEasy;       ///< if "easy" components are managed
 
  char WZNorm;       ///< how to compute the norm of z*
 

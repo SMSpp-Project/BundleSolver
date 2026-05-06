@@ -368,25 +368,18 @@ void register_Solver( std::string && solv_cfg_filename );
 BlockSolverConfig * use_default_Solver( void );
 
 /*--------------------------------------------------------------------------*/
- /// Set the type of the problem currently being solved
- /** Two types of block can be handled by the GeneralizedBundleSolver:
-
-  *   1. Only one single non-smooth function (type 0)
-  *   2. a sum of some non-smooth functions (type 1)
-  *  
-  *  This method helps MPB to understand which problem should be prepared
-  *  to solve.
-   
-  */
-void MasterProblemBlock::set_problem_type( int type )
-{ ProbType = type; } 
-
-/*--------------------------------------------------------------------------*/
- /// Initialize the empy Master Problem
+ /// Initialize the primal version of the Master Problem
  /** This method TBD
   * 
   */
-void CreateEmptyMP( stabilization_type Stbl ,  );
+void CreatePrimalMP( stabilization_type Stbl ,  );
+
+/*--------------------------------------------------------------------------*/
+ /// Initialize the dual version of the Master Problem
+ /** This method TBD
+  * 
+  */
+void CreateDualMP( stabilization_type Stbl ,  );
 
 /*--------------------------------------------------------------------------*/
  /// Load the probelm into the Block
@@ -653,7 +646,7 @@ void load_problem( void );
 
  // algorithmic parameters - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- bool ProbType; // type of problem
+ bool IsPrimal; // wether we are solving the primal or dual version of the MP
 
  stabilization_type StblType; // type of stabilization
 
@@ -661,13 +654,11 @@ void load_problem( void );
 
  int MaxSGLen; // maximum subgradient length
 
+ int NoTotCmps; // Number of total components
+
  int NoEasyCmps; // Number of easy components
 
- int NoHardCmps; // Number of easy components
-
- /* List of sub-blocks identified to be easy components.
- */
- std::vector< Block* > EasyCmps;
+ std::vector< Bool > IsEasyCmp; // which component is easy
 
  /* List of sub-blocks to be treated as hard components.
  */
