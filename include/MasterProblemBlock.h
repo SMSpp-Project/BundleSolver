@@ -1,134 +1,104 @@
 /*--------------------------------------------------------------------------*/
-/*-------------------- File MasterProblemBlock.h --------------------------*/
+/*-------------------- File MasterProblemBlock.h ---------------------------*/
 /*--------------------------------------------------------------------------*/
 /** @file
- * Header file for the MPBlock class, which implements the master problem
- * interface, using a "Generalized Bundle" algorithm for the solution of 
- * convex nondifferentiable problems.
- *
- * This interface is tought to be always used with the BundleSolver class.
- * TBD
- *
- * This class represents the master problem block within the SMS++ 
- * decomposition framework. The current version provides only the 
- * structural skeleton and does not implement any functionality.
- *
- * The user is assumed to be familiar with the algorithm: refer to
- *
- *  A. Frangioni "Generalized Bundle Methods"
- *  SIAM Journal on Optimization 13(1), 117--156, 2002
- *
- * available at
- *
- * \link
- *  http://www.di.unipi.it/~frangio/abstracts.html#SIOPT02
- * \endlink
- *
- * or
- *
- *  A. Frangioni "Standard Bundle Methods: Untrusted Models and Duality"
- *  in Numerical Nonsmooth Optimization: State of the Art Algorithms,
- *  A.M. Bagirov, M. Gaudioso, N. Karmitsa, M. Mäkelä, S. Taheri (Eds.),
- *  61 - 116, Springer, 2020
- *
- * available at
- *
- * \link
- *  http://www.di.unipi.it/~frangio/abstracts.html#NDOB18
- * \endlink
- *
- * In particular, BundleSolver implements the Incremental version of the
- * (Generalised) Proximal Bundle approach using upper models (for all the
- * components that provide a Lipschitz constant) described in
- *
- *  W. van Ackooij, A. Frangioni "Incremental Bundle Methods Using Upper
- *  Models" SIAM Journal on Optimization 28(1), 379 – 410, 2018
- *
- * available at
- *
- * \link
- *  http://www.di.unipi.it/~frangio/abstracts.html#SIOPT16
- * \endlink
- *
- * BundleSolver is capable of solving any Block such that:
- *
- * - only has "continuous" ColVariable (is_integer() == false);
- *
- * - has no Constraint, except possibly BoxConstraint (upper and/or lower
- *   bounds on the ColVariable);
- *
- * - either its Objective is a FRealObjective containing a C05Function, and
- *   it has no sub-Block;
- *
- * - or its Objective is a is a FRealObjective containing a LinearFunction,
- *   and each of its sub-Block has no Constraint and Variable, and its
- *   Objective is a FRealObjective containing a C05Function.
- *
- * A special treatment is given to the case where some of the C05Function
- * actually are LagBFunction whose inner Block only contains ColVariable,
- * whose Objective is linear (a FRealObjective containing a LinearFunction)
- * and whose Constraint are linear (either FRowConstraint containing a
- * LinearFunction, or BoxConstraint). These can be passed to the Master
- * Problem of the bundle algorithm as "easy components", see
- *
- *   A. Frangioni, E. Gorgone "Generalized Bundle Methods for Sum-Functions
- *   with ``Easy'' Components: Applications to Multicommodity Network Design"
- *   Mathematical Programming 145(1), 133 – 161, 2014
- *
- * available at
- *
- * \link
- *  http://www.di.unipi.it/~frangio/abstracts.html#MP11c
- * \endlink
- *
- * In that case, the LagBFunction is never evaluated, which means that there
- * is no need for a Solver to be attached to the inner Block.
- *
- * If the Block has multiple Objective (that is, it has sub-Block whose
- * Objective is a FRealObjective containing a C05Function), a very strong
- * assumption is required on them:
- *
- *     ALL THE Function IN THE Objective HAVE EXACTLY THE SAME SET OF
- *     "ACTIVE" Variable, ORDERED IN THE SAME WAY, AT ALL TIMES; THIS MEANS
- *     THAT IF THE SET OF "ACTIVE" Variable IS MODIFIED FOR ONE OF THE
- *     Function, IT MUST BE MODIFIED FOR ALL OF THEM AT THE SAME TIME
- *
- * The only exception is that
- *
- *     THE Objective OF THE Block CAN BE EMPTY, I.E., EITHER THERE IS NO
- *     Objective, OR THE FRealObjective HAS NO Function, OR THE
- *     LinearFunction IN THE FRealObjective HAS EXACTLY ZERO "ACTIVE"
- *     Variable; IN THE LATTER CASE, THE SET OF "ACTIVE" Variable IN THE
- *     LinearFunction MUST NEVER CHANGE
- *
- * To ensure that the rule about the list of "ACTIVE" Variable in the
- * (multiple) Objective is respected, an analogous very strong assumption is
- * made on the Modification that change that:
- *
- *     ALL THE Modification THAT CHANGE THE "ACTIVE" Variable MUST BE
- *     BUNCHED TOGETHER IN A SINGLE GroupModification. THIS MUST CONTAIN
- *     EXACTLY AS MANY Modification AS THERE ARE sub-Block (AND, THEREFORE,
- *     DIFFERENT OBJECTIVE), PLUS ONE IF THE (LinearFunction IN THE)
- *     Objective OF THE Block IS NOT EMPTY. ALL Modification MUST BE OF
- *     THE VERY SAME TYPE, I.E., EITHER ALL C05FunctionModVarsAddd, OR ALL
- *     C05FunctionModVarsRngd, OR ALL C05FunctionModVarsSbst, AND THEY MUST
- *     CHANGE THE "ACTIVE" Variable IN PRECISELY THE SAME WAY.
+ * Header file for the MPBlock class, implementing the master problem
+ * interface for the BundleSolver class.
  * 
- * Two types of block can be handled by the GeneralizedBundleSolver:
- *
- *   1. Only one single non-smooth function (type 0)
- *   2. a sum of some non-smooth functions (type 1)
- *  
- * This two types also affect how the MasterProblem is constructed. If we
- * are solving a type 0 problem, then the main Block is registered as a
- * sub-block of MPBlock. When the Solver will then load the problem, it will
- * find no structures in MPB and load the model directly from the sub-block,
- * hence populating the Master Problem. If instead we are woring on a type 1 
- * problem, MPB will copy the linear objective (if present) in its Objective
- * and register all the sub-blocks of the original father as its own sub-blocks.
- * When loading the problem, the solver will therefore populate the Objective 
- * function using the linear part in MPB and the ones found in the sub-blocks,
- * and load all the constraints from the sub-blocks.
+ * This class implements and solves the Master Problem for a generic Bundle
+ * Method, with the possibility of initializing the problem either in its
+ * primal or dual formulation.
+ * 
+ * It is particularly suitable for problems where the objective function is
+ * expressed as the sum of independent components coupled through
+ * (possibly) complicating constraints, although it can also handle the
+ * case where only a single component is present. In the former setting,
+ * each component is treated separately through a dedicated sub-block
+ * reproducing the corresponding sub-problem, while the current class is
+ * responsible for reproducing the coupling constraints. For a more
+ * detailed overview of the general algorithm, please refer to
+ * GeneralizedBundleSolver.h.
+ * 
+ * In its most general form, we assume that the objective function f can
+ * be expressed as the sum of N sub-functions f^k, each of which is only
+ * accessible through an oracle providing the function value and a
+ * subgradient at a given point. Assuming that a bundle
+ * B^k = {(g^k_i, α^k_i)}_i stores information related to subgradients and
+ * linearization errors, each sub-problem can be written as:
+ * 
+ * \min v^k                                               (1)
+ * s.t  v^k \ge g^k_i * d + α^k_i       \forall i         (2)
+ *      α^k_h \ge g^k_h * d             \forall h         (3)
+ *      v^k \ge LB^k                                      (4)
+ * 
+ * where constraints (2) and (3) are commonly referred to as subgradient
+ * cuts and feasibility cuts, respectively, while constraint (4)
+ * represents a possible known lower bound on the value of f^k. In the
+ * formulation above, d denotes the step to be performed at the current
+ * iteration and will be a responsability of MPB of initializing such
+ * variable and providing it to each sub-block.
+ * 
+ * This formulation is naturally represented by the "primal
+ * version" of a generic PolyhedralFunctionBlock. For this reason, one
+ * such block is created and registered as a sub-block of the current
+ * class for each sub-function of the original function f.
+ * 
+ * The lower approximation model of the complete function f is then
+ * obtained by introducing an appropriate variable v and the constraint
+ * 
+ *  v \ge d * b + \sum_k v_k                               (5)
+ * 
+ * where b represents the constant part of the objective function f, when
+ * present.
+ * 
+ * Finally, an appropriate stabilization mechanism must be considered in
+ * the master problem. Currently, MPB supports:
+ *  - Proximal Stabilization;
+ *  - Level Stabilization;
+ *  - Doubly Stabilized Bundle Methods.
+ * 
+ * The Master Problem obtained through the minimization of v together with
+ * the selected stabilization term corresponds to the formulation
+ * implemented in this class under the name "Primal Form".
+ * 
+ * In addition, MasterProblemBlock is also able to reproduce the dual
+ * formulation of the model described above. This is particularly useful
+ * when some of the sub-functions are so-called "easy components", i.e.,
+ * components that can be evaluated exactly instead of relying on an
+ * approximated model (see BundleSolver.h for further details).
+ * 
+ * In this case, each sub-block introduces dual multipliers θ^k_i for
+ * each cut in the bundle B^k and a multiplier \gamma^k associated with
+ * the lower bound LB^k. The corresponding contribution
+ * 
+ * - \sum_i \theta^k_i \alpha^k_i - \sum_h \theta^k_h \alpha^k_h
+ * 
+ * is then added to the objective function, together with the
+ * "normalization constraints"
+ * 
+ * \sum_i \theta^k_i + \gamma^k = \lambda
+ * 
+ * where \lambda is the dual multiplier associated with constraint (5).
+ * 
+ * MasterProblemBlock is instead responsible for coupling all terms
+ * \theta^k_i g^k_i coming from each sub-block into a single vector R,
+ * which is then used in the objective function of the maximization
+ * problem.
+ * 
+ * As in the primal case, specific approaches are adopted depending on
+ * the stabilization mechanism being used.
+ * 
+ * Also in this setting, the dual formulation described above is naturally
+ * represented by the "dual version" of a generic
+ * PolyhedralFunctionBlock. Hence, one such block is created for each
+ * component, while specialized approaches are adopted for the treatment
+ * of the "easy components".
+ * 
+ * NOTE: for a more extensive description of the specific master problems
+ * constructed in both their primal and dual formulations, please refer to
+ * the accompanying notes.
+ * 
+ * TODO: possible link to the related notes/documentation.
  * 
  *
  * \author Enrico Calandrini \n
