@@ -3787,7 +3787,11 @@ bool BundleSolver::GetGi( Index wFi )
 	   << " ~ gd = " << rs( ScPr1k );
     }
    else
-    *f_log << "constraint " << wh << " ~ rhs = " << Alfa1k;
+    // note: we don't print wh here because it has not been finalized yet
+    // (BStrategy() may have returned InINF, the actual slot is decided
+    // later by FindAPlace()); the "stored in <wh> (<gpp>)" log line below
+    // shows the real slot
+    *f_log << "constraint for Fi[ " << wFi << " ] ~ rhs = " << Alfa1k;
    }
 
   bool to_insert = true;  // if it has to be inserted
@@ -4023,23 +4027,32 @@ void BundleSolver::ResetAlfa( Index k )
  if( k == NrFi ) {  // all components need be reset
   for( Index i = 0 ; i < Master->MaxName() ; ++i )
    if( ItemVcblr[ i ].second < vBPar2[ ItemVcblr[ i ].first ] ) {
-    auto Ai = rs( v_c05f[ ItemVcblr[ i ].first
-			  ]->get_linearization_constant(
-						   ItemVcblr[ i ].second ) );
+    auto kk = ItemVcblr[ i ].first;
+    auto nm = ItemVcblr[ i ].second;
+    auto Ai = rs( v_c05f[ kk ]->get_linearization_constant( nm ) );
     #ifndef NDEBUG
      if( std::isnan( Ai ) )  // linearization no longer valid
       throw( std::logic_error( "inconsistent ItemVcblr" ) );
     #endif
 
-    // compute the linearization error in Lambda
-    v_c05f[ ItemVcblr[ i ].first ]->get_linearization_coefficients(
-		   Gi.data() , Range( 0 , NumVar ) , ItemVcblr[ i ].second );
+    // recover the linearization coefficients
+    v_c05f[ kk ]->get_linearization_coefficients( Gi.data() ,
+						  Range( 0 , NumVar ) , nm );
     if( ! f_convex )
      chgsign( Gi.data() , NumVar );
 
-    Alfa[ i ] = UpRifFi[ ItemVcblr[ i ].first ] - Ai -
+    // diagonal: linearization error in Lambda; vertical: rhs in d-coords
+    // (cf. the explanation near ChgAlfa() further down for why these differ)
+    if( v_c05f[ kk ]->is_linearization_vertical( nm ) ) {
+     Alfa[ i ] = - Ai -
               std::inner_product( Lambda.begin() , Lambda.end() , Gi.data() ,
 				  double( 0 ) );
+     }
+    else {
+     Alfa[ i ] = UpRifFi[ kk ] - Ai -
+              std::inner_product( Lambda.begin() , Lambda.end() , Gi.data() ,
+				  double( 0 ) );
+     }
     }
   }
  else {             // only that specific component need be reset
@@ -4052,15 +4065,23 @@ void BundleSolver::ResetAlfa( Index k )
       throw( std::logic_error( "inconsistent ItemVcblr" ) );
     #endif
 
-    // compute the linearization error in Lambda
+    // recover the linearization coefficients
     v_c05f[ k ]->get_linearization_coefficients( Gi.data() ,
 						 Range( 0 , NumVar ) , i );
     if( ! f_convex )
      chgsign( Gi.data() , NumVar );
 
-    Alfa[ InvItemVcblr[ k ][ i ] ] = UpRifFi[ k ] - Ai -
+    // diagonal: linearization error; vertical: rhs in d-coords
+    if( v_c05f[ k ]->is_linearization_vertical( i ) ) {
+     Alfa[ InvItemVcblr[ k ][ i ] ] = - Ai -
 	       std::inner_product( Lambda.begin() , Lambda.end() , Gi.data() ,
 				   double( 0 ) );
+     }
+    else {
+     Alfa[ InvItemVcblr[ k ][ i ] ] = UpRifFi[ k ] - Ai -
+	       std::inner_product( Lambda.begin() , Lambda.end() , Gi.data() ,
+				   double( 0 ) );
+     }
     }
   }
 
@@ -5447,8 +5468,15 @@ void BundleSolver::add_to_bundle( Index k , Index i )
   Master->CheckIdentical( false );  // temporarily de-activate it now
 
  double ScPri;
- if( v_c05f[ k ]->is_linearization_vertical( i ) )
+ if( v_c05f[ k ]->is_linearization_vertical( i ) ) {
+  // mirror the sign convention used in GetGi(): the C05Function returns
+  // alpha for the constraint "g x + alpha [<=|>=] 0", but the master
+  // problem encodes constraints in the form "SubG Lambda <= Ai", which
+  // requires alpha to be negated (for convex; the concave path handles
+  // the rs() flip too)
+  Ai = - Ai;
   Master->CheckCnst( Ai , ScPri , Lambda.data() );
+  }
  else {
   Ai = UpRifFi[ k ] - Ai -
    std::inner_product( Lambda.begin() , Lambda.end() , G1 , double( 0 ) );
@@ -7062,15 +7090,35 @@ void BundleSolver::process_outstanding_Modification( void )
        throw( std::logic_error( "inexistent linearization" ) );
      #endif
 
-     // compute the linearization error in Lambda
+     // recover the linearization coefficients
      v_c05f[ k ]->get_linearization_coefficients( Gi.data() ,
 						  Range( 0 , NumVar ) , i );
      if( ! f_convex )
       chgsign( Gi.data() , NumVar );
 
-     Ai = UpRifFi[ k ] - Ai - std::inner_product( Lambda.begin() ,
-						  Lambda.end() ,
-						  Gi.begin() , double( 0 ) );
+     // compute the new "Ai" value for the master problem; this depends on
+     // whether the linearization is diagonal (a subgradient, contributing
+     // a constraint v >= G d - alpha to the master in d-space, where alpha
+     // is the linearization error in Lambda) or vertical (a constraint
+     // SubG (Lambda + d) <= alpha = b_i, contributing SubG d <= alpha -
+     // SubG Lambda to the master in d-space). Treating both alike with
+     // the diagonal formula corrupts vertical-linearization rhs values
+     // by an offset equal to UpRifFi[k] (= Fi at the stable center),
+     // which yields stale/incorrect feasibility cuts when constants change
+     if( v_c05f[ k ]->is_linearization_vertical( i ) ) {
+      // CheckCnst-style adjustment: rhs = -alpha - SubG . Lambda (for the
+      // sign convention here, since Ai = rs( get_linearization_constant ),
+      // and a final "Ai = -Ai" in CheckCnst is what brings the rhs back
+      // into the master's "<= rhs" form)
+      Ai = - Ai - std::inner_product( Lambda.begin() , Lambda.end() ,
+				      Gi.begin() , double( 0 ) );
+      }
+     else {
+      // diagonal: linearization error in Lambda
+      Ai = UpRifFi[ k ] - Ai - std::inner_product( Lambda.begin() ,
+						   Lambda.end() ,
+						   Gi.begin() , double( 0 ) );
+      }
      Master->ChgAlfa( InvItemVcblr[ k ][ i ] , Ai );
      }
   }
