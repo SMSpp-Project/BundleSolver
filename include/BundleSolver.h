@@ -3064,6 +3064,32 @@ class FakeFiOracle : public FiOracle
 
  std::vector< ColVariable * > LamVcblr;  ///< map Lambda -> ColVariable
 
+ // per-component local→global Lambda index map for sparse Lambda mode.
+ // v_local2global[ h ] has size get_num_active_var() + 1 for v_c05f[ h ];
+ // entries [ 0 .. loc_NV - 1 ] are the indices in LamVcblr of h's active
+ // Variables in the order get_linearization_coefficients writes them, and
+ // the last slot is Inf< Index >() so v_local2global[ h ].data() is a
+ // ready-to-use Inf-terminated SGBse for MPSolver::SetItemBse. Empty
+ // (size 0) when f_sparse_lambda is false (legacy dense path).
+ std::vector< std::vector< Index > > v_local2global;
+
+ // true iff at least one v_c05f[ h ] (or f_lf) exposes a strict subset
+ // of LamVcblr as its active variables (or the same set in a different
+ // order). Auto-detected in set_Block by comparing per-component active
+ // sets against the union LamVcblr. When false, every gather site falls
+ // back to the legacy "all components see the same dense Lambda" code path.
+ bool f_sparse_lambda = false;
+
+ // pointer → global Lambda index map, the inverse of LamVcblr. Kept live
+ // (and incrementally maintained) only when f_sparse_lambda == true; used
+ // to resolve ColVariable * coming from a FunctionModVars* against the
+ // global Lambda index space when v_c05f[ h ] is sparse (i.e. when the
+ // dense invariant "all components have identical active vars in the
+ // same order" does not hold and the Mod's first()/range()/subset()
+ // entries cannot be interpreted globally). In dense mode this map is
+ // cleared after set_Block to save memory.
+ std::unordered_map< ColVariable * , Index > Lambda2Idx;
+
  VarValue UpTrgt;        ///< upper target
  VarValue LwTrgt;        ///< lower target
 

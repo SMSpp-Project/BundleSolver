@@ -1267,33 +1267,112 @@ void BundleSolver::set_Block( Block * block )
    }  // end( for each sub-Block )
   }  // end( there are sub-Block )
 
- // the set of "active" Variable in all Function must be the same- - - - - - -
+ // build LamVcblr as the union of "active" Variables across all v_c05f[ h ]
+ // (and f_lf, if any), in first-encounter order. Each v_c05f[ h ] is allowed
+ // to expose either the full union (dense legacy path) or a strict subset
+ // (sparse path) of LamVcblr. v_local2global[ h ] records, for each h, the
+ // index in LamVcblr of h's i-th active Variable in the order
+ // get_linearization_coefficients writes them, and is left empty when the
+ // sparse path is not needed.- - - - - - - - - - - - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- NumVar = v_c05f[ 0 ]->get_num_active_var();
- LamVcblr.resize( NumVar );
- auto vi = std::as_const( v_c05f[ 0 ] )->begin();
- for( Index i = 0 ; i < NumVar ; ++vi )
-  LamVcblr[ i++ ] = static_cast< ColVariable * >( & (*vi) );
+ Lambda2Idx.clear();
+ LamVcblr.clear();
+ v_local2global.assign( v_c05f.size() , {} );
+ f_sparse_lambda = false;
 
- if( f_lf ) {
-  if( f_lf->get_num_active_var() != NumVar )
-   throw( std::logic_error( "the list of active Variable do not match" ) );
+ auto register_active = [ & ]( C05Function * f ,
+                               std::vector< Index > * map_out ) {
+  const Index loc_NV = f->get_num_active_var();
+  if( map_out )
+   map_out->reserve( loc_NV + 1 );
+  auto it_end = std::as_const( f )->end();
+  for( auto it_v = std::as_const( f )->begin() ; it_v != it_end ; ++it_v ) {
+   auto p = static_cast< ColVariable * >( & ( *it_v ) );
+   auto [ jt , inserted ] = Lambda2Idx.try_emplace( p , LamVcblr.size() );
+   if( inserted )
+    LamVcblr.push_back( p );
+   if( map_out )
+    map_out->push_back( jt->second );
+   }
+  };
 
-  auto v = f_lf->begin();
-  for( auto vi = LamVcblr.begin() ; vi != LamVcblr.end() ; ++v , ++vi )
-   if( static_cast< ColVariable * >( & (*v) ) != *vi )
-    throw( std::logic_error( "the list of active Variable do not match" ) );
+ if( f_lf )
+  register_active( f_lf , nullptr );
+
+ for( Index i = 0 ; i < v_c05f.size() ; ++i )
+  register_active( v_c05f[ i ] , & v_local2global[ i ] );
+
+ NumVar = LamVcblr.size();
+
+ // detect whether any v_c05f[ h ] (or f_lf) exposes a proper subset of
+ // LamVcblr, or the full set in a non-identity order. In both cases switch
+ // to the sparse Lambda path.
+ if( f_lf && f_lf->get_num_active_var() != NumVar )
+  f_sparse_lambda = true;
+ for( Index h = 0 ; ! f_sparse_lambda && h < v_local2global.size() ; ++h ) {
+  const auto & m = v_local2global[ h ];
+  if( m.size() != NumVar ) {
+   f_sparse_lambda = true;
+   break;
+   }
+  for( Index i = 0 ; i < NumVar ; ++i )
+   if( m[ i ] != i ) {
+    f_sparse_lambda = true;
+    break;
+    }
   }
 
- for( Index i = 1 ; i < sb.size() ; ++i ) {
-  if( v_c05f[ i ]->get_num_active_var() != NumVar )
-   throw( std::logic_error( "the list of active Variable do not match" ) );
+ if( f_sparse_lambda ) {
+  // sparse + easy components: FakeFiOracle::GetADesc translates local
+  // Lambda indices coming out of LagBFunction::get_A_by_col() to global
+  // master rows via v_local2global[ h ]; the GetADesc code paths handle
+  // this when f_sparse_lambda == true (see BundleSolver.cpp:7800+).
 
-  auto v = v_c05f[ i ]->begin();
-  for( auto vi = LamVcblr.begin() ; vi != LamVcblr.end() ; ++v , ++vi )
-   if( static_cast< ColVariable * >( & (*v) ) != *vi )
-    throw( std::logic_error( "the list of active Variable do not match" ) );
+  // sanity: f_lf must cover the full LamVcblr in identity order when sparse
+  // is engaged, otherwise the f_lf gather paths would also need translation.
+  // The LagrangianDualSolver sparse path emits f_lf == nullptr (the linear
+  // term is empty), so this check is mostly defensive.
+  if( f_lf ) {
+   if( f_lf->get_num_active_var() != NumVar )
+    throw( std::logic_error( "sparse Lambda mode requires f_lf to cover "
+                             "the full union of active variables" ) );
+   auto v = f_lf->begin();
+   for( auto vi = LamVcblr.begin() ; vi != LamVcblr.end() ; ++v , ++vi )
+    if( static_cast< ColVariable * >( & ( *v ) ) != *vi )
+     throw( std::logic_error( "sparse Lambda mode requires f_lf to follow "
+                              "the LamVcblr order" ) );
+   }
+
+  // append the Inf< Index >() terminator required by MPSolver::SetItemBse,
+  // and verify monotonicity: SetItemBse requires SGBse to be ordered in
+  // increasing sense. Sparse v_c05f[ h ] produced by LagrangianDualSolver
+  // are naturally monotonic because dual pairs are appended in increasing
+  // global-index order in set_Block. If a different producer breaks the
+  // invariant, we throw rather than silently sort (the caller can sort
+  // before calling add_dual_pairs).
+  for( Index h = 0 ; h < v_local2global.size() ; ++h ) {
+   auto & m = v_local2global[ h ];
+   for( Index li = 1 ; li < m.size() ; ++li )
+    if( m[ li ] <= m[ li - 1 ] )
+     throw( std::logic_error( "sparse Lambda: v_c05f["
+                              + std::to_string( h ) + "] active Variables "
+                              "are not in strictly increasing LamVcblr "
+                              "order; this BundleSolver requires sorted "
+                              "dual pairs (LagrangianDualSolver "
+                              "produces them sorted by construction)" ) );
+   m.push_back( Inf< Index >() );
+   }
+  }
+ else {
+  // dense path: drop the per-component maps and the global lookup. This
+  // is just defensive — the maps would all be the identity and the
+  // SetItemBse(nullptr, NumVar) dense fast path would still work, but
+  // we avoid keeping ~ f_nsb * NumVar of redundant Index data live.
+  v_local2global.clear();
+  v_local2global.shrink_to_fit();
+  Lambda2Idx.clear();
+  Lambda2Idx.rehash( 0 );  // shrink the bucket array to 0
   }
 
  // if some Variable are present, they are of the ColVariable type - - - - - -
@@ -3684,18 +3763,22 @@ bool BundleSolver::GetGi( Index wFi )
   auto G1k = Master->GetItem( wFi + 1 );
 
   // fetch the item from the Oracle - - - - - - - - - - - - - - - - - - - - -
+  // in sparse Lambda mode v_c05f[ wFi ] writes only its own loc_NV active-
+  // var coefficients into G1k[ 0 .. loc_NV - 1 ]; the master will read
+  // them through the SGBse map below.
 
+  const Index loc_NV = f_sparse_lambda ? fwFi->get_num_active_var() : NumVar;
   fwFi->get_linearization_coefficients( G1k );
   if( ! f_convex )
-   chgsign( G1k , NumVar );
+   chgsign( G1k , loc_NV );
 
   auto Alfa1k = rs( fwFi->get_linearization_constant() );
   HpNum eps;
 
   // pass the base to the MP Solver - - - - - - - - - - - - - - - - - - - - -
 
-  cIndex_Set SGBse = nullptr;
-  Master->SetItemBse( SGBse , NumVar );
+  cIndex_Set SGBse = f_sparse_lambda ? v_local2global[ wFi ].data() : nullptr;
+  Master->SetItemBse( SGBse , loc_NV );
 
   // compute ScPr1k and Alfa1k- - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -3707,8 +3790,16 @@ bool BundleSolver::GetGi( Index wFi )
 
   if( diagonal ) {  // it is a subgradient
    // compute the lower bound in Lambda provided by the subgradient
-   auto FikLmb = Alfa1k +
-    std::inner_product( Lambda.begin() , Lambda.end() , G1k , double( 0 ) );
+   double FikLmb;
+   if( f_sparse_lambda ) {
+    FikLmb = Alfa1k;
+    const auto & m = v_local2global[ wFi ];
+    for( Index li = 0 ; li < loc_NV ; ++li )
+     FikLmb += Lambda[ m[ li ] ] * G1k[ li ];
+    }
+   else
+    FikLmb = Alfa1k +
+     std::inner_product( Lambda.begin() , Lambda.end() , G1k , double( 0 ) );
 
    // try to update LwFiLmb[ wFi ] (and possibly LwFiLambd.back())
    // note that, even if this suceeds and therefore increases LwFiLmb[ wFi ]
@@ -3723,8 +3814,16 @@ bool BundleSolver::GetGi( Index wFi )
    // (possibly with a larger error, but one day MPSolver will go ...)
 
    // compute the linearization error in Lambda1
-   Alfa1k = UpFiLmb1[ wFi ] - Alfa1k -
-    std::inner_product( Lambda1.begin() , Lambda1.end() , G1k , double( 0 ) );
+   if( f_sparse_lambda ) {
+    double ip = 0;
+    const auto & m = v_local2global[ wFi ];
+    for( Index li = 0 ; li < loc_NV ; ++li )
+     ip += Lambda1[ m[ li ] ] * G1k[ li ];
+    Alfa1k = UpFiLmb1[ wFi ] - Alfa1k - ip;
+    }
+   else
+    Alfa1k = UpFiLmb1[ wFi ] - Alfa1k -
+     std::inner_product( Lambda1.begin() , Lambda1.end() , G1k , double( 0 ) );
 
    // this is the eps so that G1 is an eps-subgradient in Lambda1
    eps = Alfa1k;
@@ -6625,20 +6724,82 @@ void BundleSolver::process_outstanding_Modification( void )
     if( const auto ttmod =
 	std::dynamic_pointer_cast< FunctionModVarsAddd >( tmod ) ) {
      addd_vars = true;
-     if( ! to_add ) {
-      // the first time, check that the Modification data agrees with what
-      // we expect
-      if( ttmod->first() != NumVar )
-       throw( std::logic_error( "wrong Variable names in FunctionModVars" ) );
+
+     if( f_sparse_lambda ) {
+      // Sparse Lambda mode: ttmod->first() is local (= loc_NV[ h ] at the
+      // time the Mod was issued) and ttmod->vars() is the subset of new
+      // globals that v_c05f[ h ] actually couples to. We translate each
+      // ColVariable * to its global LamVcblr index — appending it to the
+      // global Lambda only the first time we encounter it across all
+      // sparse Mods — and extend v_local2global[ h ] accordingly.
+
+      const auto h = get_index_of_component( ttmod->function() );
+
+      // strip the Inf< Index >() terminator before appending; we will
+      // re-append it once we're done with this h's add Mod
+      auto & m = v_local2global[ h ];
+      if( ( ! m.empty() ) && ( m.back() == Inf< Index >() ) )
+       m.pop_back();
+
+      for( auto v : ttmod->vars() ) {
+       const auto p = static_cast< ColVariable * >( v );
+       auto [ it , inserted ] = Lambda2Idx.try_emplace( p , LamVcblr.size() );
+       if( inserted ) {
+        LamVcblr.push_back( p );
+        ++to_add;  // a genuinely new global variable was added
+        }
+       m.push_back( it->second );
+       }
+
+      // re-append the SGBse terminator; the global slot for the new vars
+      // is at the end of LamVcblr / v_local2global[ h ], so monotonicity
+      // (required by MPSolver::SetItemBse) is preserved by construction
+      m.push_back( Inf< Index >() );
+      }
+     else {
+      // Dense mode: legacy invariant — every component sees the same
+      // active vars in the same order, so first() must equal NumVar
+      // (the global position of the next slot) on the very first Mod
+      if( ! to_add ) {
+       if( ttmod->first() != NumVar )
+        throw( std::logic_error( "wrong Variable names in FunctionModVars" ) );
+       }
+
+      to_add += ttmod->vars().size();
       }
 
-     to_add += ttmod->vars().size();
      continue;
 
      } // end( if( tmod == FunctionModVarsAddd ) )
 
     if( const auto ttmod =
 	std::dynamic_pointer_cast< FunctionModVarsRngd >( tmod ) ) {
+     if( f_sparse_lambda ) {
+      // Sparse Lambda Rngd: range is in v_c05f[ h ]'s LOCAL index space.
+      // We only need to drop the affected local slots from
+      // v_local2global[ h ]; the global LamVcblr slots stay in place
+      // (they may still be referenced by other v_c05f, and even when
+      // they aren't, the resulting "zombie" Lambda position contributes
+      // nothing to the master objective since no component writes a
+      // nonzero gradient on it — Phase B.6 will add a refcount and a
+      // proper global RmvVars to reclaim those zombie slots). We still
+      // invalidate linearization errors on any nonzero Lambda removed.
+      const auto h = get_index_of_component( ttmod->function() );
+      auto & m = v_local2global[ h ];
+      // m has size loc_NV + 1 with trailing Inf< Index >(); the valid
+      // range is [ 0 , loc_NV ).
+      const Index loc_NV = m.size() - 1;
+      const Index r0 = std::min( ttmod->range().first , loc_NV );
+      const Index r1 = std::min( ttmod->range().second , loc_NV );
+      for( Index l = r0 ; l < r1 ; ++l )
+       if( std::abs( Lambda[ m[ l ] ] ) > 1e-12 ) {
+        std::fill( AlphaC.begin() , AlphaC.end() , true );
+        break;
+        }
+      m.erase( m.begin() + r0 , m.begin() + r1 );
+      rmvd_vars = true;
+      continue;
+      }
      rmvd_vars = true;
      Range rng = ttmod->range();
 
@@ -6695,6 +6856,50 @@ void BundleSolver::process_outstanding_Modification( void )
 
     if( const auto ttmod =
 	std::dynamic_pointer_cast< FunctionModVarsSbst >( tmod ) ) {
+     if( f_sparse_lambda ) {
+      // Sparse Lambda Sbst: subset() lists LOCAL indices in v_c05f[ h ];
+      // mirror the Rngd path — drop them from v_local2global[ h ] only,
+      // leave LamVcblr alone (Phase B.6 will reclaim zombie slots).
+      const auto h = get_index_of_component( ttmod->function() );
+      auto & m = v_local2global[ h ];
+      const Index loc_NV = m.size() - 1;  // exclude trailing Inf< Index >()
+      const auto & sbst = ttmod->subset();
+
+      if( sbst.empty() ) {
+       // deleting *all* of v_c05f[ h ]'s local Lambda
+       for( Index l = 0 ; l < loc_NV ; ++l )
+        if( std::abs( Lambda[ m[ l ] ] ) > 1e-12 ) {
+         std::fill( AlphaC.begin() , AlphaC.end() , true );
+         break;
+         }
+       m.assign( { Inf< Index >() } );  // keep only the terminator
+       rmvd_vars = true;
+       continue;
+       }
+
+      // bounded subset removal: drop subset() ∩ [ 0 , loc_NV ) from m
+      Subset effective;
+      effective.reserve( sbst.size() );
+      for( auto l : sbst )
+       if( l < loc_NV )
+        effective.push_back( l );
+      if( effective.empty() ) {
+       rmvd_vars = true;
+       continue;
+       }
+      for( auto l : effective )
+       if( std::abs( Lambda[ m[ l ] ] ) > 1e-12 ) {
+        std::fill( AlphaC.begin() , AlphaC.end() , true );
+        break;
+        }
+      // erase effective[] from m in descending order so earlier
+      // erases don't invalidate later positions (effective is ordered
+      // ascending per the FunctionModVarsSbst contract).
+      for( auto it = effective.rbegin() ; it != effective.rend() ; ++it )
+       m.erase( m.begin() + *it );
+      rmvd_vars = true;
+      continue;
+      }
      rmvd_vars = true;
 
      if( ttmod->subset().empty() ) {  // deleting *all* Variable
@@ -6849,7 +7054,36 @@ void BundleSolver::process_outstanding_Modification( void )
 
   // the range/subset (and component) have been identified: check if the
   // need to be translated due to addition/removals, and in case do it
-  done:if( ! rmvd_vars ) {
+  done:if( f_sparse_lambda ) {
+   // sparse Lambda mode: ttmod->vars() and the embedded range/subset are
+   // in v_c05f[ wFi ]'s local index space, but Master->ChgSubG below
+   // wants the GLOBAL range. Map each var pointer to its global LamVcblr
+   // slot via Lambda2Idx, then take [ min , max + 1 ) as the range. We
+   // do NOT use the per-h range/subset shipped in the Mod; vars() is the
+   // ground truth and is always present for these Mod types here.
+   auto it = vars->begin();
+   if( it == vars->end() )  // nothing to do — shouldn't happen
+    continue;
+   const auto p0 = static_cast< ColVariable * >( *it );
+   const auto m0it = Lambda2Idx.find( p0 );
+   if( m0it == Lambda2Idx.end() )
+    continue;  // variable already removed; nothing to do
+   Index gmin = m0it->second , gmax = gmin;
+   for( ++it ; it != vars->end() ; ++it ) {
+    const auto p = static_cast< ColVariable * >( *it );
+    const auto mit = Lambda2Idx.find( p );
+    if( mit == Lambda2Idx.end() )
+     continue;  // skip removed vars
+    const auto g = mit->second;
+    if( g < gmin )
+     gmin = g;
+    if( g > gmax )
+     gmax = g;
+    }
+   range.first = gmin;
+   range.second = gmax + 1;
+   }
+  else if( ! rmvd_vars ) {
    // Variable have never been removed, hence the names can be used directly
    if( subset ) {  // turn the subset into a range
     range.first = subset->front();
@@ -7626,24 +7860,47 @@ void BundleSolver::FakeFiOracle::GetADesc( cIndex wFi , int * Abeg ,
   if( auto cp = LagB->get_A_by_col( MILPSlv->variable_with_index( j ) ) ) {
    auto & mons = cp->second;
    auto it = mons.begin();
-   if( strt )
-    it = std::lower_bound( it , mons.end() , std::make_pair( strt , 0 ) ,
-			   []( const auto & a , const auto & b )
-			     { return( a.first < b.first ); } );
 
-   if( stp < LagB->get_num_active_var() ) {
+   if( bslv->f_sparse_lambda ) {
+    // Sparse Lambda: mon.first is the LOCAL position of the Lambda
+    // multiplier inside LagB's dual_pair list — translate to global
+    // master row via v_local2global[ wFi - 1 ]. Since both mon.first
+    // and v_local2global[ h ] are monotonically increasing in their
+    // own index, the resulting global row index is also monotonic in
+    // mon.first, so the [ strt , stp ) filter early-terminates when
+    // the global index first reaches stp.
+    const auto & m2g = bslv->v_local2global[ wFi - 1 ];
     for( ; it != mons.end() ; ++it ) {
-     if( it->first >= stp )
+     const Index g = m2g[ it->first ];
+     if( g < strt )
+      continue;
+     if( g >= stp )
       break;
-     Aind[ count ] = it->first;
+     Aind[ count ] = g;
      Aval[ count++ ] = - it->second;
      }
     }
-   else
-    for( ; it != mons.end() ; ++it ) {
-     Aind[ count ] = it->first;
-     Aval[ count++ ] = - it->second;
+   else {
+    // Dense Lambda: mon.first IS already the global master row.
+    if( strt )
+     it = std::lower_bound( it , mons.end() , std::make_pair( strt , 0 ) ,
+                            []( const auto & a , const auto & b )
+                              { return( a.first < b.first ); } );
+
+    if( stp < LagB->get_num_active_var() ) {
+     for( ; it != mons.end() ; ++it ) {
+      if( it->first >= stp )
+       break;
+      Aind[ count ] = it->first;
+      Aval[ count++ ] = - it->second;
+      }
      }
+    else
+     for( ; it != mons.end() ; ++it ) {
+      Aind[ count ] = it->first;
+      Aval[ count++ ] = - it->second;
+      }
+    }
 
    }  // end( if( the variable has a Lagrangian term ) )
   }  // end( for( all columns ) )
