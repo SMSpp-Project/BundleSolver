@@ -3090,6 +3090,16 @@ class FakeFiOracle : public FiOracle
  // cleared after set_Block to save memory.
  std::unordered_map< ColVariable * , Index > Lambda2Idx;
 
+ // per-LamVcblr-slot refcount: v_ref_count[ i ] is the number of
+ // v_c05f (+ f_lf if any) that have LamVcblr[ i ] as an active
+ // variable. Built in set_Block alongside LamVcblr; decremented by the
+ // sparse FunctionModVarsRngd / FunctionModVarsSbst handlers, and when
+ // it reaches 0 the slot is queued for global removal — at the end of
+ // the 4th Modification loop we compact LamVcblr / Lambda / Lambda2Idx
+ // / v_local2global[ * ] and call Master->RmvVars to reclaim the
+ // master row. Kept live only when f_sparse_lambda == true.
+ std::vector< Index > v_ref_count;
+
  VarValue UpTrgt;        ///< upper target
  VarValue LwTrgt;        ///< lower target
 

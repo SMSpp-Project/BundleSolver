@@ -1278,6 +1278,7 @@ void BundleSolver::set_Block( Block * block )
 
  Lambda2Idx.clear();
  LamVcblr.clear();
+ v_ref_count.clear();
  v_local2global.assign( v_c05f.size() , {} );
  f_sparse_lambda = false;
 
@@ -1290,8 +1291,12 @@ void BundleSolver::set_Block( Block * block )
   for( auto it_v = std::as_const( f )->begin() ; it_v != it_end ; ++it_v ) {
    auto p = static_cast< ColVariable * >( & ( *it_v ) );
    auto [ jt , inserted ] = Lambda2Idx.try_emplace( p , LamVcblr.size() );
-   if( inserted )
+   if( inserted ) {
     LamVcblr.push_back( p );
+    v_ref_count.push_back( 1 );
+    }
+   else
+    ++v_ref_count[ jt->second ];
    if( map_out )
     map_out->push_back( jt->second );
    }
@@ -1365,14 +1370,17 @@ void BundleSolver::set_Block( Block * block )
    }
   }
  else {
-  // dense path: drop the per-component maps and the global lookup. This
-  // is just defensive — the maps would all be the identity and the
-  // SetItemBse(nullptr, NumVar) dense fast path would still work, but
-  // we avoid keeping ~ f_nsb * NumVar of redundant Index data live.
+  // dense path: drop the per-component maps, the global lookup, and the
+  // refcount. This is just defensive — the maps would all be the
+  // identity and the SetItemBse(nullptr, NumVar) dense fast path would
+  // still work, but we avoid keeping ~ f_nsb * NumVar of redundant Index
+  // data live.
   v_local2global.clear();
   v_local2global.shrink_to_fit();
   Lambda2Idx.clear();
   Lambda2Idx.rehash( 0 );  // shrink the bucket array to 0
+  v_ref_count.clear();
+  v_ref_count.shrink_to_fit();
   }
 
  // if some Variable are present, they are of the ColVariable type - - - - - -
@@ -6682,6 +6690,13 @@ void BundleSolver::process_outstanding_Modification( void )
  bool addd_vars = false;  // if any Variable has ever been added
  bool rmvd_vars = false;  // if any Variable has ever been removed
 
+ // Sparse mode bookkeeping: list of LamVcblr global indices whose
+ // v_ref_count reached 0 during this Modification batch (FunctionMod
+ // VarsRngd / VarsSbst handlers append here). After the 4th loop, we
+ // compact LamVcblr / Lambda* / v_local2global[ * ] / Lambda2Idx and
+ // call Master->RmvVars on this set to reclaim the master rows.
+ std::vector< Index > globally_to_remove;
+
  for( auto imod = v_mod_tmp.begin() ; imod != v_mod_tmp.end() ;
       // note the iterator_expression of the for() obtained by defining
       // a lambda and then immediately applying it to imod
@@ -6776,14 +6791,12 @@ void BundleSolver::process_outstanding_Modification( void )
 	std::dynamic_pointer_cast< FunctionModVarsRngd >( tmod ) ) {
      if( f_sparse_lambda ) {
       // Sparse Lambda Rngd: range is in v_c05f[ h ]'s LOCAL index space.
-      // We only need to drop the affected local slots from
-      // v_local2global[ h ]; the global LamVcblr slots stay in place
-      // (they may still be referenced by other v_c05f, and even when
-      // they aren't, the resulting "zombie" Lambda position contributes
-      // nothing to the master objective since no component writes a
-      // nonzero gradient on it — Phase B.6 will add a refcount and a
-      // proper global RmvVars to reclaim those zombie slots). We still
-      // invalidate linearization errors on any nonzero Lambda removed.
+      // Drop the affected local slots from v_local2global[ h ] and
+      // decrement the global refcount for each. Any slot whose refcount
+      // reaches 0 is queued for global removal (LamVcblr / Lambda* /
+      // Master->RmvVars), to be applied in one shot after the 4th loop.
+      // Also invalidate linearization errors on any nonzero Lambda
+      // removed.
       const auto h = get_index_of_component( ttmod->function() );
       auto & m = v_local2global[ h ];
       // m has size loc_NV + 1 with trailing Inf< Index >(); the valid
@@ -6791,11 +6804,13 @@ void BundleSolver::process_outstanding_Modification( void )
       const Index loc_NV = m.size() - 1;
       const Index r0 = std::min( ttmod->range().first , loc_NV );
       const Index r1 = std::min( ttmod->range().second , loc_NV );
-      for( Index l = r0 ; l < r1 ; ++l )
-       if( std::abs( Lambda[ m[ l ] ] ) > 1e-12 ) {
+      for( Index l = r0 ; l < r1 ; ++l ) {
+       const Index g = m[ l ];
+       if( std::abs( Lambda[ g ] ) > 1e-12 )
         std::fill( AlphaC.begin() , AlphaC.end() , true );
-        break;
-        }
+       if( --v_ref_count[ g ] == 0 )
+        globally_to_remove.push_back( g );
+       }
       m.erase( m.begin() + r0 , m.begin() + r1 );
       rmvd_vars = true;
       continue;
@@ -6858,8 +6873,8 @@ void BundleSolver::process_outstanding_Modification( void )
 	std::dynamic_pointer_cast< FunctionModVarsSbst >( tmod ) ) {
      if( f_sparse_lambda ) {
       // Sparse Lambda Sbst: subset() lists LOCAL indices in v_c05f[ h ];
-      // mirror the Rngd path — drop them from v_local2global[ h ] only,
-      // leave LamVcblr alone (Phase B.6 will reclaim zombie slots).
+      // mirror the Rngd path — drop them from v_local2global[ h ],
+      // decrement refcounts, queue globally-dead slots for compaction.
       const auto h = get_index_of_component( ttmod->function() );
       auto & m = v_local2global[ h ];
       const Index loc_NV = m.size() - 1;  // exclude trailing Inf< Index >()
@@ -6867,11 +6882,13 @@ void BundleSolver::process_outstanding_Modification( void )
 
       if( sbst.empty() ) {
        // deleting *all* of v_c05f[ h ]'s local Lambda
-       for( Index l = 0 ; l < loc_NV ; ++l )
-        if( std::abs( Lambda[ m[ l ] ] ) > 1e-12 ) {
+       for( Index l = 0 ; l < loc_NV ; ++l ) {
+        const Index g = m[ l ];
+        if( std::abs( Lambda[ g ] ) > 1e-12 )
          std::fill( AlphaC.begin() , AlphaC.end() , true );
-         break;
-         }
+        if( --v_ref_count[ g ] == 0 )
+         globally_to_remove.push_back( g );
+        }
        m.assign( { Inf< Index >() } );  // keep only the terminator
        rmvd_vars = true;
        continue;
@@ -6887,11 +6904,13 @@ void BundleSolver::process_outstanding_Modification( void )
        rmvd_vars = true;
        continue;
        }
-      for( auto l : effective )
-       if( std::abs( Lambda[ m[ l ] ] ) > 1e-12 ) {
+      for( auto l : effective ) {
+       const Index g = m[ l ];
+       if( std::abs( Lambda[ g ] ) > 1e-12 )
         std::fill( AlphaC.begin() , AlphaC.end() , true );
-        break;
-        }
+       if( --v_ref_count[ g ] == 0 )
+        globally_to_remove.push_back( g );
+       }
       // erase effective[] from m in descending order so earlier
       // erases don't invalidate later positions (effective is ordered
       // ascending per the FunctionModVarsSbst contract).
@@ -6970,6 +6989,88 @@ void BundleSolver::process_outstanding_Modification( void )
     }  // end( if( tmod == FunctionModVars ) )
    }  // end FunctionModVars
   }  // end( 4th loop, forward )
+
+ // sparse-mode compaction: any LamVcblr slot whose refcount fell to 0
+ // during the 4th loop is now truly dead and can be reclaimed.
+ if( f_sparse_lambda && ( ! globally_to_remove.empty() ) ) {
+  // sort + dedup (defensive — a slot can in principle be queued
+  // multiple times if two h's removed their last reference)
+  std::sort( globally_to_remove.begin() , globally_to_remove.end() );
+  globally_to_remove.erase( std::unique( globally_to_remove.begin() ,
+                                          globally_to_remove.end() ) ,
+                            globally_to_remove.end() );
+
+  // compact LamVcblr / v_ref_count in place; LamVcblr may have been
+  // extended past NumVar by sparse FunctionModVarsAddd, those extra
+  // entries (new vars, with positive refcount) survive and shift down
+  Index w = 0;
+  Index g_pos = 0;
+  for( Index i = 0 ; i < LamVcblr.size() ; ++i ) {
+   if( ( g_pos < globally_to_remove.size() ) &&
+       ( globally_to_remove[ g_pos ] == i ) ) {
+    ++g_pos;
+    continue;
+    }
+   if( w != i ) {
+    LamVcblr[ w ]     = LamVcblr[ i ];
+    v_ref_count[ w ]  = v_ref_count[ i ];
+    }
+   ++w;
+   }
+  LamVcblr.resize( w );
+  v_ref_count.resize( w );
+
+  // compact Lambda / Lambda1 / LmbdBst (sized to old NumVar pre-Adds;
+  // only positions [ 0 , NumVar ) are affected — the new vars from
+  // sparse Adds aren't in Lambda yet, they'll be appended by the
+  // post-loop AddVars). globally_to_remove entries are all in
+  // [ 0 , NumVar ) by construction.
+  Index lw = 0;
+  Index lg = 0;
+  for( Index i = 0 ; i < NumVar ; ++i ) {
+   if( ( lg < globally_to_remove.size() ) &&
+       ( globally_to_remove[ lg ] == i ) ) {
+    ++lg;
+    continue;
+    }
+   if( lw != i ) {
+    Lambda[ lw ]   = Lambda[ i ];
+    Lambda1[ lw ]  = Lambda1[ i ];
+    if( MaxSol > 1 )
+     LmbdBst[ lw ] = LmbdBst[ i ];
+    }
+   ++lw;
+   }
+  NumVar = lw;
+  Lambda.resize( NumVar );
+  Lambda1.resize( NumVar );
+  if( MaxSol > 1 )
+   LmbdBst.resize( NumVar );
+
+  // translate v_local2global[ h ] entries: every surviving global g
+  // shifts down by the number of removed entries strictly below it
+  for( auto & vmap : v_local2global )
+   for( auto & e : vmap ) {
+    if( e == Inf< Index >() )
+     continue;
+    const auto cnt = std::distance(
+                       globally_to_remove.begin() ,
+                       std::lower_bound( globally_to_remove.begin() ,
+                                          globally_to_remove.end() , e ) );
+    e -= cnt;
+    }
+
+  // rebuild Lambda2Idx with the new compacted indices
+  Lambda2Idx.clear();
+  for( Index i = 0 ; i < LamVcblr.size() ; ++i )
+   Lambda2Idx.emplace( LamVcblr[ i ] , i );
+
+  // tell the Master to drop the old global names (the Master still
+  // sees the pre-compaction index space)
+  Master->RmvVars( globally_to_remove.data() , globally_to_remove.size() );
+
+  globally_to_remove.clear();
+  }
 
  // at this point, the set of Variable in the BundleSolver/Master Problem
  // coincides with the set of Variable in the C05Function(s), save for the
