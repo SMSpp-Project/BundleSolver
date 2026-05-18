@@ -5394,6 +5394,20 @@ bool BundleSolver::IsOptimal( double eps ) const
  if( err >= INFshift )
   return( false );
 
+ // Sigma must be non-negative up to floating-point noise: Sigma < 0 means
+ // the cutting-plane model has a linearization that overestimates the
+ // function value at the stability center (i.e. the function value
+ // returned by the oracle is incompatible with the previously cached
+ // upper-bound, typically because the oracle changed monotonically
+ // between calls without us realising). Accepting a strongly-negative
+ // Sigma would let the master falsely declare optimality at a wrong
+ // point — see e.g. tests/LagBFunction `seed=3 wchg=1023 size=10` where
+ // a chain of PolyhedralFunction row Mods on a sparse-Lambda LagBFunction
+ // leads Sigma to plummet to -3e+03 in one master resolve, well past
+ // any rounding noise.
+ if( Sigma < - err )
+  return( false );
+
  if( ( tStar > 0 ) && ( DSTS + Sigma <= err ) )
   return( true );
 
@@ -6801,6 +6815,17 @@ void BundleSolver::process_outstanding_Modification( void )
     // can come from either a single-Mod (per-Function by construction)
     // or a non-special GroupMod already flattened by
     // flatten_Modification_list — both signal divergence.
+    //
+    // The identity maps are built at size LamVcblr.size() + 1 (NOT at
+    // f->get_num_active_var() + 1): the Modifications we are about to
+    // process were issued against the OLD pre-Mod local index space,
+    // and in dense mode that space had length LamVcblr.size() for
+    // every component. The Function may already have a smaller
+    // num_active_var() if the user-side mutation (e.g.
+    // LagBFunction::remove_variable) shrank it before the Mod reached
+    // us; the sparse handler below will then erase exactly the entries
+    // covered by the Mod's range / subset to bring the map down to the
+    // Function's current local size.
     if( ( ! f_sparse_lambda ) &&
         ( ! std::dynamic_pointer_cast< GroupModification >( mod ) ) ) {
      f_sparse_lambda = true;
@@ -6813,9 +6838,9 @@ void BundleSolver::process_outstanding_Modification( void )
      // referenced by every component
      const Index refs = v_c05f.size() + ( f_lf ? 1 : 0 );
      v_ref_count.assign( LamVcblr.size() , refs );
-     // identity map of size loc_NV + 1 with trailing Inf< Index >()
+     // identity map of size NumVar + 1 with trailing Inf< Index >()
+     const Index lN = LamVcblr.size();
      for( auto f : v_c05f ) {
-      const Index lN = f->get_num_active_var();
       std::vector< Index > id_map;
       id_map.reserve( lN + 1 );
       for( Index i = 0 ; i < lN ; ++i )
