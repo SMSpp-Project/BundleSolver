@@ -1177,7 +1177,7 @@ void BundleSolver::set_Block( Block * block )
  bool owned = f_Block->is_owned_by( f_id );
  if( ( ! owned ) && ( ! f_Block->lock( f_id ) ) )
   throw( std::runtime_error(
-                       "LagrangianDualSolver: unable to lock the Block" ) );
+                       "BundleSolver: unable to lock the Block" ) );
 
  // generate the abstract representation
  f_Block->generate_abstract_variables();
