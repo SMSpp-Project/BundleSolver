@@ -5807,6 +5807,8 @@ void BundleSolver::process_outstanding_easy_Modification( void )
          "unexpected *C05FunctionMod* from Objective Function" ) );
 
        constant_value += shift;
+       continue;  // the value-only shift is fully handled here; the master
+                  // doesn't need an item update for a NothingChanged Mod
        }
       else {
        whch |= 1;
