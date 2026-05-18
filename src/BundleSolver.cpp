@@ -1092,6 +1092,37 @@ int BundleSolver::compute( bool changedvars )
    Result = kError;
   }
 
+ // final consistency check: the master's lower bound on the (internal min)
+ // Fi must not exceed the upper estimate at the stability center. If it
+ // does (LB > UB on the user-facing side), the cutting-plane model has
+ // gone inconsistent — typically a numerical artefact of the easy-
+ // components inlining or a sign/index mismatch in GetADesc. We only
+ // log the violation; we don't override Result since the algorithm may
+ // still be returning a usable approximate solution.
+ if( ( Result == kOK || Result == kLowPrecision || Result == kStopIter ) &&
+     ( f_global_LB > - INFshift ) && ( UpFiLmb.back() < INFshift ) ) {
+  const auto gap = f_global_LB - UpFiLmb.back();
+  if( gap > 0 ) {
+   const auto rel = gap /
+                    std::max( std::abs( UpFiLmb.back() ) , double( 1 ) );
+   // 1e-6 ≈ default dblRelAcc: anything beyond that is real inconsistency,
+   // not floating-point noise
+   if( rel > 1e-6 ) {
+    if( f_log && ( LogVerb >= 0 ) )
+     *f_log << std::endl
+            << "WARNING: cutting-plane model inconsistent at stop: "
+            << "internal LB = " << def << f_global_LB
+            << " > internal UB (= UpFiLmb.back()) = " << UpFiLmb.back()
+            << " (gap = " << gap << " ~ rel = " << rel
+            << "); user-facing get_lb() and get_ub() will not satisfy "
+            << "get_lb() <= get_ub() — usually caused by numerical noise "
+            << "in the easy-components master inlining or by a sign/"
+            << "index mismatch in FakeFiOracle::GetADesc on this instance."
+            << std::endl;
+    }
+   }
+  }
+
  // final printouts - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -1336,8 +1367,8 @@ void BundleSolver::set_Block( Block * block )
 
   // sanity: f_lf must cover the full LamVcblr in identity order when sparse
   // is engaged, otherwise the f_lf gather paths would also need translation.
-  // The LagrangianDualSolver sparse path emits f_lf == nullptr (the linear
-  // term is empty), so this check is mostly defensive.
+  // Typical sparse-producing callers leave f_lf == nullptr (the linear term
+  // is empty), so this check is mostly defensive.
   if( f_lf ) {
    if( f_lf->get_num_active_var() != NumVar )
     throw( std::logic_error( "sparse Lambda mode requires f_lf to cover "
@@ -1351,11 +1382,11 @@ void BundleSolver::set_Block( Block * block )
 
   // append the Inf< Index >() terminator required by MPSolver::SetItemBse,
   // and verify monotonicity: SetItemBse requires SGBse to be ordered in
-  // increasing sense. Sparse v_c05f[ h ] produced by LagrangianDualSolver
-  // are naturally monotonic because dual pairs are appended in increasing
-  // global-index order in set_Block. If a different producer breaks the
-  // invariant, we throw rather than silently sort (the caller can sort
-  // before calling add_dual_pairs).
+  // increasing sense, which means each v_c05f[ h ]'s active Variables
+  // must be presented to BundleSolver in an order that is monotonic with
+  // respect to their position in LamVcblr (= first-encounter order in
+  // the union across all v_c05f and f_lf). If the caller broke this
+  // invariant, we throw rather than silently sort the dual pairs.
   for( Index h = 0 ; h < v_local2global.size() ; ++h ) {
    auto & m = v_local2global[ h ];
    for( Index li = 1 ; li < m.size() ; ++li )
@@ -1363,9 +1394,8 @@ void BundleSolver::set_Block( Block * block )
      throw( std::logic_error( "sparse Lambda: v_c05f["
                               + std::to_string( h ) + "] active Variables "
                               "are not in strictly increasing LamVcblr "
-                              "order; this BundleSolver requires sorted "
-                              "dual pairs (LagrangianDualSolver "
-                              "produces them sorted by construction)" ) );
+                              "order; the caller must present dual pairs "
+                              "sorted by global Variable position" ) );
    m.push_back( Inf< Index >() );
    }
   }
