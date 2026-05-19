@@ -3064,21 +3064,19 @@ class FakeFiOracle : public FiOracle
 
  std::vector< ColVariable * > LamVcblr;  ///< map Lambda -> ColVariable
 
- // The per-component local-to-global Lambda index map is owned by each
- // v_c05f[ h ] (see C05Function::set_global_index_map() and friends).
- // BundleSolver builds and pushes the map into each v_c05f[ h ] at
- // set_Block() time, and reads it back via v_c05f[ h ]->get_global_
- // index_map() at every gather site that needs to translate local
- // subgradient indices into the global LamVcblr space (e.g. the
- // SetItemBse path in GetGi, and the FakeFiOracle::GetADesc path).
- // It is also mutated in place via get_mutable_global_index_map() in
- // the sparse FunctionModVars* handlers.
+ // per-component local→global Lambda index map for sparse Lambda mode.
+ // v_local2global[ h ] has size get_num_active_var() + 1 for v_c05f[ h ];
+ // entries [ 0 .. loc_NV - 1 ] are the indices in LamVcblr of h's active
+ // Variables in the order get_linearization_coefficients writes them, and
+ // the last slot is Inf< Index >() so v_local2global[ h ].data() is a
+ // ready-to-use Inf-terminated SGBse for MPSolver::SetItemBse. Empty
+ // (size 0) when f_sparse_lambda is false (legacy dense path).
  //
- // Each map has size get_num_active_var() + 1 with the last entry set
- // to Inf< Index >() (sentinel required by MPSolver::SetItemBse). An
- // empty map is the conventional "identity" — i.e. the local index of
- // the i-th active Variable IS the global index. In dense Lambda mode
- // (f_sparse_lambda == false) the maps are left empty to save memory.
+ // Owned by BundleSolver (not by the C05Function), in line with the
+ // policy that Solver-specific bookkeeping never leaks into the
+ // Function interface; the Inf-terminated convention is an OSIMPSolver
+ // implementation detail that will disappear with Bundle 2.0.
+ std::vector< std::vector< Index > > v_local2global;
 
  // true iff at least one v_c05f[ h ] (or f_lf) exposes a strict subset
  // of LamVcblr as its active variables (or the same set in a different
@@ -3088,7 +3086,7 @@ class FakeFiOracle : public FiOracle
  // FunctionModVars* (i.e. one that did NOT arrive as a lockstep
  // GroupModification covering all components) promotes a dense Solver
  // to sparse on the spot — materialising identity local-to-global maps
- // for every v_c05f[ h ] and rebuilding Lambda2Idx / v_ref_count from
+ // in v_local2global[ * ] and rebuilding Lambda2Idx / v_ref_count from
  // the dense invariant — before the sparse handlers below process the
  // Mod. When false, every gather site falls back to the legacy "all
  // components see the same dense Lambda" code path.
@@ -3110,8 +3108,7 @@ class FakeFiOracle : public FiOracle
  // sparse FunctionModVarsRngd / FunctionModVarsSbst handlers, and when
  // it reaches 0 the slot is queued for global removal — at the end of
  // the 4th Modification loop we compact LamVcblr / Lambda / Lambda2Idx
- // / each v_c05f's global-index map (via get_mutable_global_index_map())
- // and call Master->RmvVars to reclaim the
+ // / v_local2global[ * ] and call Master->RmvVars to reclaim the
  // master row. Kept live only when f_sparse_lambda == true.
  std::vector< Index > v_ref_count;
 
