@@ -2,7 +2,7 @@
 /*----------------- File GeneralizedBundleSolver.h -------------------------*/
 /*--------------------------------------------------------------------------*/
 /** @file
- * Header file for the BundleSolver class, which implements the Solver
+ * Header file for the GeneralizedBundleSolver class, which implements the Solver
  * interface, in particular in its CDASolver version, using a "Generalized
  * Bundle" algorithm for the solution of convex nondifferentiable problems.
  *
@@ -30,7 +30,7 @@
  *  http://www.di.unipi.it/~frangio/abstracts.html#NDOB18
  * \endlink
  *
- * In particular, BundleSolver implements the Incremental version of the
+ * In particular, GeneralizedBundleSolver implements the Incremental version of the
  * (Generalised) Proximal Bundle approach using upper models (for all the
  * components that provide a Lipschitz constant) described in
  *
@@ -43,7 +43,7 @@
  *  http://www.di.unipi.it/~frangio/abstracts.html#SIOPT16
  * \endlink
  *
- * BundleSolver is capable of solving any Block such that:
+ * GeneralizedBundleSolver is capable of solving any Block such that:
  *
  * - only has "continuous" ColVariable (is_integer() == false);
  *
@@ -110,7 +110,7 @@
  * \author Antonio Frangioni \n
  *         Dipartimento di Informatica \n
  *         Universita' di Pisa \n
- * 
+ *
  * \author Enrico Calandrini \n
  *         Dipartimento di Informatica \n
  *         Universita' di Pisa \n
@@ -130,8 +130,8 @@
 /*----------------------------- DEFINITIONS --------------------------------*/
 /*--------------------------------------------------------------------------*/
 
-#ifndef __BundleSolver
- #define __BundleSolver
+#ifndef __GeneralizedBundleSolver
+ #define __GeneralizedBundleSolver
                       /* self-identification: #endif at the end of the file */
 
 /*--------------------------------------------------------------------------*/
@@ -139,7 +139,6 @@
 /*--------------------------------------------------------------------------*/
 
 #include <chrono>
-#include <ctime>
 #include <queue>
 
 #include "CDASolver.h"
@@ -152,14 +151,16 @@
 #include "FRealObjective.h"
 #include "FRowConstraint.h"
 
-#include "MILPSolver.h"
 #include "FakeSolver.h"
+#include "MILPSolver.h"
 
-// NDOSolver-derived stuff, it will go one day, maybe the day has come
-// #include "MPSolver.h"
-// #include "NDOSlver.h"
+#include "MasterProblemBlock.h"
 
-#include "MasterProblemBlock.h" // NEW
+// NDOSolver/FiOracle bridge headers: kept around until the FakeFiOracle
+// nested helper is rewritten on top of the SMS++ Solver/C05Function
+// interface and the using-aliases below are dropped, see task #24
+#include "MPSolver.h"
+#include "NDOSlver.h"
 
 /*--------------------------------------------------------------------------*/
 /*-------------------------- NAMESPACE & USING -----------------------------*/
@@ -168,21 +169,21 @@
 /// namespace for the Structured Modeling System++ (SMS++)
 namespace SMSpp_di_unipi_it
 {
- class BundleSolverState;  // forward declaration of BundleSolverState
+ class GeneralizedBundleSolverState;  // forward declaration of GeneralizedBundleSolverState
 
 /*--------------------------------------------------------------------------*/
 /*------------------------------- CLASSES ----------------------------------*/
 /*--------------------------------------------------------------------------*/
-/** @defgroup LagBFunction_CLASSES Classes in BundleSolver.h
+/** @defgroup LagBFunction_CLASSES Classes in GeneralizedBundleSolver.h
  *  @{ */
 
 /*--------------------------------------------------------------------------*/
-/*-------------------------- CLASS BundleSolver ----------------------------*/
+/*-------------------------- CLASS GeneralizedBundleSolver ----------------------------*/
 /*--------------------------------------------------------------------------*/
 /*--------------------------- GENERAL NOTES --------------------------------*/
 /*--------------------------------------------------------------------------*/
 /// A CDASolver using a (Generalized) Bundle algorithm
-/** BundleSolver implements the Solver interface, in particular in its
+/** GeneralizedBundleSolver implements the Solver interface, in particular in its
  * CDASolver version, using a "Generalized Bundle" algorithm.
  *
  * The user is assumed to be familiar with the algorithm: refer to
@@ -209,7 +210,7 @@ namespace SMSpp_di_unipi_it
  *  http://www.di.unipi.it/~frangio/abstracts.html#NDOB18
  * \endlink
  *
- * In particular, BundleSolver implements the Incremental version of the
+ * In particular, GeneralizedBundleSolver implements the Incremental version of the
  * (Generalised) Proximal Bundle approach using upper models (for all the
  * components that provide a Lipschitz constant) described in
  *
@@ -222,7 +223,7 @@ namespace SMSpp_di_unipi_it
  *  http://www.di.unipi.it/~frangio/abstracts.html#SIOPT16
  * \endlink
  *
- * BundleSolver is capable of solving any Block such that:
+ * GeneralizedBundleSolver is capable of solving any Block such that:
  *
  * - only has "continuous" ColVariable (is_integer() == false) that are
  *   either unconstrained below (lower bound == - INF) or non-negative
@@ -295,7 +296,7 @@ namespace SMSpp_di_unipi_it
  *     Objective OF THE Block IS NOT EMPTY, THEN THE FunctionModVar THAT
  *     CHANGE THE "ACTIVE" Variable MUST BE BUNCHED TOGETHER IN A SINGLE
  *     GroupModification. THIS MUST CONTAIN EXACTLY AS MANY Modification AS
- *     THERE ARE C05Function, I.E., THE NUMBER OF sub-Block PLUS ONE IF 
+ *     THERE ARE C05Function, I.E., THE NUMBER OF sub-Block PLUS ONE IF
  *     THE (LinearFunction IN THE) Objective OF THE Block IS NOT EMPTY. ALL
  *     Modification MUST BE OF THE VERY SAME TYPE, I.E., EITHER ALL
  *     C05FunctionModVarsAddd, OR ALL C05FunctionModVarsRngd, OR ALL
@@ -306,7 +307,7 @@ namespace SMSpp_di_unipi_it
  * thrown, either at set_Block() time (if the rules are violated from the
  * start), or when the offending Modification is processed. */
 
-class BundleSolver : public CDASolver {
+class GeneralizedBundleSolver : public CDASolver {
 
 /*--------------------------------------------------------------------------*/
 /*----------------------- PUBLIC PART OF THE CLASS -------------------------*/
@@ -341,16 +342,18 @@ public:
  using LinearCombination = C05Function::LinearCombination;
  using c_LinearCombination = C05Function::c_LinearCombination;
 
- // NDOSolver/FiOracle stuff, one day it wil go... TBD, understand valid alternatives
- //using cIndex = NDO_di_unipi_it::cIndex;
- //using cIndex_Set = NDO_di_unipi_it::cIndex_Set;
- //using FiOracle = NDO_di_unipi_it::FiOracle;
- //using HpNum = NDO_di_unipi_it::HpNum;
- //using LMNum = NDO_di_unipi_it::LMNum;
- //using MPSolver = NDO_di_unipi_it::MPSolver;
- //using NDOSolver = NDO_di_unipi_it::NDOSolver;
- //using SgRow = NDO_di_unipi_it::SgRow;
-     
+ // NDOSolver/FiOracle types, kept around until the FakeFiOracle nested helper
+ // (which still derives from NDO_di_unipi_it::FiOracle) is rewritten on top of
+ // the SMS++ Solver/C05Function interface
+ using cIndex     = NDO_di_unipi_it::cIndex;
+ using cIndex_Set = NDO_di_unipi_it::cIndex_Set;
+ using FiOracle   = NDO_di_unipi_it::FiOracle;
+ using HpNum      = NDO_di_unipi_it::HpNum;
+ using LMNum      = NDO_di_unipi_it::LMNum;
+ using MPSolver   = NDO_di_unipi_it::MPSolver;
+ using NDOSolver  = NDO_di_unipi_it::NDOSolver;
+ using SgRow      = NDO_di_unipi_it::SgRow;
+
 /*----------------------------- CONSTANTS ----------------------------------*/
 
  static constexpr auto NaNshift
@@ -363,7 +366,7 @@ public:
 /*--------------------------------------------------------------------------*/
  /// public enum for the int algorithmic parameters
  /** Public enum describing the different algorithmic parameters of int type
-  * that BundleSolver has in addition to these of CDASolver. The value
+  * that GeneralizedBundleSolver has in addition to these of CDASolver. The value
   * intLastBndSlvPar is provided so that the list can be easily further
   * extended by derived classes. */
 
@@ -380,7 +383,7 @@ public:
 
  intBPar6 ,  ///< control how the min/max number of new linearizations changes
 
- intBPar7 ,  ///< how well-behaved BundleSolver is w.r.t. other Solver
+ intBPar7 ,  ///< how well-behaved GeneralizedBundleSolver is w.r.t. other Solver
 
  intMnSSC ,  ///< minimum number of consecutive Serious Steps
 
@@ -400,7 +403,7 @@ public:
 
  intMPName ,  ///< whether the MP solver is QPPenalty or OSIMPSolver TBD (should go away)
 
- intMPlvl ,  ///< log verbosity of Master Problem 
+ intMPlvl ,  ///< log verbosity of Master Problem
 
  intMPStbl ,  ///< type of stabilization for the master problem
 
@@ -427,7 +430,7 @@ public:
 /*--------------------------------------------------------------------------*/
  /// public enum for the double algorithmic parameters
  /** Public enum describing the different algorithmic parameters of double
-  * type that BundleSolver has in addition to these of CDASolver. The value
+  * type that GeneralizedBundleSolver has in addition to these of CDASolver. The value
   * dblLastBndSlvPar is provided so that the list can be easily further
   * extended by derived classes. */
 
@@ -476,7 +479,7 @@ public:
 /*--------------------------------------------------------------------------*/
  /// public enum for the string algorithmic parameters
  /** Public enum describing the different algorithmic parameters of string
-  * type that BundleSolver has in addition to these of CDASolver. The value
+  * type that GeneralizedBundleSolver has in addition to these of CDASolver. The value
   * strLastBndSlvPar is provided so that the list can be easily further
   * extended by derived classes. */
 
@@ -486,7 +489,7 @@ public:
   strHardCfg ,                   ///< string name for not-easy Configurations
 
   strMPBSolverCfg ,                 ///< string name for Configuration of the
-                                 ///  solver associated with the MPBlock   
+                                 ///  solver associated with the MPBlock
 
   strLastBndSlvPar ///< first allowed new string parameter for derived classes
                    /**< Convenience value for easily allow derived classes
@@ -496,7 +499,7 @@ public:
 /*--------------------------------------------------------------------------*/
  /// public enum for the vector-of-int parameters
  /** Public enum describing the different algorithmic parameters of
-  * vector-of-int type that BundleSolver has in addition to these of
+  * vector-of-int type that GeneralizedBundleSolver has in addition to these of
   * CDASolver. The value vintLastBndSlvPar is provided so that the list can
   * be easily further extended by derived classes. */
 
@@ -519,7 +522,7 @@ public:
 /*--------------------------------------------------------------------------*/
  /// public enum for the vector-of-string parameters
  /** Public enum describing the different parameters of vector-of-string type
-  * that BundleSolver has in addition to these of CDASolver. The value
+  * that GeneralizedBundleSolver has in addition to these of CDASolver. The value
   * vstrLastBndSlvPar is provided so that the list can be easily further
   * extended by derived classes. */
 
@@ -548,24 +551,24 @@ public:
   };  // end( vstr_par_type_BndSlv )
 
 /** @} ---------------------------------------------------------------------*/
-/*----------------- CONSTRUCTING AND DESTRUCTING BundleSolver --------------*/
+/*----------------- CONSTRUCTING AND DESTRUCTING GeneralizedBundleSolver --------------*/
 /*--------------------------------------------------------------------------*/
-/** @name Constructing and destructing BundleSolver
+/** @name Constructing and destructing GeneralizedBundleSolver
  *  @{ */
 
  /// constructor: ensure every field is initialized
 
- BundleSolver( void ) : CDASolver() , Result( kUnEval ) , NumVar( 0 ) ,
+ GeneralizedBundleSolver( void ) : CDASolver() , Result( kUnEval ) , NumVar( 0 ) ,
   NrFi( 0 ) , SCalls( 0 ) , ParIter( 0 ) , NrEasy( 0 ) , LHasChgd( true ) ,
   tHasChgd( true ) , MPchgs( 0 ) , G1Norm( 0 ) , ScPr1( 0 ) , Alfa1( 0 ) ,
   f_global_LB( -INFshift ) , t( 0 ) , Prevt( 0 ) , Sigma( 0 ) , DSTS( 0 ) ,
   DeltaFi( 0 ) , EpsU( 0 ) , CSSCntr( 0 ) , CNSCntr( 0 ) , TrueLB( false ) ,
   SSDone( true ) , f_wFi( 0 ) , f_lf( nullptr ) , f_convex( true ) ,
-  MasterPB( nullptr ) , UpTrgt( 0 ) , LwTrgt( 0 ) , RifeqFi( false ) ,
+  MasterPB( nullptr ) , Master( nullptr ) , UpTrgt( 0 ) , LwTrgt( 0 ) , RifeqFi( false ) ,
   CmptdinL( false ) , UpFiBest( INFshift ) , UpFiLmb1def( 0 ) ,
   LwFiLmb1def( 0 ) , UpFiLmbdef( 0 ) , LwFiLmbdef( 0 ) , Fi0Lmb( 0 ) ,
   Fi0Lmb1( 0 ) , DST( 0 ) , NrmD( 0 ) , NrmZ( 0 ) , NrmZFctr( 1 ) ,
-  c_start() , aBP3( 0 ) , FakeFi( this ) 
+  c_start() , aBP3( 0 ) , FakeFi( this )
  {
   // ensure all parameters are properly given their default value
   MaxIter = CDASolver::get_dflt_int_par( intMaxIter );
@@ -588,8 +591,9 @@ public:
   TrgtMng = Index( get_dflt_int_par( intTrgtMng ) );
   // MPName = get_dflt_int_par( intMPName ); TBD (should go away)
   MPlvl = get_dflt_int_par( intMPlvl );
-  MPStbl = get_dflt_int_par( intMPStbl );
-  IsMPPrimal = get_dflt_int_par( intMPPrimal );
+  MPStbl = static_cast< MasterProblemBlock::stabilization_type >(
+                                              get_dflt_int_par( intMPStbl ) );
+  IsMPPrimal = bool( get_dflt_int_par( intMPPrimal ) );
   // MxAdd = get_dflt_int_par( intQPmp1 ); TBD (should go away)
   // MxRmv = get_dflt_int_par( intQPmp2 );
   // algo = get_dflt_int_par( intOSImp1 );
@@ -621,9 +625,9 @@ public:
   }
 
 /*--------------------------------------------------------------------------*/
- /// destructor: cleanly detaches the BundleSolver from the Block
+ /// destructor: cleanly detaches the GeneralizedBundleSolver from the Block
 
- virtual ~BundleSolver() { set_Block( nullptr ); }
+ virtual ~GeneralizedBundleSolver() { set_Block( nullptr ); }
 
 /** @} ---------------------------------------------------------------------*/
 /*-------------------------- OTHER INITIALIZATIONS -------------------------*/
@@ -633,23 +637,23 @@ public:
  *  @{ */
 
  /// set the (pointer to the) Block that the Solver has to solve
- /** Gives the BundleSolver access to the Block it has to solve; note that
-  * this does not register the BundleSolver among the Solver of the Block,
+ /** Gives the GeneralizedBundleSolver access to the Block it has to solve; note that
+  * this does not register the GeneralizedBundleSolver among the Solver of the Block,
   * because the converse happens. Extensive checks are performed during
   * set_Block() to ensure that the Block does satisfy the requirements of
-  * BundleSolver, and all the nontrivial internal data structures of
-  * BundleSolver are set up.
+  * GeneralizedBundleSolver, and all the nontrivial internal data structures of
+  * GeneralizedBundleSolver are set up.
   *
-  * If \p block == nullptr, the BundleSolver is completely cleaned up and
+  * If \p block == nullptr, the GeneralizedBundleSolver is completely cleaned up and
   * prepared for either destruction or receiving an entirely unrelated Block
   * to solve. */
 
  void set_Block( Block * block ) override;
 
 /*--------------------------------------------------------------------------*/
- /// set the int parameters of BundleSolver
- /** Set the int parameters specific of BundleSolver, together with the
-  * parameters of CDASolver that BundleSolver actually "listens to":
+ /// set the int parameters of GeneralizedBundleSolver
+ /** Set the int parameters specific of GeneralizedBundleSolver, together with the
+  * parameters of CDASolver that GeneralizedBundleSolver actually "listens to":
   *
   * - intMaxIter [Inf< int >]: maximum iterations for the next call to solve()
   *
@@ -664,7 +668,7 @@ public:
   * - intEverykIt [0]: after how many iteration call the eEverykIteration
   *                    events
   *
-  * - intLogVerb [0]: "verbosity" of the BundleSolver log
+  * - intLogVerb [0]: "verbosity" of the GeneralizedBundleSolver log
   *                   0 = no log
   *                   1 = only final state of the call and errors
   *                   2 = detailed step-by-step log
@@ -682,7 +686,7 @@ public:
   *                   each C05Function*; hence, the maximum total number
   *   is intBPar2 * < number of C05Function >. Note that intBPar2 must be
   *   >= 2, with the "poorman's" case intBPar2 == 2 forcing the
-  *   BundleSolver to perform aggregation at every iteration (for every
+  *   GeneralizedBundleSolver to perform aggregation at every iteration (for every
   *   C05Function). Of course, keeping the "bundle" small makes the Master
   *   Problem cheaper, but on the other hand acquiring enough first-order
   *   information is typically the name of the game, hence keeping this
@@ -700,8 +704,8 @@ public:
   *   linearization that are requested to the C05Function evolves as the
   *   algorithm proceeds; note that what varies in practice is the maximum
   *   number, as it is always legal for the C05Function to refuse giving
-  *   other items, although the BundleSolver will complain and stop if less
-  *   than BPar4 are given. In BundleSolver, the number
+  *   other items, although the GeneralizedBundleSolver will complain and stop if less
+  *   than BPar4 are given. In GeneralizedBundleSolver, the number
   *
   *      EpsU = Sigma + D_{tStar}*( z* ) / max( | FiVal | , 1 ) ,
   *
@@ -730,44 +734,44 @@ public:
   *    4: aBP3 is set to
   *       ( BPar5 > 0 ? BPar4 : BPar3 ) + BPar5 / log10( EpsU / RelAcc )
   *
-  * - intBPar7 [2]: This parameter, coded bit-wise, controls if BundleSolver
+  * - intBPar7 [2]: This parameter, coded bit-wise, controls if GeneralizedBundleSolver
   *                 "tries to play nice" with any other Solver that may
   *   concurrently be using the same C05Function. The point is that each of
   *   these Solver is producing new linearizations, and possibly storing
   *   them in, or removing them from, the "finite resource" of the global
-  *   pool(s) of the C05Function(s). Hence, what the BundleSolver does to the
+  *   pool(s) of the C05Function(s). Hence, what the GeneralizedBundleSolver does to the
   *   global pool may have an impact on the other Solver, if any. This
-  *   parameter controls whether BundleSolver tries as hard as possible to
+  *   parameter controls whether GeneralizedBundleSolver tries as hard as possible to
   *   avoid impacting the other Solver operations, or if it rather assumes to
   *   be "the only one" working with the C05Function, and therefore "treats
-  *   the global pool as its exclusive property". To do so, BundleSolver
+  *   the global pool as its exclusive property". To do so, GeneralizedBundleSolver
   *   handles the slot of the global pool in different ways according to the
   *   value in the first two bits of intBPar7 ( intBPar7 & 3 ):
   *
-  *   = 0 means that BundleSolver will never override any position in the
+  *   = 0 means that GeneralizedBundleSolver will never override any position in the
   *     global pool unless it strictly needs to. This means that even if a
   *     linearization is removed from the bundle (the master problem), it is
   *     kept in the global pool of the corresponding component until the
   *     latter is completely full. Only then linearizations are removed,
   *     when necessary to make space for newly generated ones. Note that
-  *     BundleSolver always "proceeds from left to right", i.e., selects the
+  *     GeneralizedBundleSolver always "proceeds from left to right", i.e., selects the
   *     linearization in the global pool with smallest "name". This creates
   *     a sort of FIFO order whereby the oldest linearizations are removed
   *     first, which makes general sense.
   *
-  *   = 1 means that BundleSolver will not immediately delete from the global
+  *   = 1 means that GeneralizedBundleSolver will not immediately delete from the global
   *     pool a linearization that it removes from the bundle (the master
-  *     problem). While the linearization is kept there, BundleSolver
+  *     problem). While the linearization is kept there, GeneralizedBundleSolver
   *     considers it "free", and can immediately after re-use that position
   *     to store a newly computed linearization. Again, the order is that if
   *     smaller names first, so if a linearization with "large name" is
   *     removed from the global pool it may take some time before it is
-  *     actually overwritten by BundleSolver, thereby leaving it available
+  *     actually overwritten by GeneralizedBundleSolver, thereby leaving it available
   *     to other Solver.
   *
-  *   = 2 means that BundleSolver will immediately delete from the global
+  *   = 2 means that GeneralizedBundleSolver will immediately delete from the global
   *     pool any linearization that it removes from the bundle (the master
-  *     problem). This makes sense if BundleSolver is the only Solver
+  *     problem). This makes sense if GeneralizedBundleSolver is the only Solver
   *     producing and consuming linearizations in these C05Function(s),
   *     since it allows them to immediately delete all the memory (which may
   *     be significant) associated with that linearization in the global pool.
@@ -779,26 +783,26 @@ public:
   *     still the old linearization is kept in the global pool (but not in the
   *     bundle) unless it is strictly necessary to do so.
   *
-  *   = 3 means that BundleSolver will immediately delete from the global
+  *   = 3 means that GeneralizedBundleSolver will immediately delete from the global
   *     pool any linearization that it removes from the bundle (the master
   *     problem); furthermore, if it finds a "better copy" of an existing
   *     linearization the new one immediately replaces the old one, in the
   *     global pool as well as in the bundle.
   *
-  *   The bit 2 ( intBPar7 & 4 ) rather decides how BundleSolver reacts to
+  *   The bit 2 ( intBPar7 & 4 ) rather decides how GeneralizedBundleSolver reacts to
   *   Modification telling that some other Solver have generated a new
-  *   linearization. If the bit is 0, then BundleSolver plainly ignores it,
+  *   linearization. If the bit is 0, then GeneralizedBundleSolver plainly ignores it,
   *   which is likely the best strategy if producing linearizations is
-  *   "cheap". However, if ( intBPar7 & 3 ) < 3 BundleSolver does take note
+  *   "cheap". However, if ( intBPar7 & 3 ) < 3 GeneralizedBundleSolver does take note
   *   that a linearization is there in order to avoid to touch it "unless
-  *   strictly necessary". If the bit is 1 instead, then BundleSolver will
+  *   strictly necessary". If the bit is 1 instead, then GeneralizedBundleSolver will
   *   right away add the linearization to its bundle (the master problem),
   *   which is likely the best strategy if producing linearizations is
   *   "costly" and therefore it makes sense to profit from the effort that
   *   the C05Function(s) has done on behalf of the other Solver(s).
   *
   *   The bit 3 ( intBPar7 & 8 ) has a similar role for the initialization
-  *   phase: if it is == 1, then BundleSolver will also scan the global pool
+  *   phase: if it is == 1, then GeneralizedBundleSolver will also scan the global pool
   *   of each component when it is attached to the Block, and immediately
   *   add to the bundle every linearization it finds there.
   *
@@ -849,7 +853,7 @@ public:
   *   t-strategies that can be activated in addition to these, with the
   *   following values:
   *
-  *    bit 4: 1 (+16) if the "endgame" t-strategy is used, where if 
+  *    bit 4: 1 (+16) if the "endgame" t-strategy is used, where if
   *           D*_1( -z* ) is "small" (~ 1/10 of the current absolute epsilon)
   *           t is decreased no matter what the other strategies dictated.
   *           The rationale is that we are "towards the end" of the
@@ -893,12 +897,12 @@ public:
   *   non-easy C05Function) before giving up for good
   *
   * - intDoEasy [1]: this boolean parameter controls whether
-  *                  BundleSolver uses the "easy components" approach on
+  *                  GeneralizedBundleSolver uses the "easy components" approach on
   *   components that allow it (LagBFunction with linear constraints,
   *   objective and continuous variables only).
   *
   *   If it is 0, then all components are treated as "hard" even if
-  *   they could be treated as "easy". If it is 1, then all "easy" 
+  *   they could be treated as "easy". If it is 1, then all "easy"
   *   components are treated as such.
   *
   *   NOTE: In a previous version intDoEasy controlled also which structures
@@ -927,7 +931,7 @@ public:
   *   While the numerical value of the threshold is specified by the different
   *   parameter dblZNEps, the following two bits control how this is used,
   *   with the following meaning:
-  *   
+  *
   *    0 = the parameter is taken as an absolute value (norm <= dblZNEps)
   *
   *    1 = the parameter is taken as a scaling factor of the corresponding
@@ -944,7 +948,7 @@ public:
   *        vector is used as the scaling factor for dblZNEps.
   *
   *   Besides for the stopping condition, these choices are crucial for the
-  *   capability of BundleSolver to produce global valid lower bounds (for a
+  *   capability of GeneralizedBundleSolver to produce global valid lower bounds (for a
   *   minimization problem, upper bounds for a maximization one). Indeed,
   *   these can only be produced when z* is "0"; this is taken to mean
   *   "almost 0" in the specific sense dictated by this parameter together
@@ -954,7 +958,7 @@ public:
   *                    about "trusting" input/output state.
   *     bit 0: if 1, it ensures that all the non-easy components have been
   *            evaluated the last time on the point that is returned (first)
-  *            by get_var_solution(). Some approaches using BundleSolver may
+  *            by get_var_solution(). Some approaches using GeneralizedBundleSolver may
   *     require this because they use some other information provided by the
   *     compute()-tion process of the components that need be "current" with
   *     the optimal solution. This may happen automatically if the very last
@@ -966,18 +970,18 @@ public:
   *     kStopTime return status where a kOK would have been produced exactly
   *     due to the cost of the extra compute()-tions.
   *     bit 1: if 1, it makes it so that the function values stored in a
-  *            BundleSolverState [see] are not trusted when it is put() back
-  *            in BundleSolver. This causes the re-computation of all
+  *            GeneralizedBundleSolverState [see] are not trusted when it is put() back
+  *            in GeneralizedBundleSolver. This causes the re-computation of all
   *     function values at the first iteration before the algorithm can
   *     declare optimality. this is provided in case the state of the Block
-  *     to which BundleSolver is registered is not the same as that when the
-  *     BundleSolverState was get(), which may happen either if they are
+  *     to which GeneralizedBundleSolver is registered is not the same as that when the
+  *     GeneralizedBundleSolverState was get(), which may happen either if they are
   *     actually two different (similar, but not identical) Block, or if
-  *     BundleSolver was detached, some changes were effected in the Block
-  *     and then BundleSolver was re-attached. this way of using 
-  *     [BundleSolver]State is explicitly permitted by the definition of
+  *     GeneralizedBundleSolver was detached, some changes were effected in the Block
+  *     and then GeneralizedBundleSolver was re-attached. this way of using
+  *     [GeneralizedBundleSolver]State is explicitly permitted by the definition of
   *     State, with the provision that the Solver must be able to identify
-  *     somehow the inconsistencies that it can create. since BundleSolver
+  *     somehow the inconsistencies that it can create. since GeneralizedBundleSolver
   *     has no way to check what had happened to the Block "when it was not
   *     listening to Modificaion", this setting provides a (crude but
   *     functional) way to ensure consistency for this use case.
@@ -1022,14 +1026,14 @@ public:
   *                  bit 3: 1 = CheckIdentical( true ) is called, 0 = not
   *
   * - intMPlvl [0]: log verbosity of Master Problem solver
-  * 
+  *
   * - intMPStbl [0]: type of stabilization to be used for the Master Problem.
   *                  Please see [MasterProblemBlock.h:207] for the currently
   *                  implemented stabilization type.
-  * 
-  * - intMPPrimal [0]: tells which formulation should be used for the Master 
+  *
+  * - intMPPrimal [0]: tells which formulation should be used for the Master
   *                    Problem. If 1 then the primal version of the MP will be
-  *                    initialized, otherwise MasterProblemBlock will use the 
+  *                    initialized, otherwise MasterProblemBlock will use the
   *                    dual one. Note that if the parameter DoEasy is set to 1
   *                    and there are easy components, then the only possibility
   *                    is to solve the dual representation.
@@ -1054,9 +1058,9 @@ public:
  void set_par( idx_type par , int value ) override;
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
- /// set the double parameters of BundleSolver
- /** Set the double parameters specific of BundleSolver, together with the
-  * parameters of CDASolver that BundleSolver actually "listens to":
+ /// set the double parameters of GeneralizedBundleSolver
+ /** Set the double parameters specific of GeneralizedBundleSolver, together with the
+  * parameters of CDASolver that GeneralizedBundleSolver actually "listens to":
   *
   * - dblMaxTime [Inf< double >()]: maximum CPU time for the next call to
   *                               compute(), in seconds
@@ -1075,9 +1079,9 @@ public:
   *                    subgradient z* is declared to be "almost 0". See
   *   intWZNorm for the details of how this is done in terms of which norm is
   *   used and how this constant is treated, as well as on the impact it has
-  *   on the ability of BundleSolver to declare globally valid lower bounds
+  *   on the ability of GeneralizedBundleSolver to declare globally valid lower bounds
   *   (for a minimization problem, upper bounds for a maximization one).
-  *   Choosing a very small value for dblZNEps may result in BundleSolver not
+  *   Choosing a very small value for dblZNEps may result in GeneralizedBundleSolver not
   *   being able to declare any global valid lower bound (especially if the
   *   alternative stopping criterion is used, see dbltStar), but on the other
   *   hand using a loose tolerance may result in declaring invalid global
@@ -1147,7 +1151,7 @@ public:
   *   In some cases, estimating tStar is not easy, while it may be easier to
   *   come up with a direct estimate of "when the norm is small enough"; see
   *   dblNZEps and intWZNorm. Thus, the alternative stopping criterion
-  *   
+  *
   *        Sigma* <= min( dblAbsAcc , dblRelAcc * | Fi | )
   *
   *        || z* || <= dblNZEps * < scaling factor >
@@ -1179,7 +1183,7 @@ public:
   *   (-) dblMinNrEvls indicates the fraction of components that necessarily
   *   have to be evaluated.
   *
-  * - dblBPar5 [30]: parameter controlling the dynamic number of 
+  * - dblBPar5 [30]: parameter controlling the dynamic number of
   *                  linearizations to be fetched from each oracle at each
   *   iteration, see intBPar6 for details  *
   *
@@ -1219,8 +1223,8 @@ public:
   *   polyhedral functions provided that both function values and v* are
   *   computed without numerical errors (which is typically impossible).
   *   Also, note that whenever m1 < m2 both a SS and a NS may be possible
-  *   at the same time, in which case the BundleSolver will typically favor
-  *   the SS. 
+  *   at the same time, in which case the GeneralizedBundleSolver will typically favor
+  *   the SS.
   *
   * - dblm3 [0.99]: factor governing the Noise Reduction for "unfaithful"
   *                 oracles that pretend to provide information with the
@@ -1259,7 +1263,7 @@ public:
   * - dbltMinor [1e-6]: minimum value of t
   *
   * - dbltInit [1]: initial value of t. Choosing the "right" initial value
-  *                 of t can clearly help the BundleSolver to perform
+  *                 of t can clearly help the GeneralizedBundleSolver to perform
   *   better in the initial iterations, although the t-strategies should see
   *   to the fact that blatantly wrong t values are rapidly corrected.
   *   Giving a reasonable value to this parameter (and, consequently, to
@@ -1311,7 +1315,7 @@ public:
   *
   *   Any value of dbltSPar3 such that abs( dbltSPar3 ) <= 1 is equivalent
   *   to 0, which means "t cannot be changed by the heuristics only".
-  * 
+  *
   * TBD (should go away)
   * - dblCtOff [1e-1]: cut-off value for pricing in QPPenaltyMP solver only
   */
@@ -1319,9 +1323,9 @@ public:
  void set_par( idx_type par , double value ) override;
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
- /// move the string parameters of BundleSolver
- /** Move in the string parameters specific of BundleSolver, together with
-  * the parameters of CDASolver that BundleSolver actually "listens to":
+ /// move the string parameters of GeneralizedBundleSolver
+ /** Move in the string parameters specific of GeneralizedBundleSolver, together with
+  * the parameters of CDASolver that GeneralizedBundleSolver actually "listens to":
   *
   * - strEasyCfg [empty]: filename from where the Configuration of the "easy"
   *                       components is taken. If not empty, strEasyCfg must
@@ -1329,8 +1333,8 @@ public:
   *   ComputeConfiguration is loaded via a call to Configuration::deserialize(
   *   const std::string ); the ComputeConfig is then set to each of the "easy"
   *   components of the problem (via a call to set_ComputeConfig) at the time
-  *   in which the BundleSolver is registered to the Block; if strEasyCfg is
-  *   empty or deserialize() returns nullptr, then set_ComputeConfig() is not 
+  *   in which the GeneralizedBundleSolver is registered to the Block; if strEasyCfg is
+  *   empty or deserialize() returns nullptr, then set_ComputeConfig() is not
   *   called.
   *
   * - strHardCfg [empty]: filename from where the Configuration of the
@@ -1339,29 +1343,29 @@ public:
   *   out of which a ComputeConfiguration is loaded via a call to
   *   Configuration::deserialize( const std::string ); the ComputeConfig is
   *   then set to each of the non-easy components of the problem (via a call
-  *   to set_ComputeConfig) at the time in which the BundleSolver is
+  *   to set_ComputeConfig) at the time in which the GeneralizedBundleSolver is
   *   registered to the Block; if strHardCfg is empty or deserialize()
-  *   returns nullptr, then set_ComputeConfig() is not called. 
-  * 
+  *   returns nullptr, then set_ComputeConfig() is not called.
+  *
   * - strMPBSolverCfg [empty]: filename from where the Configuration of the solver
-  *                         associated with the MasterProblemBlock is taken. 
+  *                         associated with the MasterProblemBlock is taken.
   *   If not empty, strMPBSolverCfg must be a filename from wich a
-  *   BlockSolverConfiguration is loaded via a call to 
+  *   BlockSolverConfiguration is loaded via a call to
   *   Configuration::deserialize( const std::string ); the BlockSolverConfiguration
   *   is then used to identify which solver should be attached to the Master Problem
-  *   Block at the time in which the BundleSolver is registered to the Block; 
-  *   if strEasyCfg is empty or deserialize() returns nullptr, then a simple 
-  *   GRBMILPSolver will be used. 
-  *   \note if Gurobi is not available on the current machine, the default choice 
-  *   will result in an error. Hence, we stronlgy encourage to properly set 
+  *   Block at the time in which the GeneralizedBundleSolver is registered to the Block;
+  *   if strEasyCfg is empty or deserialize() returns nullptr, then a simple
+  *   GRBMILPSolver will be used.
+  *   \note if Gurobi is not available on the current machine, the default choice
+  *   will result in an error. Hence, we stronlgy encourage to properly set
   *   the Configuration file with the available solver. */
-  
+
  void set_par( idx_type par , std::string && value ) override;
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
- /// move in the vector-of-int parameters of BundleSolver
- /** Move in the given vector-of-int parameters specific of BundleSolver,
-  * together with the parameters of CDASolver that BundleSolver actually
+ /// move in the vector-of-int parameters of GeneralizedBundleSolver
+ /** Move in the given vector-of-int parameters specific of GeneralizedBundleSolver,
+  * together with the parameters of CDASolver that GeneralizedBundleSolver actually
   * "listens to":
   *
   * - vintNoEasy [empty]: the vector vintNoEasy is assumed to contain the
@@ -1379,9 +1383,9 @@ public:
  void set_par( idx_type par , std::vector< int > && value ) override;
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
- /// move in the vector-of-string parameters of BundleSolver
- /** Move in the given vector-of-string parameters specific of BundleSolver,
-  * together with the parameters of CDASolver that BundleSolver actually
+ /// move in the vector-of-string parameters of GeneralizedBundleSolver
+ /** Move in the given vector-of-string parameters specific of GeneralizedBundleSolver,
+  * together with the parameters of CDASolver that GeneralizedBundleSolver actually
   * "listens to":
   *
   * - vstrCmpCfg [empty]: the vector vstrCmpCfg is assumed to contain the
@@ -1409,12 +1413,12 @@ public:
   *
   * - vstr_C05_SPAR_Names [empty]: [vector-of-]string parameters names that
   *                                are set differently to each C05Function
-  *   when BundleSolver is register()-ed to the Block. This parameter works
+  *   when GeneralizedBundleSolver is register()-ed to the Block. This parameter works
   *   in tandem with vstr_C05_SPAR_Vals [see].
   *
   * - vstr_C05_SPAR_Vals [empty]: baseline values for [vector-of-]string
   *                               parameters that are set differently to each
-  *   C05Function when BundleSolver is register()-ed to the Block. This
+  *   C05Function when GeneralizedBundleSolver is register()-ed to the Block. This
   *   parameter works in tandem with vstr_C05_SPAR_Names as follows. They
   *   must have the same length. Then, for every h = 0, 1, ...,
   *   n_components() - 1, the parameter vstr_C05_SPAR_Names[ i ] is set to
@@ -1455,7 +1459,7 @@ public:
  void set_par( idx_type par , std::vector< std::string > && value ) override;
 
 /*--------------------------------------------------------------------------*/
- /// set the ostream for the BundleSolver log
+ /// set the ostream for the GeneralizedBundleSolver log
 
  void set_log( std::ostream *log_stream = nullptr ) override;
 
@@ -1465,13 +1469,13 @@ public:
 /** @name Accessing the data of the Block
  *
  * These methods provide convenient shortcuts for directly asking to the
- * BundleSolver some relevant data about the Block it is solving.
+ * GeneralizedBundleSolver some relevant data about the Block it is solving.
  *  @{ */
 
  /// returns the number of "components", i.e., C05Function in the objective
  /** Returns the total number of "components", i.e., the C05Function whose
   * sum (possibly together with one LinearFunction) makes up the objective of
-  * the Block that the BundleSolver is solving. This method should not be
+  * the Block that the GeneralizedBundleSolver is solving. This method should not be
   * called if set_Block() has not been called, or has last been called with
   * nullptr argument. */
 
@@ -1480,8 +1484,8 @@ public:
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// returns a pointer to the i-th C05Function in the objective
  /** Returns a pointer to the i-th C05Function, i.e., the i-th term of the
-  * sum of C05Function that (possibly together with one LinearFunction) 
-  * makes up the objective of the Block that the BundleSolver is solving. 
+  * sum of C05Function that (possibly together with one LinearFunction)
+  * makes up the objective of the Block that the GeneralizedBundleSolver is solving.
   * It must ve 0 <= \p i <= n_components(). All returned pointers are not
   * nullptr provided that set_Block() has last been called with not nullptr
   * argument (otherwise this method should not be called). */
@@ -1503,13 +1507,13 @@ public:
   * not been called, or has last been called with nullptr argument. */
 
  LinearFunction * l_component( void ) const { return( f_lf ); }
-  
+
 /** @} ---------------------------------------------------------------------*/
 /*---------------------- METHODS FOR EVENTS HANDLING -----------------------*/
 /*--------------------------------------------------------------------------*/
 /** @name Set event handlers
  *
- *  BundleSolver heeds to all three "basic" types of events:
+ *  GeneralizedBundleSolver heeds to all three "basic" types of events:
  *
  * - eBeforeTermination, called just before optimality stop (but not all
  *   other kinds of stop), with return action eForceContinue forcing one
@@ -1585,8 +1589,8 @@ public:
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// returns the best know global lower bound of the function.
- /** Returns the best know global lower bound of the function. If the 
-  *  objective function is convex, this is a true LB, otherwise the best 
+ /** Returns the best know global lower bound of the function. If the
+  *  objective function is convex, this is a true LB, otherwise the best
   *  solution found so far is returned. */
 
  VarValue get_lb( void ) override {
@@ -1606,8 +1610,8 @@ public:
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// returns the best know global upper bound of the function.
- /** Returns the best know global upper bound of the function. If the 
-  *  objective function is concave, this is a true UB, otherwise the best 
+ /** Returns the best know global upper bound of the function. If the
+  *  objective function is concave, this is a true UB, otherwise the best
   *  solution found so far is returned. */
 
  VarValue get_ub( void ) override {
@@ -1626,22 +1630,22 @@ public:
   }
 
 /*--------------------------------------------------------------------------*/
- /// BundleSolver always returns a primal solution, possibly unfeasible
- 
+ /// GeneralizedBundleSolver always returns a primal solution, possibly unfeasible
+
  bool has_var_solution( void ) override { return( true ); }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
- /// BundleSolver always returns a dual solution, possibly unfeasible
- /** BundleSolver always returns a dual solution, possibly unfeasible. This
+ /// GeneralizedBundleSolver always returns a dual solution, possibly unfeasible
+ /** GeneralizedBundleSolver always returns a dual solution, possibly unfeasible. This
   *  in fact requires that the Master Problem has been solved at least once,
   *  but has_dual_solution() can only be called after compute() and therefore
   *  the Master Problem must have been solved at least once. */
- 
+
  bool has_dual_solution( void ) override { return( true ); }
 
 /*--------------------------------------------------------------------------*/
 
- bool is_var_feasible( void ) override { 
+ bool is_var_feasible( void ) override {
   return( ( Result != kInfeasible ) && ( UpFiLmb.back() < INFshift ) );
   }
 
@@ -1660,7 +1664,7 @@ public:
   *
   * - If some of the C05Function are LagBFunction and are handled as "easy"
   *   components, the primal optimal solution of the dual problem that
-  *   BundleSolver is using is actually the dual optimal solution of the
+  *   GeneralizedBundleSolver is using is actually the dual optimal solution of the
   *   constraints in the master problem, and the reduced costs of the
   *   variables, that represent that component; this can be fished out of
   *   the master problem and written in the Block inside the LagBFunction.
@@ -1696,7 +1700,7 @@ public:
   * if dual variables are required then *both* ( intDoEasy & 4 ) and
   * ( intDoEasy & 8 ) must be true [due to the internal working of
   * OSIMPSolver the information about reduced costs is required when
-  * getting dual variables, please don't ask ...]). TO DO */ 
+  * getting dual variables, please don't ask ...]). TO DO */
 
  void get_var_solution( Configuration *solc = nullptr ) override;
 
@@ -1711,25 +1715,25 @@ public:
  /** Write the  "current" dual optimal solution in the Block. This is done
   * in two different ways for "easy" and "not easy" components:
   *
-  * - for "not easy" ones, the optimal solution of the master problem for 
+  * - for "not easy" ones, the optimal solution of the master problem for
   *   that component, which is a set of convex multipliers associated to
   *   the linearizations currently in the pool, is used for forming the
   *   "important linearization" of that component and adding them to the
   *   corresponding linearizations pool; this is unless the optimal
-  *   aggregate linearization has been inserted in the bundle for other 
+  *   aggregate linearization has been inserted in the bundle for other
   *   reasons (making space in a full bundle), in which case the
   *   coefficients of the "important linearization" of that component are
   *   just < 1 , index of the optimal aggregate linearization > (that is,
   *   this costs nothing);
   *
   * - for "easy" components, the dual solution for the dual problem that
-  *   BundleSolver is solving is actually the primal optimal solution of
+  *   GeneralizedBundleSolver is solving is actually the primal optimal solution of
   *   the master problem for the variables that represent that component;
   *   this is fished out of the master problem and directly written in the
   *   Block inside the LagBFunction.
   *
   * If \p solc is nullptr, then the solution for all components is written.
-  * Otherwise, \p solc must be a pointer to a 
+  * Otherwise, \p solc must be a pointer to a
   * SimpleConfiguration< std::vector< int > >, assuming to contain the
   * indices of the components of which the primal solution has to be written.
   */
@@ -1741,7 +1745,7 @@ public:
  void get_dual_solution_easy( Index k );
 
  void get_dual_solution_hard( Index k );
- 
+
 /*--------------------------------------------------------------------------*/
 
  bool new_var_solution( void ) override
@@ -1775,7 +1779,7 @@ public:
   void get_dual_direction( Configuration *dirc = nullptr ) override {}
 
   bool new_var_direction( void ) override { return( false ); }
-  
+
   bool new_dual_direction( void ) override{ return( false ); }
 */
 
@@ -1798,7 +1802,7 @@ public:
   *  oracle", i.e., one that thoes not cheat on the lower bounds) then
   *  Sigma >= 0, and the current aggregated subgradient is a
   *  Sigma-subgradient at the current point. This justifies why the
-  *  standard stopping condition of BundleSolver roughly speaking reads
+  *  standard stopping condition of GeneralizedBundleSolver roughly speaking reads
   *
   *     Sigma is small and the norm of the aggregated subgradient is small
   *
@@ -1822,7 +1826,7 @@ public:
   *
   * (see get_DS()). Since z* is a Sigma-subgradient at the current point
   * (see get_Sigma()), justifies why one of the stopping condition of
-  * BundleSolver is
+  * GeneralizedBundleSolver is
   *
   *      Sigma + D_{tStar}*( z* ) <= RelAcc * | current value of Fi |
   *
@@ -1839,7 +1843,11 @@ public:
   *  get_DSTS() and get_Sigma() for how this number enters in the stopping
   *  conditions of the method. */
 
- VarValue get_DS( void ) { return( Master ? Master->ReadDStart( 1 ) : 0 ); }
+ VarValue get_DS( void ) {
+  return( MasterPB ? MasterPB->get_dual_norm_squared() / 2.0 : 0 );
+  }
+ /**< In the standard proximal stabilization || z* ||^2 / 2 = D*_{1}(z*),
+  *   see the (BundleSolver-side) doc on dbltStar. */
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// returns the current estimate of the (un-)optimality of the current point
@@ -1867,7 +1875,7 @@ public:
   *  t-strategies cause the master problem to be re-solved without the
   *  C05Function(s) being evaluated, these do not count as iterations. */
 
- Index get_CSSCntr( void ) { return( CSSCntr ); } 
+ Index get_CSSCntr( void ) { return( CSSCntr ); }
 
 /*--------------------------------------------------------------------------*/
  /// returns the number of consecutives Null Steps
@@ -1882,7 +1890,7 @@ public:
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// returns the predicted improvement of the model at the tentative point
 
- VarValue get_vStar( void ) { return( vStar.back() ); } 
+ VarValue get_vStar( void ) { return( vStar.back() ); }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// returns the norm of the first inserted subgradient in the last iteration
@@ -1897,17 +1905,17 @@ public:
 */
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
- 
+
  c_Vec_VarValue & get_current_point( void ) const { return( Lambda ); }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
- 
+
  c_Vec_VarValue & get_tentative_point( void ) const { return( Lambda1 ); }
- 
+
 /*--------------------------------------------------------------------------*/
 /*------------------- METHODS FOR HANDLING THE PARAMETERS ------------------*/
 /*--------------------------------------------------------------------------*/
-/** @name Handling the parameters of the BundleSolver
+/** @name Handling the parameters of the GeneralizedBundleSolver
  *
  *  @{ */
 
@@ -1940,9 +1948,9 @@ public:
   }
 
 /*--------------------------------------------------------------------------*/
- 
+
  [[nodiscard]] int get_dflt_int_par( idx_type par ) const override {
-  static const std::array< int , 22 > dflt_int_par = {
+  static const std::array< int , 24 > dflt_int_par = {
     10 ,  // intBPar1
    100 ,  // intBPar2
      1 ,  // intBPar3
@@ -1978,7 +1986,7 @@ public:
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
- 
+
  [[nodiscard]] double get_dflt_dbl_par( idx_type par ) const override {
   static const std::array< double , 17 > dflt_dbl_par = {
    0 ,      // dblNZEps
@@ -2010,7 +2018,7 @@ public:
 
  const std::string & get_dflt_str_par( idx_type par ) const override {
   static std::string __empty;
-  if( ( par == strEasyCfg ) || ( par == strHardCfg ) || 
+  if( ( par == strEasyCfg ) || ( par == strHardCfg ) ||
         ( par == strMPBSolverCfg ) )
    return( __empty );
 
@@ -2045,25 +2053,25 @@ public:
 !!*/
 
 /*--------------------------------------------------------------------------*/
- 
+
  [[nodiscard]] int get_int_par( idx_type par ) const override;
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
- 
+
  [[nodiscard]] double get_dbl_par( idx_type par ) const override;
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
- 
+
  [[nodiscard]] const std::string & get_str_par( idx_type par )
   const override;
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
- 
+
  [[nodiscard]] const std::vector< int > & get_vint_par( idx_type par )
   const override;
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
- 
+
  [[nodiscard]] const std::vector< std::string > & get_vstr_par(
 					       idx_type par ) const override;
 
@@ -2072,30 +2080,30 @@ public:
  [[nodiscard]] idx_type int_par_str2idx( const std::string & name )
   const override {
   static const std::map< std::string , idx_type > int_pars_map = {
-   { "intBPar1" , BundleSolver::intBPar1  } ,
-   { "intBPar2" , BundleSolver::intBPar2  } ,
-   { "intBPar3" , BundleSolver::intBPar3 } ,
-   { "intBPar4" , BundleSolver::intBPar4 } ,
-   { "intBPar6" , BundleSolver::intBPar6 } ,
-   { "intBPar7" , BundleSolver::intBPar7 } ,
-   { "intMnSSC" , BundleSolver::intMnSSC } ,
-   { "intMnNSC" , BundleSolver::intMnNSC } ,
-   { "inttSPar1" , BundleSolver::inttSPar1 } ,
-   { "intMaxNrEvls" , BundleSolver::intMaxNrEvls } ,
-   { "intDoEasy" , BundleSolver::intDoEasy } ,
-   { "intWZNorm" , BundleSolver::intWZNorm } ,
-   { "intFrcLstSS" , BundleSolver::intFrcLstSS } ,
-   { "intTrgtMng" , BundleSolver::intTrgtMng } ,
-   { "intMPName" , BundleSolver::intMPName } , // TBD
-   { "intMPlvl" , BundleSolver::intMPlvl } ,
-   { "intMPStbl" , BundleSolver::intMPStbl } ,
-   { "intMPPrimal" , BundleSolver::intMPPrimal } ,    
-   { "intQPmp1" , BundleSolver::intQPmp1 } , // TBD
-   { "intQPmp2" , BundleSolver::intQPmp2 } , // TBD
-   { "intOSImp1" , BundleSolver::intOSImp1 } , // TBD
-   { "intOSImp2" , BundleSolver::intOSImp2 } , // TBD
-   { "intOSImp3" , BundleSolver::intOSImp3 } , // TBD
-   { "intRstAlg" , BundleSolver::intRstAlg } ,
+   { "intBPar1" , GeneralizedBundleSolver::intBPar1  } ,
+   { "intBPar2" , GeneralizedBundleSolver::intBPar2  } ,
+   { "intBPar3" , GeneralizedBundleSolver::intBPar3 } ,
+   { "intBPar4" , GeneralizedBundleSolver::intBPar4 } ,
+   { "intBPar6" , GeneralizedBundleSolver::intBPar6 } ,
+   { "intBPar7" , GeneralizedBundleSolver::intBPar7 } ,
+   { "intMnSSC" , GeneralizedBundleSolver::intMnSSC } ,
+   { "intMnNSC" , GeneralizedBundleSolver::intMnNSC } ,
+   { "inttSPar1" , GeneralizedBundleSolver::inttSPar1 } ,
+   { "intMaxNrEvls" , GeneralizedBundleSolver::intMaxNrEvls } ,
+   { "intDoEasy" , GeneralizedBundleSolver::intDoEasy } ,
+   { "intWZNorm" , GeneralizedBundleSolver::intWZNorm } ,
+   { "intFrcLstSS" , GeneralizedBundleSolver::intFrcLstSS } ,
+   { "intTrgtMng" , GeneralizedBundleSolver::intTrgtMng } ,
+   { "intMPName" , GeneralizedBundleSolver::intMPName } , // TBD
+   { "intMPlvl" , GeneralizedBundleSolver::intMPlvl } ,
+   { "intMPStbl" , GeneralizedBundleSolver::intMPStbl } ,
+   { "intMPPrimal" , GeneralizedBundleSolver::intMPPrimal } ,
+   { "intQPmp1" , GeneralizedBundleSolver::intQPmp1 } , // TBD
+   { "intQPmp2" , GeneralizedBundleSolver::intQPmp2 } , // TBD
+   { "intOSImp1" , GeneralizedBundleSolver::intOSImp1 } , // TBD
+   { "intOSImp2" , GeneralizedBundleSolver::intOSImp2 } , // TBD
+   { "intOSImp3" , GeneralizedBundleSolver::intOSImp3 } , // TBD
+   { "intRstAlg" , GeneralizedBundleSolver::intRstAlg } ,
    };
 
   const auto it = int_pars_map.find( name );
@@ -2110,23 +2118,23 @@ public:
  [[nodiscard]] idx_type dbl_par_str2idx( const std::string & name )
   const override {
   static const std::map< std::string , idx_type > dbl_pars_map = {
-   { "dblNZEps" , BundleSolver::dblNZEps } ,
-   { "dbltStar" , BundleSolver::dbltStar } ,
-   { "dblMinNrEvls" , BundleSolver::dblMinNrEvls } ,
-   { "dblBPar5" , BundleSolver::dblBPar5 } ,
-   { "dblm1" , BundleSolver::dblm1 } ,
-   { "dblm2" , BundleSolver::dblm2 } ,
-   { "dblm3" , BundleSolver::dblm3 } ,
-   { "dblmxIncr" , BundleSolver::dblmxIncr } ,
-   { "dblmnIncr" , BundleSolver::dblmnIncr } ,
-   { "dblmxDecr" , BundleSolver::dblmxDecr } ,
-   { "dblmnDecr" , BundleSolver::dblmnDecr } ,
-   { "dbltMaior" , BundleSolver::dbltMaior } ,
-   { "dbltMinor" , BundleSolver::dbltMinor } ,
-   { "dbltInit" , BundleSolver::dbltInit } ,
-   { "dbltSPar2" , BundleSolver::dbltSPar2 } ,
-   { "dbltSPar3" , BundleSolver::dbltSPar3 } ,
-   { "dblCtOff" , BundleSolver::dblCtOff } // TBD
+   { "dblNZEps" , GeneralizedBundleSolver::dblNZEps } ,
+   { "dbltStar" , GeneralizedBundleSolver::dbltStar } ,
+   { "dblMinNrEvls" , GeneralizedBundleSolver::dblMinNrEvls } ,
+   { "dblBPar5" , GeneralizedBundleSolver::dblBPar5 } ,
+   { "dblm1" , GeneralizedBundleSolver::dblm1 } ,
+   { "dblm2" , GeneralizedBundleSolver::dblm2 } ,
+   { "dblm3" , GeneralizedBundleSolver::dblm3 } ,
+   { "dblmxIncr" , GeneralizedBundleSolver::dblmxIncr } ,
+   { "dblmnIncr" , GeneralizedBundleSolver::dblmnIncr } ,
+   { "dblmxDecr" , GeneralizedBundleSolver::dblmxDecr } ,
+   { "dblmnDecr" , GeneralizedBundleSolver::dblmnDecr } ,
+   { "dbltMaior" , GeneralizedBundleSolver::dbltMaior } ,
+   { "dbltMinor" , GeneralizedBundleSolver::dbltMinor } ,
+   { "dbltInit" , GeneralizedBundleSolver::dbltInit } ,
+   { "dbltSPar2" , GeneralizedBundleSolver::dbltSPar2 } ,
+   { "dbltSPar3" , GeneralizedBundleSolver::dbltSPar3 } ,
+   { "dblCtOff" , GeneralizedBundleSolver::dblCtOff } // TBD
    };
 
   const auto it = dbl_pars_map.find( name );
@@ -2145,7 +2153,7 @@ public:
   if( name == "strHardCfg" )
    return( strHardCfg );
   if( name == "strMPBSolverCfg" )
-   return( strMPBSolver );
+   return( strMPBSolverCfg );
 
   return( CDASolver::str_par_str2idx( name ) );
   }
@@ -2165,11 +2173,11 @@ public:
  [[nodiscard]] idx_type vstr_par_str2idx( const std::string & name )
   const override {
   static const std::map< std::string , idx_type > vstr_pars_map = {
-   { "vstrCmpCfg" , BundleSolver::vstrCmpCfg } ,
-   { "vstr_C05_SPAR_Names" , BundleSolver::vstr_C05_SPAR_Names } ,
-   { "vstr_C05_SPAR_Vals" , BundleSolver::vstr_C05_SPAR_Vals } ,
-   { "vstr_C05_EI_SPAR_Names" , BundleSolver::vstr_C05_EI_SPAR_Names } ,
-   { "vstr_C05_EI_SPAR_Vals" , BundleSolver::vstr_C05_EI_SPAR_Vals }
+   { "vstrCmpCfg" , GeneralizedBundleSolver::vstrCmpCfg } ,
+   { "vstr_C05_SPAR_Names" , GeneralizedBundleSolver::vstr_C05_SPAR_Names } ,
+   { "vstr_C05_SPAR_Vals" , GeneralizedBundleSolver::vstr_C05_SPAR_Vals } ,
+   { "vstr_C05_EI_SPAR_Names" , GeneralizedBundleSolver::vstr_C05_EI_SPAR_Names } ,
+   { "vstr_C05_EI_SPAR_Vals" , GeneralizedBundleSolver::vstr_C05_EI_SPAR_Vals }
    };
 
   const auto it = vstr_pars_map.find( name );
@@ -2183,7 +2191,7 @@ public:
 
  [[nodiscard]] const std::string & int_par_idx2str( idx_type idx )
   const override {
-  static const std::array< std::string , 22 > int_pars_str = {
+  static const std::array< std::string , 24 > int_pars_str = {
    "intBPar1" , "intBPar2" , "intBPar3" , "intBPar4" , "intBPar6" ,
    "intBPar7" , "intMnSSC" , "intMnNSC" , "inttSPar1" , "intMaxNrEvls" ,
    "intDoEasy" , "intWZNorm" , "intFrcLstSS" , "intTrgtMng" , "intMPName" ,
@@ -2251,18 +2259,18 @@ public:
   }
 
 /** @} ---------------------------------------------------------------------*/
-/*----------- METHODS FOR HANDLING THE State OF THE BundleSolver -----------*/
+/*----------- METHODS FOR HANDLING THE State OF THE GeneralizedBundleSolver -----------*/
 /*--------------------------------------------------------------------------*/
-/** @name Handling the State of the BundleSolver
+/** @name Handling the State of the GeneralizedBundleSolver
  *  @{ */
 
  State * get_State( void ) const override;
 
 /*--------------------------------------------------------------------------*/
- /// sets the current "internal state" of the BundleSolver
- /** This method reads \p state, which must be a BundleSolverState (otherwise
+ /// sets the current "internal state" of the GeneralizedBundleSolver
+ /** This method reads \p state, which must be a GeneralizedBundleSolverState (otherwise
   * exception is thrown) and uses it to set the  "internal state" of the
-  * BundleSolver. \p state is not changed (could not, it's const) so that it
+  * GeneralizedBundleSolver. \p state is not changed (could not, it's const) so that it
   * can be re-used later.
   *
   *     IMPORTANT NOTE: IT IS NOT ALLOWED TO CALL THIS METHOD WHILE compute()
@@ -2271,10 +2279,10 @@ public:
  void put_State( const State & state ) override;
 
 /*--------------------------------------------------------------------------*/
- /// sets the current "internal state" of the BundleSolver
- /** This method reads \p state, which must be a BundleSolverState (otherwise
+ /// sets the current "internal state" of the GeneralizedBundleSolver
+ /** This method reads \p state, which must be a GeneralizedBundleSolverState (otherwise
   * exception is thrown) and uses it to set the  "internal state" of the
-  * BundleSolver. \p state is "moved inside" the BundleSolver, hence at the
+  * GeneralizedBundleSolver. \p state is "moved inside" the GeneralizedBundleSolver, hence at the
   * end of the call is in a consistent state but "empty", and therefore it
   * will probably be immediately destroyed as it has little remaining use.
   *
@@ -2293,7 +2301,7 @@ public:
 /*-------------------------------- FRIENDS ---------------------------------*/
 /*--------------------------------------------------------------------------*/
 
- friend class BundleSolverState;  // make BundleSolverState friend
+ friend class GeneralizedBundleSolverState;  // make GeneralizedBundleSolverState friend
 
 /*--------------------------------------------------------------------------*/
 /*--------------------- PROTECTED PART OF THE CLASS ------------------------*/
@@ -2315,7 +2323,7 @@ public:
 /*-------------------------- PROTECTED METHODS -----------------------------*/
 /*--------------------------------------------------------------------------*/
 
- void guts_of_put_State( const BundleSolverState & state );
+ void guts_of_put_State( const GeneralizedBundleSolverState & state );
 
 /*--------------------------------------------------------------------------*/
  /* FormD() just calls SolveMP() once and calculates the direction d:
@@ -2643,7 +2651,7 @@ public:
  /** Concave functions to be maximised are sneakily turned into convex
   * functions to be minimized inside by changing the sign of function values
   * and linearizations, but they have to be output with the right sign. */
- 
+
  VarValue rs( const VarValue fv ) {
   return( f_convex ? fv : - fv );
   }
@@ -2709,14 +2717,14 @@ public:
  Index BPar4;       ///< min number of items fetched from Fi() at each call
  double BPar5;      ///< control how the actual BPar3 changes over time
  int BPar6;         ///< control how the actual BPar3 changes over time
- int BPar7;         ///< if BundleSolver "plays nice" with other Solver
+ int BPar7;         ///< if GeneralizedBundleSolver "plays nice" with other Solver
 
  double mxIncr;     ///< max increase t parameter
  double mnIncr;     ///< min increase t parameter
- Index MnSSC;       ///< min good iterations to do a SS 
+ Index MnSSC;       ///< min good iterations to do a SS
  double mxDecr;     ///< max decrease t parameter
  double mnDecr;     ///< min decrease t parameter
- Index MnNSC;       ///< max bad iterations to do a NS 
+ Index MnNSC;       ///< max bad iterations to do a NS
 
  double m1;         ///< m1 parameter for deciding if a SS/NS
  double m2;         ///< m2 parameter for deciding if a SS/NS
@@ -2751,14 +2759,18 @@ public:
  Index MxRmv;       ///< max variables added per iteration in QPPenaltyMP // TBD
 
  double CtOff;      ///< "break" value for the pricing in MinQuad // TBD
- 
+
  Index algo;        ///< algorithm type ( for OSIMPSolver only ) // TBD
  Index reduction;   ///< pre-processing (reduction) ( for OSIMPSolver only ) // TBD
  Index threads;     ///< number of threads ( for OSIMPSolver only ) // TBD
 
  Index MPlvl;       ///< log verbosity of master problem
 
- stabilization_type MPStbl;  ///< type of stabilization for the master problem
+ MasterProblemBlock::stabilization_type MPStbl;
+                    ///< type of stabilization for the master problem
+
+ bool IsMPPrimal;   ///< whether the master problem is solved in its primal
+                    ///< form (true) or in its dual one (false)
 
  int RstAlgPrm;     ///< reset parameter, bit-wise coded
 
@@ -2797,9 +2809,9 @@ public:
  Index NrFi;        ///< number of components of Fi()
 
  Index SCalls;      ///< number of calls to compute() (the current included)
- Index ParIter;     ///< number of iterations in this call to compute() 
+ Index ParIter;     ///< number of iterations in this call to compute()
 
- std::vector< bool > IsEasy; 
+ std::vector< bool > IsEasy;
  ///< true if the component k has found to be easy
 
  Index NrEasy;      ///< number of "easy" component of Fi
@@ -2825,7 +2837,7 @@ public:
   * (a NS can be done); MPchgs == 2 means that a vertical linearization
   * (cutting off Lambda1) has been found, and this by itself ensures no
   * cycling. */
- 
+
  Subset whisZ;     /**< the position in the bundle where the "aggregate
 		    * subgradient" Z[ k ] of component k is kept in
 		    * whisZ[ k ]; Inf< Index >() == it is not in the bundle */
@@ -2874,7 +2886,7 @@ public:
 
  Vec_VarValue LowerBound;  ///< Lower Bound over (each component of) Fi
  VarValue f_global_LB;     ///< an algorithmically discovered global LB
- 
+
  VarValue t;           ///< the (tremendous) t parameter
  VarValue Prevt;       ///< what t were before being changed for funny reasons
 
@@ -2910,7 +2922,7 @@ public:
  Subset NrItems;  ///< number of items in the bundle for each component
 
  /** FrFItem[ k ] contains the index of the first position in the global
-  * pool of component k where BundleSolver can put a new linearization when
+  * pool of component k where GeneralizedBundleSolver can put a new linearization when
   * the corresponding item is added to the bundle (master problem). Note
   * that whether a position is suitable to this depends on BPar2: if
   * ( BPar7 & 3 == 0 ), then the position must be completely empty
@@ -2948,7 +2960,7 @@ public:
   *
   * NOTE: THE GLOBAL POOL OF SOME C05Function CAN BE LARGER THAN vBPar2[ k ],
   * BUT ALL ELEMENTS WITH NAME LARGER THAN vBPar2[ k ] ARE NEVER USED OR
-  * CHANGED BY BundleSolver. */
+  * CHANGED BY GeneralizedBundleSolver. */
 
  std::vector< Subset > InvItemVcblr;
 
@@ -2981,8 +2993,12 @@ public:
  LinearFunction * f_lf;  ///< the 0-th component of the sum function
 
  bool f_convex;          ///< true if all objectives are convex
- 
+
  MasterProblemBlock * MasterPB;      ///< (pointer to) the Master Problem Block // NEW
+
+ MPSolver * Master;
+ ///< legacy NDOSolver MPSolver pointer; kept around until the master is
+ ///< fully driven through MasterPB. See task #24.
 
  std::vector< ColVariable * > LamVcblr;  ///< map Lambda -> ColVariable
 
@@ -2998,7 +3014,7 @@ public:
                          /**< true if the last point in which all non-easy
 			  * components have been compute()-d is the current
 			  * point Lambda. */
- 
+
  Vec_VarValue UpFiLmb1;  ///< upper function values at Lambda1
  Vec_VarValue LwFiLmb1;  ///< lower function values at Lambda1
  Index UpFiLmb1def;      ///< how many entries of UpFiLmb1 are < INF
@@ -3011,7 +3027,7 @@ public:
 
  VarValue Fi0Lmb;        ///< value of the linear 0-th component in Lambda
  VarValue Fi0Lmb1;       ///< value of the linear 0-th component in Lambda1
- 
+
  Subset CurrNrEvls;      /**< how many times compute() has been called for
 			  * each component in the current iteration */
 
@@ -3039,7 +3055,7 @@ public:
 /*--------------------------- GENERAL NOTES --------------------------------*/
 /*--------------------------------------------------------------------------*/
 /** FakeFiOracle implements the part of the FiOracle interface that is
- * strictly necessary to use a MPSolver inside BundleSolver. This hack will
+ * strictly necessary to use a MPSolver inside GeneralizedBundleSolver. This hack will
  * one day be replaced with a native implementation of the master problem
  * solver, but until then, there you go. */ // TBD All this should go away
 
@@ -3053,10 +3069,10 @@ class FakeFiOracle : public FiOracle
 /*--------------------- PUBLIC METHODS OF THE CLASS ------------------------*/
 /*--------------------------------------------------------------------------*/
 /*---------------------------- CONSTRUCTOR ---------------------------------*/
-/** Constructor of the class: takes the pointer to the BundleSolver it has
+/** Constructor of the class: takes the pointer to the GeneralizedBundleSolver it has
  * to "serve". */
 
- FakeFiOracle( BundleSolver *solver ) : FiOracle() {
+ FakeFiOracle( GeneralizedBundleSolver *solver ) : FiOracle() {
   bslv = solver;
   }
 
@@ -3159,7 +3175,7 @@ class FakeFiOracle : public FiOracle
 
  protected:
 
- BundleSolver * bslv;  ///< the BundleSolver that I "serve"
+ GeneralizedBundleSolver * bslv;  ///< the GeneralizedBundleSolver that I "serve"
 
  };  // end( class FakeFiOracle )
 
@@ -3252,7 +3268,7 @@ class FakeFiOracle : public FiOracle
 /*--------------------------------------------------------------------------*/
 
  Lst_sp_Mod::size_type num_outstanding_Modification( void );
- 
+
  bool is_special_GroupMod( GroupModification & gmod );
 
  void flatten_Modification_list( Lst_sp_Mod & vmt , sp_Mod mod );
@@ -3295,19 +3311,19 @@ class FakeFiOracle : public FiOracle
 
 /*--------------------------------------------------------------------------*/
 
- };  // end( class BundleSolver )
+ };  // end( class GeneralizedBundleSolver )
 
 /*--------------------------------------------------------------------------*/
-/*------------------------ CLASS BundleSolverState -------------------------*/
+/*------------------------ CLASS GeneralizedBundleSolverState -------------------------*/
 /*--------------------------------------------------------------------------*/
-/// class to describe the "internal state" of a BundleSolver
+/// class to describe the "internal state" of a GeneralizedBundleSolver
 /** Derived class from State to describe the "internal state" of a
- * BundleSolver: the current stability centre, the proximal parameters, and
+ * GeneralizedBundleSolver: the current stability centre, the proximal parameters, and
  * the global pool of all non-easy components. In a better world the State
  * should comprise the State of the Solver used to solve the Master Problem;
  * this will hopefully happen one day. */
 
-class BundleSolverState : public State {
+class GeneralizedBundleSolverState : public State {
 
 /*----------------------- PUBLIC PART OF THE CLASS -------------------------*/
 
@@ -3315,21 +3331,21 @@ class BundleSolverState : public State {
 
 /*----------------------------- PUBLIC TYPES -------------------------------*/
 
- using Index = BundleSolver::Index;
- using VarValue = BundleSolver::VarValue;
- using Vec_VarValue = BundleSolver::Vec_VarValue;
+ using Index = GeneralizedBundleSolver::Index;
+ using VarValue = GeneralizedBundleSolver::VarValue;
+ using Vec_VarValue = GeneralizedBundleSolver::Vec_VarValue;
 
-/*------------ CONSTRUCTING AND DESTRUCTING BundleSolverState --------------*/
+/*------------ CONSTRUCTING AND DESTRUCTING GeneralizedBundleSolverState --------------*/
 
  /// constructor, doing everything or nothing.
- /** Constructor of BundleSolverState. If provided with a pointer to a
-  * BundleSolver it immediately copies its "internal state", which is the only
-  * way in which the BundleSolverState can be initialised out of an existing
-  * BundleSolverState. If nullptr is passed (as by default), then an "empty"
-  * BundleSolverState is constructed that can only be filled by calling
+ /** Constructor of GeneralizedBundleSolverState. If provided with a pointer to a
+  * GeneralizedBundleSolver it immediately copies its "internal state", which is the only
+  * way in which the GeneralizedBundleSolverState can be initialised out of an existing
+  * GeneralizedBundleSolverState. If nullptr is passed (as by default), then an "empty"
+  * GeneralizedBundleSolverState is constructed that can only be filled by calling
   * deserialize(). */
 
- BundleSolverState( const BundleSolver * bs = nullptr ) : State() {
+ GeneralizedBundleSolverState( const GeneralizedBundleSolver * bs = nullptr ) : State() {
   if( ! bs ) {
    NrFi = NumVar = 0;
    return;
@@ -3347,7 +3363,7 @@ class BundleSolverState : public State {
   Fi0Lmb = bs->Fi0Lmb;
   global_LB = bs->f_global_LB;
   v_comp_State.resize( NrFi , nullptr );
-  for( BundleSolver::Index i = 0 ; i < NrFi ; ++i ) {
+  for( GeneralizedBundleSolver::Index i = 0 ; i < NrFi ; ++i ) {
    if( bs->NrEasy && bs->IsEasy[ i ] )
     continue;
    v_comp_State[ i ] = bs->v_c05f[ i ]->get_State();
@@ -3355,24 +3371,24 @@ class BundleSolverState : public State {
   }
 
 /*--------------------------------------------------------------------------*/
- /// de-serialize a BundleSolverState out of netCDF::NcGroup
- /** De-serialize a BundleSolverState out of netCDF::NcGroup; see
-  * BundleSolverState::serialize() for a description of the format. */
+ /// de-serialize a GeneralizedBundleSolverState out of netCDF::NcGroup
+ /** De-serialize a GeneralizedBundleSolverState out of netCDF::NcGroup; see
+  * GeneralizedBundleSolverState::serialize() for a description of the format. */
 
  void deserialize( const netCDF::NcGroup & group ) override;
 
 /*--------------------------------------------------------------------------*/
  /// destructor
 
- virtual ~BundleSolverState() {
+ virtual ~GeneralizedBundleSolverState() {
   for( auto el : v_comp_State )
    delete el;
   }
 
-/*--------- METHODS DESCRIBING THE BEHAVIOR OF A BundleSolverState ---------*/
+/*--------- METHODS DESCRIBING THE BEHAVIOR OF A GeneralizedBundleSolverState ---------*/
 
- /// serialize a BundleSolverState into a netCDF::NcGroup
- /** The method serializes the BundleSolverState into the provided
+ /// serialize a GeneralizedBundleSolverState into a netCDF::NcGroup
+ /** The method serializes the GeneralizedBundleSolverState into the provided
   * netCDF::NcGroup, so that it can later be read back by deserialize().
   *
   * After the call, \p group will contain:
@@ -3431,7 +3447,7 @@ class BundleSolverState : public State {
 
 /*-------------------------------- FRIENDS ---------------------------------*/
 
- friend class BundleSolver;  // make BundleSolver friend
+ friend class GeneralizedBundleSolver;  // make GeneralizedBundleSolver friend
 
 /*-------------------- PROTECTED PART OF THE CLASS -------------------------*/
 
@@ -3440,7 +3456,7 @@ class BundleSolverState : public State {
 /*-------------------------- PROTECTED METHODS -----------------------------*/
 
  void print( std::ostream &output ) const override {
-  output << "BundleSolverState [" << this << "] with NrFi = " << NrFi
+  output << "GeneralizedBundleSolverState [" << this << "] with NrFi = " << NrFi
 	 << " and NumVar = " << NumVar;
   }
 
@@ -3478,7 +3494,7 @@ class BundleSolverState : public State {
 
 /*--------------------------------------------------------------------------*/
 
- };  // end( class( BundleSolverState ) )
+ };  // end( class( GeneralizedBundleSolverState ) )
 
 /** @} end( group( BundleSolver_CLASSES ) ) --------------------------------*/
 /*--------------------------------------------------------------------------*/
@@ -3488,8 +3504,8 @@ class BundleSolverState : public State {
 /*--------------------------------------------------------------------------*/
 /*--------------------------------------------------------------------------*/
 
-#endif  /* BundleSolver.h included */
+#endif  /* GeneralizedBundleSolver.h included */
 
 /*--------------------------------------------------------------------------*/
-/*------------------------- End File BundleSolver.h ------------------------*/
+/*------------------------- End File GeneralizedBundleSolver.h ------------------------*/
 /*--------------------------------------------------------------------------*/

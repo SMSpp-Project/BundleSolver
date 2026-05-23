@@ -7,7 +7,7 @@
  * \author Antonio Frangioni \n
  *         Dipartimento di Informatica \n
  *         Universita' di Pisa \n
- * 
+ *
  * \author Enrico Calandrini \n
  *         Dipartimento di Informatica \n
  *         Universita' di Pisa \n
@@ -141,7 +141,7 @@
  * stopping criterion of the algorithm. Negative linearization errors may
  * lead to a negative Sigma, which breaks the stopping criterion.
  *
- * GeneralizedBundleSolver is engineered to be "resistant" to Negative linearization 
+ * GeneralizedBundleSolver is engineered to be "resistant" to Negative linearization
  * errors by detecting negative Sigma and performing "noise reduction steps"
  * to try to make them go away. However, in general one may expect that, for
  * some applications, this should never happen as the functions are convex
@@ -157,7 +157,7 @@
  *
  * - CHECK_BAD_F & 2 == checks the sign of any linearization error of any
  *                      new subgradient w.r.t. the current stability centre
- *                      Lambda as soon as the subgradient is extracted from 
+ *                      Lambda as soon as the subgradient is extracted from
  *                      the corresponding oracle; the check is disable at
  *                      the first iteration and in general whenever the
  *                      reference value of the corresponding component is
@@ -440,15 +440,15 @@ SMSpp_insert_in_factory_cpp_0( GeneralizedBundleSolver );
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
-// register BundleSolverState to the State factory
+// register GeneralizedBundleSolverState to the State factory
 
-SMSpp_insert_in_factory_cpp_0( BundleSolverState );
+SMSpp_insert_in_factory_cpp_0( GeneralizedBundleSolverState );
 
 /*--------------------------------------------------------------------------*/
 /*------------- METHODS OF GeneralizedBundleSolver -------------------------*/
 /*--------------------------------------------------------------------------*/
 
-int BundleSolver::compute( bool changedvars )
+int GeneralizedBundleSolver::compute( bool changedvars )
 {
  // ensure no concurrent accesses - - - - - - - - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -456,7 +456,7 @@ int BundleSolver::compute( bool changedvars )
  lock();                        // ... either from other threads
 
  if( Result == kStillRunning )  // ... or from the same
-  throw( std::logic_error( "BundleSolver::compute() called within itself" )
+  throw( std::logic_error( "GeneralizedBundleSolver::compute() called within itself" )
 	 );
 
  // basic sanity checks - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -604,7 +604,7 @@ int BundleSolver::compute( bool changedvars )
    BLOG( 1 , " ~ stop (MP unbounded)" << std::endl );
    break;
    }
-  
+
   if( Result >= kError ) {  // problems in the Master Problem solver
    BLOG( 1 , " ~ error in the MPSolver" << std::endl );
    break;
@@ -1123,7 +1123,7 @@ int BundleSolver::compute( bool changedvars )
 
  return( Result );
 
- }  // end( BundleSolver::compute )
+ }  // end( GeneralizedBundleSolver::compute )
 
 /*--------------------------------------------------------------------------*/
 /*-------------------------- OTHER INITIALIZATIONS -------------------------*/
@@ -1146,10 +1146,10 @@ void GeneralizedBundleSolver::set_Block( Block * block )
 
  /* Immediately create the MasterProblemBlock. This is needed because
   * in this phase two things will happen involving MPB:
-  *   - it will populate the structure needed for the master problem 
+  *   - it will populate the structure needed for the master problem
   *     using all the information coming from the Block;
-  *   - it will silently register itself as father of the easy components. 
-  *     This is needed because MPB will have to respond to all the 
+  *   - it will silently register itself as father of the easy components.
+  *     This is needed because MPB will have to respond to all the
   *     Modifications affecting such components, and hence must be informed.
  .*/
  CreateMPB();
@@ -1217,9 +1217,9 @@ void GeneralizedBundleSolver::set_Block( Block * block )
    if( ! obj )
     throw( std::logic_error( "the objective is not a real function" ) );
 
-   if( ! obj->get_function() ){ // the FRealObjective has no Function
+   if( ! obj->get_function() ) { // the FRealObjective has no Function
     f_lf = nullptr;
-    
+    }
    else {
     f_lf = dynamic_cast< LinearFunction * >( obj->get_function() );
     if( ! f_lf )
@@ -1288,7 +1288,7 @@ void GeneralizedBundleSolver::set_Block( Block * block )
  // its separate set of variables and add some map to trace back each of them
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- // Extracting the set of active variables. With the old hypothesis we can always use 
+ // Extracting the set of active variables. With the old hypothesis we can always use
  // the first one (could be the complete or the one of the first sub-blocks) because
  // they must share the same set. The linear one is stored separately.
  NumVar = v_c05f[ 0 ]->get_num_active_var();
@@ -1413,7 +1413,7 @@ void GeneralizedBundleSolver::set_Block( Block * block )
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
  NrEasy = 0;
- if( DoEasy ) { 
+ if( DoEasy ) {
  // retrieve the ComputeConfig for the "easy" components, if any
  ComputeConfig * eCC = nullptr;
  if( ! EasyCfg.empty() ) {
@@ -1434,48 +1434,40 @@ void GeneralizedBundleSolver::set_Block( Block * block )
 
   auto LagB = dynamic_cast< LagBFunction * >( v_c05f[ k ] );
   if( LagB ) {
-    auto MILPs = new MILPSolver();
-    try {  // check if the inner Block of the LagBFunction is all-linear
-     // do this by trying to register the MILPSolver to the inner Block; if
-     // the operation succeeds than the component may be easy (provided that
-     // also all variables are continuous), otherwise it surely is not,
-     // which is captured by the fact that exception is thrown.
-     // Note that the MILPSolver constructed here is used just for performing
-     // a check, and will be destroyed immediately afterwards. The inner block
-     // will instead be registered to the MPB later, and will use its solver
-     // in following stages.
-     MILPs->set_Block( LagB->get_inner_block() );
-     // the component is easy only if all variables are continuous
-     if( ! MILPs->get_num_integer_vars() ) {
-      IsEasy[ k ] = 1;
-      ++NrEasy;
+   auto MILPs = new MILPSolver();
+   try {  // check if the inner Block of the LagBFunction is all-linear
+    // do this by trying to register the MILPSolver to the inner Block; if
+    // the operation succeeds than the component may be easy (provided that
+    // also all variables are continuous), otherwise it surely is not,
+    // which is captured by the fact that an exception is thrown.
+    // Note that the MILPSolver constructed here is used just for performing
+    // the check, and is destroyed at the end of this scope regardless of
+    // the outcome -- the inner Block will be registered to the MPB later,
+    // and will use its own solver in the following stages.
+    MILPs->set_Block( LagB->get_inner_block() );
+    // the component is "easy" only if every variable is continuous
+    if( ! MILPs->get_num_integer_vars() ) {
+     IsEasy[ k ] = 1;
+     ++NrEasy;
 
-      // this is done since OSIMPSolver does not deal with constant term TBD: CHECK IF WE CAN ALLOW THIS IN MPB
-      constant_value += LagB->get_constant_term();
-
-      /* NOT NEEDED ANYMORE 
-      // if dynamic updating of the easy component is allowed for any piece
-      // of data, register the MILPSolver with the inner Block, as this is not
-      // done by [MILP]Solver::set_Block(); note that this calls set_Block()
-      // again, which is why it is important that [MILP]Solver::set_Block()
-      // check that the Block is the same and ignores it
-      // TBD
-      if( DoEasy & ~1 )
-       LagB->get_inner_block()->register_Solver( MILPs ); */
-      }
+     // this is done since OSIMPSolver does not deal with constant terms
+     // TBD: CHECK IF WE CAN ALLOW THIS IN MPB
+     constant_value += LagB->get_constant_term();
+     }
     }
-  // In any case, delete the temporary MILPSolver 
-  delete MILPs;
+   catch( ... ) {  // exception means that something nonlinear is there
+    }
+   delete MILPs;
+   }
   }
- }
 
  if( ! NrEasy )
   IsEasy.clear();
  else {
   if( NrEasy == NrFi )
    throw( std::logic_error(
-	  "BundleSolver: all components are easy, this is no supported" ) );
-   
+	  "GeneralizedBundleSolver: all components are easy, this is no supported" ) );
+
  // ComputeConfig-ure the easy components
  if( eCC || ( ! CmpCfg.empty() ) )
   for( Index k = 0 ; k < NrFi ; ++k ) {
@@ -1520,13 +1512,13 @@ void GeneralizedBundleSolver::set_Block( Block * block )
  // if the non-easy ComputeConfig is provided, apply it.
  //
  // in all cases, set the global pool size, *after* having configured them.
- // this is necessary in that with BPar2 == 0, BundleSolver just takes
+ // this is necessary in that with BPar2 == 0, GeneralizedBundleSolver just takes
  // whatever size of the global pool it finds in the C05Function (that may
  // have been just set by the non-easy ComputeConfig). with BPar2 > 0,
- // instead, BundleSolver ensures that the size of the global pool is *at
+ // instead, GeneralizedBundleSolver ensures that the size of the global pool is *at
  // least* BPar2 by increasing it if it is below. this means that:
- // - BundleSolver never *decreases* the size of the global pool
- // - BundleSolver only uses the first BPar2 linearizations in each global
+ // - GeneralizedBundleSolver never *decreases* the size of the global pool
+ // - GeneralizedBundleSolver only uses the first BPar2 linearizations in each global
  //   pool; if there are more, the other ones are ignored
  //
  // meanwhile, also set the accuracy of multipliers
@@ -1606,7 +1598,7 @@ void GeneralizedBundleSolver::set_Block( Block * block )
     auto par = ps_insert( *(Vit++) , "_" + std::to_string( k ) );
     if( ( name.size() > 4 ) && ( name.substr( 0 , 4 ) == "vstr" ) )
      Ck.set_par( std::string( name ) ,
-		 std::vector< std::string >( { par } ) );     
+		 std::vector< std::string >( { par } ) );
     else
      Ck.set_par( std::string( name ) , std::move( par ) );
     }
@@ -1724,7 +1716,7 @@ void GeneralizedBundleSolver::set_Block( Block * block )
  InitMPB();
 
  // cleanup MILPSolver data-TBD- - - - - - - - - - - - - - - - - - - - - -
- // - - - -  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+ // - - - -  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // now that the MPSolver has read all the information it needs out of the
  // MILPSolver, cleanup all un-necessary data; note that clear_problem() tells
  // which data to delete with exactly the same bit mapping as DoEasy tells
@@ -1740,10 +1732,14 @@ void GeneralizedBundleSolver::set_Block( Block * block )
  // static, which would require one parameter; doable, but not now
 
  if( NrEasy ) {
-  const char which = ( DoEasy & ~1 ) ^ 15;
-  for( Index k = 0 ; k < NrFi ; ++k )
-   if( IsEasy[ k ] )
-    IsEasy[ k ]->clear_problem( which );
+  // TODO (task #24): the legacy implementation iterated over the
+  // per-easy-cmp MILPSolver pointers stored in IsEasy and invoked
+  // clear_problem(which) on each of them. With IsEasy now a
+  // std::vector<bool> and the easy-component sub-Blocks owned by
+  // MasterPB, this should reach the [MILP]Solver attached to every
+  // MasterPB->get_easy_component(k) and trigger the same clear_problem
+  // there. Left as a no-op until the MasterPB-side wiring is in place.
+  // const char which = ( DoEasy & ~1 ) ^ 15; (void) which;
   }
 
  // reset algorithm  - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1762,14 +1758,14 @@ void GeneralizedBundleSolver::set_Block( Block * block )
  // otherwise read from all the C05Function and mark into InvItemVcblr each
  // and every linearization found in their global pools
  //
- // note that if ( BPar7 & 3 ) >= 2, BundleSolver will happily delete from
+ // note that if ( BPar7 & 3 ) >= 2, GeneralizedBundleSolver will happily delete from
  // the global pool any linearization it deletes from the bundle; yet we do
  // not immediately delete existing linearizations from the global pools here.
  // these will likely be overwritten during the optimization, and if memory
  // is a problem they can be cleaned up by the user before set_Block() is
  // called. besides, in many scenarios there will be no linearizations anyway
- // 
- // however, if ( BPar7 & 3 ) == 3 then BundleSolver does not care at all
+ //
+ // however, if ( BPar7 & 3 ) == 3 then GeneralizedBundleSolver does not care at all
  // about what linearizations are there in the global pool because it will
  // treat any position in the global pool as available for it regardless to
  // if there is anything there; hence, in this case we do not bother to even
@@ -1803,11 +1799,11 @@ void GeneralizedBundleSolver::set_Block( Block * block )
  if( ! owned )
   f_Block->unlock( f_id );
 
- }  // end( BundleSolver::set_Block )
+ }  // end( GeneralizedBundleSolver::set_Block )
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::set_par( idx_type par , int value )
+void GeneralizedBundleSolver::set_par( idx_type par , int value )
 {
  switch( par ) {
   case( intMaxIter ):
@@ -1874,41 +1870,33 @@ void BundleSolver::set_par( idx_type par , int value )
    MPName = value;
    break;
   case( intMPlvl ): MPlvl = value; break;
-  case( intMPStbl ): MPStbl = value; break;
-  case( intMPPrimal ): IsMPPrimal = value; break;
+  case( intMPStbl ):
+   MPStbl = static_cast< MasterProblemBlock::stabilization_type >( value );
+   break;
+  case( intMPPrimal ): IsMPPrimal = bool( value ); break;
   case( intQPmp1 ): MxAdd = value; break;
   case( intQPmp2 ): MxRmv = value; break;
   case( intOSImp1 ):
-   if( algo != Index( value ) ) {
-    algo = value;
-    if( auto osi_mps = dynamic_cast< OSIMPSolver * >( Master ) )
-     osi_mps->SetAlgo( OSIMPSolver::OsiAlg( algo ) ,
-		       OSIMPSolver::OsiRed( reduction ) );
-    }
+   // TODO (task #24): legacy NDOFi OSIMPSolver path. With the master
+   // problem now handled by MasterProblemBlock + a regular [MILP]Solver
+   // attached to it via BlockSolverConfig, this parameter should either
+   // disappear or forward to the right ComputeConfig field of that Solver.
+   algo = value;
    break;
   case( intOSImp2 ):
-   if( reduction != Index( value ) ) {
-    reduction = value;
-    if( auto osi_mps = dynamic_cast< OSIMPSolver * >( Master ) )
-     osi_mps->SetAlgo( OSIMPSolver::OsiAlg( algo ) ,
-		       OSIMPSolver::OsiRed( reduction ) );
-    }
+   reduction = value;  // see TODO at intOSImp1
    break;
   case( intOSImp3 ):
-   if( threads != Index( value ) ) {
-    threads = value;
-    if( auto osi_mps = dynamic_cast< OSIMPSolver * >( Master ) )
-     osi_mps->SetThreads( threads );
-    }
+   threads = value;  // see TODO at intOSImp1
    break;
   case( intRstAlg ): RstAlgPrm = value; break;
   default: CDASolver::set_par( par , value );
   }
- }  // end( BundleSolver::set_par( int ) )
+ }  // end( GeneralizedBundleSolver::set_par( int ) )
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::set_par( idx_type par , double value )
+void GeneralizedBundleSolver::set_par( idx_type par , double value )
 {
  switch( par ) {
   case( dblMaxTime ):
@@ -2011,11 +1999,11 @@ void BundleSolver::set_par( idx_type par , double value )
   default:
    CDASolver::set_par( par , value );
   }
- }  // end( BundleSolver::set_par( double ) )
+ }  // end( GeneralizedBundleSolver::set_par( double ) )
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::set_par( idx_type par , std::string && value )
+void GeneralizedBundleSolver::set_par( idx_type par , std::string && value )
 {
  switch( par ) {
   case( strEasyCfg ):
@@ -2030,11 +2018,11 @@ void BundleSolver::set_par( idx_type par , std::string && value )
   default:
    CDASolver::set_par( par , std::move( value ) );
   }
- }  // end( BundleSolver::set_par( std::string && ) )
+ }  // end( GeneralizedBundleSolver::set_par( std::string && ) )
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::set_par( idx_type par , std::vector< int > && value )
+void GeneralizedBundleSolver::set_par( idx_type par , std::vector< int > && value )
 {
  if( par == vintNoEasy )
   NoEasy = std::move( value );
@@ -2044,7 +2032,7 @@ void BundleSolver::set_par( idx_type par , std::vector< int > && value )
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::set_par( idx_type par ,
+void GeneralizedBundleSolver::set_par( idx_type par ,
 			    std::vector< std::string > && value )
 {
  switch( par ) {
@@ -2063,7 +2051,7 @@ void BundleSolver::set_par( idx_type par ,
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::set_log( std::ostream * log_stream )
+void GeneralizedBundleSolver::set_log( std::ostream * log_stream )
 {
  f_log = log_stream;
  if( Master )
@@ -2074,7 +2062,7 @@ void BundleSolver::set_log( std::ostream * log_stream )
 /*---------------------- METHODS FOR READING RESULTS -----------------------*/
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::get_var_solution( Configuration *solc ) 
+void GeneralizedBundleSolver::get_var_solution( Configuration *solc )
 {
  // first take the values of the ColVariable in the Block
 
@@ -2126,51 +2114,40 @@ void BundleSolver::get_var_solution( Configuration *solc )
 
   return;
   }
- }  // end( BundleSolver::get_var_solution )
+ }  // end( GeneralizedBundleSolver::get_var_solution )
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::get_var_solution_easy_pi( Index k )
+void GeneralizedBundleSolver::get_var_solution_easy_pi( Index k )
 {
- if( ! ( ( DoEasy & 12 ) == 12 ) ) // TBD
-  throw( std::logic_error(
-	      "intDoEasy & 12 == 12 required to get easy components pi" ) );
- 
- auto nr = IsEasy[ k ]->get_numrows();
- std::vector< double > pi( nr );
+ (void) k;
+ // TODO (task #24): the legacy implementation read the dual solution of
+ // the k-th easy component directly from the NDOFi Master->ReadDualEasy()
+ // and wrote it into the per-easy MILPSolver kept in IsEasy. With the
+ // master now owned by MasterPB and IsEasy reduced to a vector<bool>,
+ // this should reach the easy-cmp sub-Block through
+ // MasterPB->get_easy_component(k) and read its dual solution there.
+ throw( std::logic_error(
+      "GeneralizedBundleSolver::get_var_solution_easy_pi: not yet "
+      "ported to the MasterProblemBlock-driven master" ) );
 
- cHpRow DE = Master->ReadDualEasy( k + 1 );
-
- for( int i = 0 ; i < nr ; ++i )
-  pi[ i ] = DE[ i ];
- 
- IsEasy[ k ]->write_dual_solution( pi , {} );
-
- }  // end( BundleSolver::get_var_solution_easy_pi() )
+ }  // end( GeneralizedBundleSolver::get_var_solution_easy_pi() )
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::get_var_solution_easy_rc( Index k )
+void GeneralizedBundleSolver::get_var_solution_easy_rc( Index k )
 {
- if( ! ( DoEasy & 8 ) ) //TBD
-  throw( std::logic_error( "intDoEasy & 8 required to get easy components rc"
-			   ) );
+ (void) k;
+ // TODO (task #24): see get_var_solution_easy_pi above.
+ throw( std::logic_error(
+      "GeneralizedBundleSolver::get_var_solution_easy_rc: not yet "
+      "ported to the MasterProblemBlock-driven master" ) );
 
- auto nc = IsEasy[ k ]->get_numcols();
- std::vector< double > rc( nc );
-
- cHpRow RCE = Master->ReadReducedCostsEasy( k + 1 );
-
- for( int i = 0 ; i < nc ; ++i )
-  rc[ i ] = RCE[ i ];
- 
- IsEasy[ k ]->write_dual_solution( {} , rc );
-
- }  // end( BundleSolver::get_var_solution_easy_pi() )
+ }  // end( GeneralizedBundleSolver::get_var_solution_easy_rc() )
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::get_dual_solution( Configuration * solc )
+void GeneralizedBundleSolver::get_dual_solution( Configuration * solc )
 {
  if( auto c = dynamic_cast< SimpleConfiguration< std::vector< int > > * >(
 								  solc ) ) {
@@ -2199,32 +2176,28 @@ void BundleSolver::get_dual_solution( Configuration * solc )
   for( Index k = 0 ; k < NrFi ; ++k )
    get_dual_solution_hard( k );
 
- }  // end( BundleSolver::get_dual_solution() )
+ }  // end( GeneralizedBundleSolver::get_dual_solution() )
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::get_dual_solution_easy( Index k )
+void GeneralizedBundleSolver::get_dual_solution_easy( Index k )
 {
- auto nc = IsEasy[ k ]->get_numcols();
- std::vector< double > x( nc );
- 
- Index MBDm;
- cIndex_Set MBse;
- cHpRow Mlt = Master->ReadMult( MBse , MBDm , k + 1 , false );
+ (void) k;
+ // TODO (task #24): the legacy implementation read the optimal primal u^k
+ // of the k-th easy component from the NDOFi Master->ReadMult( ..., k+1 )
+ // and wrote it back into the per-easy MILPSolver. With the master now
+ // owned by MasterPB, the optimal u^k is the primal solution of the
+ // easy-cmp sub-Block already, so MasterPB->get_easy_component(k)->
+ // get_var_solution() is what should be invoked here.
+ throw( std::logic_error(
+      "GeneralizedBundleSolver::get_dual_solution_easy: not yet "
+      "ported to the MasterProblemBlock-driven master" ) );
 
- if( MBDm != Index( nc ) )
-  throw( std::logic_error( "get_dual_solution_easy: size mismatch" ) );
-
- for( int i = 0 ; i < nc ; ++i )
-  x[ i ] = Mlt[ i ];
- 
- IsEasy[ k ]->write_var_solution( x );
-
- }  // end( BundleSolver::get_dual_solution_easy() )
+ }  // end( GeneralizedBundleSolver::get_dual_solution_easy() )
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::get_dual_solution_hard( Index k )
+void GeneralizedBundleSolver::get_dual_solution_hard( Index k )
 {
  // construct the important linearization for the non-easy component (unless
  // it is already there, and signal to the C05Functions which one it is
@@ -2263,11 +2236,11 @@ void BundleSolver::get_dual_solution_hard( Index k )
 
  v_c05f[ k ]->set_important_linearization( std::move( lc ) );
 
- }  // end( BundleSolver::get_dual_solution_hard() )
+ }  // end( GeneralizedBundleSolver::get_dual_solution_hard() )
 
 /*--------------------------------------------------------------------------*/
 
-int BundleSolver::get_int_par( idx_type par ) const
+int GeneralizedBundleSolver::get_int_par( idx_type par ) const
 {
  switch( par ) {
   case( intMaxIter ):   return( MaxIter );
@@ -2291,7 +2264,7 @@ int BundleSolver::get_int_par( idx_type par ) const
   case( intMPName ):    return( MPName );
   case( intMPlvl ):     return( MPlvl );
   case( intMPStbl ):    return( MPStbl );
-  case( intMPPrimal ):  return( isMPPrimal );
+  case( intMPPrimal ):  return( int( IsMPPrimal ) );
   case( intQPmp1 ):     return( CtOff );
   case( intQPmp2 ):     return( MxRmv );
   case( intOSImp1 ):    return( algo );
@@ -2300,11 +2273,11 @@ int BundleSolver::get_int_par( idx_type par ) const
   case( intRstAlg ):    return( RstAlgPrm  );
   default:              return( CDASolver::get_int_par( par ) );
   }
- }  // end( BundleSolver::get_int_par )
+ }  // end( GeneralizedBundleSolver::get_int_par )
 
 /*--------------------------------------------------------------------------*/
 
-double BundleSolver::get_dbl_par( idx_type par ) const
+double GeneralizedBundleSolver::get_dbl_par( idx_type par ) const
 {
  switch( par ) {
   case( dblMaxTime ):   return( MaxTime );
@@ -2330,11 +2303,11 @@ double BundleSolver::get_dbl_par( idx_type par ) const
   case( dblCtOff ):     return( CtOff );
   default:              return( CDASolver::get_dbl_par( par ) );
   }
- }  // end( BundleSolver::get_dbl_par )
+ }  // end( GeneralizedBundleSolver::get_dbl_par )
 
 /*--------------------------------------------------------------------------*/
 
-const std::string & BundleSolver::get_str_par( idx_type par ) const
+const std::string & GeneralizedBundleSolver::get_str_par( idx_type par ) const
 {
  switch( par ) {
   case( strEasyCfg ):       return( EasyCfg );
@@ -2342,22 +2315,22 @@ const std::string & BundleSolver::get_str_par( idx_type par ) const
   case( strMPBSolverCfg ):  return( MPBSolverCfg );
   default:                  return( CDASolver::get_str_par( par ) );
   }
- }  // end( BundleSolver::get_str_par )
+ }  // end( GeneralizedBundleSolver::get_str_par )
 
 /*--------------------------------------------------------------------------*/
 
-const std::vector< int > & BundleSolver::get_vint_par( idx_type par ) const
+const std::vector< int > & GeneralizedBundleSolver::get_vint_par( idx_type par ) const
 {
  if( par == vintNoEasy )
   return( NoEasy );
 
  return( CDASolver::get_vint_par( par ) );
 
- }  // end( BundleSolver::get_vint_par )
+ }  // end( GeneralizedBundleSolver::get_vint_par )
 
 /*--------------------------------------------------------------------------*/
 
-const std::vector< std::string > & BundleSolver::get_vstr_par( idx_type par )
+const std::vector< std::string > & GeneralizedBundleSolver::get_vstr_par( idx_type par )
  const
 {
  switch( par ) {
@@ -2370,22 +2343,22 @@ const std::vector< std::string > & BundleSolver::get_vstr_par( idx_type par )
 
  return( CDASolver::get_vstr_par( par ) );
 
- }  // end( BundleSolver::get_vstr_par )
+ }  // end( GeneralizedBundleSolver::get_vstr_par )
 
 /*--------------------------------------------------------------------------*/
-/*----------- METHODS FOR HANDLING THE State OF THE BundleSolver -----------*/
+/*----------- METHODS FOR HANDLING THE State OF THE GeneralizedBundleSolver -----------*/
 /*--------------------------------------------------------------------------*/
 
-State * BundleSolver::get_State( void ) const {
-  return( new BundleSolverState( this ) );
-  }  // end( BundleSolver::get_State )
+State * GeneralizedBundleSolver::get_State( void ) const {
+  return( new GeneralizedBundleSolverState( this ) );
+  }  // end( GeneralizedBundleSolver::get_State )
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::put_State( const State & state )
+void GeneralizedBundleSolver::put_State( const State & state )
 {
- // if state is not a BundleSolverState &, exception will be thrown
- const auto & s = dynamic_cast< const BundleSolverState & >( state );
+ // if state is not a GeneralizedBundleSolverState &, exception will be thrown
+ const auto & s = dynamic_cast< const GeneralizedBundleSolverState & >( state );
 
  guts_of_put_State( s );
 
@@ -2395,14 +2368,14 @@ void BundleSolver::put_State( const State & state )
   if( s.v_comp_State[ i ] )
    v_c05f[ i ]->put_State( *(s.v_comp_State[ i ]) );
 
- }  // end( BundleSolver::put_State( const & ) )
+ }  // end( GeneralizedBundleSolver::put_State( const & ) )
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::put_State( State && state )
+void GeneralizedBundleSolver::put_State( State && state )
 {
- // if state is not a BundleSolverState &&, exception will be thrown
- auto && s = dynamic_cast< BundleSolverState && >( state );
+ // if state is not a GeneralizedBundleSolverState &&, exception will be thrown
+ auto && s = dynamic_cast< GeneralizedBundleSolverState && >( state );
 
  guts_of_put_State( s );
 
@@ -2416,11 +2389,11 @@ void BundleSolver::put_State( State && state )
 
  s.v_comp_State.clear();
 
- }  // end( BundleSolver::put_State( && ) )
+ }  // end( GeneralizedBundleSolver::put_State( && ) )
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::serialize_State( netCDF::NcGroup & group ,
+void GeneralizedBundleSolver::serialize_State( netCDF::NcGroup & group ,
 				    const std::string & sub_group_name ) const
 {
  if( ! sub_group_name.empty() ) {
@@ -2429,9 +2402,9 @@ void BundleSolver::serialize_State( netCDF::NcGroup & group ,
   return;
   }
 
- // do it "by hand" since there is no BundleSolverState available to call
+ // do it "by hand" since there is no GeneralizedBundleSolverState available to call
  // State::serialize() from
- group.putAtt( "type", "BundleSolverState" );
+ group.putAtt( "type", "GeneralizedBundleSolverState" );
 
  auto nv = group.addDim( "BundleSolver_NumVar" , NumVar );
 
@@ -2469,21 +2442,21 @@ void BundleSolver::serialize_State( netCDF::NcGroup & group ,
   v_c05f[ i ]->serialize_State( group ,
 				"Component_State_" + std::to_string( i ) );
   }
- }  // end( BundleSolver::serialize_State )
+ }  // end( GeneralizedBundleSolver::serialize_State )
 
 /*--------------------------------------------------------------------------*/
 /*----------------------- OTHER PROTECTED METHODS --------------------------*/
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::guts_of_put_State( const BundleSolverState & state )
+void GeneralizedBundleSolver::guts_of_put_State( const GeneralizedBundleSolverState & state )
 {
  if( Result == kStillRunning )
   throw( std::logic_error(
-	"BundleSolver::put_State() called within BundleSolver::compute()" ) );
+	"GeneralizedBundleSolver::put_State() called within GeneralizedBundleSolver::compute()" ) );
 
  if( ( NrFi != state.NrFi ) || ( NumVar != state.NumVar ) )
   throw( std::invalid_argument(
-			  "BundleSolver::put_State(): inconsistent State" ) );
+			  "GeneralizedBundleSolver::put_State(): inconsistent State" ) );
 
  if( t != state.t ) {
   t = state.t;
@@ -2534,15 +2507,15 @@ void BundleSolver::guts_of_put_State( const BundleSolverState & state )
   std::fill( UpFiLmb.begin() , UpFiLmb.end() ,  INFshift );
   RifeqFi = false;
   }
- 
+
  Fi0Lmb = state.Fi0Lmb;
  f_global_LB = state.global_LB;
- 
- }  // end( BundleSolver::guts_of_put_State )
+
+ }  // end( GeneralizedBundleSolver::guts_of_put_State )
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::FormD( void )
+void GeneralizedBundleSolver::FormD( void )
 {
  // initialize the Master Problem Solver- - - - - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -2638,7 +2611,7 @@ void BundleSolver::FormD( void )
   if( TrueLB ) {  // if the global lower bound was a "true" one, its value
    // is "baked in" the total lower and upper estimate of the function value
    // in Lambda: ensure it is recomputed. this works both if the bound was
-   // there and it is changed and if it is reset 
+   // there and it is changed and if it is reset
    if( UpFiLmbdef > NrFi ) {
     --UpFiLmbdef;
     UpFiLmb.back() = INFshift;
@@ -2738,7 +2711,7 @@ void BundleSolver::FormD( void )
   /* If it's not OK, three things can happen: unfeasible, unbounded, or a
    * numerical error.
    *
-   * Note that MPSolver assumes the primal Master Problem being 
+   * Note that MPSolver assumes the primal Master Problem being
    *
    *    P_{B,Lambda,t}:   inf{ Fi_{B,Lambda}( d ) + D_t( d ) }
    *
@@ -2766,13 +2739,13 @@ void BundleSolver::FormD( void )
    * Master->Sett( t = std::max( t / 2 , tMinor ) );
    * continue;
    *
-   * However, currently BundleSolver only admits QPPenaltyMP or OSIMPSolver
+   * However, currently GeneralizedBundleSolver only admits QPPenaltyMP or OSIMPSolver
    * with either Quadratic or BoxStep stabilisation, which can never be
    * "naturally" unbounded. Yet, the primal Master Problem can still be
    * unbounded if the dual Master Problem is empty, which can happen if
    * there are easy components. If there are not, the MPSolver returning
    * kUnbndd can only be a numerical error in disguise. */
-  
+
   if( mps == MPSolver::kUnfsbl ) {  // the MP is (primal) empty
    if( ! Master->BCSize() )         // there are no vertical linearizations
     mps = MPSolver::kError;         // it must be a numerical error
@@ -2995,11 +2968,11 @@ void BundleSolver::FormD( void )
   if( f_global_LB < UpFiLmb.back() + vStar.back() )
    f_global_LB = UpFiLmb.back() + vStar.back();
   }
- }  // end( BundleSolver::FormD )
+ }  // end( GeneralizedBundleSolver::FormD )
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::UpdtCntrs( void )
+void GeneralizedBundleSolver::UpdtCntrs( void )
 {
  // increase all the OOBase[] counters but those == +/-Inf< SIndex >() - - - - -
  // items whose OOBase[] becomes 0 (e.g. the newly entered items, which have
@@ -3080,7 +3053,7 @@ void BundleSolver::UpdtCntrs( void )
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::FormLambda1( HpNum Tau )
+void GeneralizedBundleSolver::FormLambda1( HpNum Tau )
 {
  Master->MakeLambda1( Lambda.data() , Lambda1.data() , Tau );
 
@@ -3178,7 +3151,7 @@ void BundleSolver::FormLambda1( HpNum Tau )
 
  if( UpFiLmb1def == NrFi ) {
   ++UpFiLmb1def;  // all components + the sum computed
-  // can now compute the total value: 
+  // can now compute the total value:
   UpFiLmb1.back() = std::accumulate( UpFiLmb1.begin() , --(UpFiLmb1.end()) ,
 				     Fi0Lmb1 );
   // note that this is the point where the lower bound (if any) is taken
@@ -3244,11 +3217,11 @@ void BundleSolver::FormLambda1( HpNum Tau )
      pval( *f_log , - UpFiLmb1[ k ] );
     }
   }
- }  // end( BundleSolver::FormLambda1 )
+ }  // end( GeneralizedBundleSolver::FormLambda1 )
 
 /*--------------------------------------------------------------------------*/
 
-BundleSolver::Index BundleSolver::InnerLoop( bool extrastep )
+GeneralizedBundleSolver::Index GeneralizedBundleSolver::InnerLoop( bool extrastep )
 {
  // here one might change the value of wFi, corresponding to the first
  // component to be evaluated, if a non-strictly-round-robin order is
@@ -3328,11 +3301,11 @@ BundleSolver::Index BundleSolver::InnerLoop( bool extrastep )
 
  return( ceval );
 
- }  // end( BundleSolver::InnerLoop )
+ }  // end( GeneralizedBundleSolver::InnerLoop )
 
 /*--------------------------------------------------------------------------*/
 
-bool BundleSolver::FiAndGi( Index wFi , bool getgi )
+bool GeneralizedBundleSolver::FiAndGi( Index wFi , bool getgi )
 {
  // compute and set upper and lower cutoffs and the accuracy - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -3416,11 +3389,11 @@ bool BundleSolver::FiAndGi( Index wFi , bool getgi )
 
  return( GetGi( wFi ) );
 
- }  // end( BundleSolver::FiAndGi )
+ }  // end( GeneralizedBundleSolver::FiAndGi )
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::SetupFiStrPar( Index wFi )
+void GeneralizedBundleSolver::SetupFiStrPar( Index wFi )
 {
  // set the component-specific string parameters
 
@@ -3442,18 +3415,18 @@ void BundleSolver::SetupFiStrPar( Index wFi )
 			"_" + std::to_string( get_elapsed_iterations() ) );
   if( ( name.size() > 4 ) && ( name.substr( 0 , 4 ) == "vstr" ) )
    CwFi.set_par( std::string( name ) ,
-		 std::vector< std::string >( { par } ) );     
+		 std::vector< std::string >( { par } ) );
   else
    CwFi.set_par( std::string( name ) , std::move( par ) );
   }
 
  v_c05f[ wFi ]->set_ComputeConfig( & CwFi );
 
- }  // end( BundleSolver::SetupFiStrPar )
+ }  // end( GeneralizedBundleSolver::SetupFiStrPar )
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::SetupFiLambda1( Index wFi )
+void GeneralizedBundleSolver::SetupFiLambda1( Index wFi )
 {
  auto fwFi = v_c05f[ wFi ];
 
@@ -3465,7 +3438,7 @@ void BundleSolver::SetupFiLambda1( Index wFi )
  // set the component-specific string parameters, if any - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  SetupFiStrPar( wFi );
- 
+
  if( ! ( TrgtMng & 15 ) )  // if target management is not active
   return;                  // all done
 
@@ -3612,11 +3585,11 @@ void BundleSolver::SetupFiLambda1( Index wFi )
   fwFi->set_par( dblRelAcc , EpsCurr );
   }
 
- }  // end( BundleSolver::SetupFiLambda1 )
+ }  // end( GeneralizedBundleSolver::SetupFiLambda1 )
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::SetupFiLambda( Index wFi )
+void GeneralizedBundleSolver::SetupFiLambda( Index wFi )
 {
  auto fwFi = v_c05f[ wFi ];
 
@@ -3628,7 +3601,7 @@ void BundleSolver::SetupFiLambda( Index wFi )
  // set the component-specific string parameters, if any - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  SetupFiStrPar( wFi );
- 
+
  if( ! ( TrgtMng & 15 ) )  // if target management is not active
   return;                  // all done
 
@@ -3664,11 +3637,11 @@ void BundleSolver::SetupFiLambda( Index wFi )
  if( TrgtMng & 12 )
   fwFi->set_par( dblRelAcc , EpsCurr );
 
- }  // end( BundleSolver::SetupFiLambda )
+ }  // end( GeneralizedBundleSolver::SetupFiLambda )
 
 /*--------------------------------------------------------------------------*/
 
-bool BundleSolver::GetGi( Index wFi )
+bool GeneralizedBundleSolver::GetGi( Index wFi )
 {
  bool insrtd = false;  // keep track if anything new at all was inserted
  auto fwFi = v_c05f[ wFi ];
@@ -3848,7 +3821,7 @@ bool BundleSolver::GetGi( Index wFi )
 
     gpp = ItemVcblr[ cp ].second;
     if( ( BPar7 & 3 ) < 3 ) {
-     // BundleSolver does not immediately replace the copy unless necessary,
+     // GeneralizedBundleSolver does not immediately replace the copy unless necessary,
      // but clearly if one linearization in the global pool has to be
      // sacrificed, it'll be the copy
      auto ngpp = find_place_in_global_pool( wFi );
@@ -3970,11 +3943,11 @@ bool BundleSolver::GetGi( Index wFi )
 
  return( insrtd );  // returns true if at least one item was inserted
 
- }  // end( BundleSolver::GetGi )
+ }  // end( GeneralizedBundleSolver::GetGi )
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::GotoLambda1( void )
+void GeneralizedBundleSolver::GotoLambda1( void )
 {
  // compute DeltaFi - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -3985,7 +3958,7 @@ void BundleSolver::GotoLambda1( void )
   *                 DF.begin() , std::minus< double >() );
   *
   * is wrong since the format of DeltaFi expected by ChangeCurrPoint() is
-  * different from the one used in BundleSolver; in particular, the total
+  * different from the one used in GeneralizedBundleSolver; in particular, the total
   * value need be in DF.front() rather than in DF.back(), and the value for
   * component i need be in DF[ i + 1 ] rather than in DF[ i ]. */
 
@@ -4016,11 +3989,11 @@ void BundleSolver::GotoLambda1( void )
   CheckLBs();
  #endif
 
- }  // end( BundleSolver::GotoLambda1 )
+ }  // end( GeneralizedBundleSolver::GotoLambda1 )
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::GotoLambda( void )
+void GeneralizedBundleSolver::GotoLambda( void )
 {
  // compute DeltaFi - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -4047,11 +4020,11 @@ void BundleSolver::GotoLambda( void )
   CheckLBs();
  #endif
 
- }  // end( BundleSolver::GotoLambda )
+ }  // end( GeneralizedBundleSolver::GotoLambda )
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::ResetAlfa( Index k )
+void GeneralizedBundleSolver::ResetAlfa( Index k )
 {
  std::vector< VarValue > Gi( NumVar );
  std::vector< VarValue > Alfa( Master->MaxName( k == NrFi ? InINF : k + 1 ) );
@@ -4118,11 +4091,11 @@ void BundleSolver::ResetAlfa( Index k )
 
  Master->ChgAlfa( Alfa.data() , k + 1 );
 
- }  // end( BundleSolver::ResetAlfa )
+ }  // end( GeneralizedBundleSolver::ResetAlfa )
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::SimpleBStrat( void )
+void GeneralizedBundleSolver::SimpleBStrat( void )
 {
  if( ( BPar7 & 3 ) == 3 ) {  // "eager" deletion
   std::vector< Subset > tbdltd( NrFi );
@@ -4148,17 +4121,17 @@ void BundleSolver::SimpleBStrat( void )
   CheckBundle();
  #endif
 
- }  // end( BundleSolver::SimpleBStrat )
+ }  // end( GeneralizedBundleSolver::SimpleBStrat )
 
 /*--------------------------------------------------------------------------*/
 
-double BundleSolver::BetaK( Index wFi ) {
+double GeneralizedBundleSolver::BetaK( Index wFi ) {
  return( 1.0 / double( NrFi - NrEasy ) );
  }
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::Log1( void )
+void GeneralizedBundleSolver::Log1( void )
 {
  if( ( ! f_log ) || ( LogVerb <= 1 ) )
   return;
@@ -4171,7 +4144,7 @@ void BundleSolver::Log1( void )
   *f_log << " ~ D*_1( z* ) = " << Master->ReadDStart( 1 );
  else
   *f_log << " ~ || z* || = " << NrmZ / NrmZFctr;
-  
+
  *f_log << " ~ Sigma = " << Sigma << std::endl << "           ";
 
  if( UpFiLmb.back() == INFshift )
@@ -4183,11 +4156,11 @@ void BundleSolver::Log1( void )
  if( BPar6 )
   *f_log << " ~ BP3 = " << aBP3;
 
- }  // end( BundleSolver::Log1 )
+ }  // end( GeneralizedBundleSolver::Log1 )
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::Log2( double ft )
+void GeneralizedBundleSolver::Log2( double ft )
 {
  if( ( ! f_log ) || ( LogVerb <= 1 ) )
   return;
@@ -4237,11 +4210,11 @@ void BundleSolver::Log2( double ft )
 
  *f_log << std::endl;
 
- }  // end( BundleSolver::Log2 )
+ }  // end( GeneralizedBundleSolver::Log2 )
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::compute_NrmZFctr( void )
+void GeneralizedBundleSolver::compute_NrmZFctr( void )
 {
  auto wf = ( WZNorm << 2 );
  // if we need to sum but some component has no linearization, return:
@@ -4290,7 +4263,7 @@ void BundleSolver::compute_NrmZFctr( void )
 
 /*--------------------------------------------------------------------------*/
 
-bool BundleSolver::FindNext( void )
+bool GeneralizedBundleSolver::FindNext( void )
 {
  Index InitwFi = f_wFi;
  do {
@@ -4306,7 +4279,7 @@ bool BundleSolver::FindNext( void )
 
  return( false );
 
- }  // end( BundleSolver::FindNext )
+ }  // end( GeneralizedBundleSolver::FindNext )
 
 /*--------------------------------------------------------------------------*/
 /* Front-end for four different heuristics for short-term t management.
@@ -4374,7 +4347,7 @@ bool BundleSolver::FindNext( void )
  * Moreau-Yoshida regularization, called "reversal form of the poorman's
  * quasi-Newton update". */
 
-HpNum BundleSolver::Heuristic( Index whch )
+HpNum GeneralizedBundleSolver::Heuristic( Index whch )
 {
  switch( whch & 3 ) {
   case( 0 ): return( Heuristic1() );
@@ -4409,7 +4382,7 @@ HpNum BundleSolver::Heuristic( Index whch )
  *
  * Note that, conveniently, v* >= 0 always holds. This corresponds to the
  * fact that m'( 0 ) = b < 0, i.e., m() is surely decreasing in 0.
- * 
+ *
  * However, this formula has a serious issue: we need to know DeltaFi,
  * which may well not be defined when a NS is performed and multiple
  * components are present since the incremental approach may stop the
@@ -4423,7 +4396,7 @@ HpNum BundleSolver::Heuristic( Index whch )
  * available (unless some component evaluates to -INF, in which case
  * the algorithm stops and this method is not invoked). */
 
-HpNum BundleSolver::Heuristic1( void )
+HpNum GeneralizedBundleSolver::Heuristic1( void )
 {
  auto DF = DeltaFi < INFshift ? DeltaFi : LwFiLmb1.back() - UpRifFi.back();
  auto NZ2 = NrmZ * NrmZ;
@@ -4449,7 +4422,7 @@ HpNum BundleSolver::Heuristic1( void )
  *
  * Since Alfa1 >= 0, a >= 0 which implies that m() is surely convex and the
  * minimum is
- * 
+ *
  *   v* = - [ ( ScPr1 - 2 Alfa1 ) / t ] / [ 2 Alfa1 / t^2 ]
  *      = t ( 2 Alfa1 - ScPr1 ) / ( 2 Alfa1 )
  *
@@ -4468,7 +4441,7 @@ HpNum BundleSolver::Heuristic1( void )
  * put of this, e.g. by using z*_i in place of g_i for the "easy" components,
  * but this is nontrivial and therefore avoided for now. */
 
-HpNum BundleSolver::Heuristic2( void )
+HpNum GeneralizedBundleSolver::Heuristic2( void )
 {
  if( Alfa1 > 1e-16 )            // it is always >= 0, but it may be ==
   return( t * ( 2 * Alfa1 - ScPr1 ) / ( 2 * Alfa1 ) );
@@ -4494,12 +4467,12 @@ HpNum BundleSolver::Heuristic2( void )
  *    ScPr1 / t + NrmZ^2 > 0
  *
  * yields
- * 
+ *
  *   v* = - [ - NrmZ^2 ] / [ 2 ( ScPr1 / t + NrmZ^2 ) / ( 2 t ) ]
  *      = t NrmZ^2 / ( ScPr1 / t + NrmZ^2 )
  *
  * Note that, if m() is convex, then v* >= 0 holds because, as usual, we have
- * fixed m'( 0 ) = b < 0 and therefore m() is decreasing in 0. 
+ * fixed m'( 0 ) = b < 0 and therefore m() is decreasing in 0.
  *
  * See above for the "issue" about ScPr1 having been computed with a
  * "partial" g; however, since this formula does not really use DeltaFi,
@@ -4514,7 +4487,7 @@ HpNum BundleSolver::Heuristic2( void )
  * only changes c w.r.t. the current one, hence it does not change v*, and
  * therefore need not be separately considered. */
 
-HpNum BundleSolver::Heuristic3( void )
+HpNum GeneralizedBundleSolver::Heuristic3( void )
 {
  auto NZ2 = NrmZ * NrmZ;
  if( ScPr1 / t + NZ2 > 1e-16 )
@@ -4577,7 +4550,7 @@ HpNum BundleSolver::Heuristic3( void )
  * could use it to compute < z*_i , d* >, but in practice due to the current
  * implementation of OSIMPSolver it is too costly to compute. */
 
-HpNum BundleSolver::Heuristic4( void )
+HpNum GeneralizedBundleSolver::Heuristic4( void )
 {
  auto NZ2 = NrmZ * NrmZ;
  if( G1Norm == INFshift )
@@ -4591,83 +4564,57 @@ HpNum BundleSolver::Heuristic4( void )
 
 void GeneralizedBundleSolver::CreateMPB( void )
 {
- // initialize the MasterProblemBlock - - - - - - - - - - - - - -  - - - - - -
- // - - - -  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // allocate (or re-cycle) the MasterProblemBlock and attach the configured
+ // [MILP]Solver to it through the BlockSolverConfig at MPBSolverCfg
+ if( MasterPB )
+  MasterPB->clear();
+ else
+  MasterPB = new MasterProblemBlock();
 
- if( MasterPB )      // a MPBlock is set already
-  MasterPB.clear();  // clear all its internal state
- else              // a MPSolver is not set yet, create it now
-  MasterPB = MasterProblemBlock();
+ MasterPB->register_Solver( std::string( MPBSolverCfg ) );
 
- // Provide the MPB with the configuration filename for the inner solver
- MasterPB->register_Solver( MPBSolverCfg );
-} // end( GeneralizedBundleSolver::CreateMPB )
+ }  // end( GeneralizedBundleSolver::CreateMPB )
 
 /*--------------------------------------------------------------------------*/
 
 void GeneralizedBundleSolver::InitMPB( void )
 {
- // initialize the MasterProblemBlock - - - - - - - - - - - - - -  - - - - - -
- // - - - -  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // pick primal vs dual: easy components force the dual form
+ const bool want_primal = IsMPPrimal && ! ( DoEasy && ( NrEasy > 0 ) );
+ if( IsMPPrimal && ! want_primal )
+  BLOG( 1 , std::endl << "Warning: intMPPrimal is set to 1 but DoEasy is "
+        "non-zero and NrEasy = " << NrEasy << "; the dual MP will be "
+        "used anyway." );
 
- /* Here we select if the primal or dual version of the Master problem should
-  * be initialized.
-  * NOTE: if we treat differently easy components and there are easy 
-  * components in the model, then we are obliged to use the dual 
-  * representation. */
- if( IsMPPrimal ){
-  // Create the primal version of the MP
-  if( DoEasy && NrEasy > 0 ){
-    BLOG( 1 , std::endl << "Warning: IsMPPrimal parameter is set to 1 but "
-          "DoEasy is 1 and NrEasy is " << std::string( NrEasy ) << ". "
-          "The dual version of the Master Problem will be used." );
-    MasterPB->initializeDualVersion( MPStbl , NrFi , DoEasy , NrEasy , 
-                                      IsEasy );
-  }
-  else
-    MasterPB->initializePrimalVersion( MPStbl , NrFi ):
- }
- else{
-  // Create the dual version of the MP
-  MasterPB->initializeDualVersion();
- }
+ // tell the MPB about the structural sizes; BPar2 is the per-component
+ // bundle capacity
+ MasterPB->SetDim( int( BPar2 ) , int( NumVar ) , int( NrFi ) , int( NrEasy ) );
 
- // Generate all the structures needed for the Master Problem- - - - - - - - -
- MasterPB->CreateEmptyMP( MPStbl , NrFi , DoEasy , NrEasy , IsEasy );
-
- // MinQuad requires a "high" accuracy to work (1e-12) while standard solvers
- // do not, and in fact may complain if such a tight accuracy is set
- double eps = ( MPName & 1 ) ? 1e-9 : 1e-12;
-
- Master->SetPar( MPSolver::kOptEps , eps );
- Master->SetPar( MPSolver::kFsbEps , eps );
-
- // insert the constant subgradient of the 0-th component - - - - - - - - - -
- // TODO: check if the 0-th component is sparse, if so pass a proper base
- //       to the MPSolver
-
- if( f_lf ) {
-  auto G0 = Master->GetItem( 0 );
-  f_lf->get_linearization_coefficients( G0 );
-  if( ! f_convex )
-   chgsign( G0 , NumVar );
-  Master->SetItemBse( nullptr , NumVar );
-  Master->SetItem( InINF );
-  }
+ // build the abstract representation (variables, constraints, Objective)
+ // of the chosen primal/dual form; the bundle is empty at this stage
+ std::vector< bool > is_easy_vec( NrFi , false );
+ for( Index i = 0 ; i < NrFi ; ++i )
+  is_easy_vec[ i ] = bool( IsEasy[ i ] );
+ MasterPB->CreateEmptyMP( want_primal ? MPStbl : MPStbl ,
+                          int( NrFi ) , DoEasy , int( NrEasy ) ,
+                          std::move( is_easy_vec ) );
 
  tHasChgd = true;
 
- if( MPName & 8 )
-  Master->CheckIdentical();
+ // TODO (task #24): the legacy InitMP() also pushed the constant
+ // subgradient of the 0-th component into the NDOFi Master via
+ // GetItem/SetItemBse/SetItem, set the MPSolver accuracy and the log
+ // verbosity through Master->SetPar / Master->SetMPLog, and invoked
+ // Master->CheckIdentical() under MPName & 8. With the master now driven
+ // by MasterPB, all this should be either dropped or re-expressed
+ // through MasterPB::set_b() / MasterPB::set_log() / a ComputeConfig
+ // entry on the inner [MILP]Solver.
 
- // set the log file
- Master->SetMPLog( f_log , MPlvl );
-
- }  // end( BundleSolver::InitMP )
+ }  // end( GeneralizedBundleSolver::InitMPB )
 
 /*--------------------------------------------------------------------------*/
 
-Index BundleSolver::BStrategy( Index wFi )
+Index GeneralizedBundleSolver::BStrategy( Index wFi )
 {
  // this method implements the B-strategies of the code, i.e., which "old"
  // items are discarded if the bundle is full and a new item belonging to
@@ -4946,11 +4893,11 @@ Index BundleSolver::BStrategy( Index wFi )
 
  return( wh );
 
- }  // end( BundleSolver::BStrategy )
+ }  // end( GeneralizedBundleSolver::BStrategy )
 
 /*--------------------------------------------------------------------------*/
 
-Index BundleSolver::FindAPlace( Index wFi )
+Index GeneralizedBundleSolver::FindAPlace( Index wFi )
 {
  // this method is used to return the index of an available position in the
  // bundle where to store a new item belonging to "component" wFi; if there
@@ -4979,11 +4926,11 @@ Index BundleSolver::FindAPlace( Index wFi )
 
  return( wh );
 
- }  // end( BundleSolver::FindAPlace )
+ }  // end( GeneralizedBundleSolver::FindAPlace )
 
 /*--------------------------------------------------------------------------*/
 
-bool BundleSolver::NeedsAlfa1( void )
+bool GeneralizedBundleSolver::NeedsAlfa1( void )
 {
  // Alfa1 is only used in Heuristic2
  return( ( ( ( tSPar1 & 1 ) && ( ( tSPar1 & tSPHMsk1 ) == 64 ) ) ) ||
@@ -4992,7 +4939,7 @@ bool BundleSolver::NeedsAlfa1( void )
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
-bool BundleSolver::NeedsScPr1( void )
+bool GeneralizedBundleSolver::NeedsScPr1( void )
 {
  // ScPr1 is used by everyone save for Heuristic1
  return( ( ( ( tSPar1 & 1 ) && ( tSPar1 & tSPHMsk1 ) ) ) ||
@@ -5001,7 +4948,7 @@ bool BundleSolver::NeedsScPr1( void )
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
-bool BundleSolver::NeedsG1( void )
+bool GeneralizedBundleSolver::NeedsG1( void )
 {
  // G1 is only used in Heuristic4
  return( ( ( ( tSPar1 & 1 ) && ( ( tSPar1 & tSPHMsk1 ) == 172 ) ) ) ||
@@ -5010,7 +4957,7 @@ bool BundleSolver::NeedsG1( void )
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::UpdateHeuristicInfo( void )
+void GeneralizedBundleSolver::UpdateHeuristicInfo( void )
 {
  // if required, update the "aggregated" Alfa1 and ScPr1, that are used in
  // the t heuristics, using the "representatives" of all components that
@@ -5043,28 +4990,15 @@ void BundleSolver::UpdateHeuristicInfo( void )
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::guts_of_destructor( void )
+void GeneralizedBundleSolver::guts_of_destructor( void )
 {
+ // TODO (task #24): legacy NDOFi MPSolver finalisation path. With the
+ // master now driven by MasterPB the Master pointer is always nullptr
+ // and the dispose-of-Master block is therefore a no-op; once the
+ // surrounding refactor is complete the Master member and this branch
+ // can be removed altogether.
  if( Master ) {
   Master->SetDim();
-  #if( USE_MPTESTER )
-   auto t = dynamic_cast< MPTester * >( Master );
-   assert( t );
-   #if( USE_MPTESTER == 1 )
-    auto o = dynamic_cast< OSIMPSolver * >( t->get_master() );
-   #else
-    auto o = dynamic_cast< OSIMPSolver * >( t->get_slave() );
-   #endif
-   assert( o );
-   o->SetOsi();
-  #else
-   if( MPName & 1 ) {
-    auto o = dynamic_cast< OSIMPSolver * >( Master );
-    assert( o );
-    o->SetOsi();
-    }
-  #endif
-
   delete Master;
   Master = nullptr;
   }
@@ -5102,26 +5036,14 @@ void BundleSolver::guts_of_destructor( void )
  InvItemVcblr.clear();
  vBPar2.clear();
 
- if( NrEasy ) {  // if there are "easy" components, delete the MILPSolver TBD
-  if( DoEasy & ~1 ) {
-   // if easy components can be changed, before doing this unregister the
-   // MILPSolver from the inner Block (since it is registered there);
-   // meanwhile unregister the FakeSolver that is also registered there
-   auto FSit = v_FakeSolver.begin();
-   for( Index k = 0 ; k < NrFi ; ++k )
-    if( IsEasy[ k ] ) {
-     auto iB = static_cast< LagBFunction * >(
-					   v_c05f[ k ] )->get_inner_block();
-     iB->unregister_Solver( *(FSit++) , true );
-     iB->unregister_Solver( IsEasy[ k ] , true );
-     }
-
-   v_FakeSolver.clear();
-   }
-  else  // "easy" components are static, just delete the MILPSolver
-   for( Index k = 0 ; k < NrFi ; ++k )
-    delete IsEasy[ k ];
-
+ if( NrEasy ) {
+  // TODO (task #24): the legacy implementation walked over the per-easy
+  // MILPSolver pointers stored in IsEasy and unregistered / deleted each
+  // of them. With IsEasy now a std::vector<bool> and the easy-cmp
+  // sub-Blocks owned by MasterPB (which disposes of them in its own
+  // destructor), nothing has to be released here except the FakeSolver
+  // group; in the meantime the FakeSolver list is cleared too.
+  v_FakeSolver.clear();
   IsEasy.clear();
   NrEasy = 0;
   }
@@ -5130,11 +5052,11 @@ void BundleSolver::guts_of_destructor( void )
 
  v_c05f.clear();
 
- }  // end( BundleSolver:guts_of_destructor )
+ }  // end( GeneralizedBundleSolver:guts_of_destructor )
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::ReSetAlg( unsigned char RstLvl )
+void GeneralizedBundleSolver::ReSetAlg( unsigned char RstLvl )
 {
  if( ! ( RstLvl & RstAlg ) ) {  // reset algorithmic parameters - - - - - - -
   ParIter = 0;             // reset iterations count
@@ -5191,11 +5113,11 @@ void BundleSolver::ReSetAlg( unsigned char RstLvl )
    LamVcblr[ i++ ]->set_value( 0 );
   Fi0Lmb = 0;  // then the value of the linear part is quite obvious ...
   }
- }  // end( BundleSolver::ReSetAlg )
+ }  // end( GeneralizedBundleSolver::ReSetAlg )
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::Delete( cIndex i , bool ModDelete )
+void GeneralizedBundleSolver::Delete( cIndex i , bool ModDelete )
 {
  // deletes from the bundle the item in position i
  //
@@ -5262,11 +5184,11 @@ void BundleSolver::Delete( cIndex i , bool ModDelete )
    if( ItemVcblr[ h ].second == InINF )
     FreList.push( h );
   }
- }  // end( BundleSolver::Delete )
+ }  // end( GeneralizedBundleSolver::Delete )
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::UpdtaBP3( void )
+void GeneralizedBundleSolver::UpdtaBP3( void )
 {
  if( BPar5 == 0 )
   return;
@@ -5302,11 +5224,11 @@ void BundleSolver::UpdtaBP3( void )
   if( aBP3 < BPar4 )
    aBP3 = BPar4;
 
- }  // end( BundleSolver::UpdtaBP3 )
+ }  // end( GeneralizedBundleSolver::UpdtaBP3 )
 
 /*--------------------------------------------------------------------------*/
 
-bool BundleSolver::IsOptimal( double eps ) const
+bool GeneralizedBundleSolver::IsOptimal( double eps ) const
 {
  if( ! RifeqFi )    // the linearization errors are not "properly computed"
   return( false );  // no way one can detect optimality
@@ -5327,11 +5249,11 @@ bool BundleSolver::IsOptimal( double eps ) const
  return( ( Sigma <= err ) &&
 	 ( NrmZFctr < INFshift ) && ( NrmZ <= NrmZFctr * NZEps ) );
 
- }  // end( BundleSolver::IsOptimal )
+ }  // end( GeneralizedBundleSolver::IsOptimal )
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::FModChg( VarValue shift , Index wFi )
+void GeneralizedBundleSolver::FModChg( VarValue shift , Index wFi )
 {
  if( ( ! std::isnan( shift ) ) && ( ! f_convex ) )
   shift = - shift;
@@ -5409,11 +5331,11 @@ void BundleSolver::FModChg( VarValue shift , Index wFi )
 
  f_global_LB += shift;
 
- }  // end( BundleSolver::FModChg )
+ }  // end( GeneralizedBundleSolver::FModChg )
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::remove_from_global_pool( Index k , Index i , bool hard )
+void GeneralizedBundleSolver::remove_from_global_pool( Index k , Index i , bool hard )
 {
  // update InvItemVcblr and all the associated fields to the fact that the
  // linearization currently in position i of the global pool of component k
@@ -5437,11 +5359,11 @@ void BundleSolver::remove_from_global_pool( Index k , Index i , bool hard )
 	                        ( ( BPar7 & 3 ) ? vBPar2.back() : InINF ) ) )
    --FrFItem[ k ];
 
- }  // end( BundleSolver::remove_from_global_pool )
+ }  // end( GeneralizedBundleSolver::remove_from_global_pool )
 
 /*--------------------------------------------------------------------------*/
 
-Index BundleSolver::find_place_in_global_pool( Index k )
+Index GeneralizedBundleSolver::find_place_in_global_pool( Index k )
 {
  // returns a suitable position in the global pool of component k, or InINF
  // if there is no free space
@@ -5463,11 +5385,11 @@ Index BundleSolver::find_place_in_global_pool( Index k )
 
  return( gpp );
 
- }  // end( BundleSolver::find_place_in_global_pool )
+ }  // end( GeneralizedBundleSolver::find_place_in_global_pool )
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::add_to_global_pool( Index k , Index i , Index wh )
+void GeneralizedBundleSolver::add_to_global_pool( Index k , Index i , Index wh )
 {
  // update ItemVcblr, InvItemVcblr and all the associated fields the to fact
  // that the linearization in position i in the global global_pool of
@@ -5492,11 +5414,11 @@ void BundleSolver::add_to_global_pool( Index k , Index i , Index wh )
 	                        ( ( BPar7 & 3 ) ? vBPar2.back() : InINF ) ) )
   ++FrFItem[ k ];
 
- }  // end( BundleSolver::add_to_global_pool( k , i , wh ) )
+ }  // end( GeneralizedBundleSolver::add_to_global_pool( k , i , wh ) )
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::add_to_bundle( Index k , Index i )
+void GeneralizedBundleSolver::add_to_bundle( Index k , Index i )
 {
  // add to the bundle (master problem) the item corresponding to the
  // linearization to be found at position i in the global pool of component
@@ -5559,14 +5481,14 @@ void BundleSolver::add_to_bundle( Index k , Index i )
 
  Master->SetItem( wh );  // add the item to the master problem
 
- }  // end( BundleSolver::add_to_bundle )
+ }  // end( GeneralizedBundleSolver::add_to_bundle )
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::reset_bundle( void )
+void GeneralizedBundleSolver::reset_bundle( void )
 {
  // completely resets the bundle, because a (bunch of) Modification(s) saying
- // so has(ve) been received. this only affects the BundleSolver data
+ // so has(ve) been received. this only affects the GeneralizedBundleSolver data
  // structures and the MPSolver, not the C05Function(s)
 
  OOBase.assign( vBPar2.back() , Inf< SIndex >() );
@@ -5588,11 +5510,11 @@ void BundleSolver::reset_bundle( void )
 
  Master->RmvItems();
 
- }  // end( BundleSolver::reset_bundle )
+ }  // end( GeneralizedBundleSolver::reset_bundle )
 
 /*--------------------------------------------------------------------------*/
 
-Lst_sp_Mod::size_type BundleSolver::num_outstanding_Modification( void )
+Lst_sp_Mod::size_type GeneralizedBundleSolver::num_outstanding_Modification( void )
 {
  auto res = v_mod.size();
 
@@ -5608,7 +5530,7 @@ Lst_sp_Mod::size_type BundleSolver::num_outstanding_Modification( void )
 
 /*--------------------------------------------------------------------------*/
 
-bool BundleSolver::is_special_GroupMod( GroupModification & gmod )
+bool GeneralizedBundleSolver::is_special_GroupMod( GroupModification & gmod )
 {
  // recognise "special" GroupModification for changing the set of "active"
  // Variable of all the Objective at the same time; note that these
@@ -5666,11 +5588,11 @@ bool BundleSolver::is_special_GroupMod( GroupModification & gmod )
 
  return( false );
 
- }  // end( BundleSolver::is_special_GroupMod )
+ }  // end( GeneralizedBundleSolver::is_special_GroupMod )
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::flatten_Modification_list( Lst_sp_Mod & vmt , sp_Mod mod )
+void GeneralizedBundleSolver::flatten_Modification_list( Lst_sp_Mod & vmt , sp_Mod mod )
 {
  const auto tmod = std::dynamic_pointer_cast< GroupModification >( mod );
  if( tmod && ( ! is_special_GroupMod( *tmod ) ) )
@@ -5682,7 +5604,7 @@ void BundleSolver::flatten_Modification_list( Lst_sp_Mod & vmt , sp_Mod mod )
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::flatten_easy_Modification_list( Lst_sp_Mod & vmt ,
+void GeneralizedBundleSolver::flatten_easy_Modification_list( Lst_sp_Mod & vmt ,
 						   sp_Mod mod )
 {
  if( const auto tmod = std::dynamic_pointer_cast< GroupModification >( mod ) )
@@ -5694,7 +5616,7 @@ void BundleSolver::flatten_easy_Modification_list( Lst_sp_Mod & vmt ,
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::process_outstanding_easy_Modification( void )
+void GeneralizedBundleSolver::process_outstanding_easy_Modification( void )
 {
  // look at all easy components; for each of these scan the Modification in
  // the corresponding FakeSolver and divine which changes need be done to
@@ -5718,9 +5640,13 @@ void BundleSolver::process_outstanding_easy_Modification( void )
   static_cast< LagBFunction * >( v_c05f[ k ] )->apply_obj_Modification();
 
   // MILPSolver::compute() has the only role of scanning the list of
-  // Modification and updating its internal data structures accordingly
-
-  IsEasy[ k ]->MILPSolver::compute( false );
+  // Modification and updating its internal data structures accordingly.
+  //
+  // TODO (task #24): the legacy implementation pulled the per-easy
+  // MILPSolver pointer out of IsEasy[k] and called compute() on it.
+  // With IsEasy now a std::vector<bool> the [MILP]Solver attached to
+  // the easy-cmp sub-Block owned by MasterPB must be reached instead,
+  // via MasterPB->get_easy_component(k)->get_registered_solvers().
 
   // construct the flattened list of Modification in the FakeSolver - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -5852,7 +5778,7 @@ void BundleSolver::process_outstanding_easy_Modification( void )
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::process_outstanding_Modification( void )
+void GeneralizedBundleSolver::process_outstanding_Modification( void )
 {
  // multiple-loop version, where several passes are done in order to gather
  // which kind of Modification have occurred and avoid doing costly work
@@ -5984,14 +5910,14 @@ void BundleSolver::process_outstanding_Modification( void )
    // applied in reverse order. however, if the upper/lower values are reset
    // at any point in the list they stay reset forever. indeed, even if a
    // function has a finite shift after a reset, this says nothing because
-   // there are no known values to shift. if, rather, the values are only 
+   // there are no known values to shift. if, rather, the values are only
    // shifted by finite amounts, the total shift is the sum of the shift,
    // and the order of additions does not change the result
    if( wFi < NrFi )
     FModChg( tmod->shift() , wFi );
    else {
     // this is a FunctionMod coming from some unknown Function, not any
-    // business of BundleSolver
+    // business of GeneralizedBundleSolver
     to_delete = true;
     continue;
     }
@@ -6167,7 +6093,7 @@ void BundleSolver::process_outstanding_Modification( void )
    throw( std::invalid_argument( "BlockModAD not handled (yet)" ) );
 
   // if control reaches here, the Modification is "unknown", probably a
-  // "physical" Modification that BundleSolver does not care about
+  // "physical" Modification that GeneralizedBundleSolver does not care about
 
   to_delete = true;
 
@@ -6183,7 +6109,7 @@ void BundleSolver::process_outstanding_Modification( void )
   if( cntreset ) {           // at least a (non-easy) component has been reset
    for( Index k = 0 ; k < NrFi ; ++k )
     if( reset[ k ] ) {       // reset[ k ] ==> ! IsEasy[ k ]
-     // if BundleSolver "plays nice" with other Solvers, it keeps track of
+     // if GeneralizedBundleSolver "plays nice" with other Solvers, it keeps track of
      // linearizations in the global pool even if they are not in the bundle
      // to avoid overriding them; but there is no longer anything in the
      // global pool, so reset any such information; do this first because
@@ -6193,7 +6119,7 @@ void BundleSolver::process_outstanding_Modification( void )
 		 InvItemVcblr[ k ].end() , InINF );
 
      // delete all linearizations in the bundle for this component (in
-     // the sense of updating the BundleSolver data structures, since they
+     // the sense of updating the GeneralizedBundleSolver data structures, since they
      // have been deleted already from the global pool)
      for( Index i = 0 ; i < MaxItem[ k ] ; ++i )
       if( InvItemVcblr[ k ][ i ] < vBPar2.back() )
@@ -6239,7 +6165,7 @@ void BundleSolver::process_outstanding_Modification( void )
  // in this reverse loop the map between the Lambda[] vector and the indices
  // in the Modification is nontrivial (if additions/removals happened), which
  // makes checking this too complicated. anyway, the issue will go away in the
- // version of BundleSolver that does not use MPSolver since there the
+ // version of GeneralizedBundleSolver that does not use MPSolver since there the
  // linearizations will (likely) be represented by means of their "naked"
  // constant \alpha rather than by their linearization error
  //
@@ -6418,7 +6344,7 @@ void BundleSolver::process_outstanding_Modification( void )
 
   // a C05FunctionModLin implies that *all* the linearizations must be
   // changed by adding them \delta; this may in principle be handled in
-  // a specialised way by BundleSolver, but is currently not, and
+  // a specialised way by GeneralizedBundleSolver, but is currently not, and
   // therefore it is a "full" reset
   if( const auto tmod =
       std::dynamic_pointer_cast< C05FunctionModLin >( mod ) ) {
@@ -6433,7 +6359,7 @@ void BundleSolver::process_outstanding_Modification( void )
  // note that even if there were no more Modification to process we could not
  // stop because this means that reset[ k ] == true and/or AlphaC[ k ] == true
  // for some k. in fact v_mod_tmp was not empty(), and elements can be removed
- // from it only if some component is "soft" reset. 
+ // from it only if some component is "soft" reset.
 
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // 3rd loop, forward: prepare for addition/removal/changes of individual
@@ -6838,10 +6764,10 @@ void BundleSolver::process_outstanding_Modification( void )
    }  // end FunctionModVars
   }  // end( 4th loop, forward )
 
- // at this point, the set of Variable in the BundleSolver/Master Problem
+ // at this point, the set of Variable in the GeneralizedBundleSolver/Master Problem
  // coincides with the set of Variable in the C05Function(s), save for the
  // Variable to be added: in other words, the positions from 0 no NumVar - 1
- // in the linearizations corresponds to what BundleSolver expects
+ // in the linearizations corresponds to what GeneralizedBundleSolver expects
 
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // 5th loop: handle "horizontal" changes, i.e., changes of a given range
@@ -7027,7 +6953,7 @@ void BundleSolver::process_outstanding_Modification( void )
  // imply additions to the bundle, otherwise just marking that the
  // linearization exists
  //
- // note that if ( BPar7 & 3 ) >= 2, BundleSolver will happily delete from
+ // note that if ( BPar7 & 3 ) >= 2, GeneralizedBundleSolver will happily delete from
  // the global pool any linearization it deletes from the bundle; if also
  // ! ( BPar7 & 4 ), one could therefore think it appropriate to delete
  // from the global pool any linearization that is added. however, we do not
@@ -7073,7 +6999,7 @@ void BundleSolver::process_outstanding_Modification( void )
 
    // now, if ! ( BPar7 & 4 ), also cleanup Addd[ k ] from linearizations
    // not in the bundle, but in doing so mark them into InvItemVcblr unless
-   // ( BPar7 & 3 ) == 3, in which case BundleSolver does not care if there
+   // ( BPar7 & 3 ) == 3, in which case GeneralizedBundleSolver does not care if there
    // are existing linearizations because it anyway freely overwrites them
    // note that for linearizations in the bundle, being in Addd[ k ] is the
    // same as being in Chgd[ k ]: the linearization has changed, and the
@@ -7218,13 +7144,13 @@ void BundleSolver::process_outstanding_Modification( void )
   CheckAlpha();
  #endif
 
- }  // end( BundleSolver::process_outstanding_Modification )
+ }  // end( GeneralizedBundleSolver::process_outstanding_Modification )
 
 /*--------------------------------------------------------------------------*/
 
 #ifndef NDEBUG
 
-void BundleSolver::CheckBundle( void )
+void GeneralizedBundleSolver::CheckBundle( void )
 {
  std::ostream * wlog = ( ( ! f_log ) || ( LogVerb <= 1 ) ) ? & std::cerr
                                                            : f_log;
@@ -7326,11 +7252,11 @@ void BundleSolver::CheckBundle( void )
      *wlog << "free item " << i << " not in FreList" << std::endl;
     }
   }
- }  // end( BundleSolver::CheckBundle )
+ }  // end( GeneralizedBundleSolver::CheckBundle )
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::CheckAlpha( void )
+void GeneralizedBundleSolver::CheckAlpha( void )
 {
  std::ostream * wlog = ( ( ! f_log ) || ( LogVerb <= 1 ) ) ? & std::cerr
                                                            : f_log;
@@ -7366,11 +7292,11 @@ void BundleSolver::CheckAlpha( void )
 	  << " lin_const=" << lin_cst << " <L,G>=" << dotLG << def;
     }
 
- }  // end( BundleSolver::CheckAlpha )
+ }  // end( GeneralizedBundleSolver::CheckAlpha )
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::CheckLBs( void )
+void GeneralizedBundleSolver::CheckLBs( void )
 {
  std::ostream * wlog = ( ( ! f_log ) || ( LogVerb <= 1 ) ) ? & std::cerr
                                                            : f_log;
@@ -7466,11 +7392,11 @@ void BundleSolver::CheckLBs( void )
     }
  #endif
 
- }  // end( BundleSolver::CheckLBs )
+ }  // end( GeneralizedBundleSolver::CheckLBs )
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::PrintBundle( void )
+void GeneralizedBundleSolver::PrintBundle( void )
 {
  std::ostream * wlog = ( ( ! f_log ) || ( LogVerb <= 1 ) ) ? & std::cerr
                                                            : f_log;
@@ -7512,33 +7438,33 @@ void BundleSolver::PrintBundle( void )
 #endif
 
 /*--------------------------------------------------------------------------*/
-/*--------------- METHODS OF BundleSolver::FakeFiOracle --------------------*/
+/*--------------- METHODS OF GeneralizedBundleSolver::FakeFiOracle --------------------*/
 /*--------------------------------------------------------------------------*/
 /*-------------- METHODS FOR READING THE DATA OF THE PROBLEM ---------------*/
 /*--------------------------------------------------------------------------*/
 
-Index BundleSolver::FakeFiOracle::GetNumVar( void ) const
+Index GeneralizedBundleSolver::FakeFiOracle::GetNumVar( void ) const
 {
  return( bslv->NumVar );
  }
 
 /*--------------------------------------------------------------------------*/
 
-Index BundleSolver::FakeFiOracle::GetNrFi( void ) const
+Index GeneralizedBundleSolver::FakeFiOracle::GetNrFi( void ) const
 {
  return( bslv->NrFi );
  }
 
 /*--------------------------------------------------------------------------*/
 
-Index BundleSolver::FakeFiOracle::GetMaxName( void ) const
+Index GeneralizedBundleSolver::FakeFiOracle::GetMaxName( void ) const
 {
  return( bslv->vBPar2[ bslv->NrFi ] );
  }
 
 /*--------------------------------------------------------------------------*/
 
-bool BundleSolver::FakeFiOracle::GetUC( cIndex i )
+bool GeneralizedBundleSolver::FakeFiOracle::GetUC( cIndex i )
 {
  const auto var = bslv->LamVcblr[ i ];
  const auto lb = var->get_lb();
@@ -7567,7 +7493,7 @@ bool BundleSolver::FakeFiOracle::GetUC( cIndex i )
 
 /*--------------------------------------------------------------------------*/
 
-LMNum BundleSolver::FakeFiOracle::GetUB( cIndex i )
+LMNum GeneralizedBundleSolver::FakeFiOracle::GetUB( cIndex i )
 {
  const auto var = bslv->LamVcblr[ i ];
  const auto ub = var->get_ub();
@@ -7584,100 +7510,55 @@ LMNum BundleSolver::FakeFiOracle::GetUB( cIndex i )
 
 /*--------------------------------------------------------------------------*/
 
-Index BundleSolver::FakeFiOracle::GetBNC( cIndex wFi )
+Index GeneralizedBundleSolver::FakeFiOracle::GetBNC( cIndex wFi )
 {
- if( bslv->NrEasy && bslv->IsEasy[ wFi - 1 ] )
-  return( bslv->IsEasy[ wFi - 1 ]->get_numcols() );
- else
-  return( 0 );
+ (void) wFi;
+ // TODO (task #24): legacy NDOFi path -- the per-easy MILPSolver used
+ // to live in bslv->IsEasy[wFi-1]; once the easy-cmp sub-Blocks are
+ // queried through MasterPB->get_easy_component(k) directly, this
+ // returns the number of columns of that sub-Block.
+ return( 0 );
  }
 
 /*--------------------------------------------------------------------------*/
 
-Index BundleSolver::FakeFiOracle::GetBNR( cIndex wFi )
+Index GeneralizedBundleSolver::FakeFiOracle::GetBNR( cIndex wFi )
 {
- return( bslv->IsEasy[ wFi - 1 ]->get_numrows() );
+ (void) wFi;
+ // TODO (task #24): see GetBNC above.
+ return( 0 );
  }
 
 /*--------------------------------------------------------------------------*/
 
-Index BundleSolver::FakeFiOracle::GetBNZ( cIndex wFi )
+Index GeneralizedBundleSolver::FakeFiOracle::GetBNZ( cIndex wFi )
 {
- return( bslv->IsEasy[ wFi - 1 ]->get_nzelements() );
+ (void) wFi;
+ // TODO (task #24): see GetBNC above.
+ return( 0 );
  }
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::FakeFiOracle::GetBDesc( cIndex wFi , int * Bbeg ,
+void GeneralizedBundleSolver::FakeFiOracle::GetBDesc( cIndex wFi , int * Bbeg ,
 					   int * Bind , double * Bval ,
 					   double * lhs , double * rhs ,
 					   double * cst ,
 					   double * lbd , double * ubd )
 {
- auto MILPSlv = bslv->IsEasy[ wFi - 1 ];
-
- if( Bbeg && Bind && Bval ) {
-  // these three parameters can only be either all nullptr or all non-nullptr
-  std::copy( MILPSlv->get_matbeg().begin() ,
-	     MILPSlv->get_matbeg().end() , Bbeg );
-  std::copy( MILPSlv->get_matind().begin() ,
-	     MILPSlv->get_matind().end() , Bind );
-  std::copy( MILPSlv->get_matval().begin() ,
-	     MILPSlv->get_matval().end() , Bval );
-  }
-
- if( cst ) {
-  // note that in the concave case all the master problem objective changes
-  // sign, so must do this part
-  std::copy( MILPSlv->get_objective().begin() ,
-	     MILPSlv->get_objective().end() , cst );
-  if( ! bslv->f_convex )
-   chgsign( cst , MILPSlv->get_numcols() );
-  }
-
- if( lbd )
-  std::copy( MILPSlv->get_var_lb().begin() ,
-	     MILPSlv->get_var_lb().end() , lbd );
- if( ubd )
-  std::copy( MILPSlv->get_var_ub().begin() ,
-	     MILPSlv->get_var_ub().end() , ubd );
-
- if( lhs && rhs ) {
-  // although the FiOracle interface allows setting all the parameters to
-  // nullptr (save the first three) individually, OSIMPSolver never
-  // requires lhs without rhs, so we don't handle the case
-  for( int i = 0 ; i < MILPSlv->get_numrows() ; ++i )
-   switch( MILPSlv->get_sense()[ i ] ) {
-    case( 'L' ):  // <= constraint
-     rhs[ i ] = MILPSlv->get_rhs()[ i ];
-     lhs[ i ] = -INFshift;
-     break;
-    case( 'E' ):  // == constraint
-     rhs[ i ] = MILPSlv->get_rhs()[ i ];
-     lhs[ i ] = MILPSlv->get_rhs()[ i ];
-     break;
-    case( 'G' ):  // >= constraint
-     rhs[ i ] = INFshift;
-     lhs[ i ] = MILPSlv->get_rhs()[ i ];
-     break;
-    default: {    // that's a Ranged constraint
-     double rngval = MILPSlv->get_rngval()[ i ];
-     if( rngval > 0 ) {
-      rhs[ i ] = MILPSlv->get_rhs()[ i ] + rngval;
-      lhs[ i ] = MILPSlv->get_rhs()[ i ];
-      }
-     else {
-      rhs[ i ] = MILPSlv->get_rhs()[ i ];
-      lhs[ i ] = MILPSlv->get_rhs()[ i ] + rngval;
-      }
-     }
-    }
-  }
- }  // end( BundleSolver::FakeFiOracle::GetBDesc )
+ (void) wFi; (void) Bbeg; (void) Bind; (void) Bval;
+ (void) lhs; (void) rhs; (void) cst; (void) lbd; (void) ubd;
+ // TODO (task #24): the legacy implementation copied the easy-component
+ // LP description (matbeg/matind/matval, lhs/rhs, objective, lb/ub) out
+ // of the per-easy MILPSolver kept in bslv->IsEasy[wFi-1]. Once the easy
+ // sub-Blocks are queried through MasterPB->get_easy_component(wFi-1)
+ // directly, this method becomes obsolete (the master Block already has
+ // the compact description as nested sub-Block).
+ }  // end( GeneralizedBundleSolver::FakeFiOracle::GetBDesc )
 
 /*--------------------------------------------------------------------------*/
 
-Index BundleSolver::FakeFiOracle::GetANZ( cIndex wFi ,
+Index GeneralizedBundleSolver::FakeFiOracle::GetANZ( cIndex wFi ,
 					  cIndex strt , Index stp )
 {
  return( static_cast< LagBFunction * >( bslv->v_c05f[ wFi - 1 ]
@@ -7686,55 +7567,22 @@ Index BundleSolver::FakeFiOracle::GetANZ( cIndex wFi ,
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::FakeFiOracle::GetADesc( cIndex wFi , int * Abeg ,
+void GeneralizedBundleSolver::FakeFiOracle::GetADesc( cIndex wFi , int * Abeg ,
 					   int * Aind , double * Aval ,
 					   cIndex strt , Index stp )
 {
- auto LagB = static_cast< LagBFunction * >( bslv->v_c05f[ wFi - 1 ] );
- auto MILPSlv = bslv->IsEasy[ wFi - 1 ];
- c_Index nc = MILPSlv->get_numcols();
- Index count = 0;
- for( Index j = 0 ; j < nc ; ++j ) {
-  Abeg[ j ] = count;
-  if( auto cp = LagB->get_A_by_col( MILPSlv->variable_with_index( j ) ) ) {
-   auto & mons = cp->second;
-   auto it = mons.begin();
-   if( strt )
-    it = std::lower_bound( it , mons.end() , std::make_pair( strt , 0 ) ,
-			   []( const auto & a , const auto & b )
-			     { return( a.first < b.first ); } );
-
-   if( stp < LagB->get_num_active_var() ) {
-    for( ; it != mons.end() ; ++it ) {
-     if( it->first >= stp )
-      break;
-     Aind[ count ] = it->first;
-     Aval[ count++ ] = - it->second;
-     }
-    }
-   else
-    for( ; it != mons.end() ; ++it ) {
-     Aind[ count ] = it->first;
-     Aval[ count++ ] = - it->second;
-     }
-
-   }  // end( if( the variable has a Lagrangian term ) )
-  }  // end( for( all columns ) )
-
- Abeg[ nc ] = count;  // end marker
-
- // like everything that goes in the objective, in the concave case A must be
- // changed sign
- if( ! bslv->f_convex )
-  chgsign( Aval , count );
-
- }  // end( BundleSolver::FakeFiOracle::GetANZ )
+ (void) wFi; (void) Abeg; (void) Aind; (void) Aval;
+ (void) strt; (void) stp;
+ // TODO (task #24): legacy NDOFi path that exported the easy-component
+ // Lagrangian A matrix out of the per-easy MILPSolver. Obsolete once
+ // the easy sub-Block is queried through MasterPB directly.
+ }  // end( GeneralizedBundleSolver::FakeFiOracle::GetADesc )
 
 /*--------------------------------------------------------------------------*/
 /*------------- METHODS FOR READING SUBGRADIENTS / CONSTRAINTS -------------*/
 /*--------------------------------------------------------------------------*/
 
-Index BundleSolver::FakeFiOracle::GetGi( SgRow SubG , cIndex_Set & SGBse ,
+Index GeneralizedBundleSolver::FakeFiOracle::GetGi( SgRow SubG , cIndex_Set & SGBse ,
 					 cIndex Name , cIndex strt ,
 					 Index stp )
 {
@@ -7759,42 +7607,42 @@ Index BundleSolver::FakeFiOracle::GetGi( SgRow SubG , cIndex_Set & SGBse ,
  }
 
 /*--------------------------------------------------------------------------*/
-/*------------------------ CLASS BundleSolverState -------------------------*/
+/*------------------------ CLASS GeneralizedBundleSolverState -------------------------*/
 /*--------------------------------------------------------------------------*/
 /*----------------------- PUBLIC PART OF THE CLASS -------------------------*/
 /*--------------------------------------------------------------------------*/
 
-void BundleSolverState::deserialize( const netCDF::NcGroup & group )
+void GeneralizedBundleSolverState::deserialize( const netCDF::NcGroup & group )
 {
  auto nv = group.getDim( "BundleSolver_NumVar" );
  if( nv.isNull() )
   throw( std::logic_error(
-		      "BundleSolverState::deserialize: missing NumVar" ) );
+		      "GeneralizedBundleSolverState::deserialize: missing NumVar" ) );
 
  NumVar = nv.getSize();
 
  auto l = group.getVar( "BundleSolver_Lambda" );
  if( l.isNull() )
   throw( std::logic_error(
-		      "BundleSolverState::deserialize: missing Lambda" ) );
+		      "GeneralizedBundleSolverState::deserialize: missing Lambda" ) );
 
  Lambda.resize( nv.getSize() );
  l.getVar( Lambda.data() );
 
  auto tt = group.getVar( "BundleSolver_t" );
  if( tt.isNull() )
-  throw( std::logic_error( "BundleSolverState::deserialize: missing t" ) );
+  throw( std::logic_error( "GeneralizedBundleSolverState::deserialize: missing t" ) );
 
  tt.getVar( &t );
 
  auto nf = group.getDim( "BundleSolver_NrFi" );
  if( nf.isNull() )
   throw( std::logic_error(
-		      "BundleSolverState::deserialize: missing NrFi" ) );
+		      "GeneralizedBundleSolverState::deserialize: missing NrFi" ) );
 
  NrFi = nf.getSize();
  --NrFi;
- 
+
  auto nup = group.getDim( "BundleSolver_UpFiLmbdef" );
  if( nup.isNull() ) {
   UpFiLmbdef = 0;
@@ -7805,7 +7653,7 @@ void BundleSolverState::deserialize( const netCDF::NcGroup & group )
   auto vup = group.getVar( "BundleSolver_UpFiLmb" );
   if( vup.isNull() )
    throw( std::logic_error(
-		      "BundleSolverState::deserialize: missing UpFiLmb" ) );
+		      "GeneralizedBundleSolverState::deserialize: missing UpFiLmb" ) );
 
   UpFiLmb.resize( NrFi + 1 );
   vup.getVar( UpFiLmb.data() );
@@ -7821,7 +7669,7 @@ void BundleSolverState::deserialize( const netCDF::NcGroup & group )
   auto vup = group.getVar( "BundleSolver_LwFiLmb" );
   if( vup.isNull() )
    throw( std::logic_error(
-		      "BundleSolverState::deserialize: missing LwFiLmb" ) );
+		      "GeneralizedBundleSolverState::deserialize: missing LwFiLmb" ) );
 
   LwFiLmb.resize( NrFi + 1 );
   vup.getVar( LwFiLmb.data() );
@@ -7835,23 +7683,23 @@ void BundleSolverState::deserialize( const netCDF::NcGroup & group )
 
  auto lb = group.getVar( "BundleSolver_global_LB" );
  if( lb.isNull() )
-  global_LB = -BundleSolver::INFshift;
+  global_LB = -GeneralizedBundleSolver::INFshift;
  else
   lb.getVar( &global_LB );
- 
- 
+
+
  v_comp_State.resize( nf.getSize() , nullptr );
 
- for( BundleSolver::Index i = 0 ; i < v_comp_State.size() ; ++i ) {
+ for( GeneralizedBundleSolver::Index i = 0 ; i < v_comp_State.size() ; ++i ) {
   auto gi = group.getGroup( "Component_State_" + std::to_string( i ) );
   if( ! gi.isNull() )
     v_comp_State[ i ] = State::new_State( gi );
   }
- }  // end( BundleSolverState::deserialize )
+ }  // end( GeneralizedBundleSolverState::deserialize )
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolverState::serialize( netCDF::NcGroup & group ) const
+void GeneralizedBundleSolverState::serialize( netCDF::NcGroup & group ) const
 {
  // always call the method of the base class first
  State::serialize( group );
@@ -7881,7 +7729,7 @@ void BundleSolverState::serialize( netCDF::NcGroup & group ) const
   ( group.addVar( "BundleSolver_Fi0Lmb" , netCDF::NcDouble() )
     ).putVar( & Fi0Lmb );
 
- if( global_LB > - BundleSolver::INFshift )
+ if( global_LB > - GeneralizedBundleSolver::INFshift )
   ( group.addVar( "BundleSolver_global_LB" , netCDF::NcDouble() )
     ).putVar( & global_LB );
 
@@ -7892,8 +7740,8 @@ void BundleSolverState::serialize( netCDF::NcGroup & group ) const
   auto gi = group.addGroup( "Component_State_" + std::to_string( i ) );
   v_comp_State[ i ]->serialize( gi );
   }
- }  // end( BundleSolverState::serialize )
+ }  // end( GeneralizedBundleSolverState::serialize )
 
 /*--------------------------------------------------------------------------*/
-/*----------------------- End File BundleSolver.cpp ------------------------*/
+/*----------------------- End File GeneralizedBundleSolver.cpp ------------------------*/
 /*--------------------------------------------------------------------------*/

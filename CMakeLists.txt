@@ -147,7 +147,9 @@ endif ()
 # Note: do not GLOB files here.
 target_sources(${modName} PRIVATE
         src/BundleSolver.cpp
-        src/ParallelBundleSolver.cpp)
+        src/ParallelBundleSolver.cpp
+        src/MasterProblemBlock.cpp
+        src/GeneralizedBundleSolver.cpp)
 
 # When using target_include_directories(), PUBLIC means that any targets
 # that link to this target also need that include directory.
@@ -216,6 +218,8 @@ install(TARGETS ${modName}
 # Install the headers
 install(FILES
         ${CMAKE_CURRENT_SOURCE_DIR}/include/BundleSolver.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/MasterProblemBlock.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/GeneralizedBundleSolver.h
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/${modNamespace})
 
 # Install the auto-generated configuration header (see above).

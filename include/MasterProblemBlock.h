@@ -123,6 +123,7 @@
 #include "ColVariable.h"
 #include "FRowConstraint.h"
 #include "LinearFunction.h"
+#include "OneVarConstraint.h"
 
 #include <iosfwd>
 #include <list>
@@ -422,6 +423,20 @@ class MasterProblemBlock : public Block {
  [[nodiscard]] Block * get_easy_component( int k ) const;
 
 /*--------------------------------------------------------------------------*/
+ /// returns ||z*||^2, the squared 2-norm of the aggregated dual subgradient
+ /** In the dual MP the auxiliary variables z encode the aggregated
+  * subgradient z* = b - sum_k A^k ( sum_i theta^k_i u^k_i ); this method
+  * returns the current squared 2-norm sum_j z_j^2 read off the
+  * ColVariable values, which is meaningful only after the master Solver
+  * has solved the MP at least once.
+  *
+  * In the primal MP the same quantity has to be reconstructed from the
+  * per-PFB optimal multipliers and is not available here; the method
+  * returns 0 in that case. */
+
+ [[nodiscard]] double get_dual_norm_squared( void ) const;
+
+/*--------------------------------------------------------------------------*/
  /// update the proximal stabilization parameter t
  /** Sets the proximal stabilization parameter t used in the quadratic /
   * linear term of the MP Objective. The new value is stored in #t_stab; the
@@ -434,6 +449,35 @@ class MasterProblemBlock : public Block {
   *       and for triggering a re-solve of the MP. */
 
  void set_t( double t );
+
+/*--------------------------------------------------------------------------*/
+ /// update the linear coefficient vector b of the primal Objective
+ /** Sets the linear coefficient on every d_i of the primal MP Objective
+  * to the value \p b[i] (i.e. the "b" of the paper's primal MP
+  * b * d + sum_k v^k + (1/(2t)) || d ||^2_2). \p b must have size
+  * #NumVars. The call is a no-op under the dual MP. */
+
+ void set_b( const std::vector< double > & b );
+
+/*--------------------------------------------------------------------------*/
+ /// set the lower bound LB^k of the k-th hard component
+ /** Sets the constraint v^k >= LB^k of the primal MP (or, equivalently,
+  * the linear coefficient on gamma^k of the dual one). \p k must lie in
+  * [0, NoHardCmps). LB^k = -INF turns the bound off. */
+
+ void set_LB( int k , double LB );
+
+/*--------------------------------------------------------------------------*/
+ /// update the level stabilization parameter f_lev
+ /** Sets the level target f_lev used by the #kLevel / #kDoublyStabilized
+  * stabilization schemes. The value enters the dual MP objective as the
+  * linear coefficient of the omega multiplier (+ omega * f_lev). It is a
+  * no-op when #StblType == #kProximal (omega is fixed to 0 in that case).
+  *
+  * \note the surrounding Bundle algorithm is responsible for choosing
+  *       f_lev consistently with its level-management strategy. */
+
+ void set_f_lev( double f );
 
 /*--------------------------------------------------------------------------*/
  /// load a MasterProblemBlock out of an istream
@@ -489,6 +533,14 @@ class MasterProblemBlock : public Block {
  std::vector< ColVariable > Var_d;       ///< the step variables d (free, size NumVars)
 
  std::vector< ColVariable > Var_v_hard;  ///< the epigraph variables v^k per hard component
+
+ std::vector< BoxConstraint > Bounds_v_hard;
+                                         ///< per-hard-component LB^k: v^k >= LB^k
+                                         ///< (rhs = +INF by default)
+
+ FRowConstraint LevelCns;                ///< primal level constraint
+                                         ///< sum_k v^k <= f_lev
+                                         ///< (kLevel / kDoublyStabilized only)
 
  // - - - - - - - - - - - -  static MP entities (dual form)  - - - - - - - - -
 
