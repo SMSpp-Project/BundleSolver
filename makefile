@@ -35,12 +35,16 @@
 # macros to be exported - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 BNDSLVOBJ = $(BNDSLVSDR)/obj/BundleSolver.o \
-	$(BNDSLVSDR)/obj/ParallelBundleSolver.o
+	$(BNDSLVSDR)/obj/ParallelBundleSolver.o \
+	$(BNDSLVSDR)/obj/MasterProblemBlock.o \
+	$(BNDSLVSDR)/obj/GeneralizedBundleSolver.o
 
 BNDSLVINC = -I$(BNDSLVSDR)/include
 
 BNDSLVH   = $(BNDSLVSDR)/include/BundleSolver.h \
-	$(BNDSLVSDR)/include/ParallelBundleSolver.h
+	$(BNDSLVSDR)/include/ParallelBundleSolver.h \
+	$(BNDSLVSDR)/include/MasterProblemBlock.h \
+	$(BNDSLVSDR)/include/GeneralizedBundleSolver.h
 
 # clean - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -57,6 +61,17 @@ $(BNDSLVSDR)/obj/BundleSolver.o: $(BNDSLVSDR)/src/BundleSolver.cpp \
 $(BNDSLVSDR)/obj/ParallelBundleSolver.o: $(BNDSLVSDR)/src/ParallelBundleSolver.cpp \
 	$(BNDSLVH) $(SMS++OBJ) $(MILPSH) $(libNDOOBJ)
 	$(CC) -c $(BNDSLVSDR)/src/ParallelBundleSolver.cpp -o $@ \
+	$(BNDSLVINC) $(SMS++INC) $(MILPSINC) $(libNDOINC) $(SW)
+
+$(BNDSLVSDR)/obj/MasterProblemBlock.o: $(BNDSLVSDR)/src/MasterProblemBlock.cpp \
+	$(BNDSLVSDR)/include/MasterProblemBlock.h $(SMS++OBJ)
+	$(CC) -c $(BNDSLVSDR)/src/MasterProblemBlock.cpp -o $@ \
+	$(BNDSLVINC) $(SMS++INC) $(SW)
+
+$(BNDSLVSDR)/obj/GeneralizedBundleSolver.o: $(BNDSLVSDR)/src/GeneralizedBundleSolver.cpp \
+	$(BNDSLVSDR)/include/GeneralizedBundleSolver.h \
+	$(BNDSLVSDR)/include/MasterProblemBlock.h $(SMS++OBJ) $(MILPSH) $(libNDOOBJ)
+	$(CC) -c $(BNDSLVSDR)/src/GeneralizedBundleSolver.cpp -o $@ \
 	$(BNDSLVINC) $(SMS++INC) $(MILPSINC) $(libNDOINC) $(SW)
 
 ########################## End of makefile ###################################
