@@ -33,12 +33,6 @@
 
 #include "LagBFunction.h"
 
-//#include "QPPnltMP.h" TBD:should go away
-
-//#include "OSIMPSolver.h" TBD:should go away
-
-//#include "/home/enrico/coinbrew/dist/include/coin/OsiClpSolverInterface.hpp" TBD:should go away
-
 #include <iomanip>
 
 /*--------------------------------------------------------------------------*/

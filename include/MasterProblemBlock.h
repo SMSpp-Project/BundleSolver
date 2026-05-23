@@ -219,7 +219,7 @@ class MasterProblemBlock : public Block {
   : Block( father ) , IsPrimal( false ) , StblType( kDoublyStabilized ) ,
     MaxBSize( 0 ) , MaxSGLen( 0 ) , NumVars( 0 ) ,
     NoTotCmps( 0 ) , NoEasyCmps( 0 ) , NoHardCmps( 0 ) , DoEasy( 0 ) ,
-    t_stab( 1.0 ) { }
+    t_stab( 1.0 ) , f_lev( 0.0 ) , omega_obj_idx( -1 ) { }
 
 /*--------------------------------------------------------------------------*/
  /// destructor: releases all the resources owned by MasterProblemBlock
@@ -511,9 +511,15 @@ class MasterProblemBlock : public Block {
                                    ///< populated by each hard-cmp sub-Block via
                                    ///< PolyhedralFunctionBlock::set_conjugate_constraint
 
- // - - - - - - - - - - - - - - -  stabilization parameter  - - - - - - - - -
+ // - - - - - - - - - - - - - - -  stabilization parameters  - - - - - - - -
 
- double t_stab;                    ///< current value of the proximal parameter t
+ double t_stab;     ///< current value of the proximal parameter t
+
+ double f_lev;      ///< current value of the level f_lev (level / doubly only)
+
+ int omega_obj_idx; ///< index of omega in the DQuadFunction triples, or -1
+                    ///< if omega does not contribute to the master Objective
+                    ///< (i.e. under #kProximal)
 
 /*--------------------------------------------------------------------------*/
 /*--------------------- PRIVATE PART OF THE CLASS --------------------------*/
