@@ -30,6 +30,13 @@
 
 #include "MasterProblemBlock.h"
 
+#include "BlockSolverConfig.h"
+#include "Configuration.h"
+#include "DQuadFunction.h"
+#include "FRealObjective.h"
+#include "LinearFunction.h"
+#include "PolyhedralFunctionBlock.h"
+
 #include <stdexcept>
 #include <utility>
 
@@ -69,13 +76,16 @@ void MasterProblemBlock::clear()
  // back to the "default" MP type
  IsPrimal = false;
  StblType = kDoublyStabilized;
+ t_stab   = 1.0;
 
- // drop any group of dynamic / static gamma multipliers that might have
- // been previously allocated; the rest of the abstract representation
- // (Var_lambda, Var_r, Var_omega, NormalizationCns) is owned by the
- // class as plain members and is automatically released by the
- // corresponding destructors when *this is destroyed
- Var_gamma.clear();
+ // drop the dynamically-sized variable groups (primal d and v^k, dual z
+ // and CouplingCns); the scalar members (Var_lambda, Var_r, Var_omega,
+ // NormalizationCns) keep their default state and are released by their
+ // own destructors when *this is destroyed
+ Var_d.clear();
+ Var_v_hard.clear();
+ Var_z.clear();
+ CouplingCns.clear();
 
  }  // end( MasterProblemBlock::clear )
 
@@ -109,12 +119,13 @@ void MasterProblemBlock::SetDim( int MxBSz , int NVars ,
  // CreateEmptyMP()
  IsEasyCmp.assign( NoTotCmps , false );
 
- // reserve the slots for the per-component sub-Blocks
+ // reserve the slots for the per-component sub-Blocks; the actual
+ // PolyhedralFunctionBlock / easy-cmp Block objects are allocated by
+ // CreateEmptyMP() once the formulation is known. The per-hard-cmp LB
+ // multipliers gamma^k live inside each PolyhedralFunctionBlock sub-Block
+ // (its own f_gamma) and are therefore *not* materialized here.
  EasyCmps.reserve( NoEasyCmps );
  HardCmps.reserve( NoHardCmps );
-
- // pre-size the per-hard-component LB multipliers
- Var_gamma.resize( NoHardCmps );
 
  }  // end( MasterProblemBlock::SetDim )
 
@@ -186,21 +197,52 @@ void MasterProblemBlock::CreateEmptyMP( stabilization_type Stbl , int NoCmps ,
 
 void MasterProblemBlock::CreatePrimalMP( stabilization_type Stbl )
 {
+ // we only support proximal stabilization in the primal form at the moment;
+ // level / doubly-stabilized variants need either a separate level row or a
+ // dedicated sub-block and are not implemented yet
+ if( Stbl != kProximal )
+  throw( std::logic_error(
+       "MasterProblemBlock::CreatePrimalMP: only kProximal is supported "
+       "in the primal form for now" ) );
+
  StblType = Stbl;
+ IsPrimal = true;
 
- // TODO: build the primal MP described in (P), i.e.
+ // ---- static Variable: the step d and the per-hard-component epigraph v^k --
+
+ Var_d.clear();
+ Var_d.resize( NumVars );          // d is free by default
+ if( NumVars > 0 )
+  add_static_variable( Var_d , "MPB_d" );
+
+ Var_v_hard.clear();
+ Var_v_hard.resize( NoHardCmps );  // v^k is free; the v >= g*d + alpha cuts
+                                   // are added later as dynamic constraints
+ if( NoHardCmps > 0 )
+  add_static_variable( Var_v_hard , "MPB_v" );
+
+ // ---- Objective: min  b*d + sum_k v^k  +  (1/(2t)) || d ||^2_2 ------------
  //
- //  - one ColVariable per component of d (NumVars of them);
- //  - one ColVariable v^k per "hard" component, plus the global v;
- //  - one PolyhedralFunctionBlock sub-Block per "hard" component
- //    (in its *primal* linearised representation), feeding the
- //    sub-gradient cuts v^k >= g^k_i * d + alpha^k_i;
- //  - the global epigraph constraint v >= b * d + sum_k v^k;
- //  - the FRealObjective wrapping a DQuadFunction with the proximal
- //    quadratic term (1/2t) ||d||^2_2 plus the linear part (v).
+ // the linear coefficient on d (the "b" of the paper, i.e. the constant
+ // gradient of the linear part of the original sum-function) is left at 0
+ // here; the BundleSolver is expected to install it through the standard
+ // ModBlck interface (the LinearFunction member of the DQuadFunction tracks
+ // its variables and reacts to coefficient changes via Modification).
 
- throw( std::logic_error(
-      "MasterProblemBlock::CreatePrimalMP: not implemented yet" ) );
+ const double quad_coeff = 1.0 / ( 2.0 * t_stab );
+
+ DQuadFunction::v_coeff_triple triples;
+ triples.reserve( NumVars + NoHardCmps );
+
+ for( int i = 0 ; i < NumVars ; ++i )
+  triples.emplace_back( & Var_d[ i ] , 0.0 , quad_coeff );
+
+ for( int k = 0 ; k < NoHardCmps ; ++k )
+  triples.emplace_back( & Var_v_hard[ k ] , 1.0 , 0.0 );
+
+ auto obj = new FRealObjective( this , new DQuadFunction( std::move( triples ) ) );
+ obj->set_sense( Objective::eMin , eNoMod );
+ set_objective( obj , eNoMod );
 
  }  // end( MasterProblemBlock::CreatePrimalMP )
 
@@ -209,27 +251,258 @@ void MasterProblemBlock::CreatePrimalMP( stabilization_type Stbl )
 void MasterProblemBlock::CreateDualMP( stabilization_type Stbl )
 {
  StblType = Stbl;
+ IsPrimal = false;
 
- // TODO: build the dual MP described in (D), i.e.
+ // ---- static dual multipliers: lambda >= 0, r >= 0, omega ----------------
  //
- //  - the static non-negative ColVariable lambda / r / omega (the latter
- //    fixed to 0 unless Stbl == kLevel or Stbl == kDoublyStabilized);
- //  - one non-negative ColVariable gamma^k per "hard" component (already
- //    pre-sized in Var_gamma by SetDim());
- //  - one PolyhedralFunctionBlock sub-Block per "hard" component (in its
- //    *dual* linearised representation), feeding the theta^k_i multipliers
- //    and the normalization sum_i theta^k_i + gamma^k = lambda;
- //  - one sub-Block per "easy" component (e.g. the inner Block of the
- //    corresponding LagBFunction) for the compact u^k variables and the
- //    A^k / G^k constraints;
- //  - the global normalization row lambda + r - omega = 1;
- //  - the FRealObjective wrapping a DQuadFunction with the dual proximal
- //    term -(t/2) ||z||^2_2 plus the linear part.
+ // omega is the multiplier of the level constraint v <= f_lev and is
+ // non-negative under #kLevel / #kDoublyStabilized; with pure proximal
+ // stabilization the level row does not exist, so omega is fixed to 0.
 
- throw( std::logic_error(
-      "MasterProblemBlock::CreateDualMP: not implemented yet" ) );
+ Var_lambda.is_positive( true , eNoMod );
+ Var_r.is_positive( true , eNoMod );
+ if( Stbl == kLevel || Stbl == kDoublyStabilized ) {
+  Var_omega.is_positive( true , eNoMod );
+  }
+ else {
+  Var_omega.set_value( 0 );
+  Var_omega.is_fixed( true , eNoMod );
+  }
+ add_static_variable( Var_lambda , "MPB_lambda" );
+ add_static_variable( Var_r , "MPB_r" );
+ add_static_variable( Var_omega , "MPB_omega" );
+
+ // ---- z auxiliary variables (free, one per coordinate) -------------------
+
+ Var_z.clear();
+ Var_z.resize( NumVars );
+ if( NumVars > 0 )
+  add_static_variable( Var_z , "MPB_z" );
+
+ // ---- global normalization row: lambda + r - omega = 1 -------------------
+
+ {
+  LinearFunction::v_coeff_pair norm_terms;
+  norm_terms.reserve( 3 );
+  norm_terms.emplace_back( & Var_lambda ,  1.0 );
+  norm_terms.emplace_back( & Var_r      ,  1.0 );
+  norm_terms.emplace_back( & Var_omega  , -1.0 );
+
+  NormalizationCns.set_lhs( 1.0 , eNoMod );
+  NormalizationCns.set_rhs( 1.0 , eNoMod );
+  NormalizationCns.set_function(
+     new LinearFunction( std::move( norm_terms ) ) , eNoMod );
+  add_static_constraint( NormalizationCns , "MPB_norm" );
+  }
+
+ // ---- coupling rows z_j = b_j (b = 0 until BundleSolver sets the linear --
+ // ---- part of the original sum-function)                              ----
+ //
+ // CouplingCns is exposed as a *dynamic* group because that is the only
+ // overload of Block::add_*_constraint() that accepts std::list, and the
+ // PolyhedralFunctionBlock::set_conjugate_constraint API takes a
+ // std::list< FRowConstraint > & by reference. The list size itself is in
+ // fact constant (NumVars) and never grows during the algorithm.
+
+ CouplingCns.clear();
+ CouplingCns.resize( NumVars );
+ {
+  auto it = CouplingCns.begin();
+  for( int j = 0 ; j < NumVars ; ++j , ++it ) {
+   LinearFunction::v_coeff_pair vp{ { & Var_z[ j ] , 1.0 } };
+   it->set_function( new LinearFunction( std::move( vp ) , 0.0 ) , eNoMod );
+   it->set_lhs( 0.0 , eNoMod );
+   it->set_rhs( 0.0 , eNoMod );
+   }
+  }
+ if( NumVars > 0 )
+  add_dynamic_constraint( CouplingCns , "MPB_coupling" );
+
+ // ---- one PolyhedralFunctionBlock sub-Block per "hard" component ---------
+ //
+ // The PFB is wired in its *linearised dual* representation (rep == 3):
+ //
+ //  - f_gamma >= 0 is the per-component LB^k multiplier;
+ //  - f_theta (dynamic) is the list of theta^k_i bundle multipliers;
+ //  - the per-PFB normalization row sum_i theta^k_i + gamma^k = 1 is
+ //    later augmented with the master-side lambda via set_lambda(), so
+ //    that it becomes sum_i theta^k_i + gamma^k + lambda = 1, which is
+ //    just the paper's normalization sum_i theta^k_i + gamma^k = lambda
+ //    re-grouped (the constant 1 on the right-hand side stays, lambda
+ //    appears on the LHS with sign +1);
+ //  - the per-PFB Objective contributes sum_i theta^k_i * b^k_i +
+ //    gamma^k * LB^k (the latter is 0 unless f_polyf carries an explicit
+ //    lower bound), which is precisely the per-component piece of the
+ //    dual objective in (D);
+ //  - the per-PFB contribution to the master-side z coupling rows is
+ //    installed via set_conjugate_constraint(CouplingCns), which augments
+ //    every CouplingCns[j] with the terms +theta^k_i * a^k_{i,j}.
+ //
+ // The PolyhedralFunction interior bundle is empty here: the
+ // (Generalized)BundleSolver feeds rows (g, alpha) into each f_polyf via
+ // the Modification interface as new linearizations are produced.
+
+ HardCmps.clear();
+ HardCmps.reserve( NoHardCmps );
+ const SimpleConfiguration< int > rep_dual( 3 );  // bit 0 = 1, bit 1 = 1
+
+ for( int k = 0 ; k < NoHardCmps ; ++k ) {
+  auto * pfb = new PolyhedralFunctionBlock( this );
+
+  // f_polyf needs an "active variables" vector of size NumVars; in the
+  // dual representation these only serve as keys for the bookkeeping of
+  // set_conjugate_constraint (they are not the lambda of the original
+  // PolyhedralFunction; the bundle is fed in dual space). Var_z fits the
+  // role: one ColVariable* per coordinate, with NumVars in total.
+  PolyhedralFunction::VarVector vv;
+  vv.reserve( NumVars );
+  for( auto & zj : Var_z )
+   vv.push_back( & zj );
+  pfb->get_PolyhedralFunction().set_variables( std::move( vv ) );
+
+  pfb->generate_abstract_variables(
+                              const_cast< SimpleConfiguration< int > * >( & rep_dual ) );
+  pfb->generate_abstract_constraints();
+  pfb->generate_objective();
+
+  pfb->set_lambda( & Var_lambda );
+  pfb->set_conjugate_constraint( CouplingCns );
+
+  HardCmps.push_back( pfb );
+  add_nested_Block( pfb );
+  }
+
+ // ---- master-side FRealObjective: -(t/2) || z ||^2_2 ---------------------
+ //
+ // The bundle-summing terms theta^k_i b^k_i + gamma^k LB^k of every hard
+ // component already live in the sub-PFB Objectives and are accumulated by
+ // the SMS++ engine when the master is solved. Here we only need to add
+ // the master-side quadratic stabilization on z and the (currently zero)
+ // linear part x_bar * z, which the BundleSolver will later modify via
+ // LinearFunction::modify_coefficient as the stability centre changes.
+
+ const double quad_coeff = - t_stab / 2.0;
+
+ DQuadFunction::v_coeff_triple triples;
+ triples.reserve( NumVars );
+ for( int j = 0 ; j < NumVars ; ++j )
+  triples.emplace_back( & Var_z[ j ] , 0.0 , quad_coeff );
+
+ auto obj = new FRealObjective( this , new DQuadFunction( std::move( triples ) ) );
+ obj->set_sense( Objective::eMax , eNoMod );
+ set_objective( obj , eNoMod );
+
+ // Easy components are not allocated here: they are registered one by one
+ // by the surrounding (Generalized)BundleSolver via register_easy_component(),
+ // which adds the easy-cmp sub-Block and augments every CouplingCns[j]
+ // with the +A^k_{i,j} u^k_i terms produced by that component.
+
+ // TODO (post-MVP):
+ //  - the omega * h coefficient on the level row when X is a polyhedron;
+ //  - inject the constant term b_j on every CouplingCns[j] rhs as soon as
+ //    the linear part of the original sum-function is known.
 
  }  // end( MasterProblemBlock::CreateDualMP )
+
+/*--------------------------------------------------------------------------*/
+/*--------------------------- EASY COMPONENTS ------------------------------*/
+/*--------------------------------------------------------------------------*/
+
+void MasterProblemBlock::register_easy_component(
+                  Block * easy_blk ,
+                  std::vector< LinearFunction::v_coeff_pair > && A_rows )
+{
+ if( IsPrimal )
+  throw( std::logic_error(
+       "MasterProblemBlock::register_easy_component: easy components are "
+       "only supported in the dual MP" ) );
+
+ if( ! easy_blk )
+  throw( std::invalid_argument(
+       "MasterProblemBlock::register_easy_component: null sub-Block" ) );
+
+ if( int( EasyCmps.size() ) >= NoEasyCmps )
+  throw( std::logic_error(
+       "MasterProblemBlock::register_easy_component: all NoEasyCmps slots "
+       "have been registered already" ) );
+
+ if( int( A_rows.size() ) != NumVars )
+  throw( std::invalid_argument(
+       "MasterProblemBlock::register_easy_component: A_rows must have "
+       "NumVars entries" ) );
+
+ // 1. attach the sub-Block (and transfer ownership)
+ add_nested_Block( easy_blk );
+ EasyCmps.push_back( easy_blk );
+
+ // 2. augment every CouplingCns[j] with the contributed +A^k_{i,j} u^k_i
+ //    terms, leaving the rhs untouched
+ auto it = CouplingCns.begin();
+ for( int j = 0 ; j < NumVars ; ++j , ++it ) {
+  if( A_rows[ j ].empty() )
+   continue;
+  auto lf = dynamic_cast< LinearFunction * >( it->get_function() );
+  if( ! lf )
+   throw( std::logic_error(
+        "MasterProblemBlock::register_easy_component: CouplingCns row "
+        "does not carry a LinearFunction" ) );
+  lf->add_variables( std::move( A_rows[ j ] ) , eNoMod );
+  }
+
+ }  // end( MasterProblemBlock::register_easy_component )
+
+/*--------------------------------------------------------------------------*/
+
+Block * MasterProblemBlock::get_hard_component( int k ) const
+{
+ if( k < 0 || k >= int( HardCmps.size() ) )
+  return( nullptr );
+ return( HardCmps[ k ] );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+Block * MasterProblemBlock::get_easy_component( int k ) const
+{
+ if( k < 0 || k >= int( EasyCmps.size() ) )
+  return( nullptr );
+ return( EasyCmps[ k ] );
+ }
+
+/*--------------------------------------------------------------------------*/
+/*------------------------- STABILIZATION PARAMETER ------------------------*/
+/*--------------------------------------------------------------------------*/
+
+void MasterProblemBlock::set_t( double t )
+{
+ if( t <= 0.0 )
+  throw( std::invalid_argument(
+       "MasterProblemBlock::set_t: t must be strictly positive" ) );
+
+ t_stab = t;
+
+ // The diagonal quadratic coefficient lives in the DQuadFunction wrapped
+ // by the FRealObjective set by CreatePrimal/DualMP. Both layouts place
+ // the quadratic terms on the first NumVars triple entries:
+ //   - primal:  d_i with coefficient  +1/(2t)
+ //   - dual:    z_j with coefficient  -t/2
+ // so the refresh is a straight loop over [0, NumVars).
+ if( ( IsPrimal && Var_d.empty() ) || ( ! IsPrimal && Var_z.empty() ) )
+  return;
+
+ auto obj = dynamic_cast< FRealObjective * >( get_objective() );
+ if( ! obj )
+  return;
+ auto dqf = dynamic_cast< DQuadFunction * >( obj->get_function() );
+ if( ! dqf )
+  return;
+
+ const double quad_coeff = IsPrimal ?   1.0 / ( 2.0 * t_stab )
+                                    : - t_stab / 2.0;
+ for( int i = 0 ; i < NumVars ; ++i )
+  dqf->modify_term( DQuadFunction::Index( i ) , 0.0 , quad_coeff );
+
+ }  // end( MasterProblemBlock::set_t )
 
 /*--------------------------------------------------------------------------*/
 /*------------------------- LOAD INTO THE SOLVER ---------------------------*/

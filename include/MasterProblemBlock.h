@@ -120,10 +120,12 @@
 /*--------------------------------------------------------------------------*/
 
 #include "Block.h"
-#include "BlockSolverConfig.h"
 #include "ColVariable.h"
 #include "FRowConstraint.h"
+#include "LinearFunction.h"
 
+#include <iosfwd>
+#include <list>
 #include <string>
 #include <vector>
 
@@ -216,7 +218,8 @@ class MasterProblemBlock : public Block {
  explicit MasterProblemBlock( Block * father = nullptr )
   : Block( father ) , IsPrimal( false ) , StblType( kDoublyStabilized ) ,
     MaxBSize( 0 ) , MaxSGLen( 0 ) , NumVars( 0 ) ,
-    NoTotCmps( 0 ) , NoEasyCmps( 0 ) , NoHardCmps( 0 ) , DoEasy( 0 ) { }
+    NoTotCmps( 0 ) , NoEasyCmps( 0 ) , NoHardCmps( 0 ) , DoEasy( 0 ) ,
+    t_stab( 1.0 ) { }
 
 /*--------------------------------------------------------------------------*/
  /// destructor: releases all the resources owned by MasterProblemBlock
@@ -361,6 +364,78 @@ class MasterProblemBlock : public Block {
  void load_problem( void );
 
 /*--------------------------------------------------------------------------*/
+ /// register the next "easy" component as a sub-Block of the dual MP
+ /** Appends a new easy-component sub-Block to MasterProblemBlock; the call
+  * is meaningful only after CreateDualMP() has been invoked (i.e. when
+  * #IsPrimal == false). The caller passes:
+  *
+  * - \p easy_blk: a Block whose abstract representation encodes the compact
+  *   convex description of the easy component f^k, i.e. its native u^k
+  *   ColVariable, the polyhedral constraints (G^k u^k <= g, A^k u^k = ...
+  *   plus any sign constraints), and a FRealObjective wrapping a
+  *   LinearFunction with the constant cost vector c^k. Sub-Block ownership
+  *   is transferred to MasterProblemBlock through add_nested_Block();
+  *
+  * - \p A_rows: a vector of length NumVars where, for every coordinate
+  *   j of the original sum-function space, \p A_rows[j] lists the pairs
+  *   <u^k_i, A^k_{i,j}> with non-zero matrix coefficient. These terms are
+  *   then *added* (with sign +1) to the LinearFunction of CouplingCns[j],
+  *   so that the master constraint z_j = b_j ends up reading
+  *   z_j + sum_i A^k_{i,j} u^k_i (+ hard-cmp contributions) = b_j ,
+  *   which is exactly z_j = b_j - A^k u^k -- (hard-cmp contributions) of
+  *   the paper's dual MP.
+  *
+  * The objective contribution + c^k u^k is provided by the FRealObjective
+  * of \p easy_blk itself, since the SMS++ Block engine automatically
+  * sums the Objectives of every registered sub-Block when the master is
+  * solved.
+  *
+  * The method does *not* touch the (c^k - x_bar A^k) coefficients on u^k:
+  * the stability-centre-dependent part of the dual objective is materialised
+  * at solve time through the master x_bar * z linear term, which the
+  * driving (Generalized)BundleSolver keeps in sync with the current
+  * stability centre via the appropriate Modification.
+  *
+  * \note the calls to this method are expected to be made in order, with
+  *       \p easy_blk corresponding to the next "easy" component to be
+  *       registered. After NoEasyCmps successful calls, all easy
+  *       components are wired in and EasyCmps.size() == NoEasyCmps. */
+
+ void register_easy_component( Block * easy_blk ,
+                          std::vector< LinearFunction::v_coeff_pair > && A_rows );
+
+/*--------------------------------------------------------------------------*/
+ /// returns the k-th hard-component sub-Block
+ /** Returns the PolyhedralFunctionBlock used to model the k-th "hard"
+  * component of the sum-function, for k in [0, NoHardCmps). The pointer
+  * stays valid as long as the MP is not torn down by clear() or SetDim();
+  * it is meant to be used by the (Generalized)BundleSolver to feed cuts
+  * into the underlying PolyhedralFunction via the Modification interface. */
+
+ [[nodiscard]] Block * get_hard_component( int k ) const;
+
+/*--------------------------------------------------------------------------*/
+ /// returns the k-th easy-component sub-Block
+ /** Returns the Block registered as the k-th "easy" component, for k in
+  * [0, EasyCmps.size()), or nullptr if it has not been registered yet. */
+
+ [[nodiscard]] Block * get_easy_component( int k ) const;
+
+/*--------------------------------------------------------------------------*/
+ /// update the proximal stabilization parameter t
+ /** Sets the proximal stabilization parameter t used in the quadratic /
+  * linear term of the MP Objective. The new value is stored in #t_stab; the
+  * coefficients of the Objective are updated only if the MP has already
+  * been built (i.e. after a CreateEmptyMP() call) so that the same value
+  * can also be configured before the MP is generated.
+  *
+  * \note this method only updates the proximal coefficient. The Bundle
+  *       algorithm is responsible for issuing the call at every t-change
+  *       and for triggering a re-solve of the MP. */
+
+ void set_t( double t );
+
+/*--------------------------------------------------------------------------*/
  /// load a MasterProblemBlock out of an istream
  /** Required by the abstract interface of Block, but currently not
   * implemented (a MasterProblemBlock is always built programmatically by
@@ -409,7 +484,13 @@ class MasterProblemBlock : public Block {
 
  std::vector< Block * > HardCmps;  ///< sub-Blocks of the "hard" components
 
- // - - - - - - - - - - - - - -  static MP entities  - - - - - - - - - - - - -
+ // - - - - - - - - - - -  static MP entities (primal form)  - - - - - - - - -
+
+ std::vector< ColVariable > Var_d;       ///< the step variables d (free, size NumVars)
+
+ std::vector< ColVariable > Var_v_hard;  ///< the epigraph variables v^k per hard component
+
+ // - - - - - - - - - - - -  static MP entities (dual form)  - - - - - - - - -
 
  ColVariable Var_lambda;           ///< dual multiplier of the global v >= ...
                                    ///< row, "lambda" in (D)
@@ -418,10 +499,21 @@ class MasterProblemBlock : public Block {
 
  ColVariable Var_omega;            ///< dual multiplier of the level / X row
 
- std::vector< ColVariable > Var_gamma;
-                                   ///< per-hard-component LB^k multipliers
+ std::vector< ColVariable > Var_z;
+                                   ///< auxiliary dual variables z (one per
+                                   ///< coordinate of the original sum-function
+                                   ///< variable space; size NumVars)
 
  FRowConstraint NormalizationCns;  ///< global normalization row lambda+r-omega=1
+
+ std::list< FRowConstraint > CouplingCns;
+                                   ///< coupling rows z_j = b_j (j=0..NumVars-1);
+                                   ///< populated by each hard-cmp sub-Block via
+                                   ///< PolyhedralFunctionBlock::set_conjugate_constraint
+
+ // - - - - - - - - - - - - - - -  stabilization parameter  - - - - - - - - -
+
+ double t_stab;                    ///< current value of the proximal parameter t
 
 /*--------------------------------------------------------------------------*/
 /*--------------------- PRIVATE PART OF THE CLASS --------------------------*/
