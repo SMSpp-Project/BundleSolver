@@ -119,7 +119,12 @@
  *         Dipartimento di Matematica ed Informatica \n
  *         Universita' di Cagliari \n
  *
- * \copyright &copy; by Antonio Frangioni, Enrico Calandrini, Enrico Gorgone
+ * \author Donato Meoli \n
+ *         Dipartimento di Informatica \n
+ *         Universita' di Pisa \n
+ *
+ * \copyright &copy; by Antonio Frangioni, Enrico Calandrini, Enrico Gorgone,
+ *            Donato Meoli
  */
 /*--------------------------------------------------------------------------*/
 /*----------------------------- DEFINITIONS --------------------------------*/

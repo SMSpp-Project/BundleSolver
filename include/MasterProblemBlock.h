@@ -2,104 +2,96 @@
 /*-------------------- File MasterProblemBlock.h ---------------------------*/
 /*--------------------------------------------------------------------------*/
 /** @file
- * Header file for the MPBlock class, implementing the master problem
- * interface for the BundleSolver class.
- * 
- * This class implements and solves the Master Problem for a generic Bundle
- * Method, with the possibility of initializing the problem either in its
- * primal or dual formulation.
- * 
- * It is particularly suitable for problems where the objective function is
- * expressed as the sum of independent components coupled through
- * (possibly) complicating constraints, although it can also handle the
- * case where only a single component is present. In the former setting,
- * each component is treated separately through a dedicated sub-block
- * reproducing the corresponding sub-problem, while the current class is
- * responsible for reproducing the coupling constraints. For a more
- * detailed overview of the general algorithm, please refer to
- * GeneralizedBundleSolver.h.
- * 
- * In its most general form, we assume that the objective function f can
- * be expressed as the sum of N sub-functions f^k, each of which is only
- * accessible through an oracle providing the function value and a
- * subgradient at a given point. Assuming that a bundle
- * B^k = {(g^k_i, α^k_i)}_i stores information related to subgradients and
- * linearization errors, each sub-problem can be written as:
- * 
- * \min v^k                                               (1)
- * s.t  v^k \ge g^k_i * d + α^k_i       \forall i         (2)
- *      α^k_h \ge g^k_h * d             \forall h         (3)
- *      v^k \ge LB^k                                      (4)
- * 
- * where constraints (2) and (3) are commonly referred to as subgradient
- * cuts and feasibility cuts, respectively, while constraint (4)
- * represents a possible known lower bound on the value of f^k. In the
- * formulation above, d denotes the step to be performed at the current
- * iteration and will be a responsability of MPB of initializing such
- * variable and providing it to each sub-block.
- * 
- * This formulation is naturally represented by the "primal
- * version" of a generic PolyhedralFunctionBlock. For this reason, one
- * such block is created and registered as a sub-block of the current
- * class for each sub-function of the original function f.
- * 
- * The lower approximation model of the complete function f is then
- * obtained by introducing an appropriate variable v and the constraint
- * 
- *  v \ge d * b + \sum_k v_k                               (5)
- * 
- * where b represents the constant part of the objective function f, when
- * present.
- * 
- * Finally, an appropriate stabilization mechanism must be considered in
- * the master problem. Currently, MPB supports:
- *  - Proximal Stabilization;
- *  - Level Stabilization;
- *  - Doubly Stabilized Bundle Methods.
- * 
- * The Master Problem obtained through the minimization of v together with
- * the selected stabilization term corresponds to the formulation
- * implemented in this class under the name "Primal Form".
- * 
- * In addition, MasterProblemBlock is also able to reproduce the dual
- * formulation of the model described above. This is particularly useful
- * when some of the sub-functions are so-called "easy components", i.e.,
- * components that can be evaluated exactly instead of relying on an
- * approximated model (see BundleSolver.h for further details).
- * 
- * In this case, each sub-block introduces dual multipliers θ^k_i for
- * each cut in the bundle B^k and a multiplier \gamma^k associated with
- * the lower bound LB^k. The corresponding contribution
- * 
- * - \sum_i \theta^k_i \alpha^k_i - \sum_h \theta^k_h \alpha^k_h
- * 
- * is then added to the objective function, together with the
- * "normalization constraints"
- * 
- * \sum_i \theta^k_i + \gamma^k = \lambda
- * 
- * where \lambda is the dual multiplier associated with constraint (5).
- * 
- * MasterProblemBlock is instead responsible for coupling all terms
- * \theta^k_i g^k_i coming from each sub-block into a single vector R,
- * which is then used in the objective function of the maximization
- * problem.
- * 
- * As in the primal case, specific approaches are adopted depending on
- * the stabilization mechanism being used.
- * 
- * Also in this setting, the dual formulation described above is naturally
- * represented by the "dual version" of a generic
- * PolyhedralFunctionBlock. Hence, one such block is created for each
- * component, while specialized approaches are adopted for the treatment
- * of the "easy components".
- * 
- * NOTE: for a more extensive description of the specific master problems
- * constructed in both their primal and dual formulations, please refer to
- * the accompanying notes.
- * 
- * TODO: possible link to the related notes/documentation.
- * 
+ * Header file for the class MasterProblemBlock, which derives from Block to
+ * implement the Master Problem of a generic (Generalized) Bundle algorithm
+ * within the SMS++ framework.
+ *
+ * MasterProblemBlock represents and solves the Master Problem (MP) of a
+ * Bundle method on a sum-function
+ *
+ *     f( x ) = b * x + \sum_{ k \in K } f^k( x )
+ *
+ * where each component f^k is accessed either via a black-box oracle
+ * ("hard" component) or has a known compact convex description ("easy"
+ * component, cf. [Frangioni, Gorgone, MP 2014]).
+ *
+ * Two complementary formulations of the MP are supported, both directly
+ * encoded as a Block structure (and therefore solvable by any Solver
+ * registered to MasterProblemBlock, typically a [MILP]Solver):
+ *
+ * - the **primal** form (cf. eq. (24)/(28) of the reference paper) reads
+ *
+ *      min   b * d + \sum_k v^k + (1/2t) || d ||^2_2
+ *      s.t.  v^k >= g^k_i * d + alpha^k_i        for each i in B^k       (P)
+ *            v^k >= LB^k
+ *
+ *   where d is the step from the current stability center x_bar, v^k is
+ *   the epigraph variable for component k, and (g^k_i, alpha^k_i) are the
+ *   linearizations stored in the bundle B^k;
+ *
+ * - the **dual** form (cf. eq. (25)/(26)/(31) of the reference paper) reads
+ *
+ *      max   \sum_k \sum_i theta^k_i (c^k - x_bar A^k) u^k_i
+ *            + x_bar z - (t/2) || z ||^2_2 - \sum_k \sum_i theta^k_i alpha^k_i
+ *      s.t.  \sum_i theta^k_i + gamma^k = lambda          for each k     (D)
+ *            z = b - \sum_k A^k ( \sum_i theta^k_i u^k_i )
+ *            theta^k_i >= 0 ,  gamma^k >= 0 ,  lambda >= 0
+ *
+ *   plus the additional native u^k variables and constraints of any "easy"
+ *   component k (its compact polyhedral description being directly inserted
+ *   in the MP, rather than inner-approximated by extreme points).
+ *
+ * In both formulations:
+ *
+ * - one PolyhedralFunctionBlock is registered as a sub-Block of
+ *   MasterProblemBlock for each "hard" component, holding its bundle B^k
+ *   (either in primal or in dual representation, consistently with the
+ *   chosen MP form);
+ *
+ * - each "easy" component is registered as a sub-Block containing the
+ *   compact convex description of f^k (typically a linear/convex program
+ *   inherited from a LagBFunction);
+ *
+ * - the MasterProblemBlock itself owns the *coupling* part of the MP, i.e.,
+ *   the static Variable and Constraint that glue the per-component sub-MPs
+ *   together (lambda, r, omega, gamma^k, the coupling constraint on z,
+ *   the level/global-LB rows, ...), and an FRealObjective with the
+ *   stabilizing quadratic term plus the linear part.
+ *
+ * Three stabilization schemes are supported, selected via the
+ * #stabilization_type enum:
+ *
+ * - **Proximal**: quadratic term (1/2t) || d ||^2_2 in (P), equivalently
+ *   - (t/2) || z ||^2_2 in (D);
+ *
+ * - **Level**: an additional level constraint v <= f_lev together with a
+ *   non-negative multiplier omega in the dual;
+ *
+ * - **Doubly-Stabilized**: combines both, see [Astorino, Frangioni,
+ *   Fuduli, Gorgone, MP 2017].
+ *
+ * MasterProblemBlock is meant to be driven by a (Generalized) BundleSolver
+ * which is responsible for keeping the bundles B^k updated as the algorithm
+ * proceeds; the BundleSolver does *not* directly call any MILP backend, it
+ * only manipulates the MP at the Block/Modification level and triggers
+ * compute() on the [MILP]Solver attached to the MasterProblemBlock.
+ *
+ * For the underlying theory and notation, the reader is referred to:
+ *
+ *  A. Frangioni, E. Gorgone "Generalized Bundle Methods for Sum-Functions
+ *  with ``Easy'' Components: Applications to Multicommodity Network Design"
+ *  Mathematical Programming 145(1), 133 - 161, 2014
+ *
+ * available at
+ *
+ *  \link http://www.di.unipi.it/~frangio/abstracts.html#MP11c \endlink
+ *
+ *  A. Frangioni "Generalized Bundle Methods"
+ *  SIAM Journal on Optimization 13(1), 117 - 156, 2002
+ *
+ * available at
+ *
+ *  \link http://www.di.unipi.it/~frangio/abstracts.html#SIOPT02 \endlink
  *
  * \author Enrico Calandrini \n
  *         Dipartimento di Informatica \n
@@ -109,7 +101,11 @@
  *         Dipartimento di Informatica \n
  *         Universita' di Pisa \n
  *
- * \copyright &copy; by Antonio Frangioni, Enrico Calandrini, Enrico Gorgone
+ * \author Donato Meoli \n
+ *         Dipartimento di Informatica \n
+ *         Universita' di Pisa \n
+ *
+ * \copyright &copy; by Antonio Frangioni, Enrico Calandrini, Donato Meoli
  */
 /*--------------------------------------------------------------------------*/
 /*----------------------------- DEFINITIONS --------------------------------*/
@@ -117,12 +113,19 @@
 
 #ifndef __MasterProblemBlock
  #define __MasterProblemBlock
+                      /* self-identification: #endif at the end of the file */
 
 /*--------------------------------------------------------------------------*/
 /*------------------------------ INCLUDES ----------------------------------*/
 /*--------------------------------------------------------------------------*/
 
 #include "Block.h"
+#include "BlockSolverConfig.h"
+#include "ColVariable.h"
+#include "FRowConstraint.h"
+
+#include <string>
+#include <vector>
 
 /*--------------------------------------------------------------------------*/
 /*-------------------------- NAMESPACE & USING -----------------------------*/
@@ -135,53 +138,68 @@ namespace SMSpp_di_unipi_it
 /*--------------------------------------------------------------------------*/
 /*------------------------------- CLASSES ----------------------------------*/
 /*--------------------------------------------------------------------------*/
-
+/** @defgroup MasterProblemBlock_CLASSES Classes in MasterProblemBlock.h
+ *  @{ */
 
 /*--------------------------------------------------------------------------*/
 /*---------------------- CLASS MasterProblemBlock --------------------------*/
 /*--------------------------------------------------------------------------*/
 /*--------------------------- GENERAL NOTES --------------------------------*/
 /*--------------------------------------------------------------------------*/
-/// A generic Block containing the Master Problem generated by a BundleSolver
-/** The MasterProblemBlock class implements the interface within
- *  the SMS++ framework for representing and solving a generic master problem
- *  for the BundleSolver class.
- * 
- * */
+/// A Block representing the Master Problem of a (Generalized) Bundle Method
+/** MasterProblemBlock implements, as an SMS++ Block, the Master Problem (MP)
+ * of a Generalized Bundle Method (cf. \link MasterProblemBlock.h \endlink for
+ * the mathematical description of the supported primal and dual forms, and
+ * for the underlying references).
+ *
+ * The Block exposes the coupling part of the MP (the static Variable and
+ * Constraint linking together the per-component bundles, plus the stabilizing
+ * quadratic Objective), while each component f^k is represented by a
+ * dedicated sub-Block:
+ *
+ * - "hard" components -> a PolyhedralFunctionBlock holding the bundle B^k
+ *   (in the same primal/dual representation as the master);
+ *
+ * - "easy" components -> a sub-Block containing the compact convex
+ *   description of f^k (e.g. inherited from a LagBFunction).
+ *
+ * A regular Solver (typically a [MILP]Solver from the SMS++ MILPSolver
+ * module) is attached to MasterProblemBlock through register_Solver(), and
+ * is then asked to solve the MP at every Bundle iteration. */
 
- class MasterProblemBlock : public Block {
+class MasterProblemBlock : public Block {
 
 /*--------------------------------------------------------------------------*/
 /*----------------------- PUBLIC PART OF THE CLASS -------------------------*/
 /*--------------------------------------------------------------------------*/
 
-public:
+ public:
 
 /*--------------------------------------------------------------------------*/
 /*---------------------------- PUBLIC TYPES --------------------------------*/
 /*--------------------------------------------------------------------------*/
 /** @name Public Types
- * @{ */
+ *  @{ */
 
- /// Definition of the possible type of stabilization
- /** The enum stabilization_type defines all possible "types" of stabilization
-  *  that can be inserted into the Master Problem. Currently, 
-  *  MasterProblemBlock supports 3 types of stabilization:
+ /// stabilization scheme used by the Master Problem
+ /** The enum #stabilization_type lists the stabilization mechanisms that
+  * MasterProblemBlock can insert into the MP. They differ in the term that
+  * is added to the cutting-plane model to dampen the oscillations of the
+  * unstabilized Kelley method:
   *
-  *  - Proximal;
+  * - #kProximal: proximal quadratic term (1/2t) || d ||^2_2;
   *
-  *  - Level;
+  * - #kLevel: level constraint v <= f_lev with dual multiplier omega >= 0;
   *
-  *  - Doubly-Stabilized. */
+  * - #kDoublyStabilized: both terms combined. */
 
- typedef enum {
-  kProximal         =  0 ,  ///< proximal
-  kLevel            =  1 ,  ///< level
-  kDoublyStabilized =  2    ///< doubly-stabilized
-  } stabilization_type;
+ enum stabilization_type {
+  kProximal         = 0 ,  ///< proximal stabilization
+  kLevel            = 1 ,  ///< level stabilization
+  kDoublyStabilized = 2    ///< doubly-stabilized bundle method
+  };
 
 /*----------------------------- CONSTANTS ----------------------------------*/
-
 
 /** @} ---------------------------------------------------------------------*/
 /*----------- CONSTRUCTING AND DESTRUCTING MasterProblemBlock --------------*/
@@ -189,468 +207,227 @@ public:
 /** @name Constructing and destructing MasterProblemBlock
  *  @{ */
 
- /// constructor: ensure every field is initialized
+ /// constructor: initializes every algorithmic field to a safe default
+ /** All "size" fields are set to 0; the default stabilization is
+  * #kDoublyStabilized and the default form is the dual one (IsPrimal ==
+  * false). The actual size of the MP is then established by SetDim() and
+  * the formulation is selected by CreateEmptyMP(). */
 
- /** Default constructor */
-  MasterProblemBlock( void ) : NoEasyCmps( 0 ) , NoHardCmps( 0 ) , 
-    StblType( kDoublyStabilized ) , 
-  { }
+ explicit MasterProblemBlock( Block * father = nullptr )
+  : Block( father ) , IsPrimal( false ) , StblType( kDoublyStabilized ) ,
+    MaxBSize( 0 ) , MaxSGLen( 0 ) , NumVars( 0 ) ,
+    NoTotCmps( 0 ) , NoEasyCmps( 0 ) , NoHardCmps( 0 ) , DoEasy( 0 ) { }
 
 /*--------------------------------------------------------------------------*/
- /// destructor: cleanly detaches the MasterProblemBlock from the Block
+ /// destructor: releases all the resources owned by MasterProblemBlock
+ /** The destructor releases the dynamic Variable/Constraint that
+  * MasterProblemBlock owns via the abstract representation, and detaches
+  * any registered Solver. The actual cleanup is delegated to clear(). */
 
- virtual ~MasterProblemBlock( ) { }
+ ~MasterProblemBlock() override { clear(); }
 
 /*--------------------------------------------------------------------------*/
- /// destructor  
+ /// release the abstract representation and any per-component state
+ /** clear() resets MasterProblemBlock to an "empty" state: all per-component
+  * sub-Blocks pointers are forgotten (the sub-Blocks themselves are
+  * dismissed via the Block destructor of the base class), every size field
+  * goes back to 0 and the MP type information is reset. A subsequent
+  * SetDim() + CreateEmptyMP() is then needed to rebuild the MP. */
+
  void clear();
 
 /** @} ---------------------------------------------------------------------*/
 /*-------------------------- OTHER INITIALIZATIONS -------------------------*/
 /*--------------------------------------------------------------------------*/
-/** @name Other initializations TBD
- *
+/** @name Other initializations
  *  @{ */
 
-/** Provides the MPBlock with basic information about the "size" of the
- * Master problem:
- *
- * - MxBSz is the maximum number of different items (subgradients and
- *   constraints) that can be managed by the class, i.e. the maximum size of
- *   the bundle: the protected field MaxBSize is offered by  the base class
- *   to store this information;
- *
- * - NVars is the number of variables in in the Primal Master Problem (PMP).
- *   The protected field NumVars is offered by the base class to store this 
- *   information. \note in the current implementation the number of variables 
- *   canno't change. Hence, this number is also equal to the maximum length of 
- *   any item.
- *
- * - NrFi is the number of "components". The function Fi to be 
- *   minimized may be "decomposable", i.e., the sum of k functions; 
- *   in this case, its model Fi_{B,Lambda} is usually decomposable as well 
- *   (for instance, the Cutting Plane model is). For decomposable functions, 
- *   it is possible (although not necessary) to keep k "separate bundles", 
- *   each one describing a model Fi[ k ]_{B,Lambda} of each component Fi[ k ] 
- *   of Fi, which may be beneficial to improve the "exactness" of the model.
- *   Special support is offered for the case when one of the components is a 
- *   linear function, by considering it as the "0-th component" of Fi [see
- *   ReadFiBLambda() and SetItem() and GetItem()].
- * 
- * - NrFiEasy is the number of "easy components". A special treatment is 
- *   given to the case where some of the components actually are Lagrangian 
- *   subproblem where the domain is an "easy" polyhedron", see
- *
- *      A. Frangioni, E. Gorgone "Generalized Bundle Methods for Sum-Functions
- *      with ``Easy'' Components: Applications to Multicommodity Network Design"
- *      Mathematical Programming 145(1), 133 – 161, 2014
- * 
- *   available at
- *
- *     \link
- *     http://www.di.unipi.it/~frangio/abstracts.html#MP11c
- *     \endlink
- *  
- *   for further details.
- * 
- * TBD from here
- * \note "easy" components of Fi() have basically to be dealt with by the
- *   MPBlock, by inserting their description in the Master Problem;
- *	 if this is not possible, the Master Problem has to signal it (e.g.
- *	 by throwing an exception) because the Bundle algorithm relies on
- *	 this and the FiOracle is not going to provide "ordinary" black-box
- *	 information (function values, subgradients, ...) for these
- *	 components.
- *
- * \note *Important*: "easy" components of Fi() in the Master Problem are
- *       *not* translated *by value* (but they are by argument), meaning that
- *	 the function that is included in the MP is
- *
- *	   Fi_{Lambda}[ k ]( d ) = Fi[ k ]( Lambda + d )
- *
- *	 and *not*
- *
- *	   Fi_{Lambda}[ k ]( d ) = Fi[ k ]( Lambda + d ) - Fi[ k ]( Lambda )
- *
- *	 as one would expect by analogy with the ordinary "difficult"
- *	 components. This is done to spare the Bundle algorithm with the
- *	 need to compute Fi[ k ]( Lambda ) for all "easy" components k and
- *	 each current point Lambda, which may be problematic especially for
- *	 the *initial* current point---consider the case where Lambda *is
- *	 not feasible*, so Fi[ k ]( Lambda ) = +INF! However, the value of
- *	 Fi[ k ] is actually computed by the MPBlock at Lambda + d* (d*
- *	 being the optimal solution of the Primal MP), so the value of
- *	 Fi[ k ] is known for the current point at least after every Serious
- *	 Step with step 1 along d*. Yet, this choice has some impact on the
- *	 "output" methods [see ReadFiBLambda() and ReadSigma() below].
- *
- * This method can be called more than once to modify the settings, but expect
- * the implementation to be quite expensive in time and/or memory. There are
- *  essentially three different ways for calling SetDim():
- *
- * - SetDim( 0 , ... ) makes the MPBlock to deallocate all its memory and to
- *   quietly wait for new instructions.
- *
- * - SetDim( n , 0 , ASV ) with n != 0 sets the max bundle size to n and
- *   activate/deactivate the Active Set Mechanism without changing anything
- *   else. The existing items in the bundle (if any) are all kept if n is
- *   larger than the previous setting, but a smaller value will force deletion
- *   of all the items with "name" [see [Get/Set]Item() and RmvItem() below]
- *   greater than or equal to n. Also, if the active set technique is
- *   initialized (ASV == true while it was false previously), the set of
- *   "active" variables is set to be *empty*.
- *
- * - SetDim( n , Orcl , ASV ) with n != 0 and Orcl != 0 discards all the
- *   previous settings and re-allocates everything; all the existing items in
- *   the bundle are lost. Note that such a call also resets every parameter
- *   of the algorithm, such as the starting point (which is set to 0).
- *
- * In general, calling this method with a non-empty bundle could be costly, so
- * if the items are to be discarded anyway, this should be done *before* the
- * call to SetDim() [see RmvItems() below]. */
+ /// provide MasterProblemBlock with the basic dimensions of the MP
+ /** Provides MasterProblemBlock with the four numbers fully describing the
+  * "size" of the MP it has to solve:
+  *
+  * - \p MxBSz is the maximum number of items (subgradients + feasibility
+  *   cuts) that can be kept *per component*; it is stored in #MaxBSize;
+  *
+  * - \p NVars is the number of optimization variables in the Primal MP
+  *   (i.e., the dimension of the step d); it is stored in #NumVars;
+  *
+  * - \p NrFi is the total number of components of the sum-function; it is
+  *   stored in #NoTotCmps;
+  *
+  * - \p NrFiEasy is the number of "easy" components, which receive a
+  *   compact in-place representation rather than being inner-approximated
+  *   by a bundle of linearizations; it is stored in #NoEasyCmps and the
+  *   number of "hard" components is derived as NoTotCmps - NoEasyCmps.
+  *
+  * Calling SetDim() resets any previous state: existing sub-Blocks are
+  * dropped and the abstract representation is destroyed; CreateEmptyMP()
+  * must be called afterwards to actually populate the new MP. */
 
  void SetDim( int MxBSz , int NVars , int NrFi , int NrFiEasy );
 
 /*--------------------------------------------------------------------------*/
- /// set the Solver of MasterProblemBlock
- /** This method let MasterProblemBlock register its own Solver. This method
-  *  expect that solv_cfg_filename corresponds to an appropriate 
-  *  BlockSolverConfig *. If empty, MasterProblemBlock will attempt to use 
-  *  a default Solver (i.e. GRBMILPSolver).
-  * 
-  * \note: if Gurobi is not properly installed on the private machine and 
-  *        no Solver is provided, this will end up in an error.
-  * 
-  */
-void register_Solver( std::string && solv_cfg_filename );
+ /// register the inner Solver of MasterProblemBlock
+ /** Attaches a Solver to MasterProblemBlock, used to (re-)solve the MP at
+  * every iteration of the surrounding Bundle algorithm. \p solv_cfg_filename
+  * is the path of a file containing a BlockSolverConfig (in either text or
+  * netCDF format): the file is deserialized via Configuration::deserialize()
+  * and apply()-ed to MasterProblemBlock.
+  *
+  * Two kinds of error are reported via std::invalid_argument:
+  *
+  * - \p solv_cfg_filename is empty: there is *no* default backend hard-wired
+  *   into MasterProblemBlock; the choice of the actual [MILP]Solver must
+  *   always be expressed by the caller through a BlockSolverConfig (and
+  *   resolved by the SMS++ Solver factory at apply() time), exactly like
+  *   for any other Block in the framework;
+  *
+  * - the file does not contain a BlockSolverConfig.
+  *
+  * After a successful call the registered Solver is ready to be
+  * compute()-ed. */
+
+ void register_Solver( std::string && solv_cfg_filename );
 
 /*--------------------------------------------------------------------------*/
- /// prepare the default Solver of MasterProblemBlock
- /** This method is used only when a BlockSolverConfiguration is not 
-  *  provided for setting the inner Solver of the class. The method outputs
-  *  a simple BlockSolverConfig specifying GRBMILPSolver as inner Solver
-  *  of the class.
-  * 
-  * \note: if Gurobi is not properly installed on the private machine and 
-  *        no Solver is provided, this will end up in an error.
-  * 
-  */
-BlockSolverConfig * use_default_Solver( void );
+ /// initialize an *empty* Master Problem with the given stabilization
+ /** Populates the abstract representation of MasterProblemBlock with the
+  * coupling part of the Master Problem (the static Variable / Constraint
+  * and the Objective), in either the primal or the dual formulation
+  * depending on the chosen stabilization scheme and on the presence of
+  * "easy" components.
+  *
+  * At call time the per-component bundles are *empty*: the dynamic cuts
+  * of each "hard" component are added on the fly by the surrounding Bundle
+  * algorithm via the Modification interface of the corresponding
+  * PolyhedralFunctionBlock sub-Block.
+  *
+  * As a general rule the primal form is preferred when no "easy" component
+  * is present, while the dual form is the only viable choice when
+  * \p NoEasy > 0 *and* \p DoEasyCmp != 0 (because easy components are
+  * naturally expressed in the dual MP).
+  *
+  * @param Stbl       the stabilization scheme, see #stabilization_type;
+  * @param NoCmps     total number of components (NoTotCmps);
+  * @param DoEasyCmp  bit-wise flag controlling the easy-component handling
+  *                   (it is forwarded to each LagBFunction sub-Block);
+  * @param NoEasy     number of "easy" components;
+  * @param IsEasy     boolean vector of length \p NoCmps such that
+  *                   <tt>IsEasy[k] == true</tt> iff component \p k is
+  *                   "easy"; a copy is kept inside the class. */
+
+ void CreateEmptyMP( stabilization_type Stbl , int NoCmps , int DoEasyCmp ,
+                     int NoEasy , std::vector< bool > IsEasy );
 
 /*--------------------------------------------------------------------------*/
- /// Initialize the primal version of the Master Problem
- /** This method TBD
-  * 
-  */
-void CreatePrimalMP( stabilization_type Stbl ,  );
+ /// initialize the primal version of the Master Problem
+ /** Builds the static Variable, the static Constraint and the Objective of
+  * the primal MP (cf. eq. (P) in the file documentation). This method is
+  * called internally by CreateEmptyMP() when the dual form is not strictly
+  * required, and is exposed publicly so that derived classes can override
+  * the construction (e.g. for problem-specific stabilizing terms).
+  *
+  * The current implementation is a work-in-progress placeholder; calling
+  * it on a non-empty Block has unspecified effects. */
+
+ void CreatePrimalMP( stabilization_type Stbl );
 
 /*--------------------------------------------------------------------------*/
- /// Initialize the dual version of the Master Problem
- /** This method TBD
-  * 
-  */
-void CreateDualMP( stabilization_type Stbl ,  );
+ /// initialize the dual version of the Master Problem
+ /** Builds the static Variable, the static Constraint and the Objective of
+  * the dual MP (cf. eq. (D) in the file documentation). This method is
+  * called internally by CreateEmptyMP() whenever "easy" components are
+  * present, since their compact description is naturally expressed in the
+  * dual form; it is exposed publicly so that derived classes can override
+  * the construction.
+  *
+  * The current implementation is a work-in-progress placeholder; calling
+  * it on a non-empty Block has unspecified effects. */
+
+ void CreateDualMP( stabilization_type Stbl );
 
 /*--------------------------------------------------------------------------*/
- /// Load the probelm into the Block
- /** This method tells the registered solver to load the master problem. 
-  *  If the problem type is 0, then a simple Solver->load_problem() is enough
-  *  to upload information from the unique sub-block. Otherwise, we have to
-  *  distinguish on where information is coming from (i.e. an hard or easy
-  *  component). TBD
-  * 
-  */
-void load_problem( void );
+ /// hand the abstract representation of the MP to the registered Solver
+ /** load_problem() iterates over the Solver registered to
+  * MasterProblemBlock and instructs each of them to (re-)load the abstract
+  * representation of the MP, including any extra information coming from
+  * the per-component sub-Blocks (e.g. the compact constraints of every
+  * "easy" component).
+  *
+  * It must be called after SetDim() + CreateEmptyMP() + register_Solver()
+  * and before the first compute(); subsequent compute() calls do *not*
+  * require a fresh load_problem() unless the MP type/size changes. */
+
+ void load_problem( void );
 
 /*--------------------------------------------------------------------------*/
- /// set the int parameters of MasterProblemBlock
- /** Set the int parameters specific of MasterProblemBlock, together with the
-  * parameters of ? that MasterProblemBlock actually "listens to":
-  * 
-  */
+ /// load a MasterProblemBlock out of an istream
+ /** Required by the abstract interface of Block, but currently not
+  * implemented (a MasterProblemBlock is always built programmatically by
+  * its driving BundleSolver): always throws an std::logic_error. */
 
- void set_par( idx_type par , int value ) override;
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
- /// set the double parameters of MasterProblemBlock
- /** Set the double parameters specific of MasterProblemBlock, together with the
-  * parameters of ? that MasterProblemBlock actually "listens to":
-  * 
-  */
-
- void set_par( idx_type par , double value ) override;
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
- /// move the string parameters of MasterProblemBlock
- /** Move in the string parameters specific of MasterProblemBlock, together with
-  * the parameters of ? that MasterProblemBlock actually "listens to"
-  * 
- */
-  
- void set_par( idx_type par , std::string && value ) override;
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
- /// move in the vector-of-int parameters of MasterProblemBlock
- /** Move in the given vector-of-int parameters specific of MasterProblemBlock,
-  * together with the parameters of ? that MasterProblemBlock actually
-  * "listens to"
-  * 
-  */
-  
- void set_par( idx_type par , std::string && value ) override;
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
- /// move in the vector-of-int parameters of MasterProblemBlock
- /** Move in the given vector-of-int parameters specific of MasterProblemBlock,
-  * together with the parameters of ? that MasterProblemBlock actually
-  * "listens to"
-  * 
-  */
-
- void set_par( idx_type par , std::vector< int > && value ) override;
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
- /// move in the vector-of-string parameters of MasterProblemBlock
- /** Move in the given vector-of-string parameters specific of MasterProblemBlock,
-  * together with the parameters of ? that MasterProblemBlock actually
-  * "listens to"
-  * 
-  */
-
- void set_par( idx_type par , std::vector< std::string > && value ) override;
-
-/*--------------------------------------------------------------------------*/
- /// set the ostream for the MasterProblemBlock log
-
- void set_log( std::ostream *log_stream = nullptr ) override;
+ void load( std::istream & input , char frmt = 0 ) override {
+  throw( std::logic_error(
+       "MasterProblemBlock::load not implemented yet" ) );
+  }
 
 /** @} ---------------------------------------------------------------------*/
-/*----------------- METHODS FOR ACCESSING THE DATA OF THE Block ------------*/
-/*--------------------------------------------------------------------------*/
-/** @name Accessing the data of the Block TBD
- *
- * These methods provide convenient shortcuts for directly asking to the
- * MasterProblemBlock some relevant data about the Block it is solving.
- *  @{ */
-
-/*--------------------------------------------------------------------------*/
-/*------------------- METHODS FOR HANDLING THE PARAMETERS ------------------*/
-/*--------------------------------------------------------------------------*/
-/** @name Handling the parameters of the MasterProblemBlock TBD
- *
- *  @{ */
-
- [[nodiscard]] idx_type get_num_int_par( void ) const override {
-  return(  );
-  }
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
-
- [[nodiscard]] idx_type get_num_dbl_par( void ) const override {
-  return(  );
-  }
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
-
- [[nodiscard]] idx_type get_num_str_par( void ) const override {
-  return(  );
-  }
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
-
- [[nodiscard]] idx_type get_num_vint_par( void ) const override {
-  return(  );
-  }
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
-
- [[nodiscard]] idx_type get_num_vstr_par( void ) const override {
-  return( );
-  }
-
-/*--------------------------------------------------------------------------*/
- 
- [[nodiscard]] int get_dflt_int_par( idx_type par ) const override {
-
-  return(  );
-  }
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
- 
- [[nodiscard]] double get_dflt_dbl_par( idx_type par ) const override {
-
-  return(  );
-  }
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
-
- const std::string & get_dflt_str_par( idx_type par ) const override {
-  
-  return(  );
-  }
-
-/*--------------------------------------------------------------------------*/
- 
- [[nodiscard]] int get_int_par( idx_type par ) const override;
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
- 
- [[nodiscard]] double get_dbl_par( idx_type par ) const override;
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
- 
- [[nodiscard]] const std::string & get_str_par( idx_type par )
-  const override;
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
- 
- [[nodiscard]] const std::vector< int > & get_vint_par( idx_type par )
-  const override;
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
- 
- [[nodiscard]] const std::vector< std::string > & get_vstr_par(
-					       idx_type par ) const override;
-
-/*--------------------------------------------------------------------------*/
-
- [[nodiscard]] idx_type int_par_str2idx( const std::string & name )
-  const override {
-
-   return(  );
-  }
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
-
- [[nodiscard]] idx_type dbl_par_str2idx( const std::string & name )
-  const override {
-
-  return(  );
-  }
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
-
- [[nodiscard]] idx_type str_par_str2idx( const std::string & name )
-  const override {
-
-  return(  );
-  }
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
-
- [[nodiscard]] idx_type vint_par_str2idx( const std::string & name )
-  const override {
-
-  return(  );
-  }
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
-
- [[nodiscard]] idx_type vstr_par_str2idx( const std::string & name )
-  const override {
-
-  return(  );
-  }
-
-/*--------------------------------------------------------------------------*/
-
- [[nodiscard]] const std::string & int_par_idx2str( idx_type idx )
-  const override {
-
-  return(  );
-  }
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
-
- [[nodiscard]] const std::string & dbl_par_idx2str( idx_type idx )
-  const override {
-
-  return(  );
-  }
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
-
- [[nodiscard]] const std::string & str_par_idx2str( idx_type idx )
-  const override {
-
-  return(  );
-  }
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
-
- [[nodiscard]] const std::string & vint_par_idx2str( idx_type idx )
-  const override {
-
-  return(  );
-  }
-
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
-
- [[nodiscard]] const std::string & vstr_par_idx2str( idx_type idx )
-  const override {
-
-  return(  );
-  }
-
-/*--------------------------------------------------------------------------*/
 /*--------------------- PROTECTED PART OF THE CLASS ------------------------*/
 /*--------------------------------------------------------------------------*/
 
  protected:
 
 /*--------------------------------------------------------------------------*/
-/*--------------------------- PROTECTED TYPES ------------------------------*/
-/*--------------------------------------------------------------------------*/
-
-// TBD
-
-/*--------------------------------------------------------------------------*/
-/*-------------------------- PROTECTED METHODS -----------------------------*/
-/*--------------------------------------------------------------------------*/
-
-// TBD
-
-/*--------------------------------------------------------------------------*/
 /*---------------------------- PROTECTED FIELDS  ---------------------------*/
 /*--------------------------------------------------------------------------*/
 
- // algorithmic parameters - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // - - - - - - - - -  algorithmic / structural parameters - - - - - - - - - -
 
- bool IsPrimal; // wether we are solving the primal or dual version of the MP
+ bool IsPrimal;     ///< whether the MP is in its primal or dual form
 
- stabilization_type StblType; // type of stabilization
+ stabilization_type StblType;  ///< type of stabilization, see #stabilization_type
 
- int MaxBSize; // maximum bundle size
+ int MaxBSize;      ///< maximum number of items kept per bundle B^k
 
- int MaxSGLen; // maximum subgradient length
+ int MaxSGLen;      ///< maximum length of a subgradient (currently == NumVars)
 
- int NoTotCmps; // Number of total components
+ int NumVars;       ///< number of optimization variables in the Primal MP
 
- int NoEasyCmps; // Number of easy components
+ int NoTotCmps;     ///< total number of components in the sum-function
 
- std::vector< Bool > IsEasyCmp; // which component is easy
+ int NoEasyCmps;    ///< number of "easy" components
 
- /* List of sub-blocks to be treated as hard components.
- */
- std::vector< Block* > HardCmps; 
+ int NoHardCmps;    ///< number of "hard" components ( == NoTotCmps - NoEasyCmps)
+
+ int DoEasy;        ///< bit-wise flag controlling the easy-component handling
+
+ std::vector< bool > IsEasyCmp;  ///< IsEasyCmp[k] == true iff component k is easy
+
+ // - - - - - - - - -  pointers to the per-component sub-Blocks - - - - - - - -
+
+ std::vector< Block * > EasyCmps;  ///< sub-Blocks of the "easy" components
+
+ std::vector< Block * > HardCmps;  ///< sub-Blocks of the "hard" components
+
+ // - - - - - - - - - - - - - -  static MP entities  - - - - - - - - - - - - -
+
+ ColVariable Var_lambda;           ///< dual multiplier of the global v >= ...
+                                   ///< row, "lambda" in (D)
+
+ ColVariable Var_r;                ///< dual multiplier of the global LB row
+
+ ColVariable Var_omega;            ///< dual multiplier of the level / X row
+
+ std::vector< ColVariable > Var_gamma;
+                                   ///< per-hard-component LB^k multipliers
+
+ FRowConstraint NormalizationCns;  ///< global normalization row lambda+r-omega=1
 
 /*--------------------------------------------------------------------------*/
 /*--------------------- PRIVATE PART OF THE CLASS --------------------------*/
 /*--------------------------------------------------------------------------*/
 
  private:
-
-/*--------------------------------------------------------------------------*/
-/*--------------------------- PRIVATE TYPES --------------------------------*/
-/*--------------------------------------------------------------------------*/
-
-/*--------------------------------------------------------------------------*/
-/*-------------------------- PRIVATE METHODS -------------------------------*/
-/*--------------------------------------------------------------------------*/
-
-/*--------------------------------------------------------------------------*/
-/*------------------------------ PRIVATE FIELDS  ---------------------------*/
-/*--------------------------------------------------------------------------*/
 
 /*--------------------------------------------------------------------------*/
 
@@ -660,12 +437,14 @@ void load_problem( void );
 
  };  // end( class MasterProblemBlock )
 
-} // namespace SMSpp
+/** @} end( group( MasterProblemBlock_CLASSES ) ) ----------------------------*/
+
+}  // end( namespace SMSpp_di_unipi_it )
 
 /*--------------------------------------------------------------------------*/
 /*--------------------------------------------------------------------------*/
 
-#endif  /* MasterProblemBlock.h included */
+#endif  /* __MasterProblemBlock */
 
 /*--------------------------------------------------------------------------*/
 /*--------------------- End File MasterProblemBlock.h ----------------------*/
