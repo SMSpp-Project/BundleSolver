@@ -471,6 +471,16 @@ public:
 
   strHardCfg ,                   ///< string name for not-easy Configurations
 
+  strMPBSolverCfg ,
+  ///< BlockSolverConfig filename for the MILPMPSolver master
+  /**< Filename of the BlockSolverConfig used by MILPMPSolver (only
+   * consulted when intMPName has bit 4 set, i.e. MPName & 16). The file
+   * is deserialised via Configuration::deserialize and the resulting
+   * BlockSolverConfig is fed to MILPMPSolver::SetSolverConfig so the
+   * concrete MILPSolver backend is picked from the file rather than hard-coded.
+   * If empty when MPName & 16, MILPMPSolver::SetDim leaves milp_solver null
+   * and the first SolveMP will throw. */
+
   strLastBndSlvPar ///< first allowed new string parameter for derived classes
                    /**< Convenience value for easily allow derived classes
 		    * to extend the set of string algorithmic parameters. */
@@ -2100,6 +2110,8 @@ public:
    return( strEasyCfg );
   if( name == "strHardCfg" )
    return( strHardCfg );
+  if( name == "strMPBSolverCfg" )
+   return( strMPBSolverCfg );
 
   return( CDASolver::str_par_str2idx( name ) );
   }
@@ -2170,8 +2182,8 @@ public:
 
  [[nodiscard]] const std::string & str_par_idx2str( idx_type idx )
   const override {
-  static const std::array< std::string , 2 > str_pars_str = {
-   "strEasyCfg" , "strHardCfg" };
+  static const std::array< std::string , 3 > str_pars_str = {
+   "strEasyCfg" , "strHardCfg" , "strMPBSolverCfg" };
 
   if( ( idx >= strLastParCDAS ) && ( idx < strLastBndSlvPar ) )
    return( str_pars_str[ idx - strLastParCDAS ] );
@@ -2825,10 +2837,14 @@ class FakeFiOracle : public FiOracle
  Index TrgtMng;     ///< how targets on components are managed
 
  int MPName;        /**< bit 0 = 0: MP solver == QPPenalty
-		     * bit 0 = 1: MP == OSIMPSolver
-		     * bit 1 = 1: Cplex, bit 1 = 0 CLP
-		     * bit 2 = 1: Quadratic, bit 2 = 0 BoxStep
-		     * + bit 3 = 1 (+8) = check for duplicates. */
+		     * bit 0 = 1: MP == OSIMPSolver  (bits 1,2 active)
+		     * bit 1 = 1: Cplex, bit 1 = 0 CLP   (OSI only)
+		     * bit 2 = 1: Quadratic, bit 2 = 0 BoxStep (OSI only)
+		     * + bit 3 = 1 (+8) = check for duplicates.
+		     * + bit 4 = 1 (+16) = MP == MILPMPSolver instead of
+		     *   OSIMPSolver. Requires bit 0 = 1 and the
+		     *   strMPBSolverCfg BlockSolverConfig file pointing to a
+		     *   valid MILPSolver-derived backend. */
 
  Index MxAdd;       ///< max variables added per iteration in QPPenaltyMP
  Index MxRmv;       ///< max variables added per iteration in QPPenaltyMP
@@ -2848,6 +2864,10 @@ class FakeFiOracle : public FiOracle
 
  std::string HardCfg;
  ///< filename for the Block[Solver]Config of non-easy components
+
+ std::string MILPMPCfg;
+ ///< filename for the BlockSolverConfig of the MILPMPSolver master
+ ///< (only used when MPName & 16)
 
  std::vector< int > NoEasy;  ///< which components never treat as "easy"
 

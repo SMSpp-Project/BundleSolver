@@ -149,7 +149,8 @@ target_sources(${modName} PRIVATE
         src/BundleSolver.cpp
         src/ParallelBundleSolver.cpp
         src/MasterProblemBlock.cpp
-        src/GeneralizedBundleSolver.cpp)
+        src/GeneralizedBundleSolver.cpp
+        MILPMPSolver/MILPMPSolver.cpp)
 
 # When using target_include_directories(), PUBLIC means that any targets
 # that link to this target also need that include directory.
@@ -164,6 +165,7 @@ target_sources(${modName} PRIVATE
 target_include_directories(
         ${modName} PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/MILPMPSolver>
         $<INSTALL_INTERFACE:include/${modNamespace}>)
 
 # When linking other targets to the library with target_link_libraries(),

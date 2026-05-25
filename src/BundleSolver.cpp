@@ -28,6 +28,10 @@
 
 #include "OSIMPSolver.h"
 
+#include "MILPMPSolver.h"
+
+#include <BlockSolverConfig.h>
+
 #include "OsiClpSolverInterface.hpp"
 
 #include <iomanip>
@@ -1761,7 +1765,30 @@ void BundleSolver::set_Block( Block * block )
   Master->SetDim();  // clear all its internal state
  else {              // a MPSolver is not set yet, create it now
   #if( ! USE_MPTESTER )
-   if( MPName & 1 ) {  // the MPSolver is a OSIMPSolver
+   if( ( MPName & 1 ) && ( MPName & 16 ) ) {
+    // MPName & 16 selects the SMS++-native MILPMPSolver instead of
+    // OSIMPSolver. The choice of concrete MILPSolver backend (CPX /
+    // GRB / SCIP / HiGHS) is *not* hard-coded here: it comes from the
+    // BlockSolverConfig deserialised out of strMPBSolverCfg, mirroring how
+    // the rest of the SMS++ codebase attaches Solvers to Block.
+    auto * mps = new MILPMPSolver();
+    Master = mps;
+
+    if( ! MILPMPCfg.empty() ) {
+     auto * bsc = dynamic_cast< BlockSolverConfig * >(
+                          Configuration::deserialize( MILPMPCfg ) );
+     if( ! bsc )
+      throw( std::invalid_argument(
+       "BundleSolver: strMPBSolverCfg does not deserialise to a "
+       "BlockSolverConfig (got: " + MILPMPCfg + ")" ) );
+     mps->SetSolverConfig( bsc );
+     }
+    // if MILPMPCfg is empty the MILPMPSolver is left without a backend
+    // and the first SolveMP() will throw — the caller is expected to
+    // set strMPBSolverCfg before set_FiOracle (or call SetSolverConfig on
+    // the master directly between set_FiOracle and the first compute).
+    }
+   else if( MPName & 1 ) {  // the MPSolver is a OSIMPSolver
   #endif
     auto osi_mps = new OSIMPSolver();
     Master = osi_mps;
@@ -1963,8 +1990,11 @@ void BundleSolver::set_par( idx_type par , int value )
   case( intFrcLstSS ): FrcLstSS = value; break;
   case( intTrgtMng ):  TrgtMng = Index( value ); break;
   case( intMPName ):
-   if( ( value < 0 ) || ( value > 15 ) )
-    throw( std::invalid_argument( "MPName must be in [0, 15]" ) );
+   // legal range is now [0, 31]: bit 4 (+16) selects MILPMPSolver in
+   // place of OSIMPSolver (combined with bit 0). See BundleSolver.h
+   // intMPName docstring for the bit-mask.
+   if( ( value < 0 ) || ( value > 31 ) )
+    throw( std::invalid_argument( "MPName must be in [0, 31]" ) );
    MPName = value;
    break;
   case( intMPlvl ): MPlvl = value; break;
@@ -2115,6 +2145,9 @@ void BundleSolver::set_par( idx_type par , std::string && value )
    break;
   case( strHardCfg ):
    HardCfg = std::move( value );
+   break;
+  case( strMPBSolverCfg ):
+   MILPMPCfg = std::move( value );
    break;
   default:
    CDASolver::set_par( par , std::move( value ) );
@@ -2424,9 +2457,10 @@ double BundleSolver::get_dbl_par( idx_type par ) const
 const std::string & BundleSolver::get_str_par( idx_type par ) const
 {
  switch( par ) {
-  case( strEasyCfg ):   return( EasyCfg );
-  case( strHardCfg ):   return( HardCfg );
-  default:              return( CDASolver::get_str_par( par ) );
+  case( strEasyCfg ):      return( EasyCfg );
+  case( strHardCfg ):      return( HardCfg );
+  case( strMPBSolverCfg ): return( MILPMPCfg );
+  default:                 return( CDASolver::get_str_par( par ) );
   }
  }  // end( BundleSolver::get_str_par )
 
@@ -3863,6 +3897,24 @@ bool BundleSolver::GetGi( Index wFi )
     Alfa1k = UpFiLmb1[ wFi ] - Alfa1k -
      std::inner_product( Lambda1.begin() , Lambda1.end() , G1k , double( 0 ) );
 
+   // when the oracle did not terminate at full precision the reported
+   // value is only known up to the gap between its upper and lower
+   // estimate; inflate Alfa1k by that gap so the resulting cut is a
+   // valid eps-subgradient. if the gap cannot be computed (one of the
+   // estimates is infinite), clamp Alfa1k to be non-negative so the
+   // cut stays usable as a most-generous eps-subgradient
+   if( FiStatus[ wFi ] != kOK ) {
+    auto ue_in = fwFi->get_upper_estimate();
+    auto le_in = fwFi->get_lower_estimate();
+    if( ( ue_in < INFshift ) && ( le_in > -INFshift ) ) {
+     auto inner_gap = ue_in - le_in;
+     if( inner_gap > 0 )
+      Alfa1k += inner_gap;
+     }
+    else if( Alfa1k < 0 )
+     Alfa1k = 0;
+    }
+
    // this is the eps so that G1 is an eps-subgradient in Lambda1
    eps = Alfa1k;
 
@@ -5124,7 +5176,11 @@ void BundleSolver::guts_of_destructor( void )
    assert( o );
    o->SetOsi();
   #else
-   if( MPName & 1 ) {
+   // bit 0 of MPName selects an OSIMPSolver-family master, *except* when
+   // bit 4 is also set: in that case the master is a MILPMPSolver, which
+   // owns its own MILPSolver backend and does not need an SetOsi(nullptr)
+   // cleanup before deletion.
+   if( ( MPName & 1 ) && ! ( MPName & 16 ) ) {
     auto o = dynamic_cast< OSIMPSolver * >( Master );
     assert( o );
     o->SetOsi();
