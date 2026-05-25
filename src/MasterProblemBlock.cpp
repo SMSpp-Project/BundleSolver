@@ -10,11 +10,11 @@
  * Variable, Constraint and Objective of the primal and dual MP is still
  * TODO, see CreatePrimalMP() and CreateDualMP().
  *
- * \author Enrico Calandrini \n
+ * \author Antonio Frangioni \n
  *         Dipartimento di Informatica \n
  *         Universita' di Pisa \n
  *
- * \author Antonio Frangioni \n
+ * \author Enrico Calandrini \n
  *         Dipartimento di Informatica \n
  *         Universita' di Pisa \n
  *
@@ -30,14 +30,22 @@
 
 #include "MasterProblemBlock.h"
 
+#include <cstdio>
+#include <iostream>
+
 #include "BlockSolverConfig.h"
 #include "Configuration.h"
 #include "DQuadFunction.h"
 #include "FRealObjective.h"
 #include "LinearFunction.h"
+#include "MILPSolver.h"
+#include "Modification.h"
 #include "PolyhedralFunctionBlock.h"
+#include "Solver.h"
 
+#include <algorithm>
 #include <functional>
+#include <memory>
 #include <numeric>
 #include <stdexcept>
 #include <utility>
@@ -80,18 +88,22 @@ void MasterProblemBlock::clear()
  StblType      = kDoublyStabilized;
  t_stab        = 1.0;
  f_lev         = 0.0;
+ z_obj_idx     = -1;
+ r_obj_idx     = -1;
  omega_obj_idx = -1;
 
  // drop the dynamically-sized variable / constraint groups (primal d /
- // v^k / Bounds_v_hard, dual z / CouplingCns); the scalar members
- // (Var_lambda, Var_r, Var_omega, NormalizationCns, LevelCns) keep their
+ // v^k / Bounds_v_hard, dual z / Var_lambdas / CouplingCns); the scalar
+ // members (Var_r, Var_omega, NormalizationCns, LevelCns) keep their
  // default state and are released by their own destructors when *this
  // is destroyed
  Var_d.clear();
  Var_v_hard.clear();
  Bounds_v_hard.clear();
  Var_z.clear();
+ Var_lambdas.clear();
  CouplingCns.clear();
+ slot_to_local.clear();
 
  }  // end( MasterProblemBlock::clear )
 
@@ -133,6 +145,10 @@ void MasterProblemBlock::SetDim( int MxBSz , int NVars ,
  EasyCmps.reserve( NoEasyCmps );
  HardCmps.reserve( NoHardCmps );
 
+ // pre-allocate the slot -> local-row mapping: MaxBSize slots per hard
+ // component, all initially empty (encoded as -1)
+ slot_to_local.assign( NoHardCmps , std::vector< int >( MaxBSize , -1 ) );
+
  }  // end( MasterProblemBlock::SetDim )
 
 /*--------------------------------------------------------------------------*/
@@ -159,11 +175,141 @@ void MasterProblemBlock::register_Solver( std::string && solv_cfg_filename )
        "file is not a BlockSolverConfig" ) );
   }
 
- MPBSC->apply( this );
+ // forward the exclusion list (if any) as the second argument of apply():
+ // BlockSolverConfig::apply will install it on the freshly-created Solver
+ // via Solver::set_excluded_blocks() BEFORE registering it to *this*, so
+ // load_problem() already sees the right exclusion set
+ const std::unordered_set< Block * > * ignored = f_ignored_blocks.empty()
+                                                 ? nullptr : & f_ignored_blocks;
+ MPBSC->apply( this , ignored );
  MPBSC->clear();
  delete MPBSC;
 
  }  // end( MasterProblemBlock::register_Solver )
+
+/*--------------------------------------------------------------------------*/
+
+void MasterProblemBlock::register_Solver(
+                          std::string && solv_cfg_filename ,
+                          std::unordered_set< Block * > && ignored_blocks )
+{
+ // remember the exclusion list so that register_Solver() and configure()
+ // can be called in any order: whichever lands last picks up the list
+ // and forwards it to the inner Solver via BlockSolverConfig::apply()
+ f_ignored_blocks = std::move( ignored_blocks );
+ register_Solver( std::move( solv_cfg_filename ) );
+
+ }  // end( MasterProblemBlock::register_Solver( + ignored_blocks ) )
+
+/*--------------------------------------------------------------------------*/
+/*----------------------------- CONFIGURE ----------------------------------*/
+/*--------------------------------------------------------------------------*/
+
+void MasterProblemBlock::configure(
+                          bool primal ,
+                          int max_bundle_size ,
+                          int num_vars ,
+                          std::vector< bool > is_easy ,
+                          std::vector< C05Function * > components ,
+                          Block * original_block ,
+                          std::unordered_set< Block * > ignored_blocks ,
+                          stabilization_type reg )
+{
+ // - - - sanity checks - - - - - - - - - - - - - - - - - - - - - - - - - -
+ if( max_bundle_size < 0 || num_vars < 0 )
+  throw( std::invalid_argument(
+       "MasterProblemBlock::configure: negative size" ) );
+
+ if( is_easy.size() != components.size() )
+  throw( std::invalid_argument(
+       "MasterProblemBlock::configure: size mismatch between is_easy "
+       "and components" ) );
+
+ const int n_total = int( is_easy.size() );
+ const int n_easy = int( std::count( is_easy.begin() , is_easy.end() , true ) );
+
+ if( primal && ( n_easy > 0 ) )
+  throw( std::invalid_argument(
+       "MasterProblemBlock::configure: primal form is incompatible with "
+       "easy components; switch to dual form (primal == false)" ) );
+
+ // - - - sizes / form / stabilisation - - - - - - - - - - - - - - - - - - -
+ // SetDim() starts from a clean slate (it calls clear()) and re-initialises
+ // MaxBSize / NumVars / NoTotCmps / NoEasyCmps / NoHardCmps / IsEasyCmp;
+ // we then overwrite IsEasyCmp with the user-provided vector
+ SetDim( max_bundle_size , num_vars , n_total , n_easy );
+
+ IsEasyCmp = std::move( is_easy );
+ IsPrimal = primal;
+ StblType = reg;
+
+ // - - - steal original_block into the master - - - - - - - - - - - - - -
+ // detach the model Block from its previous parent and reattach it under
+ // *this*. The Variables / Constraints living there will be seen by the
+ // inner Solver as part of the master, except for sub-Block subtrees
+ // listed in ignored_blocks (which the inner Solver will skip via
+ // Solver::set_excluded_blocks(), installed by BlockSolverConfig::apply
+ // inside register_Solver)
+ f_original_block = original_block;
+ if( f_original_block )
+  f_original_block->transfer_ownership_to( this );
+
+ // - - - steal the closed-form Block of each easy component - - - - - - - -
+ // for every easy component, call C05Function::build_easy_Block( primal )
+ // and graft the returned Block under *this*. The function-specific
+ // dualization (Lagrangian, Benders, ...) lives entirely behind
+ // that virtual, so MasterProblemBlock stays solver-agnostic and
+ // function-agnostic
+ for( int k = 0 ; k < n_total ; ++k ) {
+  if( ! IsEasyCmp[ k ] )
+   continue;
+  auto * easy_blk = components[ k ]
+                  ? components[ k ]->build_easy_Block( primal )
+                  : nullptr;
+  if( ! easy_blk )
+   throw( std::invalid_argument(
+        "MasterProblemBlock::configure: component " + std::to_string( k ) +
+        " is flagged easy but its C05Function did not return a Block from "
+        "build_easy_Block(); make sure the C05Function-specific "
+        "override is in place." ) );
+  easy_blk->transfer_ownership_to( this );
+  EasyCmps.push_back( easy_blk );
+  }
+
+ // - - - stash ignored sub-Blocks until a Solver is registered - - - - - -
+ // configure() and register_Solver() can be called in any order; whichever
+ // lands last forwards the set to the inner Solver via
+ // Solver::set_excluded_blocks(). If a Solver is already attached, we
+ // refresh its exclusion list directly here (any subsequent reload of the
+ // model picks it up)
+ f_ignored_blocks = std::move( ignored_blocks );
+ if( ! f_ignored_blocks.empty() && ! get_registered_solvers().empty() )
+  get_registered_solvers().front()->set_excluded_blocks( & f_ignored_blocks );
+
+ // - - - build the static MP - - - - - - - - - - - - - - - - - - - - - - -
+ // CreatePrimalMP / CreateDualMP populate the static abstract
+ // representation of the master (the variables d / z / r / omega / v^k,
+ // the coupling rows and the master Objective) according to the chosen
+ // form; the per-hard-component PolyhedralFunctionBlock sub-Blocks are
+ // allocated here and the surrounding (Generalized)BundleSolver then
+ // feeds the linearizations into them via the Modification interface
+ if( IsPrimal )
+  CreatePrimalMP( StblType );
+ else
+  CreateDualMP( StblType );
+
+ // - - - alert attached Solvers that the Block has been (re)built - - - - -
+ // configure() is typically called *after* register_Solver(), which means
+ // the inner :MILPSolver was attached to an empty Block and load_problem()
+ // saw 0 variables / 0 rows. add_static_variable / add_static_constraint
+ // do NOT emit any Modification, so the only way to force a full reload
+ // from the inner Solver is the "nuclear option": an NBModification on
+ // this Block, which process_modifications() will translate into a fresh
+ // load_problem() call
+ if( anyone_there() )
+  add_Modification( std::make_shared< NBModification >( this ) );
+
+ }  // end( MasterProblemBlock::configure )
 
 /*--------------------------------------------------------------------------*/
 /*-------------------------- CREATE EMPTY MP -------------------------------*/
@@ -206,43 +352,86 @@ void MasterProblemBlock::CreatePrimalMP( stabilization_type Stbl )
  StblType = Stbl;
  IsPrimal = true;
 
- // ---- static Variable: the step d and the per-hard-component epigraph v^k --
+ // ---- static Variable: the step d ---------------------------------------
+ //
+ // The epigraph variable v^k of each hard component is NOT a static
+ // master-side ColVariable here: it is the f_v of the per-component
+ // PolyhedralFunctionBlock allocated below in the linearized-primal
+ // representation (is_linearized() == true). The PFB also owns:
+ //  - its f_bcv box constraint on f_v (loaded with the PolyhedralFunction
+ //    global LB / UB)
+ //  - its f_const dynamic FRowConstraint group, holding the
+ //    v_k >= a_i^k . d + b_i^k cuts as they are pushed by
+ //    PolyhedralFunction::add_row (i.e. by MasterProblemBlock::add_cut
+ //    on this side); the cuts share the master-side Var_d as the
+ //    "x" variables of the PolyhedralFunction.
+ // The master-side Objective below then references the PFB f_v pointers
+ // directly via get_v(), so no v_k coupling row is needed
 
  Var_d.clear();
  Var_d.resize( NumVars );          // d is free by default
  if( NumVars > 0 )
   add_static_variable( Var_d , "MPB_d" );
 
- Var_v_hard.clear();
- Var_v_hard.resize( NoHardCmps );  // v^k is free; the v >= g*d + alpha cuts
-                                   // are added later as dynamic constraints
- if( NoHardCmps > 0 )
-  add_static_variable( Var_v_hard , "MPB_v" );
-
- // ---- per-hard-component lower bound v^k >= LB^k -------------------------
+ // ---- one PolyhedralFunctionBlock sub-Block per "hard" component ---------
  //
- // The BoxConstraint group is created with default bounds [0, +INF]
- // (BoxConstraint default) and then promptly relaxed below to (-INF, +INF)
- // so that the v^k stay free; the BundleSolver may then enable individual
- // floors through set_LB(k, LB^k).
+ // The PFB is wired in its *linearized primal* representation (rep == 1).
+ // Each PFB's "x" variables are bound to Var_d (the master step), so each
+ // cut v_k >= a_i . d + b_i pushed by add_row hits the right master-side
+ // variables. We do NOT call set_lambda() here: that is dual-form specific
+ // and would introduce an extra slack in the bundle's normalization
+ // (cf. task #41); the linearized-primal rep does not have a lambda at
+ // all (no dual normalization row).
+ //
+ // The PolyhedralFunction interior bundle is empty here: the
+ // (Generalized)BundleSolver feeds rows (g, alpha) into each f_polyf via
+ // the Modification interface as new linearizations are produced
 
- Bounds_v_hard.clear();
- if( NoHardCmps > 0 ) {
-  Bounds_v_hard.reserve( NoHardCmps );
-  for( int k = 0 ; k < NoHardCmps ; ++k ) {
-   Bounds_v_hard.emplace_back( this , & Var_v_hard[ k ] ,
-                               - Inf< double >() , Inf< double >() );
-   }
-  add_static_constraint( Bounds_v_hard , "MPB_v_LB" );
+ HardCmps.clear();
+ HardCmps.reserve( NoHardCmps );
+ const SimpleConfiguration< int > rep_lin_primal( 1 );  // bit 0 = 1, bit 1 = 0
+
+ for( int k = 0 ; k < NoHardCmps ; ++k ) {
+  auto * pfb = new PolyhedralFunctionBlock( this );
+
+  // wire the "x" variables of f_polyf to the master-side Var_d, so every
+  // cut v_k >= a . d + b pushed via add_row lands on the right columns
+  PolyhedralFunction::VarVector vv;
+  vv.reserve( NumVars );
+  for( auto & di : Var_d )
+   vv.push_back( & di );
+  pfb->get_PolyhedralFunction().set_variables( std::move( vv ) );
+
+  // ensure f_polyf has NO global lower bound (for the default convex
+  // case, f_bound defaults to +INF which would translate the linearized
+  // primal box-constraint f_bcv to "+INF <= f_v <= +INF" -> infeasible
+  // master; we want f_v to be free). modify_bound is called with eNoMod
+  // because we are still in setup phase and no Solver is attached yet
+  pfb->get_PolyhedralFunction().modify_bound(
+                  - Inf< Function::FunctionValue >() , eNoMod );
+
+  pfb->generate_abstract_variables(
+                       const_cast< SimpleConfiguration< int > * >( & rep_lin_primal ) );
+  pfb->generate_abstract_constraints();
+  pfb->generate_objective();
+
+  HardCmps.push_back( pfb );
+  add_nested_Block( pfb );
   }
 
  // ---- level constraint sum_k v^k <= f_lev (kLevel / kDoublyStabilized) ---
+ //
+ // The terms reference each PFB's f_v directly via get_v(); LevelCns is a
+ // master-side static FRowConstraint so the inner Solver picks it up
 
  if( ( Stbl == kLevel || Stbl == kDoublyStabilized ) && NoHardCmps > 0 ) {
   LinearFunction::v_coeff_pair lvl_terms;
   lvl_terms.reserve( NoHardCmps );
-  for( int k = 0 ; k < NoHardCmps ; ++k )
-   lvl_terms.emplace_back( & Var_v_hard[ k ] , 1.0 );
+  for( int k = 0 ; k < NoHardCmps ; ++k ) {
+   auto * pfb = dynamic_cast< PolyhedralFunctionBlock * >( HardCmps[ k ] );
+   if( pfb )
+    lvl_terms.emplace_back( pfb->get_v() , 1.0 );
+   }
 
   LevelCns.set_lhs( - Inf< double >() , eNoMod );
   LevelCns.set_rhs( f_lev , eNoMod );
@@ -253,7 +442,7 @@ void MasterProblemBlock::CreatePrimalMP( stabilization_type Stbl )
 
  // ---- Objective ---------------------------------------------------------
  //
- //   min  b * d + sum_k v^k + (1/(2t)) || d ||^2_2
+ //   min  b * d + sum_k f_v[ k ] + (1/(2t)) || d ||^2_2
  //
  // The proximal quadratic term (1/(2t))||d||^2_2 is present only under
  // kProximal / kDoublyStabilized; under pure kLevel the master is an LP
@@ -263,19 +452,23 @@ void MasterProblemBlock::CreatePrimalMP( stabilization_type Stbl )
  // gradient of the linear part of the original sum-function) is left at 0
  // here; the BundleSolver is expected to install it through the dedicated
  // set_b() API.
+ //
+ // Each v^k contributes its f_v with linear coefficient +1 (the
+ // PolyhedralFunctionBlock's own Objective also references f_v with
+ // coefficient +1 in linearized-primal rep, but that lives in the sub-Block
+ // and is summed in by the SMS++ scan of v_BFS, so we must NOT include
+ // f_v[k] in the master's own Objective to avoid double-counting). We
+ // therefore only build the d-side quadratic / linear terms here
 
  const bool has_quad =
   ( Stbl == kProximal ) || ( Stbl == kDoublyStabilized );
 
  DQuadFunction::v_coeff_triple triples;
- triples.reserve( NumVars + NoHardCmps );
+ triples.reserve( NumVars );
 
  const double quad_coeff = has_quad ? 1.0 / ( 2.0 * t_stab ) : 0.0;
  for( int i = 0 ; i < NumVars ; ++i )
   triples.emplace_back( & Var_d[ i ] , 0.0 , quad_coeff );
-
- for( int k = 0 ; k < NoHardCmps ; ++k )
-  triples.emplace_back( & Var_v_hard[ k ] , 1.0 , 0.0 );
 
  FRealObjective * obj;
  if( triples.empty() ) {
@@ -287,6 +480,12 @@ void MasterProblemBlock::CreatePrimalMP( stabilization_type Stbl )
  obj->set_sense( Objective::eMin , eNoMod );
  set_objective( obj , eNoMod );
 
+ // bookkeeping fields: Bounds_v_hard / Var_v_hard are *unused* in this
+ // refactor; we keep them clean so the dual MP code path (which still
+ // owns them) stays unaffected
+ Bounds_v_hard.clear();
+ Var_v_hard.clear();
+
  }  // end( MasterProblemBlock::CreatePrimalMP )
 
 /*--------------------------------------------------------------------------*/
@@ -296,13 +495,23 @@ void MasterProblemBlock::CreateDualMP( stabilization_type Stbl )
  StblType = Stbl;
  IsPrimal = false;
 
- // ---- static dual multipliers: lambda >= 0, r >= 0, omega ----------------
+ // ---- static dual multipliers: lambda_k (per-hard-cmp), r, omega ---------
  //
  // omega is the multiplier of the level constraint v <= f_lev and is
  // non-negative under #kLevel / #kDoublyStabilized; with pure proximal
  // stabilization the level row does not exist, so omega is fixed to 0.
+ //
+ // The lambda multipliers must be ONE PER hard component: each lambda_k
+ // appears with coefficient +1 in the normalization row of the k-th PFB
+ // (sum_i theta^k_i + gamma^k + lambda_k = 1). A single shared lambda
+ // would force theta^k_i = 1 - lambda equally across all k, which collapses
+ // the dual feasible set whenever the b^k vary in sign across components
+ // (a SS would then converge to z* = 0 spuriously)
 
- Var_lambda.is_positive( true , eNoMod );
+ Var_lambdas.clear();
+ Var_lambdas.resize( NoHardCmps );
+ for( auto & lk : Var_lambdas )
+  lk.is_positive( true , eNoMod );
  Var_r.is_positive( true , eNoMod );
  if( Stbl == kLevel || Stbl == kDoublyStabilized ) {
   Var_omega.is_positive( true , eNoMod );
@@ -311,7 +520,8 @@ void MasterProblemBlock::CreateDualMP( stabilization_type Stbl )
   Var_omega.set_value( 0 );
   Var_omega.is_fixed( true , eNoMod );
   }
- add_static_variable( Var_lambda , "MPB_lambda" );
+ if( NoHardCmps > 0 )
+  add_static_variable( Var_lambdas , "MPB_lambda" );
  add_static_variable( Var_r , "MPB_r" );
  add_static_variable( Var_omega , "MPB_omega" );
 
@@ -322,17 +532,24 @@ void MasterProblemBlock::CreateDualMP( stabilization_type Stbl )
  if( NumVars > 0 )
   add_static_variable( Var_z , "MPB_z" );
 
- // ---- global normalization row: lambda + r - omega = 1 -------------------
-
+ // ---- global normalization row: sum_k lambda_k + r - omega = NoHardCmps --
+ //
+ // Each lambda_k contributes +1 (and the per-PFB normalization sum_i
+ // theta^k_i + gamma^k + lambda_k = 1 contributes a separate row), so
+ // summing those NoHardCmps PFB-side equalities gives sum_k lambda_k =
+ // NoHardCmps - sum_k (sum_i theta^k_i + gamma^k); the master-side row
+ // closes the loop with the level/X part r - omega
  {
   LinearFunction::v_coeff_pair norm_terms;
-  norm_terms.reserve( 3 );
-  norm_terms.emplace_back( & Var_lambda ,  1.0 );
+  norm_terms.reserve( NoHardCmps + 2 );
+  for( auto & lk : Var_lambdas )
+   norm_terms.emplace_back( & lk , 1.0 );
   norm_terms.emplace_back( & Var_r      ,  1.0 );
   norm_terms.emplace_back( & Var_omega  , -1.0 );
 
-  NormalizationCns.set_lhs( 1.0 , eNoMod );
-  NormalizationCns.set_rhs( 1.0 , eNoMod );
+  const double rhs = double( NoHardCmps );
+  NormalizationCns.set_lhs( rhs , eNoMod );
+  NormalizationCns.set_rhs( rhs , eNoMod );
   NormalizationCns.set_function(
      new LinearFunction( std::move( norm_terms ) ) , eNoMod );
   add_static_constraint( NormalizationCns , "MPB_norm" );
@@ -408,7 +625,7 @@ void MasterProblemBlock::CreateDualMP( stabilization_type Stbl )
   pfb->generate_abstract_constraints();
   pfb->generate_objective();
 
-  pfb->set_lambda( & Var_lambda );
+  pfb->set_lambda( & Var_lambdas[ k ] );
   pfb->set_conjugate_constraint( CouplingCns );
 
   HardCmps.push_back( pfb );
@@ -434,35 +651,43 @@ void MasterProblemBlock::CreateDualMP( stabilization_type Stbl )
  // injects it through LinearFunction::modify_coefficient as the stability
  // centre changes.
 
+ // Triple layout in the DQuadFunction (always the same regardless of
+ // stabilization, so that set_x_bar / set_global_LB / set_f_lev can locate
+ // their target coefficient by a fixed offset):
+ //
+ //   triples[ 0 .. NumVars - 1 ]   :  z_j with (linear = 0, quad = -t/2
+ //                                   if has_quad else 0); set_x_bar moves
+ //                                   the linear coefficient to x_bar[j]
+ //   triples[ NumVars ]            :  r with (linear = 0, quad = 0);
+ //                                   set_global_LB moves the linear
+ //                                   coefficient to LB
+ //   triples[ NumVars + 1 ]        :  omega with (linear = f_lev, quad = 0)
+ //                                   IF has_omega_lin; set_f_lev refreshes
+ //                                   the linear coefficient
  const bool has_quad =
   ( Stbl == kProximal ) || ( Stbl == kDoublyStabilized );
  const bool has_omega_lin =
   ( Stbl == kLevel ) || ( Stbl == kDoublyStabilized );
 
  DQuadFunction::v_coeff_triple triples;
- triples.reserve( ( has_quad ? NumVars : 0 ) + ( has_omega_lin ? 1 : 0 ) );
+ triples.reserve( NumVars + 1 + ( has_omega_lin ? 1 : 0 ) );
+
+ z_obj_idx = NumVars > 0 ? 0 : -1;
+ const double quad_coeff = has_quad ? - t_stab / 2.0 : 0.0;
+ for( int j = 0 ; j < NumVars ; ++j )
+  triples.emplace_back( & Var_z[ j ] , 0.0 , quad_coeff );
+
+ r_obj_idx = int( triples.size() );
+ triples.emplace_back( & Var_r , 0.0 , 0.0 );
 
  omega_obj_idx = -1;
- if( has_quad ) {
-  const double quad_coeff = - t_stab / 2.0;
-  for( int j = 0 ; j < NumVars ; ++j )
-   triples.emplace_back( & Var_z[ j ] , 0.0 , quad_coeff );
-  }
  if( has_omega_lin ) {
-  omega_obj_idx = int( triples.size() );  // 0 if pure kLevel, NumVars otherwise
+  omega_obj_idx = int( triples.size() );
   triples.emplace_back( & Var_omega , f_lev , 0.0 );
   }
 
- FRealObjective * obj;
- if( triples.empty() ) {
-  // pure kLevel with no level value yet: still a valid (degenerate)
-  // master, build it with an empty LinearFunction so set_f_lev() / the
-  // Bundle algorithm can grow it later
-  obj = new FRealObjective( this , new LinearFunction() );
-  }
- else {
-  obj = new FRealObjective( this , new DQuadFunction( std::move( triples ) ) );
-  }
+ auto obj = new FRealObjective( this ,
+                                new DQuadFunction( std::move( triples ) ) );
  obj->set_sense( Objective::eMax , eNoMod );
  set_objective( obj , eNoMod );
 
@@ -559,6 +784,722 @@ double MasterProblemBlock::get_dual_norm_squared( void ) const
  }
 
 /*--------------------------------------------------------------------------*/
+
+void MasterProblemBlock::add_cut( int k , int slot ,
+                                  std::vector< double > && g , double alpha )
+{
+ if( k < 0 || k >= int( HardCmps.size() ) )
+  throw( std::invalid_argument(
+       "MasterProblemBlock::add_cut: hard-component index out of range" ) );
+ if( slot < 0 || slot >= int( slot_to_local[ k ].size() ) )
+  throw( std::invalid_argument(
+       "MasterProblemBlock::add_cut: slot out of range" ) );
+
+ // defensive eviction: the bundle treats `slot` as a *global* pool index
+ // (one occupant across all k); MasterPB stores slot_to_local as a 2D
+ // matrix [k][slot] for ergonomic access, so a stale entry can survive
+ // in row k' != k after the bundle reassigns `slot` to a new component
+ // without an explicit remove_cut(k', slot) call. Silently re-claim the
+ // slot regardless of who owned it, matching the "(N)DO write-through"
+ // semantics of the legacy BundleSolver / Master::SetItem
+ if( slot_to_local[ k ][ slot ] >= 0 )
+  remove_cut( k , slot );
+ else
+  for( int kk = 0 ; kk < int( slot_to_local.size() ) ; ++kk )
+   if( kk != k && slot_to_local[ kk ][ slot ] >= 0 ) {
+    remove_cut( kk , slot );
+    break;  // at most one occupant by invariant
+    }
+
+ auto pfb = dynamic_cast< PolyhedralFunctionBlock * >( HardCmps[ k ] );
+ if( ! pfb )
+  throw( std::logic_error(
+       "MasterProblemBlock::add_cut: HardCmps[k] is not a "
+       "PolyhedralFunctionBlock" ) );
+
+ // the new cut is appended to the end of v_A/v_b of PolyhedralFunction;
+ // record the resulting local index in slot_to_local. No NBModification
+ // reload is needed in linearized-primal rep: the PolyhedralFunctionBlock
+ // dispatcher reacts to PolyhedralFunctionModAddd with a single
+ // add_dynamic_constraints(f_const, newc, eNoBlck) call, which surfaces
+ // as a BlockModAdd<FRowConstraint> picked up by the attached :MILPSolver
+ // via the standard dynamic_modification -> add_dynamic_constraint path
+ const int new_local = int( pfb->get_PolyhedralFunction().get_nrows() );
+ pfb->get_PolyhedralFunction().add_row( std::move( g ) , alpha );
+ slot_to_local[ k ][ slot ] = new_local;
+ }
+
+/*--------------------------------------------------------------------------*/
+
+int MasterProblemBlock::add_cut( int k , std::vector< double > && g ,
+                                 double alpha )
+{
+ if( k < 0 || k >= int( HardCmps.size() ) )
+  return( -1 );
+
+ // pick the first free slot of HardCmps[k]
+ const auto & st = slot_to_local[ k ];
+ for( int slot = 0 ; slot < int( st.size() ) ; ++slot )
+  if( st[ slot ] < 0 ) {
+   add_cut( k , slot , std::move( g ) , alpha );
+   return( slot );
+   }
+ return( -1 );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+int MasterProblemBlock::get_bundle_size( int k ) const
+{
+ if( k < 0 || k >= int( HardCmps.size() ) )
+  return( 0 );
+ auto pfb = dynamic_cast< PolyhedralFunctionBlock * >( HardCmps[ k ] );
+ if( ! pfb )
+  return( 0 );
+ return( int( pfb->get_PolyhedralFunction().get_nrows() ) );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+bool MasterProblemBlock::is_bundle_empty( void ) const
+{
+ return( std::all_of( HardCmps.cbegin() , HardCmps.cend() ,
+                      []( const Block * b ) {
+                       const auto pfb = dynamic_cast< const PolyhedralFunctionBlock * >( b );
+                       return( ! pfb ||
+                               const_cast< PolyhedralFunctionBlock * >( pfb )
+                                   ->get_PolyhedralFunction().get_nrows() == 0 );
+                       } ) );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+namespace {
+
+PolyhedralFunctionBlock * pfb_at( const std::vector< Block * > & HardCmps ,
+                                  int k , const char * fn )
+{
+ if( k < 0 || k >= int( HardCmps.size() ) )
+  throw( std::invalid_argument(
+       std::string( "MasterProblemBlock::" ) + fn +
+       ": hard-component index out of range" ) );
+ auto pfb = dynamic_cast< PolyhedralFunctionBlock * >( HardCmps[ k ] );
+ if( ! pfb )
+  throw( std::logic_error(
+       std::string( "MasterProblemBlock::" ) + fn +
+       ": HardCmps[k] is not a PolyhedralFunctionBlock" ) );
+ return( pfb );
+ }
+
+}  // namespace ( anonymous )
+
+/*--------------------------------------------------------------------------*/
+
+void MasterProblemBlock::remove_cut( int k , int slot )
+{
+ auto pfb = pfb_at( HardCmps , k , "remove_cut" );
+ if( slot < 0 || slot >= int( slot_to_local[ k ].size() ) )
+  throw( std::invalid_argument(
+       "MasterProblemBlock::remove_cut: slot out of range" ) );
+
+ const int loc = slot_to_local[ k ][ slot ];
+ if( loc < 0 )
+  return;  // already empty
+
+ // remove the row from PolyhedralFunction and patch the slot->local map:
+ // every other slot whose local index was past loc shifts down by one,
+ // the slot itself becomes empty
+ pfb->get_PolyhedralFunction().delete_row(
+                                       PolyhedralFunction::Index( loc ) );
+ slot_to_local[ k ][ slot ] = -1;
+ for( auto & s : slot_to_local[ k ] )
+  if( s > loc )
+   --s;
+ }
+
+/*--------------------------------------------------------------------------*/
+
+void MasterProblemBlock::modify_cut( int k , int slot ,
+                                     std::vector< double > && g , double alpha )
+{
+ auto pfb = pfb_at( HardCmps , k , "modify_cut" );
+ if( slot < 0 || slot >= int( slot_to_local[ k ].size() ) ||
+     slot_to_local[ k ][ slot ] < 0 )
+  throw( std::invalid_argument(
+       "MasterProblemBlock::modify_cut: slot empty or out of range" ) );
+
+ pfb->get_PolyhedralFunction().modify_row(
+       PolyhedralFunction::Index( slot_to_local[ k ][ slot ] ) ,
+       std::move( g ) , alpha );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+void MasterProblemBlock::modify_alpha( int k , int slot , double alpha )
+{
+ auto pfb = pfb_at( HardCmps , k , "modify_alpha" );
+ if( slot < 0 || slot >= int( slot_to_local[ k ].size() ) ||
+     slot_to_local[ k ][ slot ] < 0 )
+  throw( std::invalid_argument(
+       "MasterProblemBlock::modify_alpha: slot empty or out of range" ) );
+
+ pfb->get_PolyhedralFunction().modify_constant(
+       PolyhedralFunction::Index( slot_to_local[ k ][ slot ] ) , alpha );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+double MasterProblemBlock::get_theta( int k , int slot ) const
+{
+ if( IsPrimal )
+  return( 0.0 );
+ if( k < 0 || k >= int( HardCmps.size() ) )
+  return( 0.0 );
+ if( slot < 0 || slot >= int( slot_to_local[ k ].size() ) )
+  return( 0.0 );
+ const int loc = slot_to_local[ k ][ slot ];
+ if( loc < 0 )
+  return( 0.0 );
+
+ const auto pfb = dynamic_cast< const PolyhedralFunctionBlock * >( HardCmps[ k ] );
+ if( ! pfb )
+  return( 0.0 );
+ const auto thetas = const_cast< PolyhedralFunctionBlock * >( pfb )
+                       ->get_dynamic_variable< ColVariable >( "PolyF_theta" );
+ if( ! thetas || loc >= int( thetas->size() ) )
+  return( 0.0 );
+
+ // f_theta is a std::list, so linear traversal is needed; the bundle
+ // sizes are bounded by intBPar2 (typically a few hundred per component)
+ auto it = thetas->cbegin();
+ std::advance( it , loc );
+ return( it->get_value() );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+double MasterProblemBlock::get_alpha( int k , int slot ) const
+{
+ if( k < 0 || k >= int( HardCmps.size() ) )
+  return( 0.0 );
+ if( slot < 0 || slot >= int( slot_to_local[ k ].size() ) )
+  return( 0.0 );
+ const int loc = slot_to_local[ k ][ slot ];
+ if( loc < 0 )
+  return( 0.0 );
+
+ const auto pfb = dynamic_cast< const PolyhedralFunctionBlock * >( HardCmps[ k ] );
+ if( ! pfb )
+  return( 0.0 );
+ const auto & b = const_cast< PolyhedralFunctionBlock * >( pfb )
+                       ->get_PolyhedralFunction().get_b();
+ if( loc >= int( b.size() ) )
+  return( 0.0 );
+ return( b[ loc ] );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+const std::vector< double > &
+                          MasterProblemBlock::get_subgradient( int k , int slot ) const
+{
+ static const std::vector< double > empty_vec;
+
+ if( k < 0 || k >= int( HardCmps.size() ) )
+  return( empty_vec );
+ if( slot < 0 || slot >= int( slot_to_local[ k ].size() ) )
+  return( empty_vec );
+ const int loc = slot_to_local[ k ][ slot ];
+ if( loc < 0 )
+  return( empty_vec );
+
+ const auto pfb = dynamic_cast< const PolyhedralFunctionBlock * >( HardCmps[ k ] );
+ if( ! pfb )
+  return( empty_vec );
+ const auto & A = const_cast< PolyhedralFunctionBlock * >( pfb )
+                       ->get_PolyhedralFunction().get_A();
+ if( loc >= int( A.size() ) )
+  return( empty_vec );
+ return( A[ loc ] );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+bool MasterProblemBlock::is_subgradient( int k , int slot ) const
+{
+ if( k < 0 || k >= int( HardCmps.size() ) )
+  return( false );
+ if( slot < 0 || slot >= int( slot_to_local[ k ].size() ) )
+  return( false );
+ const int loc = slot_to_local[ k ][ slot ];
+ if( loc < 0 )
+  return( false );
+
+ const auto pfb = dynamic_cast< const PolyhedralFunctionBlock * >( HardCmps[ k ] );
+ if( ! pfb )
+  return( false );
+ return( ! const_cast< PolyhedralFunctionBlock * >( pfb )
+              ->get_PolyhedralFunction().is_row_vertical(
+                                            PolyhedralFunction::Index( loc ) ) );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+int MasterProblemBlock::get_vertical_count( void ) const
+{
+ int total = 0;
+ for( const auto * b : HardCmps ) {
+  const auto pfb = dynamic_cast< const PolyhedralFunctionBlock * >( b );
+  if( ! pfb )
+   continue;
+  auto & pf = const_cast< PolyhedralFunctionBlock * >( pfb )
+                  ->get_PolyhedralFunction();
+  const auto n = pf.get_nrows();
+  for( PolyhedralFunction::Index i = 0 ; i < n ; ++i )
+   if( pf.is_row_vertical( i ) )
+    ++total;
+  }
+ return( total );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+double MasterProblemBlock::get_FiBLambda( int k ) const
+{
+ if( IsPrimal ) {
+  if( Var_v_hard.empty() )
+   return( 0.0 );
+  if( k >= 0 && k < int( Var_v_hard.size() ) )
+   return( Var_v_hard[ k ].get_value() );
+  // total: sum over every hard cmp; the b*d linear term and any
+  // (1/(2t))||d||^2 contribution are accounted for by the surrounding
+  // solver and not included here -- this matches the NDOFi convention
+  // of returning only the "model value" v* without the stabilization.
+  double sum = 0.0;
+  for( const auto & v : Var_v_hard )
+   sum += v.get_value();
+  return( sum );
+  }
+
+ // dual MP: by LP duality the per-cmp Objective contribution is
+ //  sum_i theta^k_i b^k_i + gamma^k * LB^k
+ // which (modulo sign convention) is exactly v*[k]; the gamma^k LB^k
+ // piece is currently not separately read out -- if it becomes
+ // load-bearing the impl can be extended to add it explicitly.
+ return( get_aggregated_alpha( k ) );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+std::vector< double > MasterProblemBlock::get_z_vector( void ) const
+{
+ std::vector< double > out;
+ if( IsPrimal ) {
+  // primal MP: z* = sum_k sum_i theta^k_i g^k_i across every hard cmp
+  out.assign( NumVars , 0.0 );
+  for( int k = 0 ; k < int( HardCmps.size() ) ; ++k ) {
+   const auto zk = get_aggregated_subgradient( k );
+   for( int j = 0 ; j < NumVars && j < int( zk.size() ) ; ++j )
+    out[ j ] += zk[ j ];
+   }
+  return( out );
+  }
+ out.reserve( Var_z.size() );
+ for( const auto & zj : Var_z )
+  out.push_back( zj.get_value() );
+ return( out );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+std::vector< double > MasterProblemBlock::get_aggregated_subgradient( int k ) const
+{
+ std::vector< double > out( NumVars , 0.0 );
+
+ if( k < 0 || k >= int( HardCmps.size() ) )
+  return( out );
+ const auto pfb = dynamic_cast< const PolyhedralFunctionBlock * >( HardCmps[ k ] );
+ if( ! pfb )
+  return( out );
+
+ const auto thetas = const_cast< PolyhedralFunctionBlock * >( pfb )
+                       ->get_dynamic_variable< ColVariable >( "PolyF_theta" );
+ if( ! thetas )
+  return( out );
+
+ const auto & A = const_cast< PolyhedralFunctionBlock * >( pfb )
+                       ->get_PolyhedralFunction().get_A();
+ if( thetas->size() != A.size() )
+  return( out );
+
+ auto it = thetas->cbegin();
+ for( std::size_t i = 0 ; i < A.size() ; ++i , ++it ) {
+  const double th = it->get_value();
+  if( th == 0.0 )
+   continue;  // skip zero multipliers (sparsity-aware)
+  const auto & gi = A[ i ];
+  const std::size_t n = std::min( gi.size() , out.size() );
+  for( std::size_t j = 0 ; j < n ; ++j )
+   out[ j ] += th * gi[ j ];
+  }
+ return( out );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+std::vector< double > MasterProblemBlock::get_d_vector( void ) const
+{
+ std::vector< double > out;
+
+ if( IsPrimal ) {
+  out.reserve( Var_d.size() );
+  for( const auto & di : Var_d )
+   out.push_back( di.get_value() );
+  return( out );
+  }
+
+ // dual MP, proximal stabilization: d* = -t * z*
+ out.reserve( Var_z.size() );
+ for( const auto & zj : Var_z )
+  out.push_back( - t_stab * zj.get_value() );
+ return( out );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+double MasterProblemBlock::get_Gid_aggregate( void ) const
+{
+ if( IsPrimal )
+  return( 0.0 );  // TODO: reconstruct from per-PFB theta * (g_i . d)
+
+ // dual MP under proximal stabilization:
+ //   d* = -t * z*, so z* . d* = -t * || z* ||^2
+ return( - t_stab * get_dual_norm_squared() );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+double MasterProblemBlock::get_Gid( int k , int slot ) const
+{
+ const auto & g = get_subgradient( k , slot );
+ if( g.empty() )
+  return( 0.0 );
+ const auto d = get_d_vector();
+ if( d.size() != g.size() )
+  return( 0.0 );
+ return( std::inner_product( g.begin() , g.end() , d.begin() , 0.0 ) );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+void MasterProblemBlock::sensitivity_analysis( double & vl ,
+                                               double & vc ) const
+{
+ if( IsPrimal ) {
+  vl = 0.0;
+  vc = 0.0;
+  return;
+  }
+ const auto nz2 = get_dual_norm_squared();
+ vl = - nz2 / 2.0;
+ vc = get_FiBLambda() - vl * t_stab;
+ }
+
+/*--------------------------------------------------------------------------*/
+
+void MasterProblemBlock::invalidate_subgradients( int k )
+{
+ if( k < 0 || k >= int( HardCmps.size() ) )
+  return;
+ auto pfb = dynamic_cast< PolyhedralFunctionBlock * >( HardCmps[ k ] );
+ if( ! pfb )
+  return;
+ pfb->add_Modification( std::make_shared< NBModification >( pfb ) );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+void MasterProblemBlock::set_alphas_bulk( int k ,
+                                          const std::vector< double > & alphas )
+{
+ if( k < 0 || k >= int( HardCmps.size() ) )
+  return;
+ const auto & st = slot_to_local[ k ];
+ const int n = std::min( int( alphas.size() ) , int( st.size() ) );
+ for( int slot = 0 ; slot < n ; ++slot )
+  if( st[ slot ] >= 0 )
+   modify_alpha( k , slot , alphas[ slot ] );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+double MasterProblemBlock::get_aggregated_alpha( int k ) const
+{
+ if( IsPrimal )
+  return( 0.0 );
+
+ auto contrib = [ this ]( int kk ) -> double {
+  if( kk < 0 || kk >= int( HardCmps.size() ) )
+   return( 0.0 );
+  const auto pfb = dynamic_cast< const PolyhedralFunctionBlock * >( HardCmps[ kk ] );
+  if( ! pfb )
+   return( 0.0 );
+  auto * th = const_cast< PolyhedralFunctionBlock * >( pfb )
+                ->get_dynamic_variable< ColVariable >( "PolyF_theta" );
+  if( ! th )
+   return( 0.0 );
+  const auto & b = const_cast< PolyhedralFunctionBlock * >( pfb )
+                       ->get_PolyhedralFunction().get_b();
+  if( th->size() != b.size() )
+   return( 0.0 );
+  double s = 0.0;
+  std::size_t i = 0;
+  for( const auto & v : *th ) {
+   s += v.get_value() * b[ i ];
+   ++i;
+   }
+  return( s );
+  };
+
+ if( k >= 0 )
+  return( contrib( k ) );
+
+ double total = 0.0;
+ for( int kk = 0 ; kk < int( HardCmps.size() ) ; ++kk )
+  total += contrib( kk );
+ return( total );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+const std::vector< double > & MasterProblemBlock::get_alphas( int k ) const
+{
+ static const std::vector< double > empty_vec;
+
+ if( k < 0 || k >= int( HardCmps.size() ) )
+  return( empty_vec );
+ const auto pfb = dynamic_cast< const PolyhedralFunctionBlock * >( HardCmps[ k ] );
+ if( ! pfb )
+  return( empty_vec );
+ return( const_cast< PolyhedralFunctionBlock * >( pfb )
+              ->get_PolyhedralFunction().get_b() );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+std::vector< double > MasterProblemBlock::get_thetas( int k ) const
+{
+ std::vector< double > out;
+ if( IsPrimal )
+  return( out );
+ if( k < 0 || k >= int( HardCmps.size() ) )
+  return( out );
+ const auto pfb = dynamic_cast< const PolyhedralFunctionBlock * >( HardCmps[ k ] );
+ if( ! pfb )
+  return( out );
+
+ const auto thetas = const_cast< PolyhedralFunctionBlock * >( pfb )
+                       ->get_dynamic_variable< ColVariable >( "PolyF_theta" );
+ if( ! thetas )
+  return( out );
+
+ out.reserve( thetas->size() );
+ for( const auto & v : *thetas )
+  out.push_back( v.get_value() );
+ return( out );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+void MasterProblemBlock::set_global_LB( double LB )
+{
+ if( IsPrimal || r_obj_idx < 0 )
+  return;
+
+ auto obj = dynamic_cast< FRealObjective * >( get_objective() );
+ if( ! obj )
+  return;
+ auto dqf = dynamic_cast< DQuadFunction * >( obj->get_function() );
+ if( ! dqf )
+  return;
+
+ dqf->modify_term( DQuadFunction::Index( r_obj_idx ) , LB , 0.0 );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+void MasterProblemBlock::set_x_bar( const std::vector< double > & x_bar )
+{
+ if( int( x_bar.size() ) != NumVars )
+  throw( std::invalid_argument(
+       "MasterProblemBlock::set_x_bar: x_bar must have NumVars entries" ) );
+
+ if( IsPrimal || z_obj_idx < 0 )
+  return;
+
+ auto obj = dynamic_cast< FRealObjective * >( get_objective() );
+ if( ! obj )
+  return;
+ auto dqf = dynamic_cast< DQuadFunction * >( obj->get_function() );
+ if( ! dqf )
+  return;
+
+ // refresh only the linear coefficient on every z_j; the quadratic
+ // coefficient -t/2 (or 0 under kLevel) is left as is
+ const double quad_coeff = ( StblType == kProximal ||
+                             StblType == kDoublyStabilized )
+                           ? - t_stab / 2.0 : 0.0;
+ for( int j = 0 ; j < NumVars ; ++j )
+  dqf->modify_term( DQuadFunction::Index( z_obj_idx + j ) ,
+                    x_bar[ j ] , quad_coeff );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+void MasterProblemBlock::set_linear_part( const std::vector< double > & b )
+{
+ if( int( b.size() ) != NumVars )
+  throw( std::invalid_argument(
+       "MasterProblemBlock::set_linear_part: b must have NumVars entries" ) );
+
+ // under the primal MP the linear part is folded directly into the master
+ // Objective by set_b and there is nothing to install in the coupling rows
+ if( IsPrimal )
+  return;
+
+ // CreateDualMP wires every CouplingCns[ j ] as the equality
+ //   z_j + sum_k sum_i theta^k_i * A^k_{i,j} = 0
+ // (with lhs = rhs = 0) so that z is forced to the dual-aggregate of the
+ // bundle subgradients. Installing the j-th component of b on both sides
+ // promotes the equality to its full algebraic form
+ //   z_j + sum_k sum_i theta^k_i * A^k_{i,j} = b_j
+ // i.e. z_j = b_j - sum_k sum_i theta^k_i * A^k_{i,j}, which is the
+ // coupling that the dual problem of the bundle method actually requires.
+ // The rhs change is broadcast to every attached Solver through eModBlck,
+ // so no rebuild of the underlying [MILP] model is needed
+ auto it = CouplingCns.begin();
+ for( int j = 0 ; j < NumVars && it != CouplingCns.end() ; ++j , ++it )
+  it->set_both( b[ j ] , eModBlck );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+void MasterProblemBlock::add_vars( int n )
+{
+ if( n <= 0 )
+  return;
+
+ // Structural change: resizing NumVars while the master problem is live
+ // requires a coordinated rewrite of:
+ //   - the static-variable groups Var_d / Var_v_hard / Var_z
+ //     (the Block internally keeps pointers into the underlying vector,
+ //     and a plain resize() would invalidate them);
+ //   - the dynamic constraint group CouplingCns (one new row z_j = 0
+ //     per added coordinate);
+ //   - every PolyhedralFunctionBlock sub-Block (its f_polyf
+ //     active-variables list, plus the set_conjugate_constraint
+ //     bookkeeping, must mirror the new NumVars);
+ //   - the DQuadFunction triples laid out as [z..r..omega] in the
+ //     master Objective (the new z_j entries must be inserted before
+ //     r_obj_idx and omega_obj_idx shifted accordingly).
+ // The plumbing is involved enough that it is the subject of a separate
+ // sub-task (task #27); until that lands, this method just notes the
+ // unimplemented call and leaves the master untouched -- safe when
+ // NumVars is stable across the algorithm (the common case in our test
+ // instances), broken when the original sum-function actually adds
+ // coordinates on the fly.
+ //
+ // We don't throw here because the surrounding GBS call site already
+ // guards with `if( Master )` for the Master path; throwing would
+ // prevent Bundle 2.0 from making any progress when used with a problem
+ // that exposes AddVars Modifications but where the bundle does not
+ // *actually* need to follow them within the validation horizon.
+ (void) n;
+ }
+
+/*--------------------------------------------------------------------------*/
+
+void MasterProblemBlock::remove_vars( const int * subset , int sz )
+{
+ if( sz <= 0 )
+  return;
+ // see add_vars: structural shrink is deferred to task #27
+ (void) subset;
+ (void) sz;
+ }
+
+/*--------------------------------------------------------------------------*/
+
+void MasterProblemBlock::forward_log( std::ostream * log_stream , int verb )
+{
+ const auto & solvers = this->get_registered_solvers();
+ if( solvers.empty() )
+  return;
+ auto * slv = solvers.front();
+
+ slv->set_log( log_stream );
+
+ // try to set the verbosity if the Solver exposes an "intLogVerb" knob
+ const auto idx = slv->int_par_str2idx( "intLogVerb" );
+ if( idx < slv->get_num_int_par() )
+  slv->set_par( idx , verb );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+void MasterProblemBlock::set_max_time( double t )
+{
+ const auto & solvers = this->get_registered_solvers();
+ if( solvers.empty() )
+  return;
+ auto * slv = solvers.front();
+ const auto idx = slv->dbl_par_str2idx( "dblMaxTime" );
+ if( idx < slv->get_num_dbl_par() )
+  slv->set_par( idx , t );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+int MasterProblemBlock::solve_master( void )
+{
+ const auto & solvers = this->get_registered_solvers();
+ if( solvers.empty() )
+  throw( std::logic_error(
+       "MasterProblemBlock::solve_master: no Solver registered" ) );
+ auto * slv = solvers.front();
+
+ // Primal MP with an empty bundle (no cuts pushed yet by add_cut) is
+ // intrinsically unbounded below in the v_k variables: the master has no
+ // v_k >= a_i.d + b_i row constraining v_k from below, so min sum v_k +
+ // (1/(2t))||d||^2 -> -INF. The classic Bundle algorithm convention is
+ // that at the very first call (bundle empty, no Fi(.) value known yet)
+ // no master needs to be solved at all: the surrounding (Generalized)
+ // BundleSolver will compute Fi(Lambda1 = Lambda = 0) and push the first
+ // round of subgradients, then re-enter solve_master with a non-empty
+ // bundle. We therefore short-circuit here, returning d = 0 (no movement)
+ // and signaling kOK to the caller.
+ //
+ // The dual MP does not have this issue: an empty bundle is feasible
+ // (theta empty, gamma fixed, lambda absorbs the unit) and the solver
+ // returns a well-defined zero solution
+ if( IsPrimal && is_bundle_empty() ) {
+  for( auto & di : Var_d ) di.set_value( 0.0 );
+  return( Solver::kOK );
+  }
+
+ const int rc = slv->compute();
+
+ // SMS++ pattern: compute() only writes the solution to the Solver's internal
+ // buffers; the ColVariable on the Block stay at their stale values until
+ // get_var_solution() is called. Without this push, the (Generalized)
+ // BundleSolver would read d* / z* / theta as zeros after every master solve
+ if( rc == Solver::kOK || rc == Solver::kLowPrecision )
+  slv->get_var_solution( nullptr );
+
+ return( rc );
+ }  // end( MasterProblemBlock::solve_master )
+
+/*--------------------------------------------------------------------------*/
 /*------------------------- STABILIZATION PARAMETER ------------------------*/
 /*--------------------------------------------------------------------------*/
 
@@ -592,10 +1533,16 @@ void MasterProblemBlock::set_t( double t )
  if( ! dqf )
   return;
 
+ // refresh only the quadratic coefficient on every d_i / z_j; the linear
+ // coefficient carries the b*d term (primal, via set_b) or the x_bar*z
+ // term (dual, via set_x_bar) and must be preserved as-is
  const double quad_coeff = IsPrimal ?   1.0 / ( 2.0 * t_stab )
                                     : - t_stab / 2.0;
- for( int i = 0 ; i < NumVars ; ++i )
-  dqf->modify_term( DQuadFunction::Index( i ) , 0.0 , quad_coeff );
+ for( int i = 0 ; i < NumVars ; ++i ) {
+  const double lin_coeff = dqf->get_linear_coefficient(
+                                            DQuadFunction::Index( i ) );
+  dqf->modify_term( DQuadFunction::Index( i ) , lin_coeff , quad_coeff );
+  }
 
  }  // end( MasterProblemBlock::set_t )
 

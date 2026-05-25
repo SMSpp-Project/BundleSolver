@@ -37,14 +37,16 @@
 BNDSLVOBJ = $(BNDSLVSDR)/obj/BundleSolver.o \
 	$(BNDSLVSDR)/obj/ParallelBundleSolver.o \
 	$(BNDSLVSDR)/obj/MasterProblemBlock.o \
-	$(BNDSLVSDR)/obj/GeneralizedBundleSolver.o
+	$(BNDSLVSDR)/obj/GeneralizedBundleSolver.o \
+	$(BNDSLVSDR)/obj/MILPMPSolver.o
 
-BNDSLVINC = -I$(BNDSLVSDR)/include
+BNDSLVINC = -I$(BNDSLVSDR)/include -I$(BNDSLVSDR)/MILPMPSolver
 
 BNDSLVH   = $(BNDSLVSDR)/include/BundleSolver.h \
 	$(BNDSLVSDR)/include/ParallelBundleSolver.h \
 	$(BNDSLVSDR)/include/MasterProblemBlock.h \
-	$(BNDSLVSDR)/include/GeneralizedBundleSolver.h
+	$(BNDSLVSDR)/include/GeneralizedBundleSolver.h \
+	$(BNDSLVSDR)/MILPMPSolver/MILPMPSolver.h
 
 # clean - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -70,8 +72,13 @@ $(BNDSLVSDR)/obj/MasterProblemBlock.o: $(BNDSLVSDR)/src/MasterProblemBlock.cpp \
 
 $(BNDSLVSDR)/obj/GeneralizedBundleSolver.o: $(BNDSLVSDR)/src/GeneralizedBundleSolver.cpp \
 	$(BNDSLVSDR)/include/GeneralizedBundleSolver.h \
-	$(BNDSLVSDR)/include/MasterProblemBlock.h $(SMS++OBJ) $(MILPSH) $(libNDOOBJ)
+	$(BNDSLVSDR)/include/MasterProblemBlock.h $(SMS++OBJ) $(MILPSH)
 	$(CC) -c $(BNDSLVSDR)/src/GeneralizedBundleSolver.cpp -o $@ \
+	$(BNDSLVINC) $(SMS++INC) $(MILPSINC) $(SW)
+
+$(BNDSLVSDR)/obj/MILPMPSolver.o: $(BNDSLVSDR)/MILPMPSolver/MILPMPSolver.cpp \
+	$(BNDSLVSDR)/MILPMPSolver/MILPMPSolver.h $(SMS++OBJ) $(MILPSH) $(libNDOOBJ)
+	$(CC) -c $(BNDSLVSDR)/MILPMPSolver/MILPMPSolver.cpp -o $@ \
 	$(BNDSLVINC) $(SMS++INC) $(MILPSINC) $(libNDOINC) $(SW)
 
 ########################## End of makefile ###################################
