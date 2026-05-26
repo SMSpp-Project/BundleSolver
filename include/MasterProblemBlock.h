@@ -280,61 +280,72 @@ class MasterProblemBlock : public Block {
   * BendersDecompositionSolver uses to populate MasterProblemBlock with
   * everything it needs.
   *
-  * The method is solver-agnostic and function-agnostic: it takes plain
-  * C05Function pointers and uses the virtual hook
-  * C05Function::build_easy_Block(primal) to obtain the closed-form
-  * "easy" sub-Block of each easy component. The dualization details
-  * (Lagrangian, Benders, ...) therefore live entirely behind that
-  * virtual and never leak into MasterProblemBlock.
+  * MasterProblemBlock never sees the "hard" components directly: only
+  * their number (\p num_hard_cmps) is fed in, since their bundles B^k
+  * are built up internally as empty PolyhedralFunctionBlock(s) under
+  * *this* and populated by the surrounding (Generalized)BundleSolver
+  * through the add_cut() / remove_cut() interface. The "easy" components
+  * are passed in via \p easy_components, type-dispatched (LagBFunction,
+  * BendersBFunction, ...) and absorbed into the master in the form
+  * dictated by the requested primal / dual MP. The dualization details
+  * stay inside MasterProblemBlock, so callers only need to know which
+  * components are easy.
   *
   * The Block containing the model variables and constraints is
   * *stolen* (i.e. its ownership is transferred via
   * Block::transfer_ownership_to(this)) into the master tree, so that
   * the inner :MILPSolver naturally sees those variables/constraints
-  * when it loads the MP. The optional \p ignored_paths list is then
-  * forwarded to the inner Solver via its
-  * #MILPSolver::vstrMILPIgnSBlks parameter, telling it which
-  * sub-Block subtrees of the stolen Block (and of the easy components)
-  * have to be skipped — for instance the original sub-Block that
-  * carried the C05Function whose linearizations are now represented
-  * by a PolyhedralFunctionBlock attached here.
+  * when it loads the MP. The optional \p ignored_blocks list is then
+  * forwarded to the inner Solver via Solver::set_excluded_blocks(),
+  * telling it which sub-Block subtrees of the stolen Block (and of the
+  * easy components) have to be skipped — for instance the original
+  * sub-Block that carried the C05Function whose linearizations are
+  * now represented by a PolyhedralFunctionBlock attached here.
   *
-  * @param primal           if true the MP is built in its primal form,
-  *                         else in its dual form. The dual form is
-  *                         mandatory when at least one easy component
-  *                         is present.
-  * @param max_bundle_size  maximum number of items (subgradients +
-  *                         feasibility cuts) kept per hard component;
-  *                         stored in #MaxBSize.
-  * @param num_vars         number of optimization variables in the
-  *                         underlying sum-function space (the dimension
-  *                         of the step d, of the dual z, ...); stored
-  *                         in #NumVars.
-  * @param is_easy          per-component flag; size determines the
-  *                         total number of components.
-  * @param components       C05Function pointers, one per component;
-  *                         must have the same size as \p is_easy. The
-  *                         "easy" ones must override
-  *                         C05Function::build_easy_Block().
-  * @param original_block   the Block holding the model variables and
-  *                         constraints to be plugged into the master.
-  *                         If not nullptr, it is stolen via
-  *                         Block::transfer_ownership_to(this).
-  * @param ignored_blocks   set of sub-Blocks the inner Solver must ignore
-  *                         (forwarded to BlockSolverConfig::apply()'s
-  *                         second argument when register_Solver() is
-  *                         called, which in turn calls
-  *                         Solver::set_excluded_blocks() on the freshly-
-  *                         created Solver). Eagerly expanded with all
-  *                         descendants by the Solver. Default = empty.
-  * @param reg              stabilization scheme, see
-  *                         #stabilization_type. */
+  * @param primal            if true the MP is built in its primal form,
+  *                          else in its dual form. The primal form
+  *                          currently supports only BendersBFunction as
+  *                          easy components; the dual form supports
+  *                          only LagBFunction. Any other C05Function
+  *                          type, or a mismatch with \p primal, makes
+  *                          configure() throw.
+  * @param max_bundle_size   maximum number of items (subgradients +
+  *                          feasibility cuts) kept per hard component;
+  *                          stored in #MaxBSize.
+  * @param num_vars          number of optimization variables in the
+  *                          underlying sum-function space (the dimension
+  *                          of the step d, of the dual z, ...); stored
+  *                          in #NumVars.
+  * @param num_hard_cmps     number of "hard" components, i.e. components
+  *                          whose bundle is built up incrementally by the
+  *                          driving (Generalized)BundleSolver through
+  *                          add_cut() / remove_cut(); stored in
+  *                          #NoHardCmps.
+  * @param easy_components   pointers to the easy C05Function components.
+  *                          Each pointer must be non-null and must be of
+  *                          a supported type (LagBFunction in the dual
+  *                          MP, BendersBFunction in the primal MP);
+  *                          its size is stored in #NoEasyCmps.
+  * @param original_block    the Block holding the model variables and
+  *                          constraints to be plugged into the master.
+  *                          If not nullptr, it is stolen via
+  *                          Block::transfer_ownership_to(this).
+  * @param ignored_blocks    set of sub-Blocks the inner Solver must
+  *                          ignore (forwarded to BlockSolverConfig::apply
+  *                          when register_Solver() is called, which in
+  *                          turn calls Solver::set_excluded_blocks() on
+  *                          the freshly-created Solver). Default = empty.
+  * @param reg               stabilization scheme, see
+  *                          #stabilization_type.
+  * @param convex            true if the underlying C05Function is convex
+  *                          (the master is minimised), false if it is
+  *                          concave (the master is maximised). */
 
  void configure( bool primal ,
                  int max_bundle_size ,
                  int num_vars ,
-                 std::vector< bool > is_easy ,
-                 const std::vector< C05Function * > & components ,
+                 int num_hard_cmps ,
+                 const std::vector< C05Function * > & easy_components ,
                  Block * original_block ,
                  std::unordered_set< Block * > ignored_blocks = {} ,
                  stabilization_type reg = kDoublyStabilized ,
@@ -1122,6 +1133,31 @@ class MasterProblemBlock : public Block {
  std::vector< Block * > EasyCmps;  ///< sub-Blocks of the "easy" components
 
  std::vector< Block * > HardCmps;  ///< sub-Blocks of the "hard" components
+
+ /// metadata of one absorbed BendersBFunction row in the primal MP
+ /** When absorb_BBF_into_primal_MP() processes the i-th mapping row of a
+  * BendersBFunction it (i) relaxes the original RowConstraint C_i in the
+  * inner Block and (ii) re-installs an equivalent FRowConstraint
+  *
+  *     g_i( y ) - A_i . d  [<=, =, >=]  ( A_i . x_bar + b_i )
+  *
+  * on *this*, where A_i = bbf->get_A()[ i ], b_i = bbf->get_b()[ i ] and
+  * the d on the master side stands for the step variables Var_d (the
+  * BBF active variables x are split as x = x_bar + d). EasyBBFRow stores
+  * the bookkeeping needed by set_x_bar() to refresh the absorbed
+  * RowConstraint's right-hand side(s) whenever the stability centre
+  * changes. */
+
+ struct EasyBBFRow {
+  FRowConstraint * cns;                ///< absorbed RowConstraint on *this*
+  std::vector< double > A_row;         ///< i-th row of bbf->get_A()
+  double b_i;                          ///< i-th entry of bbf->get_b()
+  char side;                           ///< BendersBFunction::ConstraintSide
+  double orig_lhs;                     ///< C_i->get_lhs() at absorption time
+  double orig_rhs;                     ///< C_i->get_rhs() at absorption time
+  };
+
+ std::vector< EasyBBFRow > EasyBBFRows;
 
  // - - - - - - - - - - -  static MP entities (primal form)  - - - - - - - - -
 

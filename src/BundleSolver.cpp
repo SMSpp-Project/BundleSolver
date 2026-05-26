@@ -4900,21 +4900,25 @@ void BundleSolver::InitMPB( void )
         "used anyway." );
 
  // one-shot MasterProblemBlock configuration: sizes, primal/dual form,
- // per-component "easy" flag, and the C05Function vector are handed over
- // in a single call. configure() dispatches on the concrete type of each
- // easy C05Function and grafts the resulting sub-Block under MasterPB,
- // so no separate per-component wiring is needed.
+ // hard-component count and easy components are handed over in a single
+ // call. configure() dispatches on the concrete type of each easy
+ // C05Function and grafts the resulting sub-Block under MasterPB, so no
+ // separate per-component wiring is needed.
  //
  // No model Block (original_block) is stolen here; any exclusion list
  // installed on *this* via Solver::set_excluded_blocks() is propagated
  // verbatim to MasterPB so its inner Solver skips the same subtrees.
- // build a per-component is_easy vector of size NrFi: GBS only resizes
- // IsEasy when DoEasy != 0, but configure() expects is_easy.size() ==
- // components.size() == NrFi regardless.
- std::vector< bool > is_easy_vec( NrFi , false );
+ //
+ // build the easy_components vector by walking v_c05f and keeping only
+ // the components flagged as easy (IsEasy is sized only when DoEasy != 0,
+ // so the trivial "all hard" case yields an empty vector)
+ std::vector< C05Function * > easy_cmps;
  if( IsEasy.size() == NrFi )
   for( Index k = 0 ; k < NrFi ; ++k )
-   is_easy_vec[ k ] = bool( IsEasy[ k ] );
+   if( IsEasy[ k ] )
+    easy_cmps.push_back( v_c05f[ k ] );
+
+ const int n_hard = int( NrFi ) - int( easy_cmps.size() );
 
  // The MasterPB MP sense is dictated by the easy sub-Block grafted by
  // configure(), whose Objective sense is the OPPOSITE of f_convex
@@ -4924,8 +4928,8 @@ void BundleSolver::InitMPB( void )
  MasterPB->configure( want_primal ,
                       int( BPar2 ) ,
                       int( NumVar ) ,
-                      std::move( is_easy_vec ) ,
-                      v_c05f ,
+                      n_hard ,
+                      easy_cmps ,
                       nullptr ,
                       get_excluded_blocks() ,
                       MPStbl ,

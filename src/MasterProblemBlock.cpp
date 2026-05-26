@@ -43,6 +43,7 @@
 #include "MILPSolver.h"
 #include "Modification.h"
 #include "PolyhedralFunctionBlock.h"
+#include "QuadFunction.h"
 #include "Solver.h"
 
 #include <algorithm>
@@ -74,6 +75,10 @@ void MasterProblemBlock::clear()
  // are owned by the base Block, which will dispose of them in due time)
  EasyCmps.clear();
  HardCmps.clear();
+
+ // absorbed BendersBFunction RowConstraints live as static_constraint
+ // on *this* and are owned by the base Block; just drop the bookkeeping
+ EasyBBFRows.clear();
 
  // reset every size / structural field
  MaxBSize   = 0;
@@ -210,33 +215,26 @@ void MasterProblemBlock::configure(
                           bool primal ,
                           int max_bundle_size ,
                           int num_vars ,
-                          std::vector< bool > is_easy ,
-                          const std::vector< C05Function * > & components ,
+                          int num_hard_cmps ,
+                          const std::vector< C05Function * > & easy_components ,
                           Block * original_block ,
                           std::unordered_set< Block * > ignored_blocks ,
                           stabilization_type reg ,
                           bool convex )
 {
  // - - - sanity checks - - - - - - - - - - - - - - - - - - - - - - - - - -
- if( max_bundle_size < 0 || num_vars < 0 )
+ if( max_bundle_size < 0 || num_vars < 0 || num_hard_cmps < 0 )
   throw( std::invalid_argument(
        "MasterProblemBlock::configure: negative size" ) );
 
- if( is_easy.size() != components.size() )
-  throw( std::invalid_argument(
-       "MasterProblemBlock::configure: size mismatch between is_easy "
-       "and components" ) );
-
- const int n_total = int( is_easy.size() );
- const int n_easy = int( std::count( is_easy.begin() , is_easy.end() , true ) );
+ const int n_easy  = int( easy_components.size() );
+ const int n_total = num_hard_cmps + n_easy;
 
  // - - - sizes / form / stabilisation - - - - - - - - - - - - - - - - - - -
  // SetDim() starts from a clean slate (it calls clear()) and re-initialises
- // MaxBSize / NumVars / NoTotCmps / NoEasyCmps / NoHardCmps / IsEasyCmp;
- // we then overwrite IsEasyCmp with the user-provided vector
+ // MaxBSize / NumVars / NoTotCmps / NoEasyCmps / NoHardCmps
  SetDim( max_bundle_size , num_vars , n_total , n_easy );
 
- IsEasyCmp = std::move( is_easy );
  IsPrimal = primal;
  IsConvex = convex;
  StblType = reg;
@@ -252,7 +250,7 @@ void MasterProblemBlock::configure(
  if( f_original_block )
   f_original_block->transfer_ownership_to( this );
 
- // - - - steal the closed-form Block of each easy component - - - - - - - -
+ // - - - dispatch each easy component into the master - - - - - - - - - - -
  // The MP-side embedding of an easy component is asymmetric on two axes:
  //
  //   axis 1: kind of C05Function (LagBFunction vs BendersBFunction);
@@ -278,10 +276,12 @@ void MasterProblemBlock::configure(
  // The other two combinations (LagBFunction in primal, BendersBFunction
  // in dual) would require an explicit Block dualization, which is not
  // currently available in SMS++; they are reported as "unsupported".
- for( int k = 0 ; k < n_total ; ++k ) {
-  if( ! IsEasyCmp[ k ] )
-   continue;
-  auto * c05 = components[ k ];
+ // Any C05Function type other than LagBFunction / BendersBFunction (for
+ // instance a PolyhedralFunction, which is a hard component by design)
+ // is also reported as "unsupported": such a component should never be
+ // marked easy.
+ for( int k = 0 ; k < n_easy ; ++k ) {
+  auto * c05 = easy_components[ k ];
   if( ! c05 )
    throw( std::invalid_argument(
         "MasterProblemBlock::configure: easy component " +
@@ -323,53 +323,11 @@ void MasterProblemBlock::configure(
    continue;
    }
 
-  if( auto * pf = dynamic_cast< PolyhedralFunction * >( c05 ) ) {
-   // PolyhedralFunction is self-dual: the same set of rows
-   //     F( x ) = max_i { a_i . x + b_i }    (convex case;
-   //                                          min for the concave case)
-   // can be embedded either as the linearized-primal (epigraph) rep
-   //     v >= a_i . x + b_i for every i
-   // or as the linearized-dual (simplex-on-rows) rep
-   //     max  sum_i theta_i b_i + gamma * LB
-   //     s.t. sum_i theta_i + gamma = 1
-   //          sum_i theta_i a_i = z
-   //          theta_i, gamma >= 0
-   // so no Block dualization is required: it suffices to package the
-   // PolyhedralFunction inside a PolyhedralFunctionBlock with the
-   // right rep configuration and graft it under *this*.
-   auto * pfb = new PolyhedralFunctionBlock( this );
-   auto & inner = pfb->get_PolyhedralFunction();
-
-   PolyhedralFunction::MultiVector A_copy = pf->get_A();
-   PolyhedralFunction::RealVector  b_copy = pf->get_b();
-   PolyhedralFunction::BoolVector  iv_copy = pf->get_is_vert();
-   inner.set_PolyhedralFunction( std::move( A_copy ) , std::move( b_copy ) ,
-                                 pf->get_global_bound() ,
-                                 pf->is_convex() , eNoMod ,
-                                 std::move( iv_copy ) );
-
-   PolyhedralFunction::VarVector vars_copy;
-   vars_copy.reserve( pf->get_num_active_var() );
-   for( Index j = 0 ; j < pf->get_num_active_var() ; ++j )
-    vars_copy.push_back( static_cast< ColVariable * >( pf->get_active_var( j ) ) );
-   inner.set_variables( std::move( vars_copy ) );
-
-   const SimpleConfiguration< int > rep( primal ? 1 : 3 );
-   pfb->generate_abstract_variables(
-                       const_cast< SimpleConfiguration< int > * >( & rep ) );
-   pfb->generate_abstract_constraints();
-   pfb->generate_objective();
-
-   EasyCmps.push_back( pfb );
-   add_nested_Block( pfb );
-   continue;
-   }
-
   throw( std::invalid_argument(
        "MasterProblemBlock::configure: easy component " +
        std::to_string( k ) + " has an unsupported C05Function type; "
-       "supported are LagBFunction (in the dual MP), BendersBFunction "
-       "(in the primal MP) and PolyhedralFunction (in either form)" ) );
+       "supported are LagBFunction (in the dual MP) and "
+       "BendersBFunction (in the primal MP)" ) );
   }
 
  // - - - stash ignored sub-Blocks until a Solver is registered - - - - - -
@@ -852,19 +810,153 @@ void MasterProblemBlock::absorb_BBF_into_primal_MP( BendersBFunction * bbf )
   throw( std::invalid_argument(
        "MasterProblemBlock::absorb_BBF_into_primal_MP: null BendersBFunction" ) );
 
- // The "relax + re-install" embedding of a BendersBFunction into the
- // primal MP is type-specific on the function of every absorbed
- // RowConstraint (LinearFunction, DQuadFunction, QuadFunction) and on
- // the ConstraintSide (eLHS, eRHS, eBoth); it also has to keep the
- // re-installed RowConstraint synchronised with the current stability
- // centre via set_x_bar. The full implementation is left to a
- // dedicated follow-up; for now the entry point is provided so that
- // configure() can dispatch on BendersBFunction without compile-time
- // surprises, and any actual easy BendersBFunction will hit the
- // exception below until the absorption logic is filled in.
- throw( std::logic_error(
-      "MasterProblemBlock::absorb_BBF_into_primal_MP: full embedding of "
-      "BendersBFunction into the primal MP is not yet implemented" ) );
+ // sanity: the BendersBFunction must have as many active variables as
+ // the primal MP step (one entry of Var_d per active x of the BBF), so
+ // that the coupling -A_i . d makes sense
+ if( int( bbf->get_num_active_var() ) != NumVars )
+  throw( std::invalid_argument(
+       "MasterProblemBlock::absorb_BBF_into_primal_MP: BendersBFunction "
+       "has " + std::to_string( bbf->get_num_active_var() ) +
+       " active variables but the primal MP has " +
+       std::to_string( NumVars ) + " step variables" ) );
+
+ const auto & A = bbf->get_A();
+ const auto & b = bbf->get_b();
+ const auto & C = bbf->get_constraints();
+ const auto & S = bbf->get_sides();
+
+ const std::size_t m = A.size();
+ if( b.size() != m || C.size() != m || S.size() != m )
+  throw( std::logic_error(
+       "MasterProblemBlock::absorb_BBF_into_primal_MP: inconsistent "
+       "BendersBFunction mapping sizes" ) );
+
+ EasyBBFRows.reserve( EasyBBFRows.size() + m );
+
+ for( std::size_t i = 0 ; i < m ; ++i ) {
+  RowConstraint * ci = C[ i ];
+  if( ! ci )
+   throw( std::invalid_argument(
+        "MasterProblemBlock::absorb_BBF_into_primal_MP: null RowConstraint "
+        "in BendersBFunction mapping at row " + std::to_string( i ) ) );
+
+  auto * fci = dynamic_cast< FRowConstraint * >( ci );
+  if( ! fci )
+   throw( std::invalid_argument(
+        "MasterProblemBlock::absorb_BBF_into_primal_MP: RowConstraint at "
+        "row " + std::to_string( i ) + " is not a FRowConstraint" ) );
+
+  auto * fun = fci->get_function();
+  auto * qf  = dynamic_cast< QuadFunction   * >( fun );
+  // QuadFunction derives from DQuadFunction, so test the most-derived
+  // type first; DQuadFunction is the diagonal-only specialisation and
+  // LinearFunction is the further linear specialisation
+  auto * dqf = qf ? nullptr : dynamic_cast< DQuadFunction * >( fun );
+  auto * lf  = ( qf || dqf ) ? nullptr
+                             : dynamic_cast< LinearFunction * >( fun );
+  if( ! lf && ! dqf && ! qf )
+   throw( std::logic_error(
+        "MasterProblemBlock::absorb_BBF_into_primal_MP: row " +
+        std::to_string( i ) + " has a Function of unsupported type; "
+        "currently only LinearFunction, DQuadFunction and QuadFunction "
+        "are supported" ) );
+
+  // 1. snapshot the original (lhs, rhs) of C_i and relax it on the inner
+  //    Block: from this point on the constraint lives only on *this*
+  const double orig_lhs = fci->get_lhs();
+  const double orig_rhs = fci->get_rhs();
+  fci->set_lhs( - Inf< double >() , eNoMod );
+  fci->set_rhs(   Inf< double >() , eNoMod );
+
+  // 2. build the master-side function g_i( y ) - A_i . d as a fresh
+  //    Function of the same concrete type as the original, with a copy
+  //    of the y-side coefficients plus the -A_i[ j ] coupling on every
+  //    Var_d[ j ] (the coupling is *linear*; its quadratic contribution
+  //    is zero by construction)
+  Function * new_fun = nullptr;
+  if( lf ) {
+   LinearFunction::v_coeff_pair pairs;
+   pairs.reserve( lf->get_num_active_var() + NumVars );
+   for( Function::Index j = 0 ; j < lf->get_num_active_var() ; ++j )
+    pairs.emplace_back(
+         static_cast< ColVariable * >( lf->get_active_var( j ) ) ,
+         lf->get_coefficient( j ) );
+   for( int j = 0 ; j < NumVars ; ++j )
+    pairs.emplace_back( & Var_d[ j ] , - A[ i ][ j ] );
+   new_fun = new LinearFunction( std::move( pairs ) );
+   }
+  else if( dqf ) {
+   DQuadFunction::v_coeff_triple triples;
+   triples.reserve( dqf->get_num_active_var() + NumVars );
+   for( Function::Index j = 0 ; j < dqf->get_num_active_var() ; ++j )
+    triples.emplace_back(
+         static_cast< ColVariable * >( dqf->get_active_var( j ) ) ,
+         dqf->get_linear_coefficient( j ) ,
+         dqf->get_quadratic_coefficient( j ) );
+   for( int j = 0 ; j < NumVars ; ++j )
+    triples.emplace_back( & Var_d[ j ] , - A[ i ][ j ] , 0.0 );
+   new_fun = new DQuadFunction( std::move( triples ) );
+   }
+  else {  // QuadFunction
+   // copy the diagonal triples ( y_j, linear, diag-quad ) and the
+   // off-diagonal terms ( i_y, j_y, off-diag-quad ) verbatim; the
+   // off-diagonal matrix indices remain valid because the appended
+   // Var_d[ j ] are placed *after* the original y_j entries.
+   DQuadFunction::v_coeff_triple triples;
+   triples.reserve( qf->get_num_active_var() + NumVars );
+   for( Function::Index j = 0 ; j < qf->get_num_active_var() ; ++j )
+    triples.emplace_back(
+         static_cast< ColVariable * >( qf->get_active_var( j ) ) ,
+         qf->get_linear_coefficient( j ) ,
+         qf->DQuadFunction::get_quadratic_coefficient( j ) );
+   for( int j = 0 ; j < NumVars ; ++j )
+    triples.emplace_back( & Var_d[ j ] , - A[ i ][ j ] , 0.0 );
+   QuadFunction::v_off_diag_term off_diag;
+   qf->get_v_nd_var( off_diag );
+   new_fun = new QuadFunction( std::move( triples ) , std::move( off_diag ) );
+   }
+
+  // 3. allocate the master-side FRowConstraint with the cloned function;
+  //    LHS/RHS are temporarily set assuming x_bar == 0, set_x_bar() will
+  //    refresh them on every change of the stability centre
+  auto * new_cns = new FRowConstraint();
+  new_cns->set_function( new_fun , eNoMod );
+  const double base_side = b[ i ];  // == A_i . 0 + b_i
+  switch( S[ i ] ) {
+   case( BendersBFunction::eLHS ):
+    new_cns->set_lhs( base_side , eNoMod );
+    new_cns->set_rhs( orig_rhs  , eNoMod );
+    break;
+   case( BendersBFunction::eRHS ):
+    new_cns->set_lhs( orig_lhs  , eNoMod );
+    new_cns->set_rhs( base_side , eNoMod );
+    break;
+   case( BendersBFunction::eBoth ):
+    new_cns->set_lhs( base_side , eNoMod );
+    new_cns->set_rhs( base_side , eNoMod );
+    break;
+   default:
+    throw( std::invalid_argument(
+         "MasterProblemBlock::absorb_BBF_into_primal_MP: unknown "
+         "BendersBFunction::ConstraintSide at row " +
+         std::to_string( i ) ) );
+   }
+
+  // 4. attach the new RowConstraint to *this* (as a static one, named
+  //    after the absorbed component for diagnostic purposes)
+  add_static_constraint( *new_cns , "MPB_BBF_easy" );
+
+  // 5. record metadata for set_x_bar() to keep the absorbed sides in
+  //    sync with the stability centre
+  EasyBBFRow row;
+  row.cns      = new_cns;
+  row.A_row    = A[ i ];
+  row.b_i      = b[ i ];
+  row.side     = static_cast< char >( S[ i ] );
+  row.orig_lhs = orig_lhs;
+  row.orig_rhs = orig_rhs;
+  EasyBBFRows.emplace_back( std::move( row ) );
+  }
  }
 
 /*--------------------------------------------------------------------------*/
@@ -1596,7 +1688,32 @@ void MasterProblemBlock::set_x_bar( const std::vector< double > & x_bar )
   throw( std::invalid_argument(
        "MasterProblemBlock::set_x_bar: x_bar must have NumVars entries" ) );
 
- if( IsPrimal || z_obj_idx < 0 )
+ // refresh the absorbed BendersBFunction RowConstraints (primal MP):
+ // their right-hand side(s) are  A_i . x_bar + b_i  for the side(s)
+ // marked dynamic by the original ConstraintSide; the static side(s)
+ // keep their snapshot from absorb_BBF_into_primal_MP()
+ if( IsPrimal ) {
+  for( auto & row : EasyBBFRows ) {
+   double coupling = row.b_i;
+   for( int j = 0 ; j < NumVars ; ++j )
+    coupling += row.A_row[ j ] * x_bar[ j ];
+   switch( row.side ) {
+    case( BendersBFunction::eLHS ):
+     row.cns->set_lhs( coupling , eNoMod );
+     break;
+    case( BendersBFunction::eRHS ):
+     row.cns->set_rhs( coupling , eNoMod );
+     break;
+    case( BendersBFunction::eBoth ):
+     row.cns->set_lhs( coupling , eNoMod );
+     row.cns->set_rhs( coupling , eNoMod );
+     break;
+    }
+   }
+  return;
+  }
+
+ if( z_obj_idx < 0 )
   return;
 
  auto obj = dynamic_cast< FRealObjective * >( get_objective() );
