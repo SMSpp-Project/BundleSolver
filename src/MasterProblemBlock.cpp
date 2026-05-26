@@ -33,6 +33,7 @@
 #include <cstdio>
 #include <iostream>
 
+#include "BendersBFunction.h"
 #include "BlockSolverConfig.h"
 #include "Configuration.h"
 #include "DQuadFunction.h"
@@ -229,11 +230,6 @@ void MasterProblemBlock::configure(
  const int n_total = int( is_easy.size() );
  const int n_easy = int( std::count( is_easy.begin() , is_easy.end() , true ) );
 
- if( primal && ( n_easy > 0 ) )
-  throw( std::invalid_argument(
-       "MasterProblemBlock::configure: primal form is incompatible with "
-       "easy components; switch to dual form (primal == false)" ) );
-
  // - - - sizes / form / stabilisation - - - - - - - - - - - - - - - - - - -
  // SetDim() starts from a clean slate (it calls clear()) and re-initialises
  // MaxBSize / NumVars / NoTotCmps / NoEasyCmps / NoHardCmps / IsEasyCmp;
@@ -257,8 +253,13 @@ void MasterProblemBlock::configure(
   f_original_block->transfer_ownership_to( this );
 
  // - - - steal the closed-form Block of each easy component - - - - - - - -
- // The MP-side embedding of an easy component is asymmetric and depends
- // on the concrete kind of C05Function:
+ // The MP-side embedding of an easy component is asymmetric on two axes:
+ //
+ //   axis 1: kind of C05Function (LagBFunction vs BendersBFunction);
+ //   axis 2: form of the master problem (primal vs dual).
+ //
+ // Only two of the four combinations have a "natural" closed-form
+ // embedding that does not require dualizing a Block:
  //
  //  - LagBFunction in the *dual* MP: take the inner Block (the primal of
  //    the dualized problem) and the linear map A coupling its variables
@@ -266,16 +267,17 @@ void MasterProblemBlock::configure(
  //    z-row equations of the dual MP via set_conjugate_constraint().
  //
  //  - BendersBFunction in the *primal* MP: the inner Block carries the
- //    fixed-rhs constraint  g(x) <= bar{d}. The embedding requires
- //    relaxing that constraint in the inner Block and re-installing it
- //    in the master as  g(x) <= D y + d, which in turn requires casting
- //    g to a concrete Function type (LinearFunction, DQuadFunction,
- //    QuadFunction). NOT YET IMPLEMENTED.
+ //    fixed-rhs constraints  g_i( y ) [<=, =, >=] bar{d}_i. The embedding
+ //    requires relaxing those constraints in the inner Block and
+ //    re-installing them in the master as  g_i( y ) [<=, =, >=] ( A x +
+ //    b )_i, where x are the active variables of the BendersBFunction
+ //    and A, b come from get_A() / get_b(). This step requires casting
+ //    g_i to a concrete Function type (LinearFunction, DQuadFunction,
+ //    QuadFunction) and so is type-specific.
  //
- // The above asymmetry is intentional: there is no "build_easy_Block"
- // virtual on C05Function, because the assumption "this C05Function has
- // a Block representation" is not general and the dualization details
- // are function-specific.
+ // The other two combinations (LagBFunction in primal, BendersBFunction
+ // in dual) would require an explicit Block dualization, which is not
+ // currently available in SMS++; they are reported as "unsupported".
  for( int k = 0 ; k < n_total ; ++k ) {
   if( ! IsEasyCmp[ k ] )
    continue;
@@ -289,8 +291,9 @@ void MasterProblemBlock::configure(
    if( primal )
     throw( std::invalid_argument(
          "MasterProblemBlock::configure: easy component " +
-         std::to_string( k ) + " is a LagBFunction but the primal MP "
-         "was requested; LagBFunction is only supported in the dual MP" ) );
+         std::to_string( k ) + " is a LagBFunction in the primal MP; "
+         "this requires explicit dualization of the inner Block, which "
+         "is not currently available in SMS++" ) );
    auto * inner = lbf->get_inner_block();
    if( ! inner )
     throw( std::invalid_argument(
@@ -301,10 +304,72 @@ void MasterProblemBlock::configure(
    continue;
    }
 
+  if( auto * bbf = dynamic_cast< BendersBFunction * >( c05 ) ) {
+   if( ! primal )
+    throw( std::invalid_argument(
+         "MasterProblemBlock::configure: easy component " +
+         std::to_string( k ) + " is a BendersBFunction in the dual MP; "
+         "this requires explicit dualization of the inner Block, which "
+         "is not currently available in SMS++" ) );
+   auto * inner = bbf->get_inner_block();
+   if( ! inner )
+    throw( std::invalid_argument(
+         "MasterProblemBlock::configure: easy component " +
+         std::to_string( k ) +
+         " is a BendersBFunction with no inner Block" ) );
+   absorb_BBF_into_primal_MP( bbf );
+   inner->transfer_ownership_to( this );
+   EasyCmps.push_back( inner );
+   continue;
+   }
+
+  if( auto * pf = dynamic_cast< PolyhedralFunction * >( c05 ) ) {
+   // PolyhedralFunction is self-dual: the same set of rows
+   //     F( x ) = max_i { a_i . x + b_i }    (convex case;
+   //                                          min for the concave case)
+   // can be embedded either as the linearized-primal (epigraph) rep
+   //     v >= a_i . x + b_i for every i
+   // or as the linearized-dual (simplex-on-rows) rep
+   //     max  sum_i theta_i b_i + gamma * LB
+   //     s.t. sum_i theta_i + gamma = 1
+   //          sum_i theta_i a_i = z
+   //          theta_i, gamma >= 0
+   // so no Block dualization is required: it suffices to package the
+   // PolyhedralFunction inside a PolyhedralFunctionBlock with the
+   // right rep configuration and graft it under *this*.
+   auto * pfb = new PolyhedralFunctionBlock( this );
+   auto & inner = pfb->get_PolyhedralFunction();
+
+   PolyhedralFunction::MultiVector A_copy = pf->get_A();
+   PolyhedralFunction::RealVector  b_copy = pf->get_b();
+   PolyhedralFunction::BoolVector  iv_copy = pf->get_is_vert();
+   inner.set_PolyhedralFunction( std::move( A_copy ) , std::move( b_copy ) ,
+                                 pf->get_global_bound() ,
+                                 pf->is_convex() , eNoMod ,
+                                 std::move( iv_copy ) );
+
+   PolyhedralFunction::VarVector vars_copy;
+   vars_copy.reserve( pf->get_num_active_var() );
+   for( Index j = 0 ; j < pf->get_num_active_var() ; ++j )
+    vars_copy.push_back( static_cast< ColVariable * >( pf->get_active_var( j ) ) );
+   inner.set_variables( std::move( vars_copy ) );
+
+   const SimpleConfiguration< int > rep( primal ? 1 : 3 );
+   pfb->generate_abstract_variables(
+                       const_cast< SimpleConfiguration< int > * >( & rep ) );
+   pfb->generate_abstract_constraints();
+   pfb->generate_objective();
+
+   EasyCmps.push_back( pfb );
+   add_nested_Block( pfb );
+   continue;
+   }
+
   throw( std::invalid_argument(
        "MasterProblemBlock::configure: easy component " +
        std::to_string( k ) + " has an unsupported C05Function type; "
-       "only LagBFunction in the dual MP is currently supported" ) );
+       "supported are LagBFunction (in the dual MP), BendersBFunction "
+       "(in the primal MP) and PolyhedralFunction (in either form)" ) );
   }
 
  // - - - stash ignored sub-Blocks until a Solver is registered - - - - - -
@@ -778,6 +843,29 @@ void MasterProblemBlock::CreateDualMP( stabilization_type Stbl )
  //    linear part of the original sum-function.
 
  }  // end( MasterProblemBlock::CreateDualMP )
+
+/*--------------------------------------------------------------------------*/
+
+void MasterProblemBlock::absorb_BBF_into_primal_MP( BendersBFunction * bbf )
+{
+ if( ! bbf )
+  throw( std::invalid_argument(
+       "MasterProblemBlock::absorb_BBF_into_primal_MP: null BendersBFunction" ) );
+
+ // The "relax + re-install" embedding of a BendersBFunction into the
+ // primal MP is type-specific on the function of every absorbed
+ // RowConstraint (LinearFunction, DQuadFunction, QuadFunction) and on
+ // the ConstraintSide (eLHS, eRHS, eBoth); it also has to keep the
+ // re-installed RowConstraint synchronised with the current stability
+ // centre via set_x_bar. The full implementation is left to a
+ // dedicated follow-up; for now the entry point is provided so that
+ // configure() can dispatch on BendersBFunction without compile-time
+ // surprises, and any actual easy BendersBFunction will hit the
+ // exception below until the absorption logic is filled in.
+ throw( std::logic_error(
+      "MasterProblemBlock::absorb_BBF_into_primal_MP: full embedding of "
+      "BendersBFunction into the primal MP is not yet implemented" ) );
+ }
 
 /*--------------------------------------------------------------------------*/
 /*--------------------------- EASY COMPONENTS ------------------------------*/

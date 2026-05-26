@@ -141,6 +141,12 @@ namespace SMSpp_di_unipi_it
 {
 
 /*--------------------------------------------------------------------------*/
+/*--------------------- FORWARD-DECLARED FRIENDS ---------------------------*/
+/*--------------------------------------------------------------------------*/
+
+class BendersBFunction;
+
+/*--------------------------------------------------------------------------*/
 /*------------------------------- CLASSES ----------------------------------*/
 /*--------------------------------------------------------------------------*/
 /** @defgroup MasterProblemBlock_CLASSES Classes in MasterProblemBlock.h
@@ -451,6 +457,37 @@ class MasterProblemBlock : public Block {
   * a non-empty Block has unspecified effects. */
 
  void CreateDualMP( stabilization_type Stbl );
+
+/*--------------------------------------------------------------------------*/
+ /// absorb the row-mapping of a BendersBFunction into the primal MP
+ /** Embeds an easy BendersBFunction into the primal Master Problem. The
+  * BendersBFunction is associated with the optimization problem
+  *
+  *      phi( x ) = min { c( y ) : ( g - F x ) <= E( y ) <= ( h - F x ) ,
+  *                                y in Y }
+  *
+  * and its inner Block carries the constraints in fixed-rhs form
+  *
+  *      bar{w}_i <= E_i( y ) <= bar{z}_i
+  *
+  * (the current values returned by BendersBFunction::map_f_value() at
+  * the previous stability centre). To absorb the BendersBFunction into
+  * the primal master, every active mapping row i (read from
+  * BendersBFunction::get_A() / get_b() / get_constraints() /
+  * get_sides()) is relaxed on the inner Block (LHS = -INF, RHS = +INF
+  * on the corresponding RowConstraint, depending on its
+  * #ConstraintSide) and re-installed on *this* as an FRowConstraint
+  *
+  *      E_i( y ) - ( A x )_i  [<=, =, >=]  b_i
+  *
+  * built by appending the linear coupling -A_i . x to the function of
+  * the original RowConstraint. The cast on the function of the original
+  * RowConstraint is type-specific (LinearFunction, DQuadFunction,
+  * QuadFunction); unsupported types currently trigger an exception.
+  *
+  * @param bbf  pointer to the BendersBFunction to absorb; must be non-null. */
+
+ void absorb_BBF_into_primal_MP( BendersBFunction * bbf );
 
 /*--------------------------------------------------------------------------*/
  /// hand the abstract representation of the MP to the registered Solver

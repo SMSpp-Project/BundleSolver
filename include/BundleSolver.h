@@ -32,7 +32,7 @@
  * \endlink
  *
  * In particular, BundleSolver implements the Incremental version of
- * the (Generalised) Proximal Bundle approach using upper models (for all the
+ * the (Generalized) Proximal Bundle approach using upper models (for all the
  * components that provide a Lipschitz constant) described in
  *
  *  W. van Ackooij, A. Frangioni "Incremental Bundle Methods Using Upper
@@ -202,7 +202,7 @@ namespace SMSpp_di_unipi_it
  * \endlink
  *
  * In particular, BundleSolver implements the Incremental version of
- * the (Generalised) Proximal Bundle approach using upper models (for all the
+ * the (Generalized) Proximal Bundle approach using upper models (for all the
  * components that provide a Lipschitz constant) described in
  *
  *  W. van Ackooij, A. Frangioni "Incremental Bundle Methods Using Upper
