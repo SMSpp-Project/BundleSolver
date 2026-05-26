@@ -208,7 +208,7 @@ void MILPMPSolver::SetDim( cIndex MxBSz , FiOracle * Oracle ,
     "MILPMPSolver::SetDim: registered Solver is not a MILPSolver" ) );
   }
  // if no config was provided, milp_solver stays nullptr — SolveMP will
- // throw later. the BundleSolver instantiation path is expected to call
+ // throw later. the LegacyBundleSolver instantiation path is expected to call
  // SetSolverConfig() before the first SolveMP() (a follow-up wiring).
  }
 
@@ -502,10 +502,10 @@ HpNum MILPMPSolver::ReadSigma( cIndex wFi )
  return( - total );
  }
 
-// ReadDStart( t ) is documented by BundleSolver as
+// ReadDStart( t ) is documented by LegacyBundleSolver as
 //   ReadDStart( t ) == t * || z* ||_2^2 / 2
 // which, given d = -t z*, is exactly the proximal stabilisation term
-// value at the master optimum (i.e. ||d*||^2 / (2t)). BundleSolver uses
+// value at the master optimum (i.e. ||d*||^2 / (2t)). LegacyBundleSolver uses
 // it to back-derive ||d*||_2 (and from there ||z*||_2) in FormD, so it
 // must NOT default to zero — that's what was making ||z*|| stick at 0
 // and the outer bundle spin forever in NR steps.
@@ -573,7 +573,7 @@ cHpRow MILPMPSolver::ReadMult( cIndex_Set & I , Index & D ,
 
  D = static_cast< Index >( mult_scratch.size() );
 
- // BundleSolver's sparse-MBse consumers (e.g. UpdtCntrs) iterate the
+ // LegacyBundleSolver's sparse-MBse consumers (e.g. UpdtCntrs) iterate the
  // index vector with `for( ; *(MBse++) < InINF ; )` — i.e. they expect
  // it to be Inf< Index >()-terminated, ignoring D. Append the sentinel
  // (plus a dummy multiplier entry to keep the two arrays in lockstep
@@ -737,7 +737,7 @@ HpNum  MILPMPSolver::EpsilonD( void )                  { return FsbEps; }
 /*--------------------------------------------------------------------------*/
 
 // GetItem returns a writable buffer of length MaxSGLen the
-// caller (BundleSolver::GetGi) fills with the next subgradient. The
+// caller (LegacyBundleSolver::GetGi) fills with the next subgradient. The
 // buffer is reused across calls; SetItem consumes it to produce a new
 // FRowConstraint on the master Block. wFi (1-based component index in
 // the MPSolver world, or NrFi+1 for the linear part) is recorded so
@@ -1018,7 +1018,7 @@ void MILPMPSolver::AddVars( cIndex NNwVrs )
  // promote y to a dynamic variable group and
  // append NNwVrs new free ColVariables here, then extend y_center with
  // zeros (this becomes the new center for the freshly added dimensions).
- // For now silently no-op — call sites in BundleSolver only fire AddVars
+ // For now silently no-op — call sites in LegacyBundleSolver only fire AddVars
  // when the FiOracle dimension grows mid-solve, which the bundle paths
  // exercised by TSSB EC do not do.
  }
@@ -1045,7 +1045,7 @@ void MILPMPSolver::RmvVars( cIndex_Set whch , Index hwmny )
 //
 // The structural change to y (static-vec) is the same blocker as AddVars,
 // so for now SetActvSt / AddActvSt / RmvActvSt just record the active
-// indices without touching the master — sufficient for the BundleSolver
+// indices without touching the master — sufficient for the LegacyBundleSolver
 // dense-Lambda path which is the only one tested.
 void MILPMPSolver::SetActvSt( cIndex_Set AVrs , cIndex AVDm )
 {
@@ -1120,7 +1120,7 @@ void MILPMPSolver::ChgAlfa( cIndex i , cHpNum Ai )
 //     alpha_new = alpha_old + DFi[wFi+1] - <g_k, DLambda>
 // since the cut v[wFi] - g^T y >= alpha has a center-dependent alpha.
 //
-// DFi format (mirror of BundleSolver.cpp:GotoLambda1 / GotoLambda):
+// DFi format (mirror of LegacyBundleSolver.cpp:GotoLambda1 / GotoLambda):
 //   DFi[0]   = total Fi-value delta across all components
 //   DFi[i+1] = per-component delta for component i (i in [0,NrFi))
 

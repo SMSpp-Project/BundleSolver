@@ -40,7 +40,6 @@
 /// namespace for the Structured Modeling System++ (SMS++)
 namespace SMSpp_di_unipi_it
 {
- using namespace NDO_di_unipi_it;
 
 /*--------------------------------------------------------------------------*/
 /*---------------------- CLASS ParallelBundleSolver ------------------------*/

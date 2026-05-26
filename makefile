@@ -37,7 +37,7 @@
 BNDSLVOBJ = $(BNDSLVSDR)/obj/BundleSolver.o \
 	$(BNDSLVSDR)/obj/ParallelBundleSolver.o \
 	$(BNDSLVSDR)/obj/MasterProblemBlock.o \
-	$(BNDSLVSDR)/obj/GeneralizedBundleSolver.o \
+	$(BNDSLVSDR)/obj/BundleSolver.o \
 	$(BNDSLVSDR)/obj/MILPMPSolver.o
 
 BNDSLVINC = -I$(BNDSLVSDR)/include -I$(BNDSLVSDR)/MILPMPSolver
@@ -45,7 +45,7 @@ BNDSLVINC = -I$(BNDSLVSDR)/include -I$(BNDSLVSDR)/MILPMPSolver
 BNDSLVH   = $(BNDSLVSDR)/include/BundleSolver.h \
 	$(BNDSLVSDR)/include/ParallelBundleSolver.h \
 	$(BNDSLVSDR)/include/MasterProblemBlock.h \
-	$(BNDSLVSDR)/include/GeneralizedBundleSolver.h \
+	$(BNDSLVSDR)/include/BundleSolver.h \
 	$(BNDSLVSDR)/MILPMPSolver/MILPMPSolver.h
 
 # clean - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -55,9 +55,9 @@ clean::
 
 # dependencies: every .o from its .cpp + every recursively included .h- - - -
 
-$(BNDSLVSDR)/obj/BundleSolver.o: $(BNDSLVSDR)/src/BundleSolver.cpp \
-	$(BNDSLVSDR)/include/BundleSolver.h $(SMS++OBJ) $(MILPSH) $(libNDOOBJ)
-	$(CC) -c $(BNDSLVSDR)/src/BundleSolver.cpp -o $@ $(BNDSLVINC) \
+$(BNDSLVSDR)/obj/LegacyBundleSolver.o: $(BNDSLVSDR)/src/LegacyBundleSolver.cpp \
+	$(BNDSLVSDR)/include/LegacyBundleSolver.h $(SMS++OBJ) $(MILPSH) $(libNDOOBJ)
+	$(CC) -c $(BNDSLVSDR)/src/LegacyBundleSolver.cpp -o $@ $(BNDSLVINC) \
 	$(SMS++INC) $(MILPSINC) $(libNDOINC) $(SW)
 
 $(BNDSLVSDR)/obj/ParallelBundleSolver.o: $(BNDSLVSDR)/src/ParallelBundleSolver.cpp \
@@ -70,10 +70,10 @@ $(BNDSLVSDR)/obj/MasterProblemBlock.o: $(BNDSLVSDR)/src/MasterProblemBlock.cpp \
 	$(CC) -c $(BNDSLVSDR)/src/MasterProblemBlock.cpp -o $@ \
 	$(BNDSLVINC) $(SMS++INC) $(SW)
 
-$(BNDSLVSDR)/obj/GeneralizedBundleSolver.o: $(BNDSLVSDR)/src/GeneralizedBundleSolver.cpp \
-	$(BNDSLVSDR)/include/GeneralizedBundleSolver.h \
+$(BNDSLVSDR)/obj/BundleSolver.o: $(BNDSLVSDR)/src/BundleSolver.cpp \
+	$(BNDSLVSDR)/include/BundleSolver.h \
 	$(BNDSLVSDR)/include/MasterProblemBlock.h $(SMS++OBJ) $(MILPSH)
-	$(CC) -c $(BNDSLVSDR)/src/GeneralizedBundleSolver.cpp -o $@ \
+	$(CC) -c $(BNDSLVSDR)/src/BundleSolver.cpp -o $@ \
 	$(BNDSLVINC) $(SMS++INC) $(MILPSINC) $(SW)
 
 $(BNDSLVSDR)/obj/MILPMPSolver.o: $(BNDSLVSDR)/MILPMPSolver/MILPMPSolver.cpp \

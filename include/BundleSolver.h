@@ -2,9 +2,10 @@
 /*----------------------- File BundleSolver.h ------------------------------*/
 /*--------------------------------------------------------------------------*/
 /** @file
- * Header file for the BundleSolver class, which implements the Solver
- * interface, in particular in its CDASolver version, using a "Generalized
- * Bundle" algorithm for the solution of convex nondifferentiable problems.
+ * Header file for the BundleSolver class, which implements the
+ * Solver interface, in particular in its CDASolver version, using a
+ * "Generalized Bundle" algorithm for the solution of convex nondifferentiable
+ * problems.
  *
  * The user is assumed to be familiar with the algorithm: refer to
  *
@@ -30,8 +31,8 @@
  *  http://www.di.unipi.it/~frangio/abstracts.html#NDOB18
  * \endlink
  *
- * In particular, BundleSolver implements the Incremental version of the
- * (Generalised) Proximal Bundle approach using upper models (for all the
+ * In particular, BundleSolver implements the Incremental version of
+ * the (Generalised) Proximal Bundle approach using upper models (for all the
  * components that provide a Lipschitz constant) described in
  *
  *  W. van Ackooij, A. Frangioni "Incremental Bundle Methods Using Upper
@@ -58,11 +59,11 @@
  *   Objective is a FRealObjective containing a C05Function.
  *
  * A special treatment is given to the case where some of the C05Function
- * actually are LagBFunction whose inner Block only contains ColVariable,
- * whose Objective is linear (a FRealObjective containing a LinearFunction)
- * and whose Constraint are linear (either FRowConstraint containing a
- * LinearFunction, or BoxConstraint). These can be passed to the Master
- * Problem of the bundle algorithm as "easy components", see
+ * actually are LagBFunction whose inner Block only contains ColVariable, whose
+ * Objective is linear (a FRealObjective containing a LinearFunction) and whose
+ * Constraint are linear (either FRowConstraint containing a LinearFunction, or
+ * BoxConstraint). These can be passed to the Master Problem of the bundle
+ * algorithm as "easy components", see
  *
  *   A. Frangioni, E. Gorgone "Generalized Bundle Methods for Sum-Functions
  *   with ``Easy'' Components: Applications to Multicommodity Network Design"
@@ -74,8 +75,8 @@
  *  http://www.di.unipi.it/~frangio/abstracts.html#MP11c
  * \endlink
  *
- * In that case, the LagBFunction is never evaluated, which means that there
- * is no need for a Solver to be attached to the inner Block.
+ * In that case, the LagBFunction is never evaluated, which means that there is
+ * no need for a Solver to be attached to the inner Block.
  *
  * If the Block has multiple Objective (that is, it has sub-Block whose
  * Objective is a FRealObjective containing a C05Function), a very strong
@@ -94,9 +95,9 @@
  *     Variable; IN THE LATTER CASE, THE SET OF "ACTIVE" Variable IN THE
  *     LinearFunction MUST NEVER CHANGE
  *
- * To ensure that the rule about the list of "ACTIVE" Variable in the
- * (multiple) Objective is respected, an analogous very strong assumption is
- * made on the Modification that change that:
+ * To ensure that the rule about the list of "ACTIVE" Variable in the (multiple)
+ * Objective is respected, an analogous very strong assumption is made on the
+ * Modification that change that:
  *
  *     ALL THE Modification THAT CHANGE THE "ACTIVE" Variable MUST BE
  *     BUNCHED TOGETHER IN A SINGLE GroupModification. THIS MUST CONTAIN
@@ -111,11 +112,15 @@
  *         Dipartimento di Informatica \n
  *         Universita' di Pisa \n
  *
- * \author Enrico Gorgone \n
- *         Dipartimento di Matematica ed Informatica \n
- *         Universita' di Cagliari \n
+ * \author Enrico Calandrini \n
+ *         Dipartimento di Informatica \n
+ *         Universita' di Pisa \n
  *
- * \copyright &copy; by Antonio Frangioni, Enrico Gorgone
+ * \author Donato Meoli \n
+ *         Dipartimento di Informatica \n
+ *         Universita' di Pisa \n
+ *
+ * \copyright &copy; by Antonio Frangioni, Enrico Calandrini, Donato Meoli
  */
 /*--------------------------------------------------------------------------*/
 /*----------------------------- DEFINITIONS --------------------------------*/
@@ -130,8 +135,8 @@
 /*--------------------------------------------------------------------------*/
 
 #include <chrono>
-#include <ctime>
 #include <queue>
+#include <unordered_map>
 
 #include "CDASolver.h"
 
@@ -143,12 +148,10 @@
 #include "FRealObjective.h"
 #include "FRowConstraint.h"
 
-#include "MILPSolver.h"
 #include "FakeSolver.h"
+#include "MILPSolver.h"
 
-// NDOSolver-derived stuff, it will go one day
-#include "MPSolver.h"
-#include "NDOSlver.h"
+#include "MasterProblemBlock.h"
 
 /*--------------------------------------------------------------------------*/
 /*-------------------------- NAMESPACE & USING -----------------------------*/
@@ -157,7 +160,7 @@
 /// namespace for the Structured Modeling System++ (SMS++)
 namespace SMSpp_di_unipi_it
 {
- class BundleSolverState;  // forward declaration of BundleSolverState
+ class BundleSolverState;     // forward declaration of the state
 
 /*--------------------------------------------------------------------------*/
 /*------------------------------- CLASSES ----------------------------------*/
@@ -166,13 +169,13 @@ namespace SMSpp_di_unipi_it
  *  @{ */
 
 /*--------------------------------------------------------------------------*/
-/*-------------------------- CLASS BundleSolver ----------------------------*/
+/*------------------------- CLASS BundleSolver -----------------------------*/
 /*--------------------------------------------------------------------------*/
 /*--------------------------- GENERAL NOTES --------------------------------*/
 /*--------------------------------------------------------------------------*/
 /// A CDASolver using a (Generalized) Bundle algorithm
-/** BundleSolver implements the Solver interface, in particular in its
- * CDASolver version, using a "Generalized Bundle" algorithm.
+/** BundleSolver implements the Solver interface, in particular
+ * in its CDASolver version, using a "Generalized Bundle" algorithm.
  *
  * The user is assumed to be familiar with the algorithm: refer to
  *
@@ -198,8 +201,8 @@ namespace SMSpp_di_unipi_it
  *  http://www.di.unipi.it/~frangio/abstracts.html#NDOB18
  * \endlink
  *
- * In particular, BundleSolver implements the Incremental version of the
- * (Generalised) Proximal Bundle approach using upper models (for all the
+ * In particular, BundleSolver implements the Incremental version of
+ * the (Generalised) Proximal Bundle approach using upper models (for all the
  * components that provide a Lipschitz constant) described in
  *
  *  W. van Ackooij, A. Frangioni "Incremental Bundle Methods Using Upper
@@ -239,11 +242,11 @@ namespace SMSpp_di_unipi_it
  *   therefore is fine in both cases).
  *
  * A special treatment is given to the case where some of the C05Function
- * actually are LagBFunction whose inner Block only contains ColVariable,
- * whose Objective is linear (a FRealObjective containing a LinearFunction)
- * and whose Constraint are linear (either FRowConstraint containing a
- * LinearFunction, or OneVarConstraint). These can be passed to the Master
- * Problem of the bundle algorithm as "easy components", see
+ * actually are LagBFunction whose inner Block only contains ColVariable, whose
+ * Objective is linear (a FRealObjective containing a LinearFunction) and whose
+ * Constraint are linear (either FRowConstraint containing a LinearFunction, or
+ * OneVarConstraint). These can be passed to the Master Problem of the bundle
+ * algorithm as "easy components", see
  *
  *   A. Frangioni, E. Gorgone "Generalized Bundle Methods for Sum-Functions
  *   with ``Easy'' Components: Applications to Multicommodity Network Design"
@@ -255,12 +258,12 @@ namespace SMSpp_di_unipi_it
  *  http://www.di.unipi.it/~frangio/abstracts.html#MP11c
  * \endlink
  *
- * In that case, the LagBFunction is never evaluated, which means that there
- * is no need for a Solver to be attached to the inner Block.
+ * In that case, the LagBFunction is never evaluated, which means that there is
+ * no need for a Solver to be attached to the inner Block.
  *
  * If the Block has multiple Objective (that is, it has sub-Block whose
- * Objective FRealObjective containing a C05Function), a very strong
- * assumption is required on them:
+ * Objective FRealObjective containing a C05Function), a very strong assumption
+ * is required on them:
  *
  *     ALL THE Function IN THE Objective HAVE EXACTLY THE SAME SET OF
  *     "ACTIVE" Variable, ORDERED IN THE SAME WAY, AT ALL TIMES; THIS MEANS
@@ -275,16 +278,16 @@ namespace SMSpp_di_unipi_it
  *     Variable; IN THE LATTER CASE, THE SET OF "ACTIVE" Variable IN THE
  *     LinearFunction MUST NEVER CHANGE
  *
- * To ensure that the rule about the list of "ACTIVE" Variable in the
- * (multiple) Objective is respected, an analogous very strong assumption is
- * made on the Modification that change that:
+ * To ensure that the rule about the list of "ACTIVE" Variable in the (multiple)
+ * Objective is respected, an analogous very strong assumption is made on the
+ * Modification that change that:
  *
  *     IF THE Block HAS MORE THAN ONE C05Function, THAT IS, IT HAS A
  *     NON-EMPTY SET OF sub-Block AND THE (LinearFunction IN THE)
  *     Objective OF THE Block IS NOT EMPTY, THEN THE FunctionModVar THAT
  *     CHANGE THE "ACTIVE" Variable MUST BE BUNCHED TOGETHER IN A SINGLE
  *     GroupModification. THIS MUST CONTAIN EXACTLY AS MANY Modification AS
- *     THERE ARE C05Function, I.E., THE NUMBER OF sub-Block PLUS ONE IF 
+ *     THERE ARE C05Function, I.E., THE NUMBER OF sub-Block PLUS ONE IF
  *     THE (LinearFunction IN THE) Objective OF THE Block IS NOT EMPTY. ALL
  *     Modification MUST BE OF THE VERY SAME TYPE, I.E., EITHER ALL
  *     C05FunctionModVarsAddd, OR ALL C05FunctionModVarsRngd, OR ALL
@@ -308,8 +311,7 @@ public:
 /*--------------------------------------------------------------------------*/
 /** @name Public Types
  *
- * "Import" basic types from Function, C05Function. and the
- * NDOSolver/FiOracle package (this is going to go away one day)
+ * "Import" basic types from Function, C05Function.
  *
  *  @{ */
 
@@ -331,16 +333,6 @@ public:
  using LinearCombination = C05Function::LinearCombination;
  using c_LinearCombination = C05Function::c_LinearCombination;
 
- // NDOSolver/FiOracle stuff, one day it wil go
- using cIndex = NDO_di_unipi_it::cIndex;
- using cIndex_Set = NDO_di_unipi_it::cIndex_Set;
- using FiOracle = NDO_di_unipi_it::FiOracle;
- using HpNum = NDO_di_unipi_it::HpNum;
- using LMNum = NDO_di_unipi_it::LMNum;
- using MPSolver = NDO_di_unipi_it::MPSolver;
- using NDOSolver = NDO_di_unipi_it::NDOSolver;
- using SgRow = NDO_di_unipi_it::SgRow;
-     
 /*----------------------------- CONSTANTS ----------------------------------*/
 
  static constexpr auto NaNshift
@@ -353,8 +345,8 @@ public:
 /*--------------------------------------------------------------------------*/
  /// public enum for the int algorithmic parameters
  /** Public enum describing the different algorithmic parameters of int type
-  * that BundleSolver has in addition to these of CDASolver. The value
-  * intLastBndSlvPar is provided so that the list can be easily further
+  * that BundleSolver has in addition to these of CDASolver. The
+  * value intLastBndSlvPar is provided so that the list can be easily further
   * extended by derived classes. */
 
  enum int_par_type_BndSlv {
@@ -370,7 +362,7 @@ public:
 
  intBPar6 ,  ///< control how the min/max number of new linearizations changes
 
- intBPar7 ,  ///< how well-behaved BundleSolver is w.r.t. other Solver
+ intBPar7 ,  ///< how well-behaved GBS is w.r.t. other Solver
 
  intMnSSC ,  ///< minimum number of consecutive Serious Steps
 
@@ -388,33 +380,23 @@ public:
 
  intTrgtMng ,   ///< how to manage targets and accuracy in the functions
 
- intMPName ,  ///< whether the MP solver is QPPenalty or OSIMPSolver
+ intMPStbl ,  ///< type of stabilization for the master problem
 
- intMPlvl ,  ///< log verbosity of Master Problem
-
- intQPmp1 ,  ///< MxAdd parameter for QPPenaltyMP solver only
-
- intQPmp2 ,  ///< MxRmv parameter for QPPenaltyMP solver only
-
- intOSImp1 , ///< algorithm type for OsiMP solver only
-
- intOSImp2 ,  ///< reduction parameter for OsiMP solver only
-
- intOSImp3 ,  ///< threads parameter for OsiMP solver only
+ intMPPrimal ,  ///< whether the MP is in its primal or dual form
 
  intRstAlg ,  ///< reset parameter
 
  intLastBndSlvPar  ///< first allowed new int parameter for derived classes
                    /**< Convenience value for easily allow derived classes
-		    * to extend the set of int algorithmic parameters. */
+                    * to extend the set of int algorithmic parameters. */
 
  };  // end( int_par_type_BndSlv )
 
 /*--------------------------------------------------------------------------*/
  /// public enum for the double algorithmic parameters
  /** Public enum describing the different algorithmic parameters of double
-  * type that BundleSolver has in addition to these of CDASolver. The value
-  * dblLastBndSlvPar is provided so that the list can be easily further
+  * type that BundleSolver has in addition to these of CDASolver. The
+  * value dblLastBndSlvPar is provided so that the list can be easily further
   * extended by derived classes. */
 
  enum dbl_par_type_BndSlv {
@@ -451,19 +433,17 @@ public:
 
   dbltSPar3 ,  ///< numerical parameter for "small" heuristic-based t changes
 
-  dblCtOff ,   ///< cut-off value for QPPenaltyMP solver only
-
   dblLastBndSlvPar ///< first allowed new double parameter for derived classes
                    /**< Convenience value for easily allow derived classes
-		    * to extend the set of double algorithmic parameters. */
+                    * to extend the set of double algorithmic parameters. */
 
   };  // end( dbl_par_type_BndSlv )
 
 /*--------------------------------------------------------------------------*/
  /// public enum for the string algorithmic parameters
  /** Public enum describing the different algorithmic parameters of string
-  * type that BundleSolver has in addition to these of CDASolver. The value
-  * strLastBndSlvPar is provided so that the list can be easily further
+  * type that BundleSolver has in addition to these of CDASolver. The
+  * value strLastBndSlvPar is provided so that the list can be easily further
   * extended by derived classes. */
 
  enum str_par_type_BndSlv {
@@ -471,49 +451,42 @@ public:
 
   strHardCfg ,                   ///< string name for not-easy Configurations
 
-  strMPBSolverCfg ,
-  ///< BlockSolverConfig filename for the MILPMPSolver master
-  /**< Filename of the BlockSolverConfig used by MILPMPSolver (only
-   * consulted when intMPName has bit 4 set, i.e. MPName & 16). The file
-   * is deserialised via Configuration::deserialize and the resulting
-   * BlockSolverConfig is fed to MILPMPSolver::SetSolverConfig so the
-   * concrete MILPSolver backend is picked from the file rather than hard-coded.
-   * If empty when MPName & 16, MILPMPSolver::SetDim leaves milp_solver null
-   * and the first SolveMP will throw. */
+  strMPBSolverCfg ,                 ///< string name for Configuration of the
+                                 ///  solver associated with the MPBlock
 
   strLastBndSlvPar ///< first allowed new string parameter for derived classes
                    /**< Convenience value for easily allow derived classes
-		    * to extend the set of string algorithmic parameters. */
+                    * to extend the set of string algorithmic parameters. */
   };  // end( str_par_type_BndSlv )
 
 /*--------------------------------------------------------------------------*/
  /// public enum for the vector-of-int parameters
  /** Public enum describing the different algorithmic parameters of
   * vector-of-int type that BundleSolver has in addition to these of
-  * CDASolver. The value vintLastBndSlvPar is provided so that the list can
-  * be easily further extended by derived classes. */
+  * CDASolver. The value vintLastBndSlvPar is provided so that the list can be
+  * easily further extended by derived classes. */
 
  enum vint_par_type_BndSlv {
   vintNoEasy = vintLastParCDAS ,
   ///< parameter for excluding certain components from being "easy"
   /**< The vector vintNoEasy is assumed to contain the indices (numbers in
    * 0, ..., total number of components - 1, ordered in increasing sense and
-   * therefore not repeated) of the components of the problem that must not
-   * be treated as "easy" even if they could. This clearly only applies if
-   * intDoEasy & 1 == 1, for otherwise no component is ever treated as "easy".
+   * therefore not repeated) of the components of the problem that must not be
+   * treated as "easy" even if they could. This clearly only applies if
+   * intDoEasy == 1, for otherwise no component is ever treated as "easy".
    */
 
   vintLastBndSlvPar ///< first allowed new vector-of-int parameter
                     /**< Convenience value for easily allow derived classes
-		     * to extend the set of vector-of-int parameters. */
+                     * to extend the set of vector-of-int parameters. */
 
   };  // end( vint_par_type_BndSlv )
 
 /*--------------------------------------------------------------------------*/
  /// public enum for the vector-of-string parameters
  /** Public enum describing the different parameters of vector-of-string type
-  * that BundleSolver has in addition to these of CDASolver. The value
-  * vstrLastBndSlvPar is provided so that the list can be easily further
+  * that BundleSolver has in addition to these of CDASolver. The
+  * value vstrLastBndSlvPar is provided so that the list can be easily further
   * extended by derived classes. */
 
  enum vstr_par_type_BndSlv {
@@ -536,29 +509,30 @@ public:
 
   vstrLastBndSlvPar ///< first allowed new vector-of-string parameter
                     /**< Convenience value for easily allow derived classes
-		     * to extend the set of vector-of-string parameters. */
+                     * to extend the set of vector-of-string parameters. */
 
   };  // end( vstr_par_type_BndSlv )
 
 /** @} ---------------------------------------------------------------------*/
-/*----------------- CONSTRUCTING AND DESTRUCTING BundleSolver --------------*/
+/*--------------- CONSTRUCTING AND DESTRUCTING BundleSolver ----------------*/
 /*--------------------------------------------------------------------------*/
 /** @name Constructing and destructing BundleSolver
  *  @{ */
 
  /// constructor: ensure every field is initialized
 
- BundleSolver( void ) : CDASolver() , Result( kUnEval ) , NumVar( 0 ) ,
-  NrFi( 0 ) , SCalls( 0 ) , ParIter( 0 ) , NrEasy( 0 ) , LHasChgd( true ) ,
-  tHasChgd( true ) , MPchgs( 0 ) , G1Norm( 0 ) , ScPr1( 0 ) , Alfa1( 0 ) ,
-  f_global_LB( -INFshift ) , t( 0 ) , Prevt( 0 ) , Sigma( 0 ) , DSTS( 0 ) ,
-  DeltaFi( 0 ) , EpsU( 0 ) , CSSCntr( 0 ) , CNSCntr( 0 ) , TrueLB( false ) ,
-  SSDone( true ) , f_wFi( 0 ) , f_lf( nullptr ) , f_convex( true ) ,
-  Master( nullptr ) , UpTrgt( 0 ) , LwTrgt( 0 ) , RifeqFi( false ) ,
+ BundleSolver( void ) : CDASolver() , Result( kUnEval ) ,
+  NumVar( 0 ) , NrFi( 0 ) , SCalls( 0 ) , ParIter( 0 ) , NrEasy( 0 ) ,
+  LHasChgd( true ) , tHasChgd( true ) , MPchgs( 0 ) , G1Norm( 0 ) ,
+  ScPr1( 0 ) , Alfa1( 0 ) , f_global_LB( -INFshift ) , t( 0 ) , Prevt( 0 ) ,
+  Sigma( 0 ) , DSTS( 0 ) , DeltaFi( 0 ) , EpsU( 0 ) , CSSCntr( 0 ) ,
+  CNSCntr( 0 ) , TrueLB( false ) , SSDone( true ) , f_wFi( 0 ) ,
+  f_lf( nullptr ) , f_convex( true ) , MasterPB( nullptr ) ,
+  UpTrgt( 0 ) , LwTrgt( 0 ) , RifeqFi( false ) ,
   CmptdinL( false ) , UpFiBest( INFshift ) , UpFiLmb1def( 0 ) ,
   LwFiLmb1def( 0 ) , UpFiLmbdef( 0 ) , LwFiLmbdef( 0 ) , Fi0Lmb( 0 ) ,
   Fi0Lmb1( 0 ) , DST( 0 ) , NrmD( 0 ) , NrmZ( 0 ) , NrmZFctr( 1 ) ,
-  c_start() , aBP3( 0 ) , FakeFi( this ) 
+  c_start() , aBP3( 0 )
  {
   // ensure all parameters are properly given their default value
   MaxIter = CDASolver::get_dflt_int_par( intMaxIter );
@@ -575,17 +549,13 @@ public:
   MnNSC = get_dflt_int_par( intMnNSC );
   tSPar1 = get_dflt_int_par( inttSPar1 );
   MaxNrEvls = get_dflt_int_par( intMaxNrEvls );
-  DoEasy = char( get_dflt_int_par( intDoEasy ) );
+  DoEasy = get_dflt_int_par( intDoEasy );
   WZNorm = char( get_dflt_int_par( intWZNorm ) );
   FrcLstSS = get_dflt_int_par( intFrcLstSS );
   TrgtMng = Index( get_dflt_int_par( intTrgtMng ) );
-  MPName = get_dflt_int_par( intMPName );
-  MPlvl = get_dflt_int_par( intMPlvl );
-  MxAdd = get_dflt_int_par( intQPmp1 );
-  MxRmv = get_dflt_int_par( intQPmp2 );
-  algo = get_dflt_int_par( intOSImp1 );
-  reduction = get_dflt_int_par( intOSImp2 );
-  threads = get_dflt_int_par( intOSImp3 );
+  MPStbl = static_cast< MasterProblemBlock::stabilization_type >(
+                                              get_dflt_int_par( intMPStbl ) );
+  IsMPPrimal = bool( get_dflt_int_par( intMPPrimal ) );
 
   MaxTime = CDASolver::get_dflt_dbl_par( dblMaxTime );
   RelAcc = CDASolver::get_dflt_dbl_par( dblRelAcc );
@@ -606,7 +576,6 @@ public:
   tInit = get_dflt_dbl_par( dbltInit );
   tSPar2 = get_dflt_dbl_par( dbltSPar2 );
   tSPar3 = get_dflt_dbl_par( dbltSPar3 );
-  CtOff = get_dflt_dbl_par( dblCtOff );
 
   v_events.resize( max_event_number() );
   }
@@ -624,23 +593,24 @@ public:
  *  @{ */
 
  /// set the (pointer to the) Block that the Solver has to solve
- /** Gives the BundleSolver access to the Block it has to solve; note that
-  * this does not register the BundleSolver among the Solver of the Block,
-  * because the converse happens. Extensive checks are performed during
-  * set_Block() to ensure that the Block does satisfy the requirements of
-  * BundleSolver, and all the nontrivial internal data structures of
-  * BundleSolver are set up.
+ /** Gives the BundleSolver access to the Block it has to solve;
+  * note that this does not register the BundleSolver among the
+  * Solver of the Block, because the converse happens. Extensive checks are
+  * performed during set_Block() to ensure that the Block does satisfy the
+  * requirements of BundleSolver, and all the nontrivial internal
+  * data structures of BundleSolver are set up.
   *
-  * If \p block == nullptr, the BundleSolver is completely cleaned up and
-  * prepared for either destruction or receiving an entirely unrelated Block
+  * If \p block == nullptr, the BundleSolver is completely cleaned up
+  * and prepared for either destruction or receiving an entirely unrelated Block
   * to solve. */
 
  void set_Block( Block * block ) override;
 
 /*--------------------------------------------------------------------------*/
  /// set the int parameters of BundleSolver
- /** Set the int parameters specific of BundleSolver, together with the
-  * parameters of CDASolver that BundleSolver actually "listens to":
+ /** Set the int parameters specific of BundleSolver, together
+  * with the parameters of CDASolver that BundleSolver actually
+  * "listens to":
   *
   * - intMaxIter [Inf< int >]: maximum iterations for the next call to solve()
   *
@@ -652,8 +622,8 @@ public:
   *   kept and separately reported (assuming it is not the stability center
   *   at termination).
   *
-  * - intEverykIt [0]: after how many iteration call the eEverykIteration
-  *                    events
+  * - intEverykIt [0]: after how many iterations call the
+  *                    eEverykIteration events
   *
   * - intLogVerb [0]: "verbosity" of the BundleSolver log
   *                   0 = no log
@@ -673,7 +643,7 @@ public:
   *                   each C05Function*; hence, the maximum total number
   *   is intBPar2 * < number of C05Function >. Note that intBPar2 must be
   *   >= 2, with the "poorman's" case intBPar2 == 2 forcing the
-  *   BundleSolver to perform aggregation at every iteration (for every
+  * BundleSolver to perform aggregation at every iteration (for every
   *   C05Function). Of course, keeping the "bundle" small makes the Master
   *   Problem cheaper, but on the other hand acquiring enough first-order
   *   information is typically the name of the game, hence keeping this
@@ -691,8 +661,9 @@ public:
   *   linearization that are requested to the C05Function evolves as the
   *   algorithm proceeds; note that what varies in practice is the maximum
   *   number, as it is always legal for the C05Function to refuse giving
-  *   other items, although the BundleSolver will complain and stop if less
-  *   than BPar4 are given. In BundleSolver, the number
+  *   other items, although the BundleSolver will complain and
+  *   stop if less than BPar4 are given. In BundleSolver,
+  *   the number
   *
   *      EpsU = Sigma + D_{tStar}*( z* ) / max( | FiVal | , 1 ) ,
   *
@@ -721,77 +692,85 @@ public:
   *    4: aBP3 is set to
   *       ( BPar5 > 0 ? BPar4 : BPar3 ) + BPar5 / log10( EpsU / RelAcc )
   *
-  * - intBPar7 [2]: This parameter, coded bit-wise, controls if BundleSolver
-  *                 "tries to play nice" with any other Solver that may
-  *   concurrently be using the same C05Function. The point is that each of
-  *   these Solver is producing new linearizations, and possibly storing
-  *   them in, or removing them from, the "finite resource" of the global
-  *   pool(s) of the C05Function(s). Hence, what the BundleSolver does to the
-  *   global pool may have an impact on the other Solver, if any. This
-  *   parameter controls whether BundleSolver tries as hard as possible to
-  *   avoid impacting the other Solver operations, or if it rather assumes to
-  *   be "the only one" working with the C05Function, and therefore "treats
-  *   the global pool as its exclusive property". To do so, BundleSolver
-  *   handles the slot of the global pool in different ways according to the
-  *   value in the first two bits of intBPar7 ( intBPar7 & 3 ):
+  * - intBPar7 [2]: This parameter, coded bit-wise, controls if
+  *                 BundleSolver "tries to play nice" with any
+  *   other Solver that may concurrently be using the same C05Function. The
+  *   point is that each of these Solver is producing new linearizations,
+  *   and possibly storing them in, or removing them from, the "finite
+  *   resource" of the global pool(s) of the C05Function(s). Hence, what
+  *   the BundleSolver does to the global pool may have an
+  *   impact on the other Solver, if any. This parameter controls whether
+  *   BundleSolver tries as hard as possible to avoid impacting
+  *   the other Solver operations, or if it rather assumes to be "the only
+  *   one" working with the C05Function, and therefore "treats the global
+  *   pool as its exclusive property". To do so, BundleSolver
+  *   handles the slot of the global pool in different ways according to
+  *   the value in the first two bits of intBPar7 ( intBPar7 & 3 ):
   *
-  *   = 0 means that BundleSolver will never override any position in the
-  *     global pool unless it strictly needs to. This means that even if a
-  *     linearization is removed from the bundle (the master problem), it is
-  *     kept in the global pool of the corresponding component until the
-  *     latter is completely full. Only then linearizations are removed,
-  *     when necessary to make space for newly generated ones. Note that
-  *     BundleSolver always "proceeds from left to right", i.e., selects the
-  *     linearization in the global pool with smallest "name". This creates
-  *     a sort of FIFO order whereby the oldest linearizations are removed
-  *     first, which makes general sense.
+  *   = 0 means that BundleSolver will never override any
+  *       position in the global pool unless it strictly needs to. This
+  *       means that even if a linearization is removed from the bundle
+  *       (the master problem), it is kept in the global pool of the
+  *       corresponding component until the latter is completely full.
+  *       Only then linearizations are removed, when necessary to make
+  *       space for newly generated ones. Note that BundleSolver
+  *       always "proceeds from left to right", i.e., selects the
+  *       linearization in the global pool with smallest "name". This
+  *       creates a sort of FIFO order whereby the oldest linearizations
+  *       are removed first, which makes general sense.
   *
-  *   = 1 means that BundleSolver will not immediately delete from the global
-  *     pool a linearization that it removes from the bundle (the master
-  *     problem). While the linearization is kept there, BundleSolver
-  *     considers it "free", and can immediately after re-use that position
-  *     to store a newly computed linearization. Again, the order is that if
-  *     smaller names first, so if a linearization with "large name" is
-  *     removed from the global pool it may take some time before it is
-  *     actually overwritten by BundleSolver, thereby leaving it available
-  *     to other Solver.
+  *   = 1 means that BundleSolver will not immediately delete
+  *       from the global pool a linearization that it removes from the
+  *       bundle (the master problem). While the linearization is kept
+  *       there, BundleSolver considers it "free", and can
+  *       immediately after re-use that position to store a newly computed
+  *       linearization. Again, the order is that if smaller names first,
+  *       so if a linearization with "large name" is removed from the
+  *       global pool it may take some time before it is actually
+  *       overwritten by BundleSolver, thereby leaving it
+  *       available to other Solver.
   *
-  *   = 2 means that BundleSolver will immediately delete from the global
-  *     pool any linearization that it removes from the bundle (the master
-  *     problem). This makes sense if BundleSolver is the only Solver
-  *     producing and consuming linearizations in these C05Function(s),
-  *     since it allows them to immediately delete all the memory (which may
-  *     be significant) associated with that linearization in the global pool.
-  *     However, if a linearization is found to be a "better copy" of a known
-  *     one (the new linearization has the same linear part but a larger
-  *     constant, and therefore provides a tighter constraint on the epigraph
-  *     of the convex function, so that no Solver should complain if the
-  *     weaker constraint is removed provided that the better one is added),
-  *     still the old linearization is kept in the global pool (but not in the
-  *     bundle) unless it is strictly necessary to do so.
+  *   = 2 means that BundleSolver will immediately delete from
+  *       the global pool any linearization that it removes from the
+  *       bundle (the master problem). This makes sense if
+  *       BundleSolver is the only Solver producing and
+  *       consuming linearizations in these C05Function(s), since it
+  *       allows them to immediately delete all the memory (which may be
+  *       significant) associated with that linearization in the global
+  *       pool. However, if a linearization is found to be a "better copy"
+  *       of a known one (the new linearization has the same linear part
+  *       but a larger constant, and therefore provides a tighter
+  *       constraint on the epigraph of the convex function, so that no
+  *       Solver should complain if the weaker constraint is removed
+  *       provided that the better one is added), still the old
+  *       linearization is kept in the global pool (but not in the bundle)
+  *       unless it is strictly necessary to do so.
   *
-  *   = 3 means that BundleSolver will immediately delete from the global
-  *     pool any linearization that it removes from the bundle (the master
-  *     problem); furthermore, if it finds a "better copy" of an existing
-  *     linearization the new one immediately replaces the old one, in the
-  *     global pool as well as in the bundle.
+  *   = 3 means that BundleSolver will immediately delete from
+  *       the global pool any linearization that it removes from the
+  *       bundle (the master problem); furthermore, if it finds a "better
+  *       copy" of an existing linearization the new one immediately
+  *       replaces the old one, in the global pool as well as in the
+  *       bundle.
   *
-  *   The bit 2 ( intBPar7 & 4 ) rather decides how BundleSolver reacts to
-  *   Modification telling that some other Solver have generated a new
-  *   linearization. If the bit is 0, then BundleSolver plainly ignores it,
-  *   which is likely the best strategy if producing linearizations is
-  *   "cheap". However, if ( intBPar7 & 3 ) < 3 BundleSolver does take note
-  *   that a linearization is there in order to avoid to touch it "unless
-  *   strictly necessary". If the bit is 1 instead, then BundleSolver will
-  *   right away add the linearization to its bundle (the master problem),
-  *   which is likely the best strategy if producing linearizations is
-  *   "costly" and therefore it makes sense to profit from the effort that
-  *   the C05Function(s) has done on behalf of the other Solver(s).
+  *   The bit 2 ( intBPar7 & 4 ) rather decides how BundleSolver
+  *   reacts to Modification telling that some other Solver have generated
+  *   a new linearization. If the bit is 0, then BundleSolver
+  *   plainly ignores it, which is likely the best strategy if producing
+  *   linearizations is "cheap". However, if ( intBPar7 & 3 ) < 3
+  *   BundleSolver does take note that a linearization is there
+  *   in order to avoid to touch it "unless strictly necessary". If the
+  *   bit is 1 instead, then BundleSolver will right away add
+  *   the linearization to its bundle (the master problem), which is
+  *   likely the best strategy if producing linearizations is "costly" and
+  *   therefore it makes sense to profit from the effort that the
+  *   C05Function(s) has done on behalf of the other Solver(s).
   *
   *   The bit 3 ( intBPar7 & 8 ) has a similar role for the initialization
-  *   phase: if it is == 1, then BundleSolver will also scan the global pool
-  *   of each component when it is attached to the Block, and immediately
-  *   add to the bundle every linearization it finds there.
+  *   phase: if it is == 1, then BundleSolver will also scan
+  *   the global pool of each component when it is attached to the Block,
+  *   and immediately add to the bundle every linearization it finds
+  *   there.
   *
   *   Of course, setting these bits to 1 has no impact if no other Solver is
   *   attached to the same Block, which is why the default value is 0 (to
@@ -831,7 +810,7 @@ public:
   *              terms D*_t( -z* ) and Sigma* are kept of "roughly the same
   *              size": if D*_1( -z* ) <= tSPar2 * Sigma* then t increases
   *              are inhibited (increasing t causes a decrease of D*_1( -z* )
-  *	         that is already small), if tSPar2 * D*_1( -z* ) >= Sigma*
+  *              that is already small), if tSPar2 * D*_1( -z* ) >= Sigma*
   *              then t decreases are inhibited (decreasing t causes an
   *              increase of D*_1( -z* ) that is already big)
   *
@@ -840,7 +819,7 @@ public:
   *   t-strategies that can be activated in addition to these, with the
   *   following values:
   *
-  *    bit 4: 1 (+16) if the "endgame" t-strategy is used, where if 
+  *    bit 4: 1 (+16) if the "endgame" t-strategy is used, where if
   *           D*_1( -z* ) is "small" (~ 1/10 of the current absolute epsilon)
   *           t is decreased no matter what the other strategies dictated.
   *           The rationale is that we are "towards the end" of the
@@ -883,35 +862,19 @@ public:
   *   is the limit on how many times this will be attempted (for each
   *   non-easy C05Function) before giving up for good
   *
-  * - intDoEasy [1]: this parameter is coded bit-wise and controls whether
-  *                  BundleSolver uses the "easy components" approach on
-  *   components that allow it (LagBFunction with linear constraints,
-  *   objective and continuous variables only), and whether it retains the
-  *   information necessary to handle dynamic changes to (a part of) the data
-  *   of each "easy component".
+  * - intDoEasy [1]: this boolean parameter controls whether
+  *                  BundleSolver uses the "easy components"
+  *   approach on components that allow it (LagBFunction with linear
+  *   constraints, objective and continuous variables only).
   *
-  *   If the bit 0 is 0, then all components are treated as "hard" even if
-  *   they could be treated as "easy"; all the other bits are then ignored.
-  *   Note, however, that in this case BundleSolver will require a functioning
-  *   Solver to be registered to the inner Block of the LagBFunction to work
-  *   (because it will compute() the LagBFunction, and the Solver is needed
-  *   for that).
+  *   If it is 0, then all components are treated as "hard" even if
+  *   they could be treated as "easy". If it is 1, then all "easy"
+  *   components are treated as such.
   *
-  *   If the bit 0 is 1, then all "easy" components are treated as such.
-  *   Furthermore, the following three bits, if 1, instruct BundleSolver to
-  *   keep information (in the MILPSolver used to represent the "easy"
-  *   component) that allows different parts of the easy components to be
-  *   changed during the course of the optimization and the BundleSolver to
-  *   properly react to these changes, with the following encoding:
-  *
-  *      - bit 1 (+ 2): allow changes in the objective function
-  *      - bit 2 (+ 4): allow changes in the lhs/rhs of the constraints
-  *      - bit 3 (+ 8): allow changes in the lb/ub of the variables
-  *
-  *   If the corresponding bit is set to 0, then the corresponding changes in
-  *   the "easy" component will result in an exception being thrown. The
-  *   default value correspond to "static easy components", i.e., they are
-  *   considered but they cannot be changed.
+  *   NOTE: In a previous version intDoEasy controlled also which structures
+  *   were allowed to change in an esy component. With the use of MPBlock
+  *   this is not necessary anymore, as the latter allows for changes in
+  *   any part of the structure of easy components.
   *
   * - intWZNorm [2]: Proving that some point Lambda is epsilon-optimal for a
   *                  NonDifferentiable Optimization problem involves finding
@@ -934,7 +897,7 @@ public:
   *   While the numerical value of the threshold is specified by the different
   *   parameter dblZNEps, the following two bits control how this is used,
   *   with the following meaning:
-  *   
+  *
   *    0 = the parameter is taken as an absolute value (norm <= dblZNEps)
   *
   *    1 = the parameter is taken as a scaling factor of the corresponding
@@ -951,43 +914,49 @@ public:
   *        vector is used as the scaling factor for dblZNEps.
   *
   *   Besides for the stopping condition, these choices are crucial for the
-  *   capability of BundleSolver to produce global valid lower bounds (for a
-  *   minimization problem, upper bounds for a maximization one). Indeed,
-  *   these can only be produced when z* is "0"; this is taken to mean
-  *   "almost 0" in the specific sense dictated by this parameter together
-  *   with dblZNEps.
+  *   capability of BundleSolver to produce global valid lower
+  *   bounds (for a minimization problem, upper bounds for a maximization
+  *   one). Indeed, these can only be produced when z* is "0"; this is
+  *   taken to mean "almost 0" in the specific sense dictated by this
+  *   parameter together with dblZNEps.
   *
-  * - intFrcLstSS [0]: bit-wise encoding that controls two "symmetric" issues
-  *                    about "trusting" input/output state.
+  * - intFrcLstSS [0]: bit-wise encoding that controls two "symmetric"
+  *                    issues about "trusting" input/output state.
   *     bit 0: if 1, it ensures that all the non-easy components have been
-  *            evaluated the last time on the point that is returned (first)
-  *            by get_var_solution(). Some approaches using BundleSolver may
-  *     require this because they use some other information provided by the
-  *     compute()-tion process of the components that need be "current" with
-  *     the optimal solution. This may happen automatically if the very last
-  *     iteration that the algorithm performs before stopping is a "serious
-  *     step", but in general this is not guaranteed, whence the need for
-  *     this parameter. Note that setting it to 1 may be as expensive as
-  *     computing all components is; in particular it cannot work if the
-  *     maximum time limit has been exceeded already, and it may trigger a
-  *     kStopTime return status where a kOK would have been produced exactly
-  *     due to the cost of the extra compute()-tions.
+  *            evaluated the last time on the point that is returned
+  *            (first) by get_var_solution(). Some approaches using
+  *            BundleSolver may require this because they use
+  *            some other information provided by the compute()-tion
+  *            process of the components that need be "current" with the
+  *            optimal solution. This may happen automatically if the very
+  *            last iteration that the algorithm performs before stopping
+  *            is a "serious step", but in general this is not guaranteed,
+  *            whence the need for this parameter. Note that setting it
+  *            to 1 may be as expensive as computing all components is;
+  *            in particular it cannot work if the maximum time limit has
+  *            been exceeded already, and it may trigger a kStopTime
+  *            return status where a kOK would have been produced exactly
+  *            due to the cost of the extra compute()-tions.
   *     bit 1: if 1, it makes it so that the function values stored in a
-  *            BundleSolverState [see] are not trusted when it is put() back
-  *            in BundleSolver. This causes the re-computation of all
-  *     function values at the first iteration before the algorithm can
-  *     declare optimality. this is provided in case the state of the Block
-  *     to which BundleSolver is registered is not the same as that when the
-  *     BundleSolverState was get(), which may happen either if they are
-  *     actually two different (similar, but not identical) Block, or if
-  *     BundleSolver was detached, some changes were effected in the Block
-  *     and then BundleSolver was re-attached. this way of using 
-  *     [BundleSolver]State is explicitly permitted by the definition of
-  *     State, with the provision that the Solver must be able to identify
-  *     somehow the inconsistencies that it can create. since BundleSolver
-  *     has no way to check what had happened to the Block "when it was not
-  *     listening to Modificaion", this setting provides a (crude but
-  *     functional) way to ensure consistency for this use case.
+  *            BundleSolverState [see] are not trusted when it
+  *            is put() back in BundleSolver. This causes the
+  *            re-computation of all function values at the first
+  *            iteration before the algorithm can declare optimality.
+  *            This is provided in case the state of the Block to which
+  *            BundleSolver is registered is not the same as
+  *            that when the BundleSolverState was get(),
+  *            which may happen either if they are actually two different
+  *            (similar, but not identical) Block, or if
+  *            BundleSolver was detached, some changes were
+  *            effected in the Block and then BundleSolver was
+  *            re-attached. This way of using BundleSolverState
+  *            is explicitly permitted by the definition of State, with
+  *            the provision that the Solver must be able to identify
+  *            somehow the inconsistencies that it can create. Since
+  *            BundleSolver has no way to check what had
+  *            happened to the Block "when it was not listening to
+  *            Modification", this setting provides a (crude but
+  *            functional) way to ensure consistency for this use case.
   *
   * - intTrgtMng [0]: bit-wise encoding of several details of the algorithm
   *                   pertaining to how the upper and lower model are used to
@@ -1020,24 +989,16 @@ public:
   *              note that the values of these bits is only significant if
   *              at least one among the bits 0, 1 and 2 is 1.
   *
-  * - intMPName [1]: bit-wise encoding of which MPSolver is used:
-  *                  bit 0: 0 = QPPenalty, 1 = OSIMPSolver
-  *                  bit 1: 1 = OsiCpxSolverInterface / OsiGrbSolverInterface,
-  *                             0 = OsiClpInterface
-  *                  bit 2: 1 = Quadratic, 0 = BoxStep
-  *                  bit 3: 1 = CheckIdentical( true ) is called, 0 = not
+  * - intMPStbl [0]: type of stabilization to be used for the Master Problem.
+  *                  Please see [MasterProblemBlock.h:207] for the currently
+  *                  implemented stabilization type.
   *
-  * - intMPlvl [0]: log verbosity of Master Problem solver
-  *
-  * - intQPmp1 [0]: MxAdd parameter ( for QPPenaltyMP solver only )
-  *
-  * - intQPmp2 [0]: MxRmv parameter ( for QPPenaltyMP solver only )
-  *
-  * - intOSImp1 [4]: algorithm type ( for OsiMP solver only )
-  *
-  * - intOSImp2 [0]: reduction parameter ( for OsiMP solver only )
-  *
-  * - intOSImp3 [1]: number of threads ( for OsiMP solver only )
+  * - intMPPrimal [0]: tells which formulation should be used for the Master
+  *                    Problem. If 1 then the primal version of the MP will be
+  *                    initialized, otherwise MasterProblemBlock will use the
+  *                    dual one. Note that if the parameter DoEasy is set to 1
+  *                    and there are easy components, then the only possibility
+  *                    is to solve the dual representation.
   *
   * - intRstAlg [2]: parameter to handle the reset of the algorithm when
   *                  a new Block is set, bit-wise coded:
@@ -1050,8 +1011,9 @@ public:
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// set the double parameters of BundleSolver
- /** Set the double parameters specific of BundleSolver, together with the
-  * parameters of CDASolver that BundleSolver actually "listens to":
+ /** Set the double parameters specific of BundleSolver, together
+  * with the parameters of CDASolver that BundleSolver actually
+  * "listens to":
   *
   * - dblMaxTime [Inf< double >()]: maximum CPU time for the next call to
   *                               compute(), in seconds
@@ -1068,15 +1030,15 @@ public:
   *
   * - dblNZEps [0]:    parameter controlling when the norm of the aggregated
   *                    subgradient z* is declared to be "almost 0". See
-  *   intWZNorm for the details of how this is done in terms of which norm is
-  *   used and how this constant is treated, as well as on the impact it has
-  *   on the ability of BundleSolver to declare globally valid lower bounds
-  *   (for a minimization problem, upper bounds for a maximization one).
-  *   Choosing a very small value for dblZNEps may result in BundleSolver not
-  *   being able to declare any global valid lower bound (especially if the
-  *   alternative stopping criterion is used, see dbltStar), but on the other
-  *   hand using a loose tolerance may result in declaring invalid global
-  *   upper bound.
+  *   intWZNorm for the details of how this is done in terms of which norm
+  *   is used and how this constant is treated, as well as on the impact
+  *   it has on the ability of BundleSolver to declare globally
+  *   valid lower bounds (for a minimization problem, upper bounds for a
+  *   maximization one). Choosing a very small value for dblZNEps may
+  *   result in BundleSolver not being able to declare any
+  *   global valid lower bound (especially if the alternative stopping
+  *   criterion is used, see dbltStar), but on the other hand using a
+  *   loose tolerance may result in declaring invalid global upper bound.
   *
   *   A relevant case where choosing a fair value for dblNZEps can be easier
   *   is that when the C05Function(s) is (are) Lagrangian function(s), since
@@ -1142,7 +1104,7 @@ public:
   *   In some cases, estimating tStar is not easy, while it may be easier to
   *   come up with a direct estimate of "when the norm is small enough"; see
   *   dblNZEps and intWZNorm. Thus, the alternative stopping criterion
-  *   
+  *
   *        Sigma* <= min( dblAbsAcc , dblRelAcc * | Fi | )
   *
   *        || z* || <= dblNZEps * < scaling factor >
@@ -1174,7 +1136,7 @@ public:
   *   (-) dblMinNrEvls indicates the fraction of components that necessarily
   *   have to be evaluated.
   *
-  * - dblBPar5 [30]: parameter controlling the dynamic number of 
+  * - dblBPar5 [30]: parameter controlling the dynamic number of
   *                  linearizations to be fetched from each oracle at each
   *   iteration, see intBPar6 for details  *
   *
@@ -1214,8 +1176,8 @@ public:
   *   polyhedral functions provided that both function values and v* are
   *   computed without numerical errors (which is typically impossible).
   *   Also, note that whenever m1 < m2 both a SS and a NS may be possible
-  *   at the same time, in which case the BundleSolver will typically favor
-  *   the SS. 
+  *   at the same time, in which case the BundleSolver will
+  *   typically favor the SS.
   *
   * - dblm3 [0.99]: factor governing the Noise Reduction for "unfaithful"
   *                 oracles that pretend to provide information with the
@@ -1306,26 +1268,26 @@ public:
   *
   *   Any value of dbltSPar3 such that abs( dbltSPar3 ) <= 1 is equivalent
   *   to 0, which means "t cannot be changed by the heuristics only".
-  *
-  * - dblCtOff [1e-1]: cut-off value for pricing in QPPenaltyMP solver only
   */
 
  void set_par( idx_type par , double value ) override;
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// move the string parameters of BundleSolver
- /** Move in the string parameters specific of BundleSolver, together with
-  * the parameters of CDASolver that BundleSolver actually "listens to":
+ /** Move in the string parameters specific of BundleSolver,
+  * together with the parameters of CDASolver that BundleSolver
+  * actually "listens to":
   *
-  * - strEasyCfg [empty]: filename from where the Configuration of the "easy"
-  *                       components is taken. If not empty, strEasyCfg must
-  *   be a filename (of either a text file or a netCDF one) out of which a
-  *   ComputeConfiguration is loaded via a call to Configuration::deserialize(
-  *   const std::string ); the ComputeConfig is then set to each of the "easy"
-  *   components of the problem (via a call to set_ComputeConfig) at the time
-  *   in which the BundleSolver is registered to the Block; if strEasyCfg is
-  *   empty or deserialize() returns nullptr, then set_ComputeConfig() is not 
-  *   called.
+  * - strEasyCfg [empty]: filename from where the Configuration of the
+  *                       "easy" components is taken. If not empty,
+  *   strEasyCfg must be a filename (of either a text file or a netCDF
+  *   one) out of which a ComputeConfiguration is loaded via a call to
+  *   Configuration::deserialize( const std::string ); the ComputeConfig
+  *   is then set to each of the "easy" components of the problem (via a
+  *   call to set_ComputeConfig) at the time in which the
+  *   BundleSolver is registered to the Block; if strEasyCfg
+  *   is empty or deserialize() returns nullptr, then set_ComputeConfig()
+  *   is not called.
   *
   * - strHardCfg [empty]: filename from where the Configuration of the
   *                       non-easy components is taken. If not empty,
@@ -1335,21 +1297,33 @@ public:
   *   then set to each of the non-easy components of the problem (via a call
   *   to set_ComputeConfig) at the time in which the BundleSolver is
   *   registered to the Block; if strHardCfg is empty or deserialize()
-  *   returns nullptr, then set_ComputeConfig() is not called. */
-  
+  *   returns nullptr, then set_ComputeConfig() is not called.
+  *
+  * - strMPBSolverCfg [empty]: filename from where the Configuration of
+  *                            the Solver associated with the
+  *   MasterProblemBlock is taken. If not empty, strMPBSolverCfg must be
+  *   a filename from which a BlockSolverConfiguration is loaded via a
+  *   call to Configuration::deserialize( const std::string ); the
+  *   BlockSolverConfiguration is then used to identify which Solver
+  *   should be attached to the MasterProblemBlock at the time in which
+  *   the BundleSolver is registered to the Block. If
+  *   strMPBSolverCfg is empty or deserialize() returns nullptr, the
+  *   caller is required to attach a suitable Solver to the
+  *   MasterProblemBlock by other means before compute() is invoked. */
+
  void set_par( idx_type par , std::string && value ) override;
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// move in the vector-of-int parameters of BundleSolver
- /** Move in the given vector-of-int parameters specific of BundleSolver,
-  * together with the parameters of CDASolver that BundleSolver actually
-  * "listens to":
+ /** Move in the given vector-of-int parameters specific of
+  * BundleSolver, together with the parameters of CDASolver that
+  * BundleSolver actually "listens to":
   *
   * - vintNoEasy [empty]: the vector vintNoEasy is assumed to contain the
   *                       indices (numbers in 0, ..., total number of
   *   components - 1, ordered in increasing sense and therefore not repeated)
   *   of the components of the problem that must not be treated as "easy"
-  *   even if they could. This clearly only applies if intDoEasy & 1 == 1,
+  *   even if they could. This clearly only applies if intDoEasy == 1,
   *   for otherwise no component is ever treated as "easy". The ordering of
   *   the components is as follows: if the Block only has a C05Function as
   *   Objective and no sub-Block then that it is component 0, otherwise the
@@ -1361,9 +1335,9 @@ public:
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// move in the vector-of-string parameters of BundleSolver
- /** Move in the given vector-of-string parameters specific of BundleSolver,
-  * together with the parameters of CDASolver that BundleSolver actually
-  * "listens to":
+ /** Move in the given vector-of-string parameters specific of
+  * BundleSolver, together with the parameters of CDASolver that
+  * BundleSolver actually "listens to":
   *
   * - vstrCmpCfg [empty]: the vector vstrCmpCfg is assumed to contain the
   *                       filenames of ComputeConfig to be passed to each
@@ -1390,14 +1364,15 @@ public:
   *
   * - vstr_C05_SPAR_Names [empty]: [vector-of-]string parameters names that
   *                                are set differently to each C05Function
-  *   when BundleSolver is register()-ed to the Block. This parameter works
-  *   in tandem with vstr_C05_SPAR_Vals [see].
+  *   when BundleSolver is register()-ed to the Block. This
+  *   parameter works in tandem with vstr_C05_SPAR_Vals [see].
   *
   * - vstr_C05_SPAR_Vals [empty]: baseline values for [vector-of-]string
-  *                               parameters that are set differently to each
-  *   C05Function when BundleSolver is register()-ed to the Block. This
-  *   parameter works in tandem with vstr_C05_SPAR_Names as follows. They
-  *   must have the same length. Then, for every h = 0, 1, ...,
+  *                               parameters that are set differently to
+  *   each C05Function when BundleSolver is register()-ed to
+  *   the Block. This parameter works in tandem with vstr_C05_SPAR_Names
+  *   as follows. They must have the same length. Then, for every
+  *   h = 0, 1, ...,
   *   n_components() - 1, the parameter vstr_C05_SPAR_Names[ i ] is set to
   *   value <prefix>"_h"<suffix>, where <prefix> is the first part of
   *   vstr_C05_SPAR_Vals[ i ] up until the rightmost "." (if any) excluded,
@@ -1452,20 +1427,20 @@ public:
  /// returns the number of "components", i.e., C05Function in the objective
  /** Returns the total number of "components", i.e., the C05Function whose
   * sum (possibly together with one LinearFunction) makes up the objective of
-  * the Block that the BundleSolver is solving. This method should not be
-  * called if set_Block() has not been called, or has last been called with
-  * nullptr argument. */
+  * the Block that the BundleSolver is solving. This method should
+  * not be called if set_Block() has not been called, or has last been called
+  * with nullptr argument. */
 
  Index n_components( void ) const { return( NrFi ); }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// returns a pointer to the i-th C05Function in the objective
  /** Returns a pointer to the i-th C05Function, i.e., the i-th term of the
-  * sum of C05Function that (possibly together with one LinearFunction) 
-  * makes up the objective of the Block that the BundleSolver is solving. 
-  * It must ve 0 <= \p i <= n_components(). All returned pointers are not
-  * nullptr provided that set_Block() has last been called with not nullptr
-  * argument (otherwise this method should not be called). */
+  * sum of C05Function that (possibly together with one LinearFunction) makes up
+  * the objective of the Block that the BundleSolver is solving. It
+  * must ve 0 <= \p i <= n_components(). All returned pointers are not nullptr
+  * provided that set_Block() has last been called with not nullptr argument
+  * (otherwise this method should not be called). */
 
  C05Function * component( Index i ) const {
   #ifndef NDEBUG
@@ -1478,13 +1453,13 @@ public:
  /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// returns a pointer to the LinearFunction in the objective
  /** Returns a pointer to the single LinearFunction that is summed with the
-  * C05Function in the objective, if any. If the method returns nullptr,
-  * there is no such LinearFunction (it is constantly 0, i.e., all its
-  * coefficients are 0). This method should not be called if set_Block() has
-  * not been called, or has last been called with nullptr argument. */
+  * C05Function in the objective, if any. If the method returns nullptr, there
+  * is no such LinearFunction (it is constantly 0, i.e., all its coefficients
+  * are 0). This method should not be called if set_Block() has not been called,
+  * or has last been called with nullptr argument. */
 
  LinearFunction * l_component( void ) const { return( f_lf ); }
-  
+
 /** @} ---------------------------------------------------------------------*/
 /*---------------------- METHODS FOR EVENTS HANDLING -----------------------*/
 /*--------------------------------------------------------------------------*/
@@ -1536,9 +1511,8 @@ public:
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// returns the number of iterations in the current call to compute()
  /** Returns the number of iterations in the current call to compute(), the
-  * last one included. Note that this is the number of master problem
-  * solutions, as clearly the number of function evaluations may be rather
-  * different. */
+  * last one included. Note that this is the number of master problem solutions,
+  * as clearly the number of function evaluations may be rather different. */
 
  long get_elapsed_iterations( void ) const override { return( ParIter ); }
 
@@ -1564,13 +1538,18 @@ public:
   return( elapsed.count() );
   }
 
-/*--------------------------------------------------------------------------*/
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ /// returns the best know global lower bound of the function.
+ /** Returns the best know global lower bound of the function. If the
+  *  objective function is convex, this is a true LB, otherwise the best
+  *  solution found so far is returned. */
 
  VarValue get_lb( void ) override {
   if( f_convex ) {
    if( f_global_LB > - INFshift )
     return( f_global_LB + constant_value );
 
+   // if LowerBound is not conditional (see Block.h:2728) then return it
    return( TrueLB ? LowerBound.back()  + constant_value : - INFshift );
    }
   else
@@ -1581,6 +1560,10 @@ public:
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ /// returns the best know global upper bound of the function.
+ /** Returns the best know global upper bound of the function. If the
+  *  objective function is concave, this is a true UB, otherwise the best
+  *  solution found so far is returned. */
 
  VarValue get_ub( void ) override {
   if( f_convex )
@@ -1592,27 +1575,29 @@ public:
    if( f_global_LB > - INFshift )
     return( - f_global_LB + constant_value );
 
+   // if UpperBound is not conditional (see Block.h:2728) then return it
    return( TrueLB ? - LowerBound.back() + constant_value : INFshift );
    }
   }
 
 /*--------------------------------------------------------------------------*/
- /// BundleSolver always returns a primal solution, possibly unfeasible
- 
+ /// BundleSolver always returns a primal solution (maybe infeas.)
+
  bool has_var_solution( void ) override { return( true ); }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// BundleSolver always returns a dual solution, possibly unfeasible
- /** BundleSolver always returns a dual solution, possibly unfeasible. This
+ /** BundleSolver always returns a dual solution, possibly
+  * infeasible. This
   *  in fact requires that the Master Problem has been solved at least once,
   *  but has_dual_solution() can only be called after compute() and therefore
   *  the Master Problem must have been solved at least once. */
- 
+
  bool has_dual_solution( void ) override { return( true ); }
 
 /*--------------------------------------------------------------------------*/
 
- bool is_var_feasible( void ) override { 
+ bool is_var_feasible( void ) override {
   return( ( Result != kInfeasible ) && ( UpFiLmb.back() < INFshift ) );
   }
 
@@ -1630,15 +1615,15 @@ public:
   * - The optimal values of the ColVariable in the Block;
   *
   * - If some of the C05Function are LagBFunction and are handled as "easy"
-  *   components, the primal optimal solution of the dual problem that
-  *   BundleSolver is using is actually the dual optimal solution of the
-  *   constraints in the master problem, and the reduced costs of the
-  *   variables, that represent that component; this can be fished out of
-  *   the master problem and written in the Block inside the LagBFunction.
-  *   (via the MILPSolver that is attached to it).
+  *   components, the primal optimal solution of the dual problem that the
+  *   BundleSolver is using is actually the dual optimal
+  *   solution of the constraints in the master problem, and the reduced
+  *   costs of the variables, that represent that component; this can be
+  *   fished out of the master problem and written in the Block inside
+  *   the LagBFunction (via the MILPSolver that is attached to it).
   *
-  * If \p solc is nullptr, then only the optimal values of the ColVariable
-  * in the Block are written. Otherwise, \p solc can be:
+  * If \p solc is nullptr, then only the optimal values of the ColVariable in
+  * the Block are written. Otherwise, \p solc can be:
   *
   * - a pointer to a
   *   SimpleConfiguration< std::vector< std::pair< int , int > > >, assumed
@@ -1660,14 +1645,14 @@ public:
   *   second bit (+2) if the reduced costs need be written) which is applied
   *   to *all easy* components.
   *
-  * IMPORTANT NOTE: getting access to dual variables / reduced costs of any
-  *                 easy component requires access to that component's
-  * description, which is *deleted if not needed* as dictated by intDoEasy.
-  * Hence, if reduced costs are required then ( intDoEasy & 8 ) must be true,
-  * if dual variables are required then *both* ( intDoEasy & 4 ) and
-  * ( intDoEasy & 8 ) must be true [due to the internal working of
-  * OSIMPSolver the information about reduced costs is required when
-  * getting dual variables, please don't ask ...]). */
+  * IMPORTANT NOTE: getting access to dual variables / reduced costs of
+  *                 any easy component requires access to that
+  *   component's description, which is *deleted if not needed* as
+  *   dictated by intDoEasy. Hence, if reduced costs are required then
+  *   ( intDoEasy & 8 ) must be true; if dual variables are required then
+  *   *both* ( intDoEasy & 4 ) and ( intDoEasy & 8 ) must be true, since
+  *   the master pipeline reuses the same code path for reduced costs
+  *   and dual variables. */
 
  void get_var_solution( Configuration *solc = nullptr ) override;
 
@@ -1682,27 +1667,27 @@ public:
  /** Write the  "current" dual optimal solution in the Block. This is done
   * in two different ways for "easy" and "not easy" components:
   *
-  * - for "not easy" ones, the optimal solution of the master problem for 
+  * - for "not easy" ones, the optimal solution of the master problem for
   *   that component, which is a set of convex multipliers associated to
   *   the linearizations currently in the pool, is used for forming the
   *   "important linearization" of that component and adding them to the
   *   corresponding linearizations pool; this is unless the optimal
-  *   aggregate linearization has been inserted in the bundle for other 
+  *   aggregate linearization has been inserted in the bundle for other
   *   reasons (making space in a full bundle), in which case the
   *   coefficients of the "important linearization" of that component are
   *   just < 1 , index of the optimal aggregate linearization > (that is,
   *   this costs nothing);
   *
   * - for "easy" components, the dual solution for the dual problem that
-  *   BundleSolver is solving is actually the primal optimal solution of
-  *   the master problem for the variables that represent that component;
-  *   this is fished out of the master problem and directly written in the
-  *   Block inside the LagBFunction.
+  *   BundleSolver is solving is actually the primal optimal
+  *   solution of the master problem for the variables that represent
+  *   that component; this is fished out of the master problem and
+  *   directly written in the Block inside the LagBFunction.
   *
   * If \p solc is nullptr, then the solution for all components is written.
-  * Otherwise, \p solc must be a pointer to a 
-  * SimpleConfiguration< std::vector< int > >, assuming to contain the
-  * indices of the components of which the primal solution has to be written.
+  * Otherwise, \p solc must be a pointer to a SimpleConfiguration< std::vector<
+  * int > >, assuming to contain the indices of the components of which the
+  * primal solution has to be written.
   */
 
  void get_dual_solution( Configuration *solc = nullptr ) override;
@@ -1712,7 +1697,7 @@ public:
  void get_dual_solution_easy( Index k );
 
  void get_dual_solution_hard( Index k );
- 
+
 /*--------------------------------------------------------------------------*/
 
  bool new_var_solution( void ) override
@@ -1746,7 +1731,7 @@ public:
   void get_dual_direction( Configuration *dirc = nullptr ) override {}
 
   bool new_var_direction( void ) override { return( false ); }
-  
+
   bool new_dual_direction( void ) override{ return( false ); }
 */
 
@@ -1754,7 +1739,7 @@ public:
 /*------------ METHODS FOR READING ALGORITHM PROGRESS DATA -----------------*/
 /*--------------------------------------------------------------------------*/
 /** @name Accessing data describing how the algorithm is progressing, useful
- *  e.g. inside events to trach the algorithm performances or perform
+ *  e.g. inside events to track the algorithm performances or perform
  *  dynamic parameters adjustments
  *  @{ */
 
@@ -1769,7 +1754,8 @@ public:
   *  oracle", i.e., one that thoes not cheat on the lower bounds) then
   *  Sigma >= 0, and the current aggregated subgradient is a
   *  Sigma-subgradient at the current point. This justifies why the
-  *  standard stopping condition of BundleSolver roughly speaking reads
+  *  standard stopping condition of BundleSolver roughly
+  *  speaking reads
   *
   *     Sigma is small and the norm of the aggregated subgradient is small
   *
@@ -1791,15 +1777,15 @@ public:
   *
   *       ( tStar / 2 ) || z* ||_2^2
   *
-  * (see get_DS()). Since z* is a Sigma-subgradient at the current point
-  * (see get_Sigma()), justifies why one of the stopping condition of
+  * (see get_DS()). Since z* is a Sigma-subgradient at the current point (see
+  * get_Sigma()), justifies why one of the stopping condition of
   * BundleSolver is
   *
   *      Sigma + D_{tStar}*( z* ) <= RelAcc * | current value of Fi |
   *
-  * assuming that tStar is a proper upper bound on the maximum possible
-  * step that one could ever take in direction -z* in order to have the
-  * function decrease (a rater big "if"). */
+  * assuming that tStar is a proper upper bound on the maximum possible step
+  * that one could ever take in direction -z* in order to have the function
+  * decrease (a rater big "if"). */
 
  VarValue get_DSTS( void ) { return( DSTS ); }
 
@@ -1810,7 +1796,9 @@ public:
   *  get_DSTS() and get_Sigma() for how this number enters in the stopping
   *  conditions of the method. */
 
- VarValue get_DS( void ) { return( Master ? Master->ReadDStart( 1 ) : 0 ); }
+ VarValue get_DS( void ) const { return( read_DStart( 1 ) ); }
+ /**< D*_{1}(z*) = || z* ||^2 / 2 under standard proximal stabilization;
+  *   see the doc on dbltStar. */
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// returns the current estimate of the (un-)optimality of the current point
@@ -1838,7 +1826,7 @@ public:
   *  t-strategies cause the master problem to be re-solved without the
   *  C05Function(s) being evaluated, these do not count as iterations. */
 
- Index get_CSSCntr( void ) { return( CSSCntr ); } 
+ Index get_CSSCntr( void ) { return( CSSCntr ); }
 
 /*--------------------------------------------------------------------------*/
  /// returns the number of consecutives Null Steps
@@ -1853,10 +1841,10 @@ public:
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// returns the predicted improvement of the model at the tentative point
 
- VarValue get_vStar( void ) { return( vStar.back() ); } 
+ VarValue get_vStar( void ) { return( vStar.back() ); }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
- /// returns the gorm of the first inserted subgradient in the last iteration
+ /// returns the norm of the first inserted subgradient in the last iteration
 
  VarValue get_G1Norm( void ) { return( G1Norm ); }
 
@@ -1868,13 +1856,13 @@ public:
 */
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
- 
+
  c_Vec_VarValue & get_current_point( void ) const { return( Lambda ); }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
- 
+
  c_Vec_VarValue & get_tentative_point( void ) const { return( Lambda1 ); }
- 
+
 /*--------------------------------------------------------------------------*/
 /*------------------- METHODS FOR HANDLING THE PARAMETERS ------------------*/
 /*--------------------------------------------------------------------------*/
@@ -1911,9 +1899,9 @@ public:
   }
 
 /*--------------------------------------------------------------------------*/
- 
+
  [[nodiscard]] int get_dflt_int_par( idx_type par ) const override {
-  static const std::array< int , 22 > dflt_int_par = {
+  static const std::array< int , 17 > dflt_int_par = {
     10 ,  // intBPar1
    100 ,  // intBPar2
      1 ,  // intBPar3
@@ -1928,13 +1916,8 @@ public:
      2 ,  // intWZNorm
      0 ,  // intFrcLstSS
      0 ,  // intTrgtMng
-     0 ,  // intMPName
-     0 ,  // intMPlvl
-     0 ,  // intQPmp1
-     0 ,  // intQPmp2
-     4 ,  // intOSImp1
-     0 ,  // intOSImp2
-     1 ,  // intOSImp3
+     2 ,  // intMPStbl (default value is DoublyStabilized)
+     0 ,  // intMPPrimal (default value is dual)
      2    // intRstAlg, default value:
           // RstAlg = 0  -  reset algorithmic parameters
           // RstCrr = 1  -  set current point to using values of the Variable
@@ -1947,9 +1930,9 @@ public:
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
- 
+
  [[nodiscard]] double get_dflt_dbl_par( idx_type par ) const override {
-  static const std::array< double , 17 > dflt_dbl_par = {
+  static const std::array< double , 16 > dflt_dbl_par = {
    0 ,      // dblNZEps
    1e+2 ,   // dbltStar
    0 ,      // dblMinNrEvls
@@ -1965,8 +1948,7 @@ public:
    1e-6,    // dbltMinor
    1 ,      // dbltInit
    1e-3 ,   // dbltSPar2
-   0 ,      // dbltSPar3
-   1e-1     // dblCtOff
+   0        // dbltSPar3
    };
 
   if( ( par >= dblLastParCDAS ) && ( par < dblLastBndSlvPar ) )
@@ -1979,7 +1961,8 @@ public:
 
  const std::string & get_dflt_str_par( idx_type par ) const override {
   static std::string __empty;
-  if( ( par == strEasyCfg ) || ( par == strHardCfg ) )
+  if( ( par == strEasyCfg ) || ( par == strHardCfg ) ||
+        ( par == strMPBSolverCfg ) )
    return( __empty );
 
   return( CDASolver::get_dflt_str_par( par ) );
@@ -2013,27 +1996,27 @@ public:
 !!*/
 
 /*--------------------------------------------------------------------------*/
- 
+
  [[nodiscard]] int get_int_par( idx_type par ) const override;
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
- 
+
  [[nodiscard]] double get_dbl_par( idx_type par ) const override;
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
- 
+
  [[nodiscard]] const std::string & get_str_par( idx_type par )
   const override;
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
- 
+
  [[nodiscard]] const std::vector< int > & get_vint_par( idx_type par )
   const override;
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
- 
+
  [[nodiscard]] const std::vector< std::string > & get_vstr_par(
-					       idx_type par ) const override;
+                                               idx_type par ) const override;
 
 /*--------------------------------------------------------------------------*/
 
@@ -2054,13 +2037,8 @@ public:
    { "intWZNorm" , BundleSolver::intWZNorm } ,
    { "intFrcLstSS" , BundleSolver::intFrcLstSS } ,
    { "intTrgtMng" , BundleSolver::intTrgtMng } ,
-   { "intMPName" , BundleSolver::intMPName } ,
-   { "intMPlvl" , BundleSolver::intMPlvl } ,
-   { "intQPmp1" , BundleSolver::intQPmp1 } ,
-   { "intQPmp2" , BundleSolver::intQPmp2 } ,
-   { "intOSImp1" , BundleSolver::intOSImp1 } ,
-   { "intOSImp2" , BundleSolver::intOSImp2 } ,
-   { "intOSImp3" , BundleSolver::intOSImp3 } ,
+   { "intMPStbl" , BundleSolver::intMPStbl } ,
+   { "intMPPrimal" , BundleSolver::intMPPrimal } ,
    { "intRstAlg" , BundleSolver::intRstAlg } ,
    };
 
@@ -2091,8 +2069,7 @@ public:
    { "dbltMinor" , BundleSolver::dbltMinor } ,
    { "dbltInit" , BundleSolver::dbltInit } ,
    { "dbltSPar2" , BundleSolver::dbltSPar2 } ,
-   { "dbltSPar3" , BundleSolver::dbltSPar3 } ,
-   { "dblCtOff" , BundleSolver::dblCtOff }
+   { "dbltSPar3" , BundleSolver::dbltSPar3 }
    };
 
   const auto it = dbl_pars_map.find( name );
@@ -2134,7 +2111,8 @@ public:
    { "vstrCmpCfg" , BundleSolver::vstrCmpCfg } ,
    { "vstr_C05_SPAR_Names" , BundleSolver::vstr_C05_SPAR_Names } ,
    { "vstr_C05_SPAR_Vals" , BundleSolver::vstr_C05_SPAR_Vals } ,
-   { "vstr_C05_EI_SPAR_Names" , BundleSolver::vstr_C05_EI_SPAR_Names } ,
+   { "vstr_C05_EI_SPAR_Names" ,
+                 BundleSolver::vstr_C05_EI_SPAR_Names } ,
    { "vstr_C05_EI_SPAR_Vals" , BundleSolver::vstr_C05_EI_SPAR_Vals }
    };
 
@@ -2149,12 +2127,11 @@ public:
 
  [[nodiscard]] const std::string & int_par_idx2str( idx_type idx )
   const override {
-  static const std::array< std::string , 22 > int_pars_str = {
+  static const std::array< std::string , 17 > int_pars_str = {
    "intBPar1" , "intBPar2" , "intBPar3" , "intBPar4" , "intBPar6" ,
    "intBPar7" , "intMnSSC" , "intMnNSC" , "inttSPar1" , "intMaxNrEvls" ,
-   "intDoEasy" , "intWZNorm" , "intFrcLstSS" , "intTrgtMng" , "intMPName" ,
-   "intMPlvl" , "intQPmp1" , "intQPmp2", "OSImp1" , "OSImp2" , "OSImp3" ,
-   "intRstAlg"  };
+   "intDoEasy" , "intWZNorm" , "intFrcLstSS" , "intTrgtMng" ,
+   "intMPStbl" , "intMPPrimal" , "intRstAlg"  };
 
   if( ( idx >= intLastParCDAS ) && ( idx < intLastBndSlvPar ) )
    return( int_pars_str[ idx - intBPar1 ] );
@@ -2166,11 +2143,11 @@ public:
 
  [[nodiscard]] const std::string & dbl_par_idx2str( idx_type idx )
   const override {
-  static const std::array< std::string , 17 > dbl_pars_str = {
+  static const std::array< std::string , 16 > dbl_pars_str = {
    "dblNZEps" , "dbltStar" , "dblMinNrEvls" , "dblBPar5" , "dblm1" ,
    "dblm2" , "dblm3" , "dblmxIncr" , "dblmnIncr" , "dblmxDecr" ,
    "dblmnDecr" , "dbltMaior" , "dbltMinor" , "dbltInit" , "dbltSPar2" ,
-   "dbltSPar3" , "dblCtOff" };
+   "dbltSPar3" };
 
  if( ( idx >= dblLastParCDAS ) && ( idx < dblLastBndSlvPar ) )
    return( dbl_pars_str[ idx - dblLastParCDAS ] );
@@ -2217,7 +2194,7 @@ public:
   }
 
 /** @} ---------------------------------------------------------------------*/
-/*----------- METHODS FOR HANDLING THE State OF THE BundleSolver -----------*/
+/*------ METHODS FOR HANDLING THE State OF THE BundleSolver -----*/
 /*--------------------------------------------------------------------------*/
 /** @name Handling the State of the BundleSolver
  *  @{ */
@@ -2226,10 +2203,10 @@ public:
 
 /*--------------------------------------------------------------------------*/
  /// sets the current "internal state" of the BundleSolver
- /** This method reads \p state, which must be a BundleSolverState (otherwise
-  * exception is thrown) and uses it to set the  "internal state" of the
-  * BundleSolver. \p state is not changed (could not, it's const) so that it
-  * can be re-used later.
+ /** This method reads \p state, which must be a BundleSolverState
+  * (otherwise exception is thrown) and uses it to set the "internal state" of
+  * the BundleSolver. \p state is not changed (could not, it's const)
+  * so that it can be re-used later.
   *
   *     IMPORTANT NOTE: IT IS NOT ALLOWED TO CALL THIS METHOD WHILE compute()
   *                     IS RUNNING, SAY FROM WITHIN AN EVENT. */
@@ -2238,11 +2215,12 @@ public:
 
 /*--------------------------------------------------------------------------*/
  /// sets the current "internal state" of the BundleSolver
- /** This method reads \p state, which must be a BundleSolverState (otherwise
-  * exception is thrown) and uses it to set the  "internal state" of the
-  * BundleSolver. \p state is "moved inside" the BundleSolver, hence at the
-  * end of the call is in a consistent state but "empty", and therefore it
-  * will probably be immediately destroyed as it has little remaining use.
+ /** This method reads \p state, which must be a BundleSolverState
+  * (otherwise exception is thrown) and uses it to set the "internal state" of
+  * the BundleSolver. \p state is "moved inside" the
+  * BundleSolver, hence at the end of the call is in a consistent
+  * state but "empty", and therefore it will probably be immediately destroyed
+  * as it has little remaining use.
   *
   *     IMPORTANT NOTE: IT IS NOT ALLOWED TO CALL THIS METHOD WHILE compute()
   *                     IS RUNNING, SAY FROM WITHIN AN EVENT. */
@@ -2252,14 +2230,15 @@ public:
 /*--------------------------------------------------------------------------*/
 
  void serialize_State( netCDF::NcGroup & group ,
-		       const std::string & sub_group_name = "" )
+                       const std::string & sub_group_name = "" )
   const override;
 
 /** @} ---------------------------------------------------------------------*/
 /*-------------------------------- FRIENDS ---------------------------------*/
 /*--------------------------------------------------------------------------*/
 
- friend class BundleSolverState;  // make BundleSolverState friend
+ // make BundleSolverState friend
+ friend class BundleSolverState;
 
 /*--------------------------------------------------------------------------*/
 /*--------------------- PROTECTED PART OF THE CLASS ------------------------*/
@@ -2278,140 +2257,120 @@ public:
  using Vec_Bool = std::vector< bool >;      ///< a std::vector of bool
 
 /*--------------------------------------------------------------------------*/
-/*------------------------- CLASS FakeFiOracle  ----------------------------*/
-/*--------------------------------------------------------------------------*/
-/*--------------------------- GENERAL NOTES --------------------------------*/
-/*--------------------------------------------------------------------------*/
-/** FakeFiOracle implements the part of the FiOracle interface that is
- * strictly necessary to use a MPSolver inside BundleSolver. This hack will
- * one day be replaced with a native implementation of the master problem
- * solver, but until then, there you go. */
-
-class FakeFiOracle : public FiOracle
-{
-
-/*----------------------- PUBLIC PART OF THE CLASS -------------------------*/
-
- public:
-
-/*--------------------- PUBLIC METHODS OF THE CLASS ------------------------*/
-/*--------------------------------------------------------------------------*/
-/*---------------------------- CONSTRUCTOR ---------------------------------*/
-/** Constructor of the class: takes the pointer to the BundleSolver it has
- * to "serve". */
-
- FakeFiOracle( BundleSolver *solver ) : FiOracle() {
-  bslv = solver;
-  }
-
-/*-------------------------- OTHER INITIALIZATIONS -------------------------*/
-
- void SetNDOSolver( NDOSolver *NwSlvr = 0 ) override {
-  throw( std::logic_error( "this method cannot be called" ) );
-  }
-
-/*--------------------------------------------------------------------------*/
-
- void SetFiLog( std::ostream * outs = 0 , const char lvl = 0 ) override {
-  throw( std::logic_error( "this method cannot be called" ) );
-  }
-
-/*--------------------------------------------------------------------------*/
-
- void SetFiTime( const bool TimeIt = true ) override {
-  throw( std::logic_error( "this method cannot be called" ) );
-  }
-
-/*--------------------------------------------------------------------------*/
-
- void SetMaxName( cIndex MxNme = 0 ) override {
-  throw( std::logic_error( "this method cannot be called" ) );
-  }
-
-/*-------------- METHODS FOR READING THE DATA OF THE PROBLEM ---------------*/
-/// get the number of Variable
-/** Variable cannot be changed. This means that is used the default
- *  implementation of GetMaxNumVar(). The maximum number of variables is
- *  equal to the current number of variable*/
-
- Index GetNumVar( void ) const override;
-
-/*--------------------------------------------------------------------------*/
-
- Index GetNrFi( void ) const override;
-
-/*--------------------------------------------------------------------------*/
-
- Index GetMaxName( void ) const override;
-
-/*--------------------------------------------------------------------------*/
-
- bool GetUC( cIndex i ) override;
-
-/*--------------------------------------------------------------------------*/
-
- LMNum GetUB( cIndex i ) override;
-
-/*--------------------------------------------------------------------------*/
-
- Index GetBNC( cIndex wFi ) override;
-
-/*--------------------------------------------------------------------------*/
-
- Index GetBNR( cIndex wFi ) override;
-
-/*--------------------------------------------------------------------------*/
-
- Index GetBNZ( cIndex wFi ) override;
-
-/*--------------------------------------------------------------------------*/
-
- void GetBDesc( cIndex wFi , int *Bbeg , int *Bind , double *Bval ,
-		double *lhs , double *rhs , double *cst ,
-		double *lbd , double *ubd ) override;
-
-/*--------------------------------------------------------------------------*/
-
- Index GetANZ( cIndex wFi , cIndex strt = 0 , Index stp = Inf< Index >() )
-  override;
-
-/*--------------------------------------------------------------------------*/
-
- void GetADesc( cIndex wFi , int *Abeg , int *Aind , double *Aval ,
-		cIndex strt = 0 , Index stp = Inf< Index >() ) override;
-
-/*--------------------------------------------------------------------------*/
-
- HpNum Fi( cIndex wFi = Inf< Index >() ) override {
-  throw( std::logic_error( "this method cannot be called" ) );
-  }
-
-/*------------- METHODS FOR READING SUBGRADIENTS / CONSTRAINTS -------------*/
-
- bool NewGi( cIndex wFi = Inf< Index >() ) override { return( true ); }
-
-/*--------------------------------------------------------------------------*/
-
- Index GetGi( SgRow SubG , cIndex_Set &SGBse , cIndex Name = Inf< Index >() ,
-	      cIndex strt = 0 , Index stp = Inf< Index >() ) override;
-
-/*------------------------------ DESTRUCTOR --------------------------------*/
-
- virtual ~FakeFiOracle() { }
-
-/*-------------------- PROTECTED PART OF THE CLASS -------------------------*/
-
- protected:
-
- BundleSolver * bslv;  ///< the BundleSolver that I "serve"
-
- };  // end( class FakeFiOracle )
-
-/*--------------------------------------------------------------------------*/
 /*-------------------------- PROTECTED METHODS -----------------------------*/
 /*--------------------------------------------------------------------------*/
 
  void guts_of_put_State( const BundleSolverState & state );
+
+/*--------------------------------------------------------------------------*/
+ /// read the linearization error of the item with global name \p name
+ /** Routes to MasterPB->get_alpha mapped through ItemVcblr; returns 0
+  * when MasterPB is not yet available. */
+
+ VarValue read_alpha_global( Index name ) const;
+
+/*--------------------------------------------------------------------------*/
+ /// read the optimal multiplier theta of the item with global name \p name
+ /** Routes to MasterPB->get_theta mapped through ItemVcblr; returns 0
+  * when MasterPB is not yet available. */
+
+ VarValue read_theta_global( Index name ) const;
+
+/*--------------------------------------------------------------------------*/
+ /// remove the cut with global name \p name from the master
+ /** Routes the call to
+  * MasterPB->remove_cut( ItemVcblr[ name ].first ,
+  *                      ItemVcblr[ name ].second ). */
+
+ void remove_cut_global( Index name );
+
+/*--------------------------------------------------------------------------*/
+ /// returns the upper bound of valid global names in the bundle
+ /** Used as the loop upper bound (i.e.
+  * `for( i = 0 ; i < get_max_name() ; ++i ) ...`); returns the highest
+  * occupied global slot index plus one, always <= ItemVcblr.size() ==
+  * vBPar2.back(). The loop body still has to filter
+  * `ItemVcblr[ i ].second < vBPar2[ ItemVcblr[ i ].first ]` to skip
+  * empty entries. */
+
+ Index get_max_name( void ) const {
+  return( f_max_name );
+  }
+
+/*--------------------------------------------------------------------------*/
+ /// component index of the item with global name \p name
+ /** Returns the 1-based component index of the item with global name
+  * \p name: 1 .. NrFi for a regular component, NrFi + 1 if the item
+  * belongs to the linear "0-th component", Inf< Index >() otherwise.
+  * The information is read straight from ItemVcblr[ name ].first + 1. */
+
+ Index wcomponent_global( Index name ) const {
+  if( name < ItemVcblr.size() &&
+      ItemVcblr[ name ].second < Inf< Index >() )
+   return( ItemVcblr[ name ].first + 1 );
+  return( Inf< Index >() );
+  }
+
+/*--------------------------------------------------------------------------*/
+ /// is the item with global name \p name a "true" subgradient?
+ /** Returns true iff the item is a diagonal linearization (subgradient),
+  * false if it is vertical (feasibility cut) or empty. Routes through
+  * MasterPB->is_subgradient( k , slot ) via ItemVcblr. */
+
+ bool is_subgradient_global( Index name ) const {
+  if( MasterPB && name < ItemVcblr.size() ) {
+   const auto & loc = ItemVcblr[ name ];
+   if( loc.second < Inf< Index >() )
+    return( MasterPB->is_subgradient( int( loc.first ) ,
+                                      int( loc.second ) ) );
+   }
+  return( false );
+  }
+
+/*--------------------------------------------------------------------------*/
+ /// returns D*_{factor}( z* ) = ( factor / 2 ) * || z* ||^2
+ /** Returns ( factor / 2 ) * MasterPB::get_dual_norm_squared(); returns
+  * 0 if MasterPB is not yet available. */
+
+ VarValue read_DStart( double factor ) const {
+  if( MasterPB )
+   return( factor / 2.0 * MasterPB->get_dual_norm_squared() );
+  return( 0 );
+  }
+
+/*--------------------------------------------------------------------------*/
+ /// total number of vertical (feasibility) cuts in the master problem
+ /** Routes to MasterPB::get_vertical_count(), which scans every
+  * HardCmps[ k ] and tallies the is_row_vertical hits. */
+
+ Index get_bc_size( void ) const {
+  if( MasterPB )
+   return( Index( MasterPB->get_vertical_count() ) );
+  return( 0 );
+  }
+
+/*--------------------------------------------------------------------------*/
+ /// returns g_name . d for the cut with global name \p name
+ /** Routes through MasterPB->get_Gid( k , slot ) via ItemVcblr. */
+
+ VarValue read_Gid_global( Index name ) const {
+  if( MasterPB && name < ItemVcblr.size() ) {
+   const auto & loc = ItemVcblr[ name ];
+   if( loc.second < Inf< Index >() )
+    return( MasterPB->get_Gid( int( loc.first ) , int( loc.second ) ) );
+   }
+  return( 0 );
+  }
+
+/*--------------------------------------------------------------------------*/
+ /// returns the aggregated z* . d
+ /** Routes through MasterPB->get_Gid_aggregate(). */
+
+ VarValue read_Gid_aggregate( void ) const {
+  if( MasterPB )
+   return( MasterPB->get_Gid_aggregate() );
+  return( 0 );
+  }
 
 /*--------------------------------------------------------------------------*/
  /* FormD() just calls SolveMP() once and calculates the direction d:
@@ -2435,7 +2394,7 @@ class FakeFiOracle : public FiOracle
  /* After a (successful) call to FormD(), sets the new tentative point Lambda1
   * as Lambda1 = Lambda + ( Tau / t ) * d. */
 
- void FormLambda1( HpNum Tau );
+ void FormLambda1( double Tau );
 
 /*--------------------------------------------------------------------------*/
  /* Performs the inner loop: repeatedly compute components up until the
@@ -2444,14 +2403,13 @@ class FakeFiOracle : public FiOracle
   * (errors, out of time, ...). Sets MPchgs > 0 if the SS and/or NS
   * conditions are satisfied.
   *
-  * It is virtual because this is precisely the point where a sequential and
-  * a "basic" asynchronous implementation of the approach differ, and
-  * therefore this is the obvious hook for a derived AsynchBundleSolver.
+  * It is virtual because this is precisely the point where a sequential and a
+  * "basic" asynchronous implementation of the approach differ, and therefore
+  * this is the obvious hook for a derived AsynchBundleSolver.
   *
-  * The parameter extrastep, if true, means that InnerLoop() is not called
-  * from within the normal main loop, but at the end to ensure that the
-  * components are "current" with the returned optimal solution. This has
-  * two effects:
+  * The parameter extrastep, if true, means that InnerLoop() is not called from
+  * within the normal main loop, but at the end to ensure that the components
+  * are "current" with the returned optimal solution. This has two effects:
   *
   * - it disables all fancy early termination checks and forces all (non-easy)
   *   components to be evaluated;
@@ -2460,29 +2418,28 @@ class FakeFiOracle : public FiOracle
   *   not collect any new linearization.
   *
   * The rationale for the latter choice is that the bundle contains enough
-  * linearizations to stop already, hence new ones are not needed, and in
-  * fact the Master Problem is not re-solved, hence even if they were
-  * collected they would not be useful. This is potentially wasteful in that
-  * one does the effort to compute() the functions but only collects "a small
-  * part" of the ensuing information. However, producing linearizations may
-  * have a cost in itself, so on the other hand it saves some time. Besides,
-  * if the C05Function are re-compute()-d right after in Lambda, then if they
-  * are "complex and costly" they will likely have checks to understand if the
-  * bulk of the computation can be skipped because it has been done already.
+  * linearizations to stop already, hence new ones are not needed, and in fact
+  * the Master Problem is not re-solved, hence even if they were collected they
+  * would not be useful. This is potentially wasteful in that one does the
+  * effort to compute() the functions but only collects "a small part" of the
+  * ensuing information. However, producing linearizations may have a cost in
+  * itself, so on the other hand it saves some time. Besides, if the C05Function
+  * are re-compute()-d right after in Lambda, then if they are "complex and
+  * costly" they will likely have checks to understand if the bulk of the
+  * computation can be skipped because it has been done already.
   *
-  * The method returns the number of different components evaluated. It may
-  * also internally set Result == kError if an irrecoverable error happens
-  * during a component compute()-tion or Result == kStopTime if the
-  * available running time runs up. */
+  * The method returns the number of different components evaluated. It may also
+  * internally set Result == kError if an irrecoverable error happens during a
+  * component compute()-tion or Result == kStopTime if the available running
+  * time runs up. */
 
  virtual Index InnerLoop( bool extrastep = false );
 
 /*--------------------------------------------------------------------------*/
  /* Computes Fi[ wFi ]( Lambda1 ). In the "default mode", where getgi == true,
-  * it also inserts the obtained linearizations in the bundle. If getgi ==
-  * false instead this means that method is being called outside of the
-  * main loop, with Lambda1 == Lambda, and that no linearizations need be
-  * collected.
+  * it also inserts the obtained linearizations in the bundle. If getgi == false
+  * instead this means that method is being called outside of the main loop,
+  * with Lambda1 == Lambda, and that no linearizations need be collected.
   *
   * Returns true <=> at least one item was inserted. It also "sneakily" sets
   * MPchgs if appropriate. None of this clearly happens if getgi == false. */
@@ -2529,7 +2486,7 @@ class FakeFiOracle : public FiOracle
    ++UpFiLmb1def;  // all components + the sum computed
    UpFiLmb1[ wFi ] = nval;
    UpFiLmb1.back() = std::accumulate( UpFiLmb1.begin() , --(UpFiLmb1.end()) ,
-				      Fi0Lmb1 );
+                                      Fi0Lmb1 );
    // note that this is the point where the lower bound (if any) is
    // "baked in" the total function value
    if( TrueLB && ( UpFiLmb1.back() < LowerBound.back() ) )
@@ -2573,7 +2530,7 @@ class FakeFiOracle : public FiOracle
    ++LwFiLmb1def;  // all components + the sum computed
    LwFiLmb1[ wFi ] = nval;
    LwFiLmb1.back() = std::accumulate( LwFiLmb1.begin() , --(LwFiLmb1.end()) ,
-				      Fi0Lmb1 );
+                                      Fi0Lmb1 );
    // note that this is the point where the lower bound (if any) is
    // "baked in" the total function value
    if( TrueLB && ( LwFiLmb1.back() < LowerBound.back() ) )
@@ -2606,7 +2563,7 @@ class FakeFiOracle : public FiOracle
    ++UpFiLmbdef;  // all components + the sum computed
    UpFiLmb[ wFi ] = nval;
    UpFiLmb.back() = std::accumulate( UpFiLmb.begin() , --(UpFiLmb.end()) ,
-				     Fi0Lmb );
+                                     Fi0Lmb );
    // note that this is the point where the lower bound (if any) is
    // "baked in" the total function value
    if( TrueLB && ( UpFiLmb.back() < LowerBound.back() ) )
@@ -2650,7 +2607,7 @@ class FakeFiOracle : public FiOracle
    ++LwFiLmbdef;  // all components + the sum computed
    LwFiLmb[ wFi ] = nval;
    LwFiLmb.back() = std::accumulate( LwFiLmb.begin() , --(LwFiLmb.end()) ,
-				     Fi0Lmb );
+                                     Fi0Lmb );
    // note that this is the point where the lower bound (if any) is
    // "baked in" the total function value
    if( TrueLB && ( LwFiLmb.back() < LowerBound.back() ) )
@@ -2737,9 +2694,9 @@ class FakeFiOracle : public FiOracle
 
 /*--------------------------------------------------------------------------*/
  /** Concave functions to be maximised are sneakily turned into convex
-  * functions to be minimized inside by changing the sign of function values
-  * and linearizations, but they have to be output with the right sign. */
- 
+  * functions to be minimized inside by changing the sign of function values and
+  * linearizations, but they have to be output with the right sign. */
+
  VarValue rs( const VarValue fv ) {
   return( f_convex ? fv : - fv );
   }
@@ -2754,26 +2711,26 @@ class FakeFiOracle : public FiOracle
  /// method implementing the short-term t-strategies
  /** The method is called after a SS if inttSPar1 & 1 and after a NS if
   * tSPar1 & 2 and should return a proposed new value for t using only
-  * information pertaining to the current iteration (typically, the
-  * aggregated subgradient and its linearization error, the newly obtained
-  * subgradient and its linearization error). The base class implements four
-  * simple heuristics chosen on the basis of the bits 6 and 7 of inttSPar1;
-  * see the comments to set_par( inttSPar1 ) and those inside Heuristic1()
-  * to Heuristic4() for details. However, the method is virtual so that
-  * derived classes can implement new ones, typically using the remaining
-  * bits of inttSPar1 (from 8 on) to select them. */
+  * information pertaining to the current iteration (typically, the aggregated
+  * subgradient and its linearization error, the newly obtained subgradient and
+  * its linearization error). The base class implements four simple heuristics
+  * chosen on the basis of the bits 6 and 7 of inttSPar1; see the comments to
+  * set_par( inttSPar1 ) and those inside Heuristic1() to Heuristic4() for
+  * details. However, the method is virtual so that derived classes can
+  * implement new ones, typically using the remaining bits of inttSPar1 (from 8
+  * on) to select them. */
 
- virtual HpNum Heuristic( Index whch );
+ virtual double Heuristic( Index whch );
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
- HpNum Heuristic1( void );
+ double Heuristic1( void );
 
- HpNum Heuristic2( void );
+ double Heuristic2( void );
 
- HpNum Heuristic3( void );
+ double Heuristic3( void );
 
- HpNum Heuristic4( void );
+ double Heuristic4( void );
 
 /*--------------------------------------------------------------------------*/
 /*---------------------------- PROTECTED FIELDS  ---------------------------*/
@@ -2805,14 +2762,14 @@ class FakeFiOracle : public FiOracle
  Index BPar4;       ///< min number of items fetched from Fi() at each call
  double BPar5;      ///< control how the actual BPar3 changes over time
  int BPar6;         ///< control how the actual BPar3 changes over time
- int BPar7;         ///< if BundleSolver "plays nice" with other Solver
+ int BPar7;         ///< if GBS "plays nice" with other Solver
 
  double mxIncr;     ///< max increase t parameter
  double mnIncr;     ///< min increase t parameter
- Index MnSSC;       ///< min good iterations to do a SS 
+ Index MnSSC;       ///< min good iterations to do a SS
  double mxDecr;     ///< max decrease t parameter
  double mnDecr;     ///< min decrease t parameter
- Index MnNSC;       ///< max bad iterations to do a NS 
+ Index MnNSC;       ///< max bad iterations to do a NS
 
  double m1;         ///< m1 parameter for deciding if a SS/NS
  double m2;         ///< m2 parameter for deciding if a SS/NS
@@ -2826,36 +2783,21 @@ class FakeFiOracle : public FiOracle
  double tSPar2;     ///< double parameter for long-term t-strategy
  double tSPar3;     ///< double parameter for small heuristic t changes
 
- char DoEasy;       ///< if and how "easy" components are managed
+ bool DoEasy;       ///< if "easy" components are managed
 
  char WZNorm;       ///< how to compute the norm of z*
 
  int FrcLstSS;      /**<  bit 0 = 1: all components must be computed in
-		     *               the optimum
-		     *    bit 1 = 1: the State is not to be trusted */
+                     *               the optimum
+                     *    bit 1 = 1: the State is not to be trusted */
 
  Index TrgtMng;     ///< how targets on components are managed
 
- int MPName;        /**< bit 0 = 0: MP solver == QPPenalty
-		     * bit 0 = 1: MP == OSIMPSolver  (bits 1,2 active)
-		     * bit 1 = 1: Cplex, bit 1 = 0 CLP   (OSI only)
-		     * bit 2 = 1: Quadratic, bit 2 = 0 BoxStep (OSI only)
-		     * + bit 3 = 1 (+8) = check for duplicates.
-		     * + bit 4 = 1 (+16) = MP == MILPMPSolver instead of
-		     *   OSIMPSolver. Requires bit 0 = 1 and the
-		     *   strMPBSolverCfg BlockSolverConfig file pointing to a
-		     *   valid MILPSolver-derived backend. */
+ MasterProblemBlock::stabilization_type MPStbl;
+                    ///< type of stabilization for the master problem
 
- Index MxAdd;       ///< max variables added per iteration in QPPenaltyMP
- Index MxRmv;       ///< max variables added per iteration in QPPenaltyMP
-
- double CtOff;      ///< "break" value for the pricing in MinQuad
- 
- Index algo;        ///< algorithm type ( for OSIMPSolver only )
- Index reduction;   ///< pre-processing (reduction) ( for OSIMPSolver only )
- Index threads;     ///< number of threads ( for OSIMPSolver only )
-
- Index MPlvl;       ///< log verbosity of master problem
+ bool IsMPPrimal;   ///< whether the master problem is solved in its primal
+                    ///< form (true) or in its dual one (false)
 
  int RstAlgPrm;     ///< reset parameter, bit-wise coded
 
@@ -2865,9 +2807,8 @@ class FakeFiOracle : public FiOracle
  std::string HardCfg;
  ///< filename for the Block[Solver]Config of non-easy components
 
- std::string MILPMPCfg;
- ///< filename for the BlockSolverConfig of the MILPMPSolver master
- ///< (only used when MPName & 16)
+ std::string MPBSolverCfg;
+ ///< filename for the SolverConfig of the Solver to be used in the MPBlock
 
  std::vector< int > NoEasy;  ///< which components never treat as "easy"
 
@@ -2895,10 +2836,10 @@ class FakeFiOracle : public FiOracle
  Index NrFi;        ///< number of components of Fi()
 
  Index SCalls;      ///< number of calls to compute() (the current included)
- Index ParIter;     ///< number of iterations in this call to compute() 
+ Index ParIter;     ///< number of iterations in this call to compute()
 
- std::vector< MILPSolver * > IsEasy;
- ///< MILPSolver used to read the easy components (non-nullptr iff k is easy)
+ std::vector< bool > IsEasy;
+ ///< true if the component k has found to be easy
 
  Index NrEasy;      ///< number of "easy" component of Fi
 
@@ -2912,37 +2853,36 @@ class FakeFiOracle : public FiOracle
  Vec_VarValue LmbdBst;  ///< the best point found so far
 
  bool LHasChgd;       /**< true if Lambda has changed since the latest call
-		       * to FiAndGi(): allows repeated calls in the same
-		       * Lambda, e.g. with increasing precision */
+                       * to FiAndGi(): allows repeated calls in the same Lambda,
+                       * e.g. with increasing precision */
  bool tHasChgd;       ///< true if t has changed since the last MP
 
  char MPchgs;         ///< nonzero if we can prove no cycling will occur
                       /**< MPchgs == 1 means that the conditions for
-		       * ensuring that no cycle will occur have been found
-  * due to the function value (a SS can be done) or a diagonal linearization
-  * (a NS can be done); MPchgs == 2 means that a vertical linearization
-  * (cutting off Lambda1) has been found, and this by itself ensures no
-  * cycling. */
- 
+                       * ensuring that no cycle will occur have been found
+  * due to the function value (a SS can be done) or a diagonal linearization (a
+  * NS can be done); MPchgs == 2 means that a vertical linearization (cutting
+  * off Lambda1) has been found, and this by itself ensures no cycling. */
+
  Subset whisZ;     /**< the position in the bundle where the "aggregate
-		    * subgradient" Z[ k ] of component k is kept in
-		    * whisZ[ k ]; Inf< Index >() == it is not in the bundle */
+                    * subgradient" Z[ k ] of component k is kept in whisZ[ k ];
+                    * Inf< Index >() == it is not in the bundle */
  std::vector< bool > Zvalid;  /**< Zvalid[ k ] == true if the item in position
-			       * whisZ[ k ] is exactly Z[ k ] as computed by
- * the last master problem. Zvalid[ k ] == true ==> whisZ[ k ] < INF.
- * if Zvalid[ k ] == false and whisZ[ k ] < INF, then Z[ k ] had been
- * previously stored in position whisZ[ k ], but the master problem has
- * been re-solved since and therefore Z[ k ] is no longer current. */
+                               * whisZ[ k ] is exactly Z[ k ] as computed by
+ * the last master problem. Zvalid[ k ] == true ==> whisZ[ k ] < INF. if Zvalid[
+ * k ] == false and whisZ[ k ] < INF, then Z[ k ] had been previously stored in
+ * position whisZ[ k ], but the master problem has been re-solved since and
+ * therefore Z[ k ] is no longer current. */
 
  Subset whisG1;    ///< "representative subgradient" for each component
                    /**< whisG1[ k ] is the first subgradient inserted in the
-		    * bundle for component k in the latest call to InnerLoop
+                    * bundle for component k in the latest call to InnerLoop
  * in which component k has actually been evaluated. This is used as the
- * "representative subgradient" for component k for the computation of the
- * t heuristics, which use information about an "aggregate representative
+ * "representative subgradient" for component k for the computation of the t
+ * heuristics, which use information about an "aggregate representative
  * subgradient" obtained by summing all the individual "representative
- * subgradients".
- * NOTE 1: the "representative subgradient" used to be selected as the one
+ * subgradients". NOTE 1: the "representative subgradient" used to be selected
+ * as the one
  *         with smallest Alfa1k and largest ScPr1k, which may have been a
  *         bit better but was heuristic anyway; choosing the first makes
  *         for a simpler logic, and ideally "the first should be the best"
@@ -2968,17 +2908,17 @@ class FakeFiOracle : public FiOracle
 
  VarValue ScPr1;   ///< ideally, ScalarProduct( dir , G1 )
  VarValue Alfa1;   /**< ideally, the linearization error of G1 w.r.t. the
-		    * current point Lambda. */
+                    * current point Lambda. */
 
  Vec_VarValue LowerBound;  ///< Lower Bound over (each component of) Fi
  VarValue f_global_LB;     ///< an algorithmically discovered global LB
- 
+
  VarValue t;           ///< the (tremendous) t parameter
  VarValue Prevt;       ///< what t were before being changed for funny reasons
 
  VarValue Sigma;       ///< Sigma*: convex combination of the Alfa's
  VarValue DSTS;        /**< D*_{t*}( -z* ), the other part of the dual
-			* objective */
+                        * objective */
  Vec_VarValue vStar;   ///< v*, the predicted improvement
 
  VarValue DeltaFi;     ///< FiLambda - FiLambda1
@@ -2994,75 +2934,81 @@ class FakeFiOracle : public FiOracle
                       std::greater< Index > > FreList;
  ///< list of free positions in the bundle
  /**< FreList is the priority queue of free positions in the bundle, where
-  * the position with higher priority is that with smaller name. This is why
-  * the comparison parameter has to be explicitly set to
-  * std::greater< Index >, since a priority queue with the default
-  * std::less< Index > spits out the element with larger value. */
+  * the position with higher priority is that with smaller name. This is why the
+  * comparison parameter has to be explicitly set to std::greater< Index >,
+  * since a priority queue with the default std::less< Index > spits out the
+  * element with larger value. */
 
  /** NrItems[ k ] contains the number of items in the bundle (master problem)
-  * for component k. If ( BPar7 & 3 ) < 3, this number may be strictly less
-  * than the number of linearizations in the global pool of component k,
-  * since removals from the bundle do not imply removals from the global pool
+  * for component k. If ( BPar7 & 3 ) < 3, this number may be strictly less than
+  * the number of linearizations in the global pool of component k, since
+  * removals from the bundle do not imply removals from the global pool
   */
 
  Subset NrItems;  ///< number of items in the bundle for each component
 
  /** FrFItem[ k ] contains the index of the first position in the global
-  * pool of component k where BundleSolver can put a new linearization when
-  * the corresponding item is added to the bundle (master problem). Note
-  * that whether a position is suitable to this depends on BPar2: if
-  * ( BPar7 & 3 == 0 ), then the position must be completely empty
-  * (InvItemVcblr[ k ][ i ] == INF), while if ( BPar7 & 3 != 0 ) then
-  * another linearization can be in that position already provided that
-  * there is no corresponding item in the bundle
+  * pool of component k where BundleSolver can put a new
+  * linearization when the corresponding item is added to the bundle
+  * (master problem). Note that whether a position is suitable to this
+  * depends on BPar2: if ( BPar7 & 3 == 0 ), then the position must be
+  * completely empty (InvItemVcblr[ k ][ i ] == INF), while if
+  * ( BPar7 & 3 != 0 ) then another linearization can be in that position
+  * already provided that there is no corresponding item in the bundle
   * (vBPar2[ k ] <= InvItemVcblr[ k ][ i ] < INF). */
 
  Subset FrFItem;  ///< the first free item in each global pool
 
  /** MaxItem[ k ] contains 1 + the maximum index of a position in the
-  * global pool of component k where a linearization is stored; if
-  * MaxItem[ k ] == 0, then the global pool is empty. Note that this
-  * ignores the fact that a position in the global pool corresponds or
-  * not to an item in the bundle: all linearizations count. As a
-  * consequence it must always be MaxItem[ k ] >= FrFItem[ k ]. */
+  * global pool of component k where a linearization is stored; if MaxItem[ k ]
+  * == 0, then the global pool is empty. Note that this ignores the fact that a
+  * position in the global pool corresponds or not to an item in the bundle: all
+  * linearizations count. As a consequence it must always be MaxItem[ k ] >=
+  * FrFItem[ k ]. */
 
  Subset MaxItem;  ///< the first unused item in each global pool
 
  /** Vocabulary of items: ItemVcblr[ i ].first is the component name
-  * and ItemVcblr[ i ].second is the name in the global pool of that
-  * component for item in position i of the bundle (master problem).
-  * ItemVcblr[ i ].second == INF means that position i in the bundle is
-  * not used. */
+  * and ItemVcblr[ i ].second is the name in the global pool of that component
+  * for item in position i of the bundle (master problem). ItemVcblr[ i ].second
+  * == INF means that position i in the bundle is not used. */
 
  std::vector< std::pair< Index , Index > > ItemVcblr;
 
  /** Inverse vocabulary of items. InvItemVcblr[ k ] is a Subset of size
-  * vBPar2[ k ] and describes the global pool of component k. With
-  * p = InvItemVcblr[ k ][ i ], if p < vBPar2[ NrFi ], then the linearization
-  * with name i in the global pool of h is in the bundle at position p.
-  * If p == INF, then there is no linearization with name i in the global
-  * pool of k. If vBPar2[ NrFi ] <= p < INF, then there is a linearization
-  * with name i in the global pool of h, but it is not in the bundle.
+  * vBPar2[ k ] and describes the global pool of component k. With p =
+  * InvItemVcblr[ k ][ i ], if p < vBPar2[ NrFi ], then the linearization with
+  * name i in the global pool of h is in the bundle at position p. If p == INF,
+  * then there is no linearization with name i in the global pool of k. If
+  * vBPar2[ NrFi ] <= p < INF, then there is a linearization with name i in the
+  * global pool of h, but it is not in the bundle.
   *
   * NOTE: THE GLOBAL POOL OF SOME C05Function CAN BE LARGER THAN vBPar2[ k ],
-  * BUT ALL ELEMENTS WITH NAME LARGER THAN vBPar2[ k ] ARE NEVER USED OR
-  * CHANGED BY BundleSolver. */
+  * BUT ALL ELEMENTS WITH NAME LARGER THAN vBPar2[ k ] ARE NEVER USED OR CHANGED
+  * BY BundleSolver. */
 
  std::vector< Subset > InvItemVcblr;
 
+ /** Highest global slot index occupied in ItemVcblr plus one, i.e. the
+  * current upper bound of valid global names. Always in
+  * [0, ItemVcblr.size()]; bumped by add_to_global_pool() and trimmed
+  * by remove_from_global_pool(). */
+
+ Index f_max_name{ 0 };
+
   /** Out-Of-Base counters: if OOBase[ i ]
-   * = Inf< SIndex >() then there is no item in position i of the bundle
-   * = k > 0 means that the item in position i is out of base since k
+   * = Inf< SIndex >() then there is no item in position i of the bundle = k > 0
+   * means that the item in position i is out of base since k
    *   iterations
-   * = 0 means in the current base but potentially removable
-   * = a *finite* negative value - k means not removable for the next k
+   * = 0 means in the current base but potentially removable = a *finite*
+   * negative value - k means not removable for the next k
    *   iterations: note that some items in base may be such
    * = - Inf< SIndex >() means unremovable */
 
  Vec_SIndex OOBase;
 
  bool TrueLB;         /**< true if LowerBound is a "true" lower bound rather
-		       * than a "conditional" one */
+                       * than a "conditional" one */
  bool SSDone;         ///< true if the last step was a SS
 
  Index f_wFi;         ///< which component was evaluated last
@@ -3072,15 +3018,15 @@ class FakeFiOracle : public FiOracle
  std::vector< C05Function * > v_c05f;
  ///< the vector of (pointers to) the components of the sum function
 
- // this is necessary since OSIMPSolver does not deal with constant term
  OFValue constant_value{};
  ///< the summation of the constant terms of all "easy" components
+ ///< collected outside the master MP, which cannot carry them on its own
 
  LinearFunction * f_lf;  ///< the 0-th component of the sum function
 
  bool f_convex;          ///< true if all objectives are convex
- 
- MPSolver * Master;      ///< (pointer to) the Master Problem Solver
+
+ MasterProblemBlock * MasterPB;  ///< the Master Problem Block
 
  std::vector< ColVariable * > LamVcblr;  ///< map Lambda -> ColVariable
 
@@ -3089,13 +3035,12 @@ class FakeFiOracle : public FiOracle
  // entries [ 0 .. loc_NV - 1 ] are the indices in LamVcblr of h's active
  // Variables in the order get_linearization_coefficients writes them, and
  // the last slot is Inf< Index >() so v_local2global[ h ].data() is a
- // ready-to-use Inf-terminated SGBse for MPSolver::SetItemBse. Empty
- // (size 0) when f_sparse_lambda is false (legacy dense path).
+ // ready-to-use Inf-terminated SGBse for the gather logic. Empty
+ // (size 0) when f_sparse_lambda is false (dense path).
  //
- // Owned by BundleSolver (not by the C05Function), in line with the
- // policy that Solver-specific bookkeeping never leaks into the
- // Function interface; the Inf-terminated convention is an OSIMPSolver
- // implementation detail that will disappear with Bundle 2.0.
+ // Owned by BundleSolver (not by the C05Function), in line
+ // with the policy that Solver-specific bookkeeping never leaks into
+ // the Function interface.
  std::vector< std::vector< Index > > v_local2global;
 
  // true iff at least one v_c05f[ h ] (or f_lf) exposes a strict subset
@@ -3108,16 +3053,16 @@ class FakeFiOracle : public FiOracle
  // to sparse on the spot — materialising identity local-to-global maps
  // in v_local2global[ * ] and rebuilding Lambda2Idx / v_ref_count from
  // the dense invariant — before the sparse handlers below process the
- // Mod. When false, every gather site falls back to the legacy "all
- // components see the same dense Lambda" code path.
+ // Mod. When false, every gather site falls back to the dense
+ // "all components see the same Lambda" code path.
  bool f_sparse_lambda = false;
 
  // pointer → global Lambda index map, the inverse of LamVcblr. Kept live
- // (and incrementally maintained) only when f_sparse_lambda == true; used
- // to resolve ColVariable * coming from a FunctionModVars* against the
- // global Lambda index space when v_c05f[ h ] is sparse (i.e. when the
- // dense invariant "all components have identical active vars in the
- // same order" does not hold and the Mod's first()/range()/subset()
+ // (and incrementally maintained) only when f_sparse_lambda == true;
+ // used to resolve ColVariable * coming from a FunctionModVars* against
+ // the global Lambda index space when v_c05f[ h ] is sparse (i.e. when
+ // the dense invariant "all components have identical active vars in
+ // the same order" does not hold and the Mod's first()/range()/subset()
  // entries cannot be interpreted globally). In dense mode this map is
  // cleared after set_Block to save memory.
  std::unordered_map< ColVariable * , Index > Lambda2Idx;
@@ -3128,7 +3073,7 @@ class FakeFiOracle : public FiOracle
  // sparse FunctionModVarsRngd / FunctionModVarsSbst handlers, and when
  // it reaches 0 the slot is queued for global removal — at the end of
  // the 4th Modification loop we compact LamVcblr / Lambda / Lambda2Idx
- // / v_local2global[ * ] and call Master->RmvVars to reclaim the
+ // / v_local2global[ * ] and call MasterPB->remove_vars to reclaim the
  // master row. Kept live only when f_sparse_lambda == true.
  std::vector< Index > v_ref_count;
 
@@ -3138,13 +3083,19 @@ class FakeFiOracle : public FiOracle
  VarValue UpFiBest;      ///< Fi best value vector
 
  Vec_VarValue UpRifFi;   /** The value of Fi[ k ]() where the zero of the
-			  * translated Cutting Plane models are fixed */
+                          * translated Cutting Plane models are fixed */
  bool RifeqFi;           ///< true if UpRifFi == UpFiLmb
+ bool f_linear_part_set = false;
+ ///< guard that allows the constant linear gradient of f_lf to be handed
+ /// to MasterPB exactly once during a solver instance lifetime: f_lf is
+ /// the affine "0-th" component of the original sum-function and its
+ /// LinearFunction coefficients are problem data, hence invariant across
+ /// successive calls to compute()
  bool CmptdinL;          ///< true if all components are "current"
                          /**< true if the last point in which all non-easy
-			  * components have been compute()-d is the current
-			  * point Lambda. */
- 
+                          * components have been compute()-d is the current
+                          * point Lambda. */
+
  Vec_VarValue UpFiLmb1;  ///< upper function values at Lambda1
  Vec_VarValue LwFiLmb1;  ///< lower function values at Lambda1
  Index UpFiLmb1def;      ///< how many entries of UpFiLmb1 are < INF
@@ -3157,9 +3108,9 @@ class FakeFiOracle : public FiOracle
 
  VarValue Fi0Lmb;        ///< value of the linear 0-th component in Lambda
  VarValue Fi0Lmb1;       ///< value of the linear 0-th component in Lambda1
- 
+
  Subset CurrNrEvls;      /**< how many times compute() has been called for
-			  * each component in the current iteration */
+                          * each component in the current iteration */
 
  double DST;             ///< D_t( z* ), used to compute the crucial Delta*
  double NrmD;            ///< Euclidean norm of the current direction d*
@@ -3171,10 +3122,6 @@ class FakeFiOracle : public FiOracle
  std::chrono::time_point< std::chrono::system_clock > c_start;
  ///< starting instant of last call to compute()
 
- // the FakeFiOracle object - - - - - - - - - - - - - - - - - - - - - - - - -
-
- FakeFiOracle FakeFi;  ///< the FakeFiOracle object
-
 /*--------------------------------------------------------------------------*/
 /*--------------------- PRIVATE PART OF THE CLASS --------------------------*/
 /*--------------------------------------------------------------------------*/
@@ -3182,17 +3129,18 @@ class FakeFiOracle : public FiOracle
  private:
 
 /*--------------------------------------------------------------------------*/
-/*--------------------------- PRIVATE TYPES --------------------------------*/
-/*--------------------------------------------------------------------------*/
-/*--------------------------------------------------------------------------*/
 /*-------------------------- PRIVATE METHODS -------------------------------*/
 /*--------------------------------------------------------------------------*/
 
- void InitMP( void );
+ void CreateMPB( void );
 
 /*--------------------------------------------------------------------------*/
 
- Index BStrategy( cIndex wFi );
+ void InitMPB( void );
+
+/*--------------------------------------------------------------------------*/
+
+ Index BStrategy( Index wFi );
 
 /*--------------------------------------------------------------------------*/
 
@@ -3233,7 +3181,7 @@ class FakeFiOracle : public FiOracle
 
 /*--------------------------------------------------------------------------*/
 
- void Delete( cIndex i , bool ModDelete = false );
+ void Delete( Index i , bool ModDelete = false );
 
 /*--------------------------------------------------------------------------*/
 
@@ -3269,7 +3217,7 @@ class FakeFiOracle : public FiOracle
 /*--------------------------------------------------------------------------*/
 
  Lst_sp_Mod::size_type num_outstanding_Modification( void );
- 
+
  bool is_special_GroupMod( GroupModification & gmod );
 
  void flatten_Modification_list( Lst_sp_Mod & vmt , sp_Mod mod );
@@ -3313,14 +3261,14 @@ class FakeFiOracle : public FiOracle
  };  // end( class BundleSolver )
 
 /*--------------------------------------------------------------------------*/
-/*------------------------ CLASS BundleSolverState -------------------------*/
+/*---------------------- CLASS BundleSolverState ---------------------------*/
 /*--------------------------------------------------------------------------*/
 /// class to describe the "internal state" of a BundleSolver
 /** Derived class from State to describe the "internal state" of a
- * BundleSolver: the current stability centre, the proximal parameters, and
- * the global pool of all non-easy components. In a better world the State
- * should comprise the State of the Solver used to solve the Master Problem;
- * this will hopefully happen one day. */
+ * BundleSolver: the current stability centre, the proximal
+ * parameters, and the global pool of all non-easy components. In a better world
+ * the State should comprise the State of the Solver used to solve the Master
+ * Problem; this will hopefully happen one day. */
 
 class BundleSolverState : public State {
 
@@ -3334,17 +3282,18 @@ class BundleSolverState : public State {
  using VarValue = BundleSolver::VarValue;
  using Vec_VarValue = BundleSolver::Vec_VarValue;
 
-/*------------ CONSTRUCTING AND DESTRUCTING BundleSolverState --------------*/
+/*------- CONSTRUCTING AND DESTRUCTING BundleSolverState --------*/
 
  /// constructor, doing everything or nothing.
- /** Constructor of BundleSolverState. If provided with a pointer to a
-  * BundleSolver it immediately copies its "internal state", which is the only
-  * way in which the BundleSolverState can be initialised out of an existing
-  * BundleSolverState. If nullptr is passed (as by default), then an "empty"
-  * BundleSolverState is constructed that can only be filled by calling
-  * deserialize(). */
+ /** Constructor of BundleSolverState. If provided with a pointer
+  * to a BundleSolver it immediately copies its "internal state",
+  * which is the only way in which the BundleSolverState can be
+  * initialised out of an existing BundleSolverState. If nullptr is
+  * passed (as by default), then an "empty" BundleSolverState is
+  * constructed that can only be filled by calling deserialize(). */
 
- BundleSolverState( const BundleSolver * bs = nullptr ) : State() {
+ BundleSolverState( const BundleSolver * bs = nullptr )
+   : State() {
   if( ! bs ) {
    NrFi = NumVar = 0;
    return;
@@ -3372,7 +3321,8 @@ class BundleSolverState : public State {
 /*--------------------------------------------------------------------------*/
  /// de-serialize a BundleSolverState out of netCDF::NcGroup
  /** De-serialize a BundleSolverState out of netCDF::NcGroup; see
-  * BundleSolverState::serialize() for a description of the format. */
+  * BundleSolverState::serialize() for a description of the format.
+  */
 
  void deserialize( const netCDF::NcGroup & group ) override;
 
@@ -3384,7 +3334,7 @@ class BundleSolverState : public State {
    delete el;
   }
 
-/*--------- METHODS DESCRIBING THE BEHAVIOR OF A BundleSolverState ---------*/
+/*---- METHODS DESCRIBING THE BEHAVIOR OF A BundleSolverState ---*/
 
  /// serialize a BundleSolverState into a netCDF::NcGroup
  /** The method serializes the BundleSolverState into the provided
@@ -3456,7 +3406,7 @@ class BundleSolverState : public State {
 
  void print( std::ostream &output ) const override {
   output << "BundleSolverState [" << this << "] with NrFi = " << NrFi
-	 << " and NumVar = " << NumVar;
+         << " and NumVar = " << NumVar;
   }
 
 /*--------------------------- PROTECTED FIELDS -----------------------------*/
@@ -3506,5 +3456,5 @@ class BundleSolverState : public State {
 #endif  /* BundleSolver.h included */
 
 /*--------------------------------------------------------------------------*/
-/*------------------------- End File BundleSolver.h ------------------------*/
+/*----------------------- End File BundleSolver.h --------------------------*/
 /*--------------------------------------------------------------------------*/

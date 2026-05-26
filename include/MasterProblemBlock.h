@@ -70,7 +70,7 @@
  * - **Doubly-Stabilized**: combines both, see [Astorino, Frangioni,
  *   Fuduli, Gorgone, MP 2017].
  *
- * MasterProblemBlock is meant to be driven by a (Generalized) BundleSolver
+ * MasterProblemBlock is meant to be driven by a BundleSolver
  * which is responsible for keeping the bundles B^k updated as the algorithm
  * proceeds; the BundleSolver does *not* directly call any MILP backend, it only
  * manipulates the MP at the Block/Modification level and triggers compute() on
@@ -192,16 +192,33 @@ class MasterProblemBlock : public Block {
   * added to the cutting-plane model to dampen the oscillations of the
   * unstabilized Kelley method:
   *
+  * - #kNone: no stabilization (pure Kelley cutting-plane);
+  *
   * - #kProximal: proximal quadratic term (1/2t) || d ||^2_2;
   *
   * - #kLevel: level constraint v <= f_lev with dual multiplier omega >= 0;
   *
-  * - #kDoublyStabilized: both terms combined. */
+  * - #kTrustRegion: hard trust region || d ||_inf <= t;
+  *
+  * - #kDoublyStabilized: kProximal + kLevel combined;
+  *
+  * - #kUpperLower: two-sided upper/lower bundle [u_bar, l_bar] with a
+  *   proximal term anchored at the upper bundle u_bar; #kProximal,
+  *   #kLevel and #kDoublyStabilized are recovered as special cases by
+  *   degenerating one of the two bundles.
+  *
+  * Only #kProximal, #kLevel and #kDoublyStabilized are currently fully
+  * wired in CreatePrimalMP / CreateDualMP; #kNone, #kTrustRegion and
+  * #kUpperLower are reserved enumerators and CreatePrimalMP /
+  * CreateDualMP throw `std::logic_error` if invoked with one of them. */
 
  enum stabilization_type {
   kProximal         = 0 ,  ///< proximal stabilization
   kLevel            = 1 ,  ///< level stabilization
-  kDoublyStabilized = 2    ///< doubly-stabilized bundle method
+  kDoublyStabilized = 2 ,  ///< doubly-stabilized bundle method
+  kNone             = 3 ,  ///< no stabilization (pure cutting plane)
+  kTrustRegion      = 4 ,  ///< trust region || d ||_inf <= t
+  kUpperLower       = 5    ///< upper / lower bundle pair
   };
 
 /*----------------------------- CONSTANTS ----------------------------------*/
@@ -219,7 +236,8 @@ class MasterProblemBlock : public Block {
   * formulation is selected by CreateEmptyMP(). */
 
  explicit MasterProblemBlock( Block * father = nullptr )
-  : Block( father ) , IsPrimal( false ) , StblType( kDoublyStabilized ) ,
+  : Block( father ) , IsPrimal( false ) , IsConvex( true ) ,
+    StblType( kDoublyStabilized ) ,
     MaxBSize( 0 ) , MaxSGLen( 0 ) , NumVars( 0 ) ,
     NoTotCmps( 0 ) , NoEasyCmps( 0 ) , NoHardCmps( 0 ) , DoEasy( 0 ) ,
     t_stab( 1.0 ) , f_lev( 0.0 ) ,
@@ -250,10 +268,11 @@ class MasterProblemBlock : public Block {
  *  @{ */
 
  /// one-shot configuration of MasterProblemBlock
- /** Single-call configuration replacing the legacy SetDim + CreateEmptyMP
-  * + per-component register_easy_component pipeline. This is the API the
-  * surrounding (Generalized)BundleSolver / BendersDecompositionSolver
-  * uses to populate MasterProblemBlock with everything it needs.
+ /** Single-call configuration that bundles dimensioning, primal/dual
+  * variant selection and easy-component registration into one entry
+  * point. This is the API the surrounding BundleSolver /
+  * BendersDecompositionSolver uses to populate MasterProblemBlock with
+  * everything it needs.
   *
   * The method is solver-agnostic and function-agnostic: it takes plain
   * C05Function pointers and uses the virtual hook
@@ -309,10 +328,11 @@ class MasterProblemBlock : public Block {
                  int max_bundle_size ,
                  int num_vars ,
                  std::vector< bool > is_easy ,
-                 std::vector< C05Function * > components ,
+                 const std::vector< C05Function * > & components ,
                  Block * original_block ,
                  std::unordered_set< Block * > ignored_blocks = {} ,
-                 stabilization_type reg = kDoublyStabilized );
+                 stabilization_type reg = kDoublyStabilized ,
+                 bool convex = true );
 
 /*--------------------------------------------------------------------------*/
  /// provide MasterProblemBlock with the basic dimensions of the MP
@@ -475,7 +495,7 @@ class MasterProblemBlock : public Block {
   * The method does *not* touch the (c^k - x_bar A^k) coefficients on u^k: the
   * stability-centre-dependent part of the dual objective is materialised at
   * solve time through the master x_bar * z linear term, which the driving
-  * (Generalized)BundleSolver keeps in sync with the current stability centre
+  * BundleSolver keeps in sync with the current stability centre
   * via the appropriate Modification.
   *
   * \note the calls to this method are expected to be made in order, with
@@ -492,7 +512,7 @@ class MasterProblemBlock : public Block {
  /** Returns the PolyhedralFunctionBlock used to model the k-th "hard"
   * component of the sum-function, for k in [0, NoHardCmps). The pointer stays
   * valid as long as the MP is not torn down by clear() or SetDim(); it is meant
-  * to be used by the (Generalized)BundleSolver to feed cuts into the underlying
+  * to be used by the BundleSolver to feed cuts into the underlying
   * PolyhedralFunction via the Modification interface. */
 
  [[nodiscard]] Block * get_hard_component( int k ) const;
@@ -527,7 +547,7 @@ class MasterProblemBlock : public Block {
   * NumVars; moved into the PolyhedralFunction); \p alpha is the linearization
   * error.
   *
-  * The (k, slot) pair lets the surrounding (Generalized)BundleSolver keep its
+  * The (k, slot) pair lets the surrounding BundleSolver keep its
   * ItemVcblr / InvItemVcblr name-management *unchanged* across subsequent
   * remove_cut() calls: MasterPB internally tracks the slot -> local-row mapping
   * into the PolyhedralFunction of HardCmps[k] (rows are renumbered on
@@ -535,9 +555,22 @@ class MasterProblemBlock : public Block {
   *
   * The call issues the appropriate PolyhedralFunctionModAddd through the usual
   * Modification interface, so the [MILP]Solver attached to MasterProblemBlock
-  * picks it up on the next compute(). */
+  * picks it up on the next compute().
+  *
+  * Before committing the new row, the incoming (g, alpha) is compared
+  * coefficient-by-coefficient against every linearization already in the
+  * bundle of HardCmps[k]: if a match is found (within an absolute
+  * tolerance scaled by the magnitudes involved) no insertion takes place
+  * and the return value is the (k, slot) of the duplicate. Otherwise the
+  * cut is installed as described above and the return value is the
+  * sentinel #kCutInserted (== -1), signalling that the master problem has
+  * effectively changed. The surrounding bundle solver consumes this
+  * return code to decide whether the new cut warrants treating the master
+  * as "changed" for the purposes of the SS/NS bookkeeping. */
 
- void add_cut( int k , int slot , std::vector< double > && g , double alpha );
+ static constexpr int kCutInserted = -1;
+
+ int add_cut( int k , int slot , std::vector< double > && g , double alpha );
 
 /*--------------------------------------------------------------------------*/
  /// add a new linearization (g, alpha) to bundle B^k, auto-allocating a slot
@@ -746,7 +779,7 @@ class MasterProblemBlock : public Block {
 /*--------------------------------------------------------------------------*/
  /// linear-in-t sensitivity of v*(t) around the current t_stab
  /** NDOFi counterpart of Master->SensitAnals(vl, vc). The
-  * (Generalized)BundleSolver uses these two scalars to predict
+  * BundleSolver uses these two scalars to predict
   *     v( t_new ) >= vc + t_new * vl
   * in the long-term "hard" t-strategy. With the proximal dual MP
   *   v*(t) = sum_k sum_i theta^k_i alpha^k_i + gamma^k LB^k + x_bar . z*
@@ -800,6 +833,34 @@ class MasterProblemBlock : public Block {
   * constant gradient b through set_b). */
 
  void set_x_bar( const std::vector< double > & x_bar );
+
+/*--------------------------------------------------------------------------*/
+ /// set the upper bundle u_bar of an #kUpperLower stabilization
+ /** Companion of #set_x_bar to be used under #kUpperLower stabilization
+  * (which is currently a reserved-but-not-implemented type, see
+  * #stabilization_type): \p u_bar is the upper bundle centre, around
+  * which the proximal term is anchored on the "upper" side. Throws when
+  * called under any other stabilization. \p u_bar must have size
+  * NumVars.
+  *
+  * Not yet implemented: the method exists as an API skeleton so callers
+  * can be written against the final interface today, but it currently
+  * throws std::logic_error unconditionally. */
+
+ void set_u_bar( const std::vector< double > & u_bar );
+
+/*--------------------------------------------------------------------------*/
+ /// set the lower bundle l_bar of an #kUpperLower stabilization
+ /** Companion of #set_u_bar: \p l_bar is the lower bundle centre, around
+  * which the proximal term is anchored on the "lower" side. Throws when
+  * called under any stabilization other than #kUpperLower. \p l_bar
+  * must have size NumVars.
+  *
+  * Not yet implemented: the method exists as an API skeleton so callers
+  * can be written against the final interface today, but it currently
+  * throws std::logic_error unconditionally. */
+
+ void set_l_bar( const std::vector< double > & l_bar );
 
 /*--------------------------------------------------------------------------*/
  /// install the constant linear part \p b of the original sum-function
@@ -861,14 +922,15 @@ class MasterProblemBlock : public Block {
  void remove_vars( const int * subset , int sz );
 
 /*--------------------------------------------------------------------------*/
- /// forward an ostream + verbosity to the [MILP]Solver attached to MasterPB
- /** Drop-in for Master->SetMPLog(log_stream, verb). Sets the log ostream
-  * on the first Solver registered to MasterProblemBlock and (if the
-  * Solver advertises an `intLogVerb` parameter) sets the log verbosity
-  * to \p verb. No-op if no Solver is registered or if the Solver does
-  * not expose intLogVerb. */
+ /// forward an ostream to the [MILP]Solver attached to MasterPB
+ /** Sets the log ostream on the first Solver registered to
+  * MasterProblemBlock. The verbosity itself is left to the Solver's own
+  * ComputeConfig (typically the `intLogVerb` knob in the MPBSolverCfg
+  * file), so the surrounding BundleSolver does not need to
+  * carry a duplicate "MP log verbosity" parameter. No-op if no Solver
+  * is registered. */
 
- void forward_log( std::ostream * log_stream , int verb );
+ void forward_log( std::ostream * log_stream );
 
 /*--------------------------------------------------------------------------*/
  /// cap the master Solver running time to \p t (seconds)
@@ -936,7 +998,7 @@ class MasterProblemBlock : public Block {
  /// returns the current value of the proximal stabilization parameter t
  /** Returns the proximal stabilization parameter t currently used in the
   * quadratic / linear term of the MP Objective. Needed by the caller (e.g.
-  * GeneralizedBundleSolver::FormLambda1) to convert the master-side step
+  * BundleSolver::FormLambda1) to convert the master-side step
   * d* = -t * z* back to a t-independent displacement when applying a
   * different Tau (as in t-strategies). */
 
@@ -995,6 +1057,7 @@ class MasterProblemBlock : public Block {
  // - - - - - - - - -  algorithmic / structural parameters - - - - - - - - - -
 
  bool IsPrimal;     ///< whether the MP is in its primal or dual form
+ bool IsConvex;     ///< whether the C05Function is convex (eMin) or concave (eMax)
 
  stabilization_type StblType;
                           ///< type of stabilization, see #stabilization_type
@@ -1052,8 +1115,8 @@ class MasterProblemBlock : public Block {
                                    ///< sub-Block (cf. set_lambda()) and with
                                    ///< coefficient +1 in the master-side
                                    ///< NormalizationCns whose RHS is therefore
-                                   ///< NoHardCmps (not 1 as in the legacy
-                                   ///< single-lambda layout)
+                                   ///< NoHardCmps (one lambda per hard
+                                   ///< component, summing to NoHardCmps)
 
  ColVariable Var_r;                ///< dual multiplier of the global LB row
 
