@@ -100,15 +100,18 @@ void MasterProblemBlock::clear()
  omega_obj_idx = -1;
 
  // drop the dynamically-sized variable / constraint groups (primal d /
- // v^k / Bounds_v_hard, dual z / Var_lambdas / CouplingCns); the scalar
- // members (Var_r, Var_omega, NormalizationCns, LevelCns) keep their
- // default state and are released by their own destructors when *this
- // is destroyed
+ // v^k / Bounds_v_hard, dual z / CouplingCns); the scalar members
+ // (Var_lambda, Var_r, Var_omega, NormalizationCns, LevelCns) keep
+ // their default state and are released by their own destructors when
+ // *this is destroyed
  Var_d.clear();
  Var_v_hard.clear();
  Bounds_v_hard.clear();
  Var_z.clear();
- Var_lambdas.clear();
+ Var_lambda.set_value( 0.0 );
+ Var_lambda.is_fixed( false , eNoMod );
+ Var_s_plus.clear();
+ Var_s_minus.clear();
  CouplingCns.clear();
  slot_to_local.clear();
 
@@ -299,6 +302,13 @@ void MasterProblemBlock::configure(
     throw( std::invalid_argument(
          "MasterProblemBlock::configure: easy component " +
          std::to_string( k ) + " is a LagBFunction with no inner Block" ) );
+   // generate the per-row stationarity constraints
+   //     E^k_i u^k + lambda * e^k_i = 0
+   // BEFORE moving the inner Block under *this*:
+   // absorb_LBF_into_dual_MP() reaches into the inner Block via
+   // lbf->get_inner_block(), which still resolves to `inner` here but
+   // would return nullptr after transfer_ownership_to
+   absorb_LBF_into_dual_MP( lbf );
    inner->transfer_ownership_to( this );
    EasyCmps.push_back( inner );
    continue;
@@ -568,23 +578,33 @@ void MasterProblemBlock::CreateDualMP( stabilization_type Stbl )
  StblType = Stbl;
  IsPrimal = false;
 
- // ---- static dual multipliers: lambda_k (per-hard-cmp), r, omega ---------
+ // ---- static dual multipliers: lambda (global), r, omega -----------------
  //
- // omega is the multiplier of the level constraint v <= f_lev and is
- // non-negative under #kLevel / #kDoublyStabilized; with pure proximal
- // stabilization the level row does not exist, so omega is fixed to 0.
+ // lambda is the *single* global non-negative multiplier paired with the
+ // model-value equation
  //
- // The lambda multipliers must be ONE PER hard component: each lambda_k
- // appears with coefficient +1 in the normalization row of the k-th PFB
- // (sum_i theta^k_i + gamma^k + lambda_k = 1). A single shared lambda
- // would force theta^k_i = 1 - lambda equally across all k, which collapses
- // the dual feasible set whenever the b^k vary in sign across components
- // (a SS would then converge to z* = 0 spuriously)
+ //     v = d b + sum_E pi^k e^k + sum_H v_x^k
+ //
+ // of the lower model  and the
+ // stationarity condition (ii) at v_x^k: lambda = sum_i theta^k_i +
+ // gamma^k for every k in H). Hence the same lambda enters the simplex
+ // (= normalization) row of *every* hard component PFB sub-Block with
+ // coefficient +1 (cf. PolyhedralFunctionBlock::set_lambda, called below
+ // with a single shared pointer), so each per-PFB row reads
+ //
+ //     sum_i theta^k_i + gamma^k + lambda = 1.
+ //
+ // r is the non-negative multiplier of the global lower bound v >= LB;
+ // omega is the non-negative multiplier of the level row Lvl >= v,
+ // live only under #kLevel / #kDoublyStabilized. The master-side
+ // stationarity at v then reads
+ //
+ //     lambda + r - omega = 1
+ //
+ // which becomes the single static "normalization" constraint installed
+ // below; the per-PFB rows are owned by the PFB sub-Blocks themselves.
 
- Var_lambdas.clear();
- Var_lambdas.resize( NoHardCmps );
- for( auto & lk : Var_lambdas )
-  lk.is_positive( true , eNoMod );
+ Var_lambda.is_positive( true , eNoMod );
  Var_r.is_positive( true , eNoMod );
  if( Stbl == kLevel || Stbl == kDoublyStabilized ) {
   Var_omega.is_positive( true , eNoMod );
@@ -593,10 +613,9 @@ void MasterProblemBlock::CreateDualMP( stabilization_type Stbl )
   Var_omega.set_value( 0 );
   Var_omega.is_fixed( true , eNoMod );
   }
- if( NoHardCmps > 0 )
-  add_static_variable( Var_lambdas , "MPB_lambda" );
- add_static_variable( Var_r , "MPB_r" );
- add_static_variable( Var_omega , "MPB_omega" );
+ add_static_variable( Var_lambda , "MPB_lambda" );
+ add_static_variable( Var_r      , "MPB_r"      );
+ add_static_variable( Var_omega  , "MPB_omega"  );
 
  // ---- z auxiliary variables (free, one per coordinate) -------------------
 
@@ -605,44 +624,77 @@ void MasterProblemBlock::CreateDualMP( stabilization_type Stbl )
  if( NumVars > 0 )
   add_static_variable( Var_z , "MPB_z" );
 
- // ---- global normalization row: sum_k lambda_k + r - omega = NoHardCmps --
- //
- // Each lambda_k contributes +1 (and the per-PFB normalization sum_i
- // theta^k_i + gamma^k + lambda_k = 1 contributes a separate row), so
- // summing those NoHardCmps PFB-side equalities gives sum_k lambda_k =
- // NoHardCmps - sum_k (sum_i theta^k_i + gamma^k); the master-side row
- // closes the loop with the level/X part r - omega
+ // ---- s^+ / s^- non-negative slack multipliers (box) ---------------------
+ // One per coordinate; the slack is meaningful only when the matching
+ // box side is finite (L_t - (x_bar)_t for s^+, U_t - (x_bar)_t for s^-).
+ // Until the box is wired in we keep both fixed to 0 so the slack does
+ // not contribute to the dual problem.
+ Var_s_plus.clear();
+ Var_s_minus.clear();
+ Var_s_plus.resize( NumVars );
+ Var_s_minus.resize( NumVars );
+ for( int j = 0 ; j < NumVars ; ++j ) {
+  Var_s_plus[ j ].is_positive( true , eNoMod );
+  Var_s_plus[ j ].set_value( 0.0 );
+  Var_s_plus[ j ].is_fixed( true , eNoMod );
+  Var_s_minus[ j ].is_positive( true , eNoMod );
+  Var_s_minus[ j ].set_value( 0.0 );
+  Var_s_minus[ j ].is_fixed( true , eNoMod );
+  }
+ if( NumVars > 0 ) {
+  add_static_variable( Var_s_plus  , "MPB_s_plus"  );
+  add_static_variable( Var_s_minus , "MPB_s_minus" );
+  }
+
+ // ---- global normalization row: lambda + r - omega = 1 -------------------
  {
   LinearFunction::v_coeff_pair norm_terms;
-  norm_terms.reserve( NoHardCmps + 2 );
-  for( auto & lk : Var_lambdas )
-   norm_terms.emplace_back( & lk , 1.0 );
+  norm_terms.reserve( 3 );
+  norm_terms.emplace_back( & Var_lambda ,  1.0 );
   norm_terms.emplace_back( & Var_r      ,  1.0 );
   norm_terms.emplace_back( & Var_omega  , -1.0 );
 
-  const double rhs = double( NoHardCmps );
-  NormalizationCns.set_lhs( rhs , eNoMod );
-  NormalizationCns.set_rhs( rhs , eNoMod );
+  NormalizationCns.set_lhs( 1.0 , eNoMod );
+  NormalizationCns.set_rhs( 1.0 , eNoMod );
   NormalizationCns.set_function(
      new LinearFunction( std::move( norm_terms ) ) , eNoMod );
   add_static_constraint( NormalizationCns , "MPB_norm" );
   }
 
- // ---- coupling rows z_j = b_j (b = 0 until BundleSolver sets the linear --
- // ---- part of the original sum-function)                              ----
+ // ---- coupling rows ) -----------------
  //
- // CouplingCns is exposed as a *dynamic* group because that is the only
- // overload of Block::add_*_constraint() that accepts std::list, and the
- // PolyhedralFunctionBlock::set_conjugate_constraint API takes a
- // std::list< FRowConstraint > & by reference. The list size itself is in
- // fact constant (NumVars) and never grows during the algorithm.
+ //   z_j - lambda * b_j + s^+_j - s^-_j - sum_{k in E} ( u^k A^k )_j
+ //         - sum_{k in H, i in beta_SG^k} theta^k_i g^k_{i,j}
+ //         - sum_{k in H, h in beta_F^k}  theta^k_h g^k_{h,j}        = 0
+ //
+ // The lambda*b_j coefficient is filled in by set_linear_part() once
+ // BundleSolver knows the linear part b of the original sum-function;
+ // the theta-side terms are appended by PolyhedralFunctionBlock::set_-
+ // conjugate_constraint() called below for every hard component; the
+ // u^k A^k terms (easy components in the dual MP) live inside the
+ // stolen LagBFunction inner Block. CouplingCns is exposed as a *dynamic*
+ // group because PolyhedralFunctionBlock::set_conjugate_constraint takes
+ // a std::list< FRowConstraint > & by reference; the list size itself
+ // stays constant (NumVars) throughout the algorithm.
+ //
+ // The fixed entries on Var_lambda / Var_s_plus[ j ] / Var_s_minus[ j ]
+ // are inserted *now* (with a 0 coefficient on Var_lambda, which
+ // set_linear_part will later refresh to -b_j) so that the positions
+ // 1..3 of every CouplingCns[ j ] LinearFunction are stable; subsequent
+ // calls to PolyhedralFunctionBlock::set_conjugate_constraint append
+ // their theta-terms in tail without disturbing them.
 
  CouplingCns.clear();
  CouplingCns.resize( NumVars );
  {
   auto it = CouplingCns.begin();
   for( int j = 0 ; j < NumVars ; ++j , ++it ) {
-   LinearFunction::v_coeff_pair vp{ { & Var_z[ j ] , 1.0 } };
+   LinearFunction::v_coeff_pair vp;
+   vp.reserve( 4 );
+   vp.emplace_back( & Var_z[ j ]        ,  1.0 );  // pos 0
+   vp.emplace_back( & Var_lambda        ,  0.0 );  // pos 1 (set by set_linear_part)
+   vp.emplace_back( & Var_s_plus[ j ]   ,  1.0 );  // pos 2
+   vp.emplace_back( & Var_s_minus[ j ]  , -1.0 );  // pos 3
    it->set_function( new LinearFunction( std::move( vp ) , 0.0 ) , eNoMod );
    it->set_lhs( 0.0 , eNoMod );
    it->set_rhs( 0.0 , eNoMod );
@@ -709,7 +761,7 @@ void MasterProblemBlock::CreateDualMP( stabilization_type Stbl )
   pfb->generate_abstract_constraints();
   pfb->generate_objective();
 
-  pfb->set_lambda( & Var_lambdas[ k ] );
+  pfb->set_lambda( & Var_lambda );
   pfb->set_conjugate_constraint( CouplingCns );
 
   HardCmps.push_back( pfb );
@@ -778,8 +830,29 @@ void MasterProblemBlock::CreateDualMP( stabilization_type Stbl )
  omega_obj_idx = -1;
  if( has_omega_lin ) {
   omega_obj_idx = int( triples.size() );
-  const double omega_lin = std::isfinite( f_lev ) ? sgn * f_lev : 0.0;
+  // : the omega-side contribution to the dual objective is
+  //     - omega * Lvl_xbar  ,   Lvl_xbar = f_lev + f_C
+  // in the textbook eMax form; the convex case flips the whole row sign
+  const double omega_lin = std::isfinite( f_lev )
+                            ? - sgn * ( f_lev + f_C ) : 0.0;
   triples.emplace_back( & Var_omega , omega_lin , 0.0 );
+  }
+
+ // : the box slacks s^+ / s^- contribute
+ //     + s^+ ( L - x_bar ) - s^- ( U - x_bar )
+ // in the textbook eMax form. Coefficients start at 0 (= no box wired
+ // yet, slacks fixed); set_box() / set_x_bar() update them later. The
+ // s^+ / s^- triples are laid out contiguously after omega so that the
+ // refresh logic can address them by a fixed base offset
+ s_plus_obj_idx  = -1;
+ s_minus_obj_idx = -1;
+ if( NumVars > 0 ) {
+  s_plus_obj_idx = int( triples.size() );
+  for( int j = 0 ; j < NumVars ; ++j )
+   triples.emplace_back( & Var_s_plus[ j ] , 0.0 , 0.0 );
+  s_minus_obj_idx = int( triples.size() );
+  for( int j = 0 ; j < NumVars ; ++j )
+   triples.emplace_back( & Var_s_minus[ j ] , 0.0 , 0.0 );
   }
 
  auto obj = new FRealObjective( this ,
@@ -960,51 +1033,103 @@ void MasterProblemBlock::absorb_BBF_into_primal_MP( BendersBFunction * bbf )
  }
 
 /*--------------------------------------------------------------------------*/
-/*--------------------------- EASY COMPONENTS ------------------------------*/
-/*--------------------------------------------------------------------------*/
 
-void MasterProblemBlock::register_easy_component(
-                  Block * easy_blk ,
-                  std::vector< LinearFunction::v_coeff_pair > && A_rows )
+void MasterProblemBlock::absorb_LBF_into_dual_MP( LagBFunction * lbf )
 {
- if( IsPrimal )
-  throw( std::logic_error(
-       "MasterProblemBlock::register_easy_component: easy components are "
-       "only supported in the dual MP" ) );
-
- if( ! easy_blk )
+ if( ! lbf )
   throw( std::invalid_argument(
-       "MasterProblemBlock::register_easy_component: null sub-Block" ) );
+       "MasterProblemBlock::absorb_LBF_into_dual_MP: null LagBFunction" ) );
 
- if( int( EasyCmps.size() ) >= NoEasyCmps )
-  throw( std::logic_error(
-       "MasterProblemBlock::register_easy_component: all NoEasyCmps slots "
-       "have been registered already" ) );
+ // walk every RowConstraint of the inner Block of the LagBFunction
+ // (already transferred under *this* by configure()) and re-install it
+ // on the master as the stationarity row of the dual MP at pi^k
+ // ():
+ //
+ //     E^k_i u^k + lambda * e^k_i = 0    for every row i.
+ //
+ // The original RowConstraint of the inner Block is relaxed in place
+ // (LHS = -INF, RHS = +INF) so that the inner :MILPSolver loaded by the
+ // dual MP back-end does not enforce it twice.
 
- if( int( A_rows.size() ) != NumVars )
+ auto * inner = lbf->get_inner_block();
+ if( ! inner )
   throw( std::invalid_argument(
-       "MasterProblemBlock::register_easy_component: A_rows must have "
-       "NumVars entries" ) );
+       "MasterProblemBlock::absorb_LBF_into_dual_MP: null inner Block" ) );
 
- // 1. attach the sub-Block (and transfer ownership)
- add_nested_Block( easy_blk );
- EasyCmps.push_back( easy_blk );
-
- // 2. augment every CouplingCns[j] with the contributed +A^k_{i,j} u^k_i
- //    terms, leaving the rhs untouched
- auto it = CouplingCns.begin();
- for( int j = 0 ; j < NumVars ; ++j , ++it ) {
-  if( A_rows[ j ].empty() )
-   continue;
-  auto lf = dynamic_cast< LinearFunction * >( it->get_function() );
+ auto process_one = [ this ]( FRowConstraint & ci ) {
+  auto * lf = dynamic_cast< LinearFunction * >( ci.get_function() );
   if( ! lf )
    throw( std::logic_error(
-        "MasterProblemBlock::register_easy_component: CouplingCns row "
-        "does not carry a LinearFunction" ) );
-  lf->add_variables( std::move( A_rows[ j ] ) , eNoMod );
-  }
+        "MasterProblemBlock::absorb_LBF_into_dual_MP: only LinearFunction "
+        "constraints are supported on the inner Block (the easy component's "
+        "feasible set must be polyhedral)" ) );
 
- }  // end( MasterProblemBlock::register_easy_component )
+  // pick e^k_i from the side the original constraint was using: an
+  // equality constraint has lhs = rhs (= eBoth in BBF jargon); an
+  // upper-bounded one stores e^k_i as the rhs; a lower-bounded one as
+  // the lhs. Pure two-sided inequalities are ambiguous in ,
+  // since stationarity wants a single e^k_i; we currently accept them
+  // by taking the finite side (rhs if finite, else lhs).
+  const double orig_lhs = ci.get_lhs();
+  const double orig_rhs = ci.get_rhs();
+  double e_i;
+  if( orig_lhs == orig_rhs )                e_i = orig_rhs;
+  else if( std::isfinite( orig_rhs ) )      e_i = orig_rhs;
+  else if( std::isfinite( orig_lhs ) )      e_i = orig_lhs;
+  else
+   throw( std::invalid_argument(
+        "MasterProblemBlock::absorb_LBF_into_dual_MP: inner RowConstraint "
+        "is unbounded on both sides; cannot derive e^k_i" ) );
+
+  // build the master-side LinearFunction: original ( u^k, E^k_{i,j} )
+  // pairs plus the +e^k_i coupling on Var_lambda
+  LinearFunction::v_coeff_pair pairs;
+  pairs.reserve( lf->get_num_active_var() + 1 );
+  for( Function::Index j = 0 ; j < lf->get_num_active_var() ; ++j )
+   pairs.emplace_back(
+        static_cast< ColVariable * >( lf->get_active_var( j ) ) ,
+        lf->get_coefficient( j ) );
+  pairs.emplace_back( & Var_lambda , e_i );
+
+  auto * new_fun = new LinearFunction( std::move( pairs ) );
+  auto * new_cns = new FRowConstraint();
+  new_cns->set_function( new_fun , eNoMod );
+  new_cns->set_lhs( 0.0 , eNoMod );
+  new_cns->set_rhs( 0.0 , eNoMod );
+  add_static_constraint( *new_cns , "MPB_LBF_easy" );
+
+  // relax the original RowConstraint on the inner Block
+  ci.set_lhs( - Inf< double >() , eNoMod );
+  ci.set_rhs(   Inf< double >() , eNoMod );
+  };
+
+ // static / dynamic constraints are exposed as const vector<boost::any>
+ // by Block::get_static_constraints / get_dynamic_constraints; we need
+ // mutable access to relax LHS/RHS of the absorbed RowConstraints, so
+ // we const_cast the outer container (the inner Block now lives under
+ // *this*, so there is no aliasing concern with other observers).
+ // Each entry holds either a single FRowConstraint, a vector of them
+ // or a std::list of them (dynamic only).
+ auto walk_any = [ & process_one ]( boost::any & any ) {
+  if( auto * one = boost::any_cast< FRowConstraint >( & any ) ) {
+   process_one( *one );
+   }
+  else if( auto * vec = boost::any_cast< std::vector< FRowConstraint > >( & any ) ) {
+   for( auto & ci : *vec ) process_one( ci );
+   }
+  else if( auto * lst = boost::any_cast< std::list< FRowConstraint > >( & any ) ) {
+   for( auto & ci : *lst ) process_one( ci );
+   }
+  };
+
+ auto & s_cnst =
+  const_cast< Vec_any & >( inner->get_static_constraints() );
+ for( auto & any : s_cnst ) walk_any( any );
+
+ auto & d_cnst =
+  const_cast< Vec_any & >( inner->get_dynamic_constraints() );
+ for( auto & any : d_cnst ) walk_any( any );
+ }
 
 /*--------------------------------------------------------------------------*/
 
@@ -1659,6 +1784,63 @@ std::vector< double > MasterProblemBlock::get_thetas( int k ) const
 
 /*--------------------------------------------------------------------------*/
 
+void MasterProblemBlock::set_C( double C )
+{
+ // store the shift; the next call to set_global_LB / set_f_lev will
+ // pick it up when committing the LB / Lvl coefficient to the dual
+ // Objective. Note that we do *not* re-commit the existing coefficient
+ // here: the caller is expected to drive the refresh by calling
+ // set_global_LB / set_f_lev again with the up-to-date LB / Lvl, which
+ // is the natural pattern when x_bar moves.
+ f_C = C;
+ }
+
+/*--------------------------------------------------------------------------*/
+
+void MasterProblemBlock::set_box( const std::vector< double > & L ,
+                                  const std::vector< double > & U )
+{
+ if( IsPrimal )
+  return;
+ if( ! L.empty() && int( L.size() ) != NumVars )
+  throw( std::invalid_argument(
+       "MasterProblemBlock::set_box: L must be empty or of size NumVars" ) );
+ if( ! U.empty() && int( U.size() ) != NumVars )
+  throw( std::invalid_argument(
+       "MasterProblemBlock::set_box: U must be empty or of size NumVars" ) );
+
+ f_L = L;
+ f_U = U;
+
+ auto obj = dynamic_cast< FRealObjective * >( get_objective() );
+ auto dqf = obj ? dynamic_cast< DQuadFunction * >( obj->get_function() )
+                : nullptr;
+ if( ! dqf || s_plus_obj_idx < 0 || s_minus_obj_idx < 0 )
+  return;
+
+ // : s^+_j gets coefficient +sgn*(L_j - x_bar_j), s^-_j
+ // gets -sgn*(U_j - x_bar_j); the slack stays fixed to 0 (and the
+ // coefficient stays 0) whenever the corresponding bound is non-finite.
+ const double sgn = IsConvex ? -1.0 : 1.0;
+ for( int j = 0 ; j < NumVars ; ++j ) {
+  const double xj = ( j < int( f_x_bar.size() ) ) ? f_x_bar[ j ] : 0.0;
+
+  const bool has_L = ! f_L.empty() && std::isfinite( f_L[ j ] );
+  Var_s_plus[ j ].is_fixed( ! has_L , eNoMod );
+  if( ! has_L ) Var_s_plus[ j ].set_value( 0.0 );
+  dqf->modify_term( DQuadFunction::Index( s_plus_obj_idx + j ) ,
+                    has_L ? sgn * ( f_L[ j ] - xj ) : 0.0 , 0.0 );
+
+  const bool has_U = ! f_U.empty() && std::isfinite( f_U[ j ] );
+  Var_s_minus[ j ].is_fixed( ! has_U , eNoMod );
+  if( ! has_U ) Var_s_minus[ j ].set_value( 0.0 );
+  dqf->modify_term( DQuadFunction::Index( s_minus_obj_idx + j ) ,
+                    has_U ? - sgn * ( f_U[ j ] - xj ) : 0.0 , 0.0 );
+  }
+ }
+
+/*--------------------------------------------------------------------------*/
+
 void MasterProblemBlock::set_global_LB( double LB )
 {
  if( IsPrimal || r_obj_idx < 0 )
@@ -1671,12 +1853,14 @@ void MasterProblemBlock::set_global_LB( double LB )
  if( ! dqf )
   return;
 
- // dual master sense matches IsConvex; the +LB·r term of the textbook
- // max form is negated when IsConvex (the whole objective is in min form).
- // A non-finite LB (= no global bound known) collapses the LB·r term to
- // zero rather than leaking Inf into the Objective.
+ // dual master sense matches IsConvex; the +LB_xbar*r term of the
+ // textbook max form is negated when IsConvex (the whole objective is
+ // in min form). The shifted lower bound is  LB_xbar = LB + f_C
+ // . A non-finite LB (= no global bound
+ // known) collapses the LB*r term to zero rather than leaking Inf
+ // into the Objective.
  const double sgn = IsConvex ? -1.0 : 1.0;
- const double coeff = std::isfinite( LB ) ? sgn * LB : 0.0;
+ const double coeff = std::isfinite( LB ) ? sgn * ( LB + f_C ) : 0.0;
  dqf->modify_term( DQuadFunction::Index( r_obj_idx ) , coeff , 0.0 );
  }
 
@@ -1772,19 +1956,20 @@ void MasterProblemBlock::set_linear_part( const std::vector< double > & b )
  if( IsPrimal )
   return;
 
- // CreateDualMP wires every CouplingCns[ j ] as the equality
- //   z_j + sum_k sum_i theta^k_i * A^k_{i,j} = 0
- // (with lhs = rhs = 0) so that z is forced to the dual-aggregate of the
- // bundle subgradients. Installing the j-th component of b on both sides
- // promotes the equality to its full algebraic form
- //   z_j + sum_k sum_i theta^k_i * A^k_{i,j} = b_j
- // i.e. z_j = b_j - sum_k sum_i theta^k_i * A^k_{i,j}, which is the
- // coupling that the dual problem of the bundle method actually requires.
- // The rhs change is broadcast to every attached Solver through eModBlck,
- // so no rebuild of the underlying [MILP] model is needed
- auto it = CouplingCns.begin();
- for( int j = 0 ; j < NumVars && it != CouplingCns.end() ; ++j , ++it )
-  it->set_both( b[ j ] , eModBlck );
+ // dual MP: CreateDualMP wires every CouplingCns[ j ] with Var_lambda
+ // at position 1 of its LinearFunction, initial coefficient 0. The
+ // linear part of the original sum-function enters the equation as the
+ // term  -lambda * b_j, so we refresh that coefficient (and only that
+ // one) here. The change is
+ // broadcast to every attached Solver via eModBlck.
+ constexpr int LAMBDA_POS = 1;
+ int j = 0;
+ for( auto & cns : CouplingCns ) {
+  auto * lf = static_cast< LinearFunction * >( cns.get_function() );
+  if( lf )
+   lf->modify_coefficient( LAMBDA_POS , - b[ j ] , eModBlck );
+  ++j;
+  }
  }
 
 /*--------------------------------------------------------------------------*/
@@ -1988,12 +2173,15 @@ void MasterProblemBlock::set_f_lev( double f )
  if( ! dqf )
   return;
 
- // dual master sense matches IsConvex; the +f_lev·omega term of the
- // textbook max form is negated under IsConvex (Objective in min form).
- // A non-finite f_lev (= no level set yet) collapses the term to zero
- // rather than leaking Inf into the Objective.
+ // : the omega-side contribution to the dual objective is
+ //     -omega * Lvl_xbar  ,    Lvl_xbar = Lvl + f_C
+ // in the textbook eMax form ; the convex
+ // case flips the whole row sign. A non-finite f_lev (= no level set
+ // yet) collapses the term to zero rather than leaking Inf into the
+ // Objective.
  const double sgn = IsConvex ? -1.0 : 1.0;
- const double coeff = std::isfinite( f_lev ) ? sgn * f_lev : 0.0;
+ const double coeff = std::isfinite( f_lev )
+                       ? - sgn * ( f_lev + f_C ) : 0.0;
  dqf->modify_term( DQuadFunction::Index( omega_obj_idx ) , coeff , 0.0 );
 
  }  // end( MasterProblemBlock::set_f_lev )

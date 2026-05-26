@@ -19,7 +19,7 @@
  * as a Block structure (and therefore solvable by any Solver registered to
  * MasterProblemBlock, typically a [MILP]Solver):
  *
- * - the **primal** form (cf. eq. (24)/(28) of the reference paper) reads
+ * - the **primal** form reads
  *
  *      min   b * d + \sum_k v^k + (1/2t) || d ||^2_2
  *      s.t.  v^k >= g^k_i * d + alpha^k_i        for each i in B^k       (P)
@@ -29,7 +29,7 @@
  *   the epigraph variable for component k, and (g^k_i, alpha^k_i) are the
  *   linearizations stored in the bundle B^k;
  *
- * - the **dual** form (cf. eq. (25)/(26)/(31) of the reference paper) reads
+ * - the **dual** form reads
  *
  *      max   \sum_k \sum_i theta^k_i (c^k - x_bar A^k) u^k_i
  *            + x_bar z - (t/2) || z ||^2_2 - \sum_k \sum_i theta^k_i alpha^k_i
@@ -145,6 +145,7 @@ namespace SMSpp_di_unipi_it
 /*--------------------------------------------------------------------------*/
 
 class BendersBFunction;
+class LagBFunction;
 
 /*--------------------------------------------------------------------------*/
 /*------------------------------- CLASSES ----------------------------------*/
@@ -501,6 +502,41 @@ class MasterProblemBlock : public Block {
  void absorb_BBF_into_primal_MP( BendersBFunction * bbf );
 
 /*--------------------------------------------------------------------------*/
+ /// absorb a LagBFunction's inner constraints into the dual MP
+ /** Embeds an easy LagBFunction into the dual Master Problem. The
+  * polyhedral feasible set U^k of the LagBFunction is described by the
+  * RowConstraints living in its inner Block in the fixed-rhs form
+  *
+  *      lhs_i <= ( E^k_i u^k ) <= rhs_i
+  *
+  * (with constants lhs_i / rhs_i). The stationarity condition of the
+  * dual MP at the pi^k variables of the easy linear program (cf.
+  * ) reads instead
+  *
+  *      E^k_i u^k + lambda * e^k_i = 0    for every row i,
+  *
+  * where lambda is the global multiplier owned by *this* (Var_lambda)
+  * and e^k_i is taken from the side of the original RowConstraint:
+  *
+  *  - if S_i = eRHS  -> e^k_i := rhs_i ;
+  *  - if S_i = eLHS  -> e^k_i := lhs_i ;
+  *  - if S_i = eBoth -> e^k_i := rhs_i (= lhs_i, equality constraint).
+  *
+  * For every RowConstraint of the inner Block this method snapshots its
+  * (lhs_i, rhs_i, function), relaxes it (LHS = -INF, RHS = +INF) and
+  * installs on *this* a fresh FRowConstraint with the cloned
+  * LinearFunction augmented by the +e^k_i coefficient on Var_lambda and
+  * with LHS = RHS = 0. Quadratic / non-linear function types are not
+  * supported and trigger an exception, since the underlying primal LP of
+  * the easy component is linear by assumption.
+  *
+  * @param lbf  pointer to the LagBFunction to absorb; must be non-null
+  *             and its inner Block must have been already transferred to
+  *             *this* by configure(). */
+
+ void absorb_LBF_into_dual_MP( LagBFunction * lbf );
+
+/*--------------------------------------------------------------------------*/
  /// hand the abstract representation of the MP to the registered Solver
  /** load_problem() iterates over the Solver registered to
   * MasterProblemBlock and instructs each of them to (re-)load the abstract
@@ -513,47 +549,6 @@ class MasterProblemBlock : public Block {
   * fresh load_problem() unless the MP type/size changes. */
 
  void load_problem( void );
-
-/*--------------------------------------------------------------------------*/
- /// register the next "easy" component as a sub-Block of the dual MP
- /** Appends a new easy-component sub-Block to MasterProblemBlock; the call
-  * is meaningful only after CreateDualMP() has been invoked (i.e. when
-  * #IsPrimal == false). The caller passes:
-  *
-  * - \p easy_blk: a Block whose abstract representation encodes the compact
-  *   convex description of the easy component f^k, i.e. its native u^k
-  *   ColVariable, the polyhedral constraints (G^k u^k <= g, A^k u^k = ...
-  *   plus any sign constraints), and a FRealObjective wrapping a
-  *   LinearFunction with the constant cost vector c^k. Sub-Block ownership
-  *   is transferred to MasterProblemBlock through add_nested_Block();
-  *
-  * - \p A_rows: a vector of length NumVars where, for every coordinate
-  *   j of the original sum-function space, \p A_rows[j] lists the pairs
-  *   <u^k_i, A^k_{i,j}> with non-zero matrix coefficient. These terms are
-  *   then *added* (with sign +1) to the LinearFunction of CouplingCns[j],
-  *   so that the master constraint z_j = b_j ends up reading
-  *   z_j + sum_i A^k_{i,j} u^k_i (+ hard-cmp contributions) = b_j ,
-  *   which is exactly z_j = b_j - A^k u^k -- (hard-cmp contributions) of
-  *   the paper's dual MP.
-  *
-  * The objective contribution + c^k u^k is provided by the FRealObjective of \p
-  * easy_blk itself, since the SMS++ Block engine automatically sums the
-  * Objectives of every registered sub-Block when the master is solved.
-  *
-  * The method does *not* touch the (c^k - x_bar A^k) coefficients on u^k: the
-  * stability-centre-dependent part of the dual objective is materialised at
-  * solve time through the master x_bar * z linear term, which the driving
-  * BundleSolver keeps in sync with the current stability centre
-  * via the appropriate Modification.
-  *
-  * \note the calls to this method are expected to be made in order, with
-  *       \p easy_blk corresponding to the next "easy" component to be
-  *       registered. After NoEasyCmps successful calls, all easy
-  *       components are wired in and EasyCmps.size() == NoEasyCmps. */
-
- void register_easy_component(
-              Block * easy_blk ,
-              std::vector< LinearFunction::v_coeff_pair > && A_rows );
 
 /*--------------------------------------------------------------------------*/
  /// returns the k-th hard-component sub-Block
@@ -862,12 +857,26 @@ class MasterProblemBlock : public Block {
  [[nodiscard]] std::vector< double > get_thetas( int k ) const;
 
 /*--------------------------------------------------------------------------*/
+ /// set the stability-centre shift C used by the LB / Lvl rows
+ /** Updates the additive shift
+  *     C = -f^0( x_bar ) - sum_{k in H} f^{k,H}( x_bar )
+  *  that turns LB into LB_xbar = LB + C and
+  * Lvl into Lvl_xbar = Lvl + C. The shift is depositied as a member and
+  * applied on top of the value passed to set_global_LB() / set_f_lev() /
+  * set_LB() when their coefficients are committed to the dual Objective.
+  * Should be called by the driver BundleSolver whenever the stability
+  * centre x_bar moves; default is 0 (= no shift, suitable for kProximal
+  * without explicit global LB / level). */
+
+ void set_C( double C );
+
+/*--------------------------------------------------------------------------*/
  /// set the global lower bound LB on the value of the sum-function
  /** In the dual MP the global lower bound enters as the linear coefficient
-  * of the r multiplier in the master Objective (+ r * LB term). This API
-  * forwards \p LB to that coefficient via modify_term on the FRealObjective
-  * LinearFunction. No-op under the primal MP (where the global LB has to be
-  * expressed differently). */
+  * of the r multiplier in the master Objective (+ r * LB_xbar term, with
+  * LB_xbar = LB + C, cf. set_C). This API forwards \p LB to that coefficient
+  * via modify_term on the FRealObjective LinearFunction. No-op under the
+  * primal MP (where the global LB has to be expressed differently). */
 
  void set_global_LB( double LB );
 
@@ -881,6 +890,27 @@ class MasterProblemBlock : public Block {
   * constant gradient b through set_b). */
 
  void set_x_bar( const std::vector< double > & x_bar );
+
+/*--------------------------------------------------------------------------*/
+ /// set the per-coordinate box  L <= x <= U  on the optimization variables
+ /** Installs the lower / upper bounds on the optimization variable x that
+  * the surrounding BundleSolver is minimising on. In terms of the step
+  * variable  d = x - x_bar  the box reads
+  *     L - x_bar <= d <= U - x_bar
+  * which on the dual MP enters as
+  *     + s^+_j ( L_j - x_bar_j ) - s^-_j ( U_j - x_bar_j )
+  * in the objective with non-negative slacks s^+, s^- .
+  *
+  * For each coordinate j the corresponding slack(s) are unfixed only if
+  * the matching side is finite; otherwise the slack stays fixed to 0,
+  * meaning the bound does not really apply.
+  *
+  * \p L and \p U must both have size NumVars; passing an empty vector is
+  * equivalent to "no bound on that side" (= all slacks of that side
+  * stay / become fixed to 0). No-op under the primal MP. */
+
+ void set_box( const std::vector< double > & L ,
+               const std::vector< double > & U );
 
 /*--------------------------------------------------------------------------*/
  /// set the upper bundle u_bar of an #kUpperLower stabilization
@@ -997,14 +1027,15 @@ class MasterProblemBlock : public Block {
  int solve_master( void );
 
 /*--------------------------------------------------------------------------*/
- /// returns the current optimal value of lambda_k (per-hard-component)
- /** lambda_k is the master-side dual multiplier of the v^k >= ... row of the
-  * k-th hard component (see Var_lambdas). \p k must lie in [0, NoHardCmps);
-  * meaningful only after solve_master(). */
+ /// returns the current optimal value of the global multiplier lambda
+ /** lambda is the master-side non-negative dual multiplier paired with the
+  * model-value equation of the lower model (
+  * stationarity (i): lambda + r - omega = 1), shared across every hard
+  * component (cf. PolyhedralFunctionBlock::set_lambda). Meaningful only
+  * after solve_master(). */
 
- [[nodiscard]] double get_lambda( int k ) const
-  { return( ( k >= 0 && k < int( Var_lambdas.size() ) )
-            ? Var_lambdas[ k ].get_value() : 0.0 ); }
+ [[nodiscard]] double get_lambda( void ) const
+  { return( Var_lambda.get_value() ); }
 
 /*--------------------------------------------------------------------------*/
  /// returns the current optimal value of r
@@ -1178,18 +1209,37 @@ class MasterProblemBlock : public Block {
 
  // - - - - - - - - - - - -  static MP entities (dual form)  - - - - - - - - -
 
- std::vector< ColVariable > Var_lambdas;
-                                   ///< per-hard-component dual multipliers
-                                   ///< lambda_k of the v^k >= max_i (...) row
-                                   ///< of component k (size NoHardCmps).
-                                   ///< Each lambda_k appears with coefficient
-                                   ///< +1 in the normalization row of the
-                                   ///< matching PolyhedralFunctionBlock
-                                   ///< sub-Block (cf. set_lambda()) and with
-                                   ///< coefficient +1 in the master-side
-                                   ///< NormalizationCns whose RHS is therefore
-                                   ///< NoHardCmps (one lambda per hard
-                                   ///< component, summing to NoHardCmps)
+ ColVariable Var_lambda;
+                                   ///< global non-negative dual multiplier
+                                   ///< of the model-value equation of the
+                                   ///< lower model. The *same* Var_lambda
+                                   ///< enters with coefficient +1 the
+                                   ///< simplex (= normalization) row of
+                                   ///< every hard-component PFB sub-Block
+                                   ///< (cf. PolyhedralFunctionBlock::set_-
+                                   ///< lambda) and with coefficient +1 the
+                                   ///< master-side NormalizationCns
+                                   ///< (lambda + r - omega = 1).
+
+ std::vector< ColVariable > Var_s_plus;
+                                   ///< non-negative slack multipliers s^+
+                                   ///< paired with the lower side of the
+                                   ///< box  L - x_bar <= d  (cf.
+                                   ///< 
+                                   ///< / (48)). One entry per coordinate
+                                   ///< (size NumVars); coordinates without
+                                   ///< a finite L are kept fixed to 0,
+                                   ///< i.e. the corresponding slack does
+                                   ///< not really exist.
+
+ std::vector< ColVariable > Var_s_minus;
+                                   ///< non-negative slack multipliers s^-
+                                   ///< paired with the upper side of the
+                                   ///< box  d <= U - x_bar  (cf.
+                                   ///< 
+                                   ///< / (48)). One entry per coordinate
+                                   ///< (size NumVars); coordinates without
+                                   ///< a finite U are kept fixed to 0.
 
  ColVariable Var_r;                ///< dual multiplier of the global LB row
 
@@ -1216,6 +1266,28 @@ class MasterProblemBlock : public Block {
 
  double t_stab;     ///< current value of the proximal parameter t
 
+ double f_C = 0.0;  ///< additive shift used to express LB_xbar = LB + C
+                    ///< and Lvl_xbar = Lvl + C, with C = -f^0( x_bar )
+                    ///< - sum_H f^{k,H}( x_bar ); refreshed by set_C() at
+                    ///< every stability-centre move
+
+ std::vector< double > f_L;
+                    ///< per-coordinate lower bound L on x for the box
+                    ///< constraint L - x_bar <= d <= U - x_bar; a
+                    ///< non-finite L_t means "no lower bound on
+                    ///< coordinate t", in which case s^+_t stays fixed
+                    ///< to 0 (= the slack does not really exist)
+
+ std::vector< double > f_U;
+                    ///< per-coordinate upper bound U on x; mirrors f_L
+                    ///< with s^-_t playing the role of s^+_t
+
+ std::vector< double > f_x_bar;
+                    ///< snapshot of the latest stability centre passed
+                    ///< to set_x_bar(), used by set_box() and the box
+                    ///< refresh logic to compute (L - x_bar) and
+                    ///< (U - x_bar) without re-asking the caller
+
  double f_lev;      ///< current value of the level f_lev (level / doubly only)
 
  int z_obj_idx;     ///< index of the first z_j entry in the DQuadFunction
@@ -1229,6 +1301,16 @@ class MasterProblemBlock : public Block {
  int omega_obj_idx; ///< index of omega in the DQuadFunction triples, or -1
                     ///< if omega does not contribute to the master Objective
                     ///< (i.e. under #kProximal)
+
+ int s_plus_obj_idx  = -1;
+                    ///< index of the first s^+_j entry in the DQuadFunction
+                    ///< triples (the NumVars s^+ entries are laid out
+                    ///< contiguously); carries the +sgn*(L_j - x_bar_j)
+                    ///< coefficient updated by set_x_bar / set_box
+
+ int s_minus_obj_idx = -1;
+                    ///< index of the first s^-_j entry in the DQuadFunction
+                    ///< triples; carries the -sgn*(U_j - x_bar_j) coefficient
 
 /*--------------------------------------------------------------------------*/
 /*--------------------- PRIVATE PART OF THE CLASS --------------------------*/
