@@ -2493,7 +2493,7 @@ const std::vector< std::string > & LegacyBundleSolver::get_vstr_par( idx_type pa
  }  // end( LegacyBundleSolver::get_vstr_par )
 
 /*--------------------------------------------------------------------------*/
-/*----------- METHODS FOR HANDLING THE State OF THE LegacyBundleSolver -----------*/
+/*------- METHODS FOR HANDLING THE State OF THE LegacyBundleSolver -----------*/
 /*--------------------------------------------------------------------------*/
 
 State * LegacyBundleSolver::get_State( void ) const {
@@ -8213,7 +8213,7 @@ Index LegacyBundleSolver::FakeFiOracle::GetGi( SgRow SubG , cIndex_Set & SGBse ,
  }
 
 /*--------------------------------------------------------------------------*/
-/*------------------------ CLASS LegacyBundleSolverState -------------------------*/
+/*------------------ CLASS LegacyBundleSolverState -------------------------*/
 /*--------------------------------------------------------------------------*/
 /*----------------------- PUBLIC PART OF THE CLASS -------------------------*/
 /*--------------------------------------------------------------------------*/

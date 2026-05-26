@@ -1057,7 +1057,7 @@ class MasterProblemBlock : public Block {
  // - - - - - - - - -  algorithmic / structural parameters - - - - - - - - - -
 
  bool IsPrimal;     ///< whether the MP is in its primal or dual form
- bool IsConvex;     ///< whether the C05Function is convex (eMin) or concave (eMax)
+ bool IsConvex;     ///< whether the C05Function is convex (true) or concave
 
  stabilization_type StblType;
                           ///< type of stabilization, see #stabilization_type
