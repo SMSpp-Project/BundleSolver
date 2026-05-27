@@ -3408,13 +3408,14 @@ bool BundleSolver::FiAndGi( Index wFi , bool getgi )
   *f_log << " [" << fixd << elapsed.count() << "] " << def;
   }
 
- if( f_convex ) {
-  if( ue == -INFshift )  // very special case: value == -INF
-   return( true );       // immediately terminate
-  }
- else
-  if( le == INFshift )   // very special case: value == +INF
-   return( true );       // immediately terminate
+ // very special case: the sub-problem is unbounded (value == -INF in convex
+ // convention, or +INF in concave). Do *not* short-circuit here: even though
+ // no finite subgradient exists, the oracle may have produced a feasibility
+ // ray (vertical linearization) that the master needs in order to remain
+ // bounded at the next iteration. We still propagate the unbounded marker
+ // into UpFiLmb1[ wFi ] so GetGi() picks the prefer_vertical branch
+ const bool unbounded = f_convex ? ( ue == -INFshift )
+                                 : ( le ==  INFshift );
 
  // if getgi == false the method is actually being called on Lambda, hence
  // it is Lambda's estimates that need be updated, not Lambda1's
@@ -3428,6 +3429,13 @@ bool BundleSolver::FiAndGi( Index wFi , bool getgi )
 
  // update UpFiLambd1[ wFi ] (and possibly UpFiLambd1[ NrFi ])
  update_UpFiLambd1( wFi , f_convex ? ue : - le );
+
+ if( unbounded )
+  // skip the remaining accounting (Lipschitz upper-bound refresh and
+  // LwFiLambd1 update both rely on a finite value) and go straight to
+  // fetching a vertical certificate; GetGi() sees UpFiLmb1[ wFi ] = -INF
+  // (resp. +INF in concave) and asks the oracle for a ray first
+  return( GetGi( wFi ) );
 
   // if bit 4 of TrgtMng == 1, then compute the upper bound in Lambda
   // provided by the upper bound in Lambda1 and try to update UpFiLmb[ wFi ]
@@ -3712,8 +3720,16 @@ bool BundleSolver::GetGi( Index wFi )
   bool diagonal = true;
   bool HasLinearization;
 
+  // when Fi at Lambda1 is *not* finite the sub-problem either is unbounded
+  // (its solver has produced a recession direction rather than a primal
+  // solution, signaled by UpFiLmb1 == -INFshift in convex-min convention
+  // or +INFshift in the not-yet-computed flavour) or has not been touched
+  // yet; in both cases we look for a vertical (feasibility) linearization
+  // first and only fall back to a diagonal one if no ray is available
+  const bool prefer_vertical = ( UpFiLmb1[ wFi ] == INFshift ) ||
+                               ( UpFiLmb1[ wFi ] == -INFshift );
   if( ! Ftchd ) {  // first look for a constraint then for a sub-gradient
-   if( UpFiLmb1[ wFi ] == INFshift ) {
+   if( prefer_vertical ) {
     HasLinearization = fwFi->has_linearization( diagonal = false );
     if( ! HasLinearization )
      HasLinearization = fwFi->has_linearization( diagonal = true );
@@ -3722,7 +3738,7 @@ bool BundleSolver::GetGi( Index wFi )
     HasLinearization = fwFi->has_linearization( diagonal );
    }
   else {
-   if( UpFiLmb1[ wFi ] == INFshift ) {
+   if( prefer_vertical ) {
     HasLinearization = fwFi->compute_new_linearization( diagonal = false );
     if( ! HasLinearization )
      HasLinearization = fwFi->compute_new_linearization( diagonal = true );

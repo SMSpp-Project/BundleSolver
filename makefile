@@ -34,7 +34,7 @@
 
 # macros to be exported - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-BNDSLVOBJ = $(BNDSLVSDR)/obj/BundleSolver.o \
+BNDSLVOBJ = $(BNDSLVSDR)/obj/LegacyBundleSolver.o \
 	$(BNDSLVSDR)/obj/ParallelBundleSolver.o \
 	$(BNDSLVSDR)/obj/MasterProblemBlock.o \
 	$(BNDSLVSDR)/obj/BundleSolver.o \
@@ -42,7 +42,7 @@ BNDSLVOBJ = $(BNDSLVSDR)/obj/BundleSolver.o \
 
 BNDSLVINC = -I$(BNDSLVSDR)/include -I$(BNDSLVSDR)/MILPMPSolver
 
-BNDSLVH   = $(BNDSLVSDR)/include/BundleSolver.h \
+BNDSLVH   = $(BNDSLVSDR)/include/LegacyBundleSolver.h \
 	$(BNDSLVSDR)/include/ParallelBundleSolver.h \
 	$(BNDSLVSDR)/include/MasterProblemBlock.h \
 	$(BNDSLVSDR)/include/BundleSolver.h \
