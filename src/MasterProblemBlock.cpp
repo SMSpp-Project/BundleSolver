@@ -1167,7 +1167,8 @@ double MasterProblemBlock::get_dual_norm_squared( void ) const
 /*--------------------------------------------------------------------------*/
 
 int MasterProblemBlock::add_cut( int k , int slot ,
-                                 std::vector< double > && g , double alpha )
+                                 std::vector< double > && g , double alpha ,
+                                 bool is_vert )
 {
  if( k < 0 || k >= int( HardCmps.size() ) )
   throw( std::invalid_argument(
@@ -1244,7 +1245,8 @@ int MasterProblemBlock::add_cut( int k , int slot ,
  // as a BlockModAdd<FRowConstraint> picked up by the attached :MILPSolver
  // via the standard dynamic_modification -> add_dynamic_constraint path
  const int new_local = int( pfb->get_PolyhedralFunction().get_nrows() );
- pfb->get_PolyhedralFunction().add_row( std::move( g ) , alpha );
+ pfb->get_PolyhedralFunction().add_row( std::move( g ) , alpha ,
+                                        eModBlck , is_vert );
  slot_to_local[ k ][ slot ] = new_local;
  return( kCutInserted );
  }
@@ -1252,7 +1254,7 @@ int MasterProblemBlock::add_cut( int k , int slot ,
 /*--------------------------------------------------------------------------*/
 
 int MasterProblemBlock::add_cut( int k , std::vector< double > && g ,
-                                 double alpha )
+                                 double alpha , bool is_vert )
 {
  if( k < 0 || k >= int( HardCmps.size() ) )
   return( -1 );
@@ -1261,7 +1263,7 @@ int MasterProblemBlock::add_cut( int k , std::vector< double > && g ,
  const auto & st = slot_to_local[ k ];
  for( int slot = 0 ; slot < int( st.size() ) ; ++slot )
   if( st[ slot ] < 0 ) {
-   add_cut( k , slot , std::move( g ) , alpha );
+   add_cut( k , slot , std::move( g ) , alpha , is_vert );
    return( slot );
    }
  return( -1 );

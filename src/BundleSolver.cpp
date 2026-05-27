@@ -101,7 +101,6 @@
  * errors by detecting negative Sigma and performing "noise reduction steps"
  * to try to make them go away. However, in general one may expect that, for
  * some applications, this should never happen as the functions are convex
- * and the oracles should be "faithful". Hence, appearence of negative
  * linearization and especially negative Sigma, would be a sign that the
  * oracles are not behaving as expected. This macro, coded bitwose, causes
  * checks on negative linearization errors and/or negative Sigma to be
@@ -4098,7 +4097,7 @@ bool BundleSolver::GetGi( Index wFi )
    if( MasterPB )
     master_changed = ( MasterPB->add_cut(
                                 int( wFi ) , int( wh ) , make_dense_g1() ,
-                                Alfa1k_for_master )
+                                Alfa1k_for_master , ! diagonal )
                        == MasterProblemBlock::kCutInserted );
 
    // now find a position in the global pool of component wFi where to store
@@ -5708,7 +5707,8 @@ void BundleSolver::add_to_bundle( Index k , Index i )
  if( MasterPB ) {
   for( auto & v : G1 )
    v = - v;
-  MasterPB->add_cut( int( k ) , int( wh ) , std::move( G1 ) , Ai );
+  MasterPB->add_cut( int( k ) , int( wh ) , std::move( G1 ) , Ai ,
+                     v_c05f[ k ]->is_linearization_vertical( i ) );
   }
 
  }  // end( BundleSolver::add_to_bundle )

@@ -613,15 +613,19 @@ class MasterProblemBlock : public Block {
 
  static constexpr int kCutInserted = -1;
 
- int add_cut( int k , int slot , std::vector< double > && g , double alpha );
+ int add_cut( int k , int slot , std::vector< double > && g , double alpha ,
+              bool is_vert = false );
 
 /*--------------------------------------------------------------------------*/
  /// add a new linearization (g, alpha) to bundle B^k, auto-allocating a slot
- /** Like add_cut(k, slot, g, alpha) but the slot is chosen by
+ /** Like add_cut(k, slot, g, alpha, is_vert) but the slot is chosen by
   * MasterPB itself; returns the chosen slot (or -1 if no slot is free, i.e. all
-  * MaxBSize positions of B^k are occupied). */
+  * MaxBSize positions of B^k are occupied). \p is_vert tags the cut as a
+  * vertical (feasibility) one so that the PolyhedralFunction back-end records
+  * it as such (no v_k epigraph variable on the LHS of the row). */
 
- int add_cut( int k , std::vector< double > && g , double alpha );
+ int add_cut( int k , std::vector< double > && g , double alpha ,
+              bool is_vert = false );
 
 /*--------------------------------------------------------------------------*/
  /// returns the number of cuts currently in the bundle of the k-th hard cmp
