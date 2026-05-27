@@ -159,6 +159,10 @@ void MasterProblemBlock::SetDim( int MxBSz , int NVars ,
  // component, all initially empty (encoded as -1)
  slot_to_local.assign( NoHardCmps , std::vector< int >( MaxBSize , -1 ) );
 
+ // per-hard-component cache of F_k( x_bar ); default 0 until the
+ // driver feeds the actual reference values via set_F_at_x_bar
+ f_F_at_x_bar.assign( NoHardCmps , 0.0 );
+
  }  // end( MasterProblemBlock::SetDim )
 
 /*--------------------------------------------------------------------------*/
@@ -355,7 +359,7 @@ void MasterProblemBlock::configure(
  // representation of the master (the variables d / z / r / omega / v^k,
  // the coupling rows and the master Objective) according to the chosen
  // form; the per-hard-component PolyhedralFunctionBlock sub-Blocks are
- // allocated here and the surrounding BundleSolver then
+ // allocated here and the surrounding driver then
  // feeds the linearizations into them via the Modification interface
  if( IsPrimal )
   CreatePrimalMP( StblType );
@@ -458,7 +462,7 @@ void MasterProblemBlock::CreatePrimalMP( stabilization_type Stbl )
  // normalization row).
  //
  // The PolyhedralFunction interior bundle is empty here: the
- // BundleSolver feeds rows (g, alpha) into each f_polyf via
+ // the driver feeds rows (g, alpha) into each f_polyf via
  // the Modification interface as new linearizations are produced
 
  HardCmps.clear();
@@ -524,7 +528,7 @@ void MasterProblemBlock::CreatePrimalMP( stabilization_type Stbl )
  //
  // The linear coefficient on d (the "b" of the paper, i.e. the constant
  // gradient of the linear part of the original sum-function) is left at 0
- // here; the BundleSolver is expected to install it through the dedicated
+ // here; the driver is expected to install it through the dedicated
  // set_b() API.
  //
  // Each v^k contributes its f_v with linear coefficient +1 (the
@@ -668,7 +672,7 @@ void MasterProblemBlock::CreateDualMP( stabilization_type Stbl )
  //         - sum_{k in H, h in beta_F^k}  theta^k_h g^k_{h,j}        = 0
  //
  // The lambda*b_j coefficient is filled in by set_linear_part() once
- // BundleSolver knows the linear part b of the original sum-function;
+ // the driver knows the linear part b of the original sum-function;
  // the theta-side terms are appended by PolyhedralFunctionBlock::set_-
  // conjugate_constraint() called below for every hard component; the
  // u^k A^k terms (easy components in the dual MP) live inside the
@@ -724,7 +728,7 @@ void MasterProblemBlock::CreateDualMP( stabilization_type Stbl )
  //    every CouplingCns[j] with the terms +theta^k_i * a^k_{i,j}.
  //
  // The PolyhedralFunction interior bundle is empty here: the
- // BundleSolver feeds rows (g, alpha) into each f_polyf via
+ // the driver feeds rows (g, alpha) into each f_polyf via
  // the Modification interface as new linearizations are produced.
 
  HardCmps.clear();
@@ -783,7 +787,7 @@ void MasterProblemBlock::CreateDualMP( stabilization_type Stbl )
  //    present under #kLevel / #kDoublyStabilized; under #kProximal omega
  //    is fixed to 0 and the term vanishes.
  //
- // The other linear part x_bar * z is left at 0 here: the BundleSolver
+ // The other linear part x_bar * z is left at 0 here: the driver
  // injects it through LinearFunction::modify_coefficient as the stability
  // centre changes.
 
@@ -861,12 +865,12 @@ void MasterProblemBlock::CreateDualMP( stabilization_type Stbl )
  set_objective( obj , eNoMod );
 
  // Easy components are not allocated here: they are registered one by one
- // by the surrounding BundleSolver via register_easy_component(),
+ // by the surrounding driver via register_easy_component(),
  // which adds the easy-cmp sub-Block and augments every CouplingCns[j]
  // with the +A^k_{i,j} u^k_i terms produced by that component.
 
  // Two coefficients are intentionally left unset by CreateDualMP and must
- // be filled in by the surrounding BundleSolver as soon as
+ // be filled in by the surrounding driver as soon as
  // the corresponding pieces of the sum-function become known:
  //  - the omega * h coefficient on the level row, whenever X is a
  //    polyhedron with explicit right-hand side h;
@@ -1194,13 +1198,33 @@ int MasterProblemBlock::add_cut( int k , int slot ,
  const auto & A = pfb->get_PolyhedralFunction().get_A();
  const auto & b = pfb->get_PolyhedralFunction().get_b();
  constexpr double rel_tol = 1e-12;
+
+ // The duplicate-detection compares the incoming ( g , alpha_raw ) against
+ // the stored ( A[ i ] , b[ i ] ). Stored diagonal b is the linearization
+ // error at the current x_bar; to keep the comparison fair we translate the
+ // incoming alpha_raw into the same form before comparing
+ //   incoming_b = F_k( x_bar ) - alpha_raw + g . x_bar
+ // (when g matches A[ i ] perfectly, this incoming_b matches b[ i ] iff
+ // alpha_raw matches the cut's own raw constant, i.e. it really is a
+ // duplicate). Vertical cuts skip this translation: they store raw
+ const bool here_is_vert = is_vert;
+ double incoming_b = alpha;
+ if( ( ! here_is_vert ) && ( ! IsPrimal ) &&
+     ( k < int( f_F_at_x_bar.size() ) ) ) {
+  const std::size_t n = std::min( g.size() , f_x_bar.size() );
+  double dot = 0.0;
+  for( std::size_t j = 0 ; j < n ; ++j )
+   dot += g[ j ] * f_x_bar[ j ];
+  incoming_b = f_F_at_x_bar[ k ] - alpha + dot;
+  }
+
  const auto cuts_match = [ & ]( std::size_t i ) -> bool {
   if( i >= b.size() || i >= A.size() )
    return( false );
-  const double a_tol = rel_tol * std::max( { std::abs( alpha ) ,
+  const double a_tol = rel_tol * std::max( { std::abs( incoming_b ) ,
                                               std::abs( b[ i ] ) ,
                                               double( 1 ) } );
-  if( std::abs( alpha - b[ i ] ) > a_tol )
+  if( std::abs( incoming_b - b[ i ] ) > a_tol )
    return( false );
   const auto & gi = A[ i ];
   const std::size_t n = std::min( g.size() , gi.size() );
@@ -1244,8 +1268,15 @@ int MasterProblemBlock::add_cut( int k , int slot ,
  // add_dynamic_constraints(f_const, newc, eNoBlck) call, which surfaces
  // as a BlockModAdd<FRowConstraint> picked up by the attached :MILPSolver
  // via the standard dynamic_modification -> add_dynamic_constraint path
+ //
+ // For numerical stability the bundle stores, on the master side, the
+ // linearization-error form of the diagonal cut rather than its raw
+ // constant: incoming_b (computed once above for the duplicate-detection)
+ // is exactly the value that goes into v_b[ i ]. Vertical cuts skip the
+ // translation: their feasibility-constraint constant is reference-
+ // independent and stored as-is
  const int new_local = int( pfb->get_PolyhedralFunction().get_nrows() );
- pfb->get_PolyhedralFunction().add_row( std::move( g ) , alpha ,
+ pfb->get_PolyhedralFunction().add_row( std::move( g ) , incoming_b ,
                                         eModBlck , is_vert );
  slot_to_local[ k ][ slot ] = new_local;
  return( kCutInserted );
@@ -1350,9 +1381,27 @@ void MasterProblemBlock::modify_cut( int k , int slot ,
   throw( std::invalid_argument(
        "MasterProblemBlock::modify_cut: slot empty or out of range" ) );
 
- pfb->get_PolyhedralFunction().modify_row(
-       PolyhedralFunction::Index( slot_to_local[ k ][ slot ] ) ,
-       std::move( g ) , alpha );
+ // mirror the on-insert translation done in add_cut(): the diagonal
+ // cut's stored constant is the linearization error at the current
+ // x_bar, derived from the raw alpha the caller passes in. The new g is
+ // already in the master-side convention, so its contribution to the
+ // dot product uses g as received
+ const int loc = slot_to_local[ k ][ slot ];
+ auto & poly = pfb->get_PolyhedralFunction();
+ const bool is_vert = poly.is_row_vertical( PolyhedralFunction::Index( loc ) );
+
+ double b_store = alpha;
+ if( ( ! is_vert ) && ( ! IsPrimal ) &&
+     ( k < int( f_F_at_x_bar.size() ) ) ) {
+  const std::size_t n = std::min( g.size() , f_x_bar.size() );
+  double dot = 0.0;
+  for( std::size_t j = 0 ; j < n ; ++j )
+   dot += g[ j ] * f_x_bar[ j ];
+  b_store = f_F_at_x_bar[ k ] - alpha + dot;
+  }
+
+ poly.modify_row( PolyhedralFunction::Index( loc ) ,
+                  std::move( g ) , b_store );
  }
 
 /*--------------------------------------------------------------------------*/
@@ -1365,8 +1414,29 @@ void MasterProblemBlock::modify_alpha( int k , int slot , double alpha )
   throw( std::invalid_argument(
        "MasterProblemBlock::modify_alpha: slot empty or out of range" ) );
 
- pfb->get_PolyhedralFunction().modify_constant(
-       PolyhedralFunction::Index( slot_to_local[ k ][ slot ] ) , alpha );
+ // mirror the on-insert translation: the diagonal cut's stored constant
+ // is the linearization error at the current x_bar. To rebuild it we
+ // need the cut's own g (already in the PolyhedralFunction row); vertical
+ // cuts store the raw constant directly, no translation
+ const int loc = slot_to_local[ k ][ slot ];
+ auto & poly = pfb->get_PolyhedralFunction();
+ const bool is_vert = poly.is_row_vertical( PolyhedralFunction::Index( loc ) );
+
+ double b_store = alpha;
+ if( ( ! is_vert ) && ( ! IsPrimal ) &&
+     ( k < int( f_F_at_x_bar.size() ) ) ) {
+  const auto & A = poly.get_A();
+  if( loc >= 0 && loc < int( A.size() ) ) {
+   const auto & Ai = A[ loc ];
+   const std::size_t n = std::min( Ai.size() , f_x_bar.size() );
+   double dot = 0.0;
+   for( std::size_t j = 0 ; j < n ; ++j )
+    dot += Ai[ j ] * f_x_bar[ j ];
+   b_store = f_F_at_x_bar[ k ] - alpha + dot;
+   }
+  }
+
+ poly.modify_constant( PolyhedralFunction::Index( loc ) , b_store );
  }
 
 /*--------------------------------------------------------------------------*/
@@ -1713,6 +1783,12 @@ double MasterProblemBlock::get_aggregated_alpha( int k ) const
  if( IsPrimal )
   return( 0.0 );
 
+ // Each diagonal cut stores, in PolyhedralFunction.v_b[ i ], the
+ // linearization error at the current x_bar (set on insertion and kept
+ // refreshed by set_reference). The bundle-method Sigma is therefore the
+ // direct convex combination
+ //   Sigma_k = sum_i theta^k_i * b[ i ]
+ // walked here in O( bundle size )
  auto contrib = [ this ]( int kk ) -> double {
   if( kk < 0 || kk >= int( HardCmps.size() ) )
    return( 0.0 );
@@ -1734,6 +1810,75 @@ double MasterProblemBlock::get_aggregated_alpha( int k ) const
    ++i;
    }
   return( s );
+  };
+
+ if( k >= 0 )
+  return( contrib( k ) );
+
+ double total = 0.0;
+ for( int kk = 0 ; kk < int( HardCmps.size() ) ; ++kk )
+  total += contrib( kk );
+ return( total );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+double MasterProblemBlock::get_raw_aggregated_alpha( int k ) const
+{
+ if( IsPrimal )
+  return( 0.0 );
+
+ // The bundle stores diagonal cuts in linearization-error form,
+ //   b[ i ] = F_k( x_bar ) - alpha_raw_i + g_i . x_bar
+ // (the sign of the g . x_bar contribution absorbs the flip applied by
+ // the driver before handing g over to add_cut). Reverting yields
+ //   alpha_raw_i = F_k( x_bar ) - b[ i ] + g_i . x_bar
+ // and aggregating
+ //   raw_k = sum_i theta_i * alpha_raw_i
+ //         = F_k( x_bar ) * ( sum_i theta_i ) - sum_i theta_i b[ i ]
+ //                                            + sum_i theta_i ( g_i . x_bar )
+ // (vertical cuts store their feasibility-constraint constant directly;
+ // they are included in the sum with the same sign as the raw form, since
+ // for them the storage already equals the raw constant)
+ auto contrib = [ this ]( int kk ) -> double {
+  if( kk < 0 || kk >= int( HardCmps.size() ) )
+   return( 0.0 );
+  const auto pfb = dynamic_cast< const PolyhedralFunctionBlock * >( HardCmps[ kk ] );
+  if( ! pfb )
+   return( 0.0 );
+  auto * th = const_cast< PolyhedralFunctionBlock * >( pfb )
+                ->get_dynamic_variable< ColVariable >( "PolyF_theta" );
+  if( ! th )
+   return( 0.0 );
+  auto & poly = const_cast< PolyhedralFunctionBlock * >( pfb )
+                    ->get_PolyhedralFunction();
+  const auto & b = poly.get_b();
+  const auto & A = poly.get_A();
+  if( th->size() != b.size() )
+   return( 0.0 );
+
+  double b_sum   = 0.0;
+  double sum_th  = 0.0;
+  double z_dot   = 0.0;
+  std::size_t i  = 0;
+  for( const auto & v : *th ) {
+   const double theta = v.get_value();
+   b_sum  += theta * b[ i ];
+   sum_th += theta;
+   if( i < A.size() ) {
+    const auto & Ai = A[ i ];
+    const std::size_t n = std::min( Ai.size() , f_x_bar.size() );
+    double dot = 0.0;
+    for( std::size_t j = 0 ; j < n ; ++j )
+     dot += Ai[ j ] * f_x_bar[ j ];
+    z_dot += theta * dot;
+    }
+   ++i;
+   }
+
+  const double F_xb = ( kk < int( f_F_at_x_bar.size() ) )
+                      ? f_F_at_x_bar[ kk ] : 0.0;
+  return( F_xb * sum_th - b_sum + z_dot );
   };
 
  if( k >= 0 )
@@ -1864,6 +2009,98 @@ void MasterProblemBlock::set_global_LB( double LB )
  const double sgn = IsConvex ? -1.0 : 1.0;
  const double coeff = std::isfinite( LB ) ? sgn * ( LB + f_C ) : 0.0;
  dqf->modify_term( DQuadFunction::Index( r_obj_idx ) , coeff , 0.0 );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+void MasterProblemBlock::set_F_at_x_bar( int k , double value )
+{
+ if( k < 0 || k >= int( f_F_at_x_bar.size() ) )
+  throw( std::invalid_argument(
+       "MasterProblemBlock::set_F_at_x_bar: k out of range" ) );
+ f_F_at_x_bar[ k ] = value;
+ }
+
+/*--------------------------------------------------------------------------*/
+
+double MasterProblemBlock::get_F_at_x_bar( int k ) const
+{
+ if( k < 0 || k >= int( f_F_at_x_bar.size() ) )
+  return( 0.0 );
+ return( f_F_at_x_bar[ k ] );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+void MasterProblemBlock::set_reference(
+                              const std::vector< double > & x_bar ,
+                              const std::vector< double > & F_at_x_bar )
+{
+ if( int( F_at_x_bar.size() ) != int( f_F_at_x_bar.size() ) )
+  throw( std::invalid_argument(
+       "MasterProblemBlock::set_reference: F_at_x_bar size != NoHardCmps" ) );
+ if( int( x_bar.size() ) != NumVars )
+  throw( std::invalid_argument(
+       "MasterProblemBlock::set_reference: x_bar size != NumVars" ) );
+
+ // capture the old reference *before* writing the new one, so the per-cut
+ // shift below can be expressed as a delta against the old state. Diagonal
+ // cuts in the master store the linearization error at the current x_bar
+ // (= a small non-negative quantity), not the raw cut constant: this is an
+ // internal numerical-stability choice and the caller never sees it. When
+ // the reference moves to ( x_bar_new , F_new ) the stored b[ i ] must be
+ // refreshed to track the new x_bar
+ const std::vector< double > old_x_bar = f_x_bar;
+ const std::vector< double > old_F     = f_F_at_x_bar;
+
+ // refresh x_bar via the regular setter (which also updates any state that
+ // depends on it, e.g. the x_bar * z term in the dual Objective and the
+ // box-slack coefficients)
+ set_x_bar( x_bar );
+
+ // commit the new per-component reference values
+ f_F_at_x_bar = F_at_x_bar;
+
+ // shift each *diagonal* cut's stored linearization error by
+ //     delta = ( F_new - F_old ) + ( A[ i ] . x_bar_new - A[ i ] . x_bar_old )
+ // (vertical cuts encode a feasibility constraint whose right-hand side is
+ // reference-independent and are left alone). The math is the dual of the
+ // legacy "shift after a current-point change" loop, but here the bundle is
+ // walked once and the update is invisible to the surrounding driver
+ if( IsPrimal )
+  return;  // primal MP carries the raw lin-error elsewhere; nothing to shift
+
+ for( int k = 0 ; k < int( HardCmps.size() ) ; ++k ) {
+  if( old_x_bar.size() != f_x_bar.size() )
+   break;  // first ever set_reference; old_x_bar empty, nothing to shift
+
+  auto * pfb = dynamic_cast< PolyhedralFunctionBlock * >( HardCmps[ k ] );
+  if( ! pfb )
+   continue;
+  auto & poly = pfb->get_PolyhedralFunction();
+  const auto & A = poly.get_A();
+  const auto & b = poly.get_b();
+
+  const double dF = ( k < int( old_F.size() ) )
+                    ? ( F_at_x_bar[ k ] - old_F[ k ] )
+                    : F_at_x_bar[ k ];
+
+  // walk every row of HardCmps[ k ]; vertical rows are skipped because
+  // their right-hand side does not depend on the reference
+  for( std::size_t i = 0 ; i < b.size() ; ++i ) {
+   if( poly.is_row_vertical( PolyhedralFunction::Index( i ) ) )
+    continue;
+   const auto & Ai = A[ i ];
+   const std::size_t n = std::min( Ai.size() , f_x_bar.size() );
+   double dx_dot = 0.0;
+   for( std::size_t j = 0 ; j < n ; ++j )
+    dx_dot += Ai[ j ] * ( f_x_bar[ j ] - old_x_bar[ j ] );
+   const double delta = dF + dx_dot;
+   if( delta == 0.0 )
+    continue;
+   poly.modify_constant( PolyhedralFunction::Index( i ) , b[ i ] + delta );
+   }
+  }
  }
 
 /*--------------------------------------------------------------------------*/
@@ -2069,7 +2306,7 @@ int MasterProblemBlock::solve_master( void )
  // v_k >= a_i.d + b_i row constraining v_k from below, so min sum v_k +
  // (1/(2t))||d||^2 -> -INF. The classic Bundle algorithm convention is
  // that at the very first call (bundle empty, no Fi(.) value known yet)
- // no master needs to be solved at all: the surrounding BundleSolver
+ // no master needs to be solved at all: the surrounding driver
  // will compute Fi(Lambda1 = Lambda = 0) and push the first
  // round of subgradients, then re-enter solve_master with a non-empty
  // bundle. We therefore short-circuit here, returning d = 0 (no movement)
@@ -2087,7 +2324,7 @@ int MasterProblemBlock::solve_master( void )
 
  // SMS++ pattern: compute() only writes the solution to the Solver's internal
  // buffers; the ColVariable on the Block stay at their stale values until
- // get_var_solution() is called. Without this push, the BundleSolver
+ // get_var_solution() is called. Without this push, the driver
  // would read d* / z* / theta as zeros after every master solve
  if( rc == Solver::kOK || rc == Solver::kLowPrecision )
   slv->get_var_solution( nullptr );
@@ -2197,7 +2434,7 @@ void MasterProblemBlock::set_b( const std::vector< double > & b )
        "MasterProblemBlock::set_b: b must have NumVars entries" ) );
 
  // Only the primal MP exposes a linear b*d term: in the dual MP the
- // contribution x_bar*b lives in the BundleSolver-managed x_bar*z linear
+ // contribution x_bar*b lives in the driver-managed x_bar*z linear
  // part, which is updated through a different API.
  if( ! IsPrimal || Var_d.empty() )
   return;

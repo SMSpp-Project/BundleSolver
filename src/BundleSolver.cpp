@@ -2621,8 +2621,16 @@ void BundleSolver::guts_of_put_State( const BundleSolverState & state )
    }
   // else no change in the (unknown) f-values, so all-0 is OK
 
-  if( MasterPB )
-   MasterPB->set_x_bar( state.Lambda );  // shift the dual MP x_bar*z linear term
+  if( MasterPB ) {
+   std::vector< double > F_hard;
+   F_hard.reserve( NrFi );
+   for( Index k = 0 ; k < NrFi ; ++k ) {
+    if( NrEasy && IsEasy[ k ] )
+     continue;
+    F_hard.push_back( UpRifFi[ k ] );
+    }
+   MasterPB->set_reference( state.Lambda , F_hard );
+   }
   }
 
  if( FrcLstSS & 2 ) {
@@ -3780,38 +3788,17 @@ bool BundleSolver::GetGi( Index wFi )
 
   auto Alfa1k = rs( fwFi->get_linearization_constant() );
 
-  // promote alpha to the form the dual master objective consumes as the
-  // coefficient of theta^k_i. Given that the row carried by the new cut
-  // reads, after the rs() flip,
-  //
-  //   F_k( x ) >= alpha_raw + g . x
-  //
-  // (where alpha_raw is the value Alfa1k holds right now: the constant
-  // returned by get_linearization_constant() in convex-min sign), the
-  // linearization error at the current reference point Lambda is
-  //
-  //   alpha_master = F_k( Lambda ) - alpha_raw - g . Lambda
-  //
-  // i.e. the gap between F_k at Lambda and what the linearization predicts
-  // there. In phase 0 (Lambda == 0 and the reference value F_k( Lambda )
-  // is the freshly evaluated F_k( Lambda1 ) folded into UpRifFi[ wFi ] by
-  // ReSetAlg) this collapses to alpha_master = -alpha_raw, the same
-  // positive value that the bundle 1.0 path produces via CheckSubG.
-  // Computed now, before the local Alfa1k is rewritten further below as
-  // the linearization error in Lambda1 (a separate form used by the
-  // heuristic accumulators Alfa1, eps, ScPr1)
+  // The master receives the raw cut constant (no promotion to a Lambda-
+  // dependent linearization error): each cut is shipped as ( g , alpha_raw )
+  // and the master keeps that form. The translation to the linearization-
+  // error form needed by the bundle stop test is done internally by
+  // MasterProblemBlock::get_aggregated_alpha using the cached F_k( x_bar )
+  // installed via set_reference. Alfa1k_for_master is therefore the
+  // un-promoted alpha_raw (already in convex-min sign via rs()), while the
+  // local Alfa1k is overwritten further below as the linearization error
+  // in Lambda1, a separate form used by the heuristic accumulators Alfa1,
+  // eps, ScPr1
   auto Alfa1k_for_master = Alfa1k;
-  if( f_sparse_lambda ) {
-   const auto & m = v_local2global[ wFi ];
-   double ip = 0.0;
-   for( Index li = 0 ; li < loc_NV ; ++li )
-    ip += Lambda[ m[ li ] ] * G1k[ li ];
-   Alfa1k_for_master = UpRifFi[ wFi ] - Alfa1k_for_master - ip;
-   }
-  else
-   Alfa1k_for_master = UpRifFi[ wFi ] - Alfa1k_for_master -
-                       std::inner_product( Lambda.begin() , Lambda.end() ,
-                                           G1k , double( 0 ) );
 
   // eps is only meaningful in the diagonal branch below, where it gets
   // set to the linearization error in Lambda1 of the new subgradient.
@@ -4194,16 +4181,6 @@ void BundleSolver::GotoLambda1( void )
  std::transform( UpFiLmb1.begin() , --(UpFiLmb1.end()) , UpRifFi.begin() ,
                  ++(DF.begin()) , std::minus< double >() );
 
- // capture d* = Lambda1 - Lambda before the swap below so that the
- // per-cut shift in the master can reflect the change in *both* the
- // reference Fi-value and the reference point Lambda
- std::vector< double > d_star;
- if( MasterPB ) {
-  d_star.resize( Lambda1.size() );
-  for( std::size_t j = 0 ; j < Lambda1.size() ; ++j )
-   d_star[ j ] = Lambda1[ j ] - Lambda[ j ];
-  }
-
  // do the move - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // Lambda = Lambda1 and all associated data structures
 
@@ -4219,57 +4196,33 @@ void BundleSolver::GotoLambda1( void )
  // change the current point in the Master Problem - - - - - - - - - - - - -
 
  if( MasterPB ) {
-  MasterPB->set_x_bar( Lambda );  // x_bar feeds the + x_bar*z linear term
-
-  // every alpha^k_i in the dual master was built when the bundle solver
-  // was at the old reference, by promoting the raw oracle constant
-  // alpha_raw^k_i to the form
-  //
-  //    alpha^k_i = F_k( Lambda_old ) - alpha_raw^k_i
-  //                                  - <Lambda_old, g_i^GBS>
-  //
-  // where g_i^GBS is the convex-min flipped subgradient kept locally by
-  // GBS. Each cut handed to MasterPB stores a sign-flipped image of
-  // that gradient in its A[i] column (A[i] = -g_i^GBS, see the
-  // make_dense_g1 wrap in GetGi), so the same algebraic identity in
-  // the master's own bookkeeping reads
-  //
-  //    alpha^k_i = F_k( Lambda_old ) - alpha_raw^k_i
-  //                                  + <Lambda_old, A[i]>
-  //
-  // The reference change Lambda_old -> Lambda_new = Lambda1_old, with
-  // F_k( Lambda_old ) -> F_k( Lambda_new ) too, leaves alpha_raw^k_i
-  // and A[i] untouched. Subtracting the old form from the new yields
-  //
-  //    delta alpha^k_i = DF[ k+1 ] + <d*, A[i]>
-  //
-  // with DF[k+1] = F_k( Lambda_new ) - F_k( Lambda_old ) and
-  // d* = Lambda_new - Lambda_old = Lambda1_old - Lambda_old (captured
-  // above before the swap). Vertical (feasibility) cuts encode a fixed
-  // right-hand side that does not depend on the reference and are left
-  // alone
-  for( Index k = 0 ; k < NrFi ; ++k ) {
-   if( NrEasy && IsEasy[ k ] )
-    continue;
-   const auto dk = DF[ k + 1 ];
-   for( Index slot = 0 ; slot < InvItemVcblr[ k ].size() ; ++slot ) {
-    if( InvItemVcblr[ k ][ slot ] >= vBPar2.back() )
-     continue;  // empty slot
-    if( ! MasterPB->is_subgradient( int( k ) , int( slot ) ) )
-     continue;  // vertical cut: rhs is fixed, no shift
-    const auto & g_master = MasterPB->get_subgradient( int( k ) ,
-                                                       int( slot ) );
-    double dg = 0.0;
-    const std::size_t n = std::min( g_master.size() , d_star.size() );
-    for( std::size_t j = 0 ; j < n ; ++j )
-     dg += d_star[ j ] * g_master[ j ];
-    const double delta = dk + dg;
-    if( delta == 0.0 )
+  // atomic refresh of the master reference (x_bar + per-hard F_k(x_bar)):
+  // the cache fed here will eventually drive the on-demand translation of
+  // raw cut alphas to linearization errors inside MasterPB, removing the
+  // shift loop that follows. For now both sides run: the cache is poked
+  // and the legacy promoted alphas are still refreshed below
+  {
+   std::vector< double > F_hard;
+   F_hard.reserve( NrFi );
+   for( Index k = 0 ; k < NrFi ; ++k ) {
+    if( NrEasy && IsEasy[ k ] )
      continue;
-    const auto a = MasterPB->get_alpha( int( k ) , int( slot ) );
-    MasterPB->modify_alpha( int( k ) , int( slot ) , a + delta );
+    F_hard.push_back( UpRifFi[ k ] );
     }
+   MasterPB->set_reference( Lambda , F_hard );
    }
+  // set_x_bar is intentionally NOT called separately: set_reference
+  // already forwards x_bar to set_x_bar internally
+
+  // Every cut in the bundle stores its raw native constant alpha_raw_i
+  // (immutable post-insertion). The translation to the bundle-method
+  // linearization-error form is rebuilt on demand by
+  // MasterProblemBlock::get_aggregated_alpha from the cached
+  // F_k( x_bar ) installed by set_reference above and the cached
+  // x_bar. The reference change Lambda_old -> Lambda_new is therefore
+  // *fully* expressed by the set_reference call: no per-cut alpha
+  // refresh is needed (vertical cuts were already invariant under
+  // reference moves and stay that way)
   }
 
  #if CHECK_DS & 4
@@ -4285,46 +4238,25 @@ void BundleSolver::GotoLambda1( void )
 
 void BundleSolver::GotoLambda( void )
 {
- // compute DeltaFi - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
- std::vector< VarValue > DF( NrFi + 1 );  // DF = UpFiLmb - UpRifFi
-
- DF.front() = UpFiLmb.back() - UpRifFi.back();
- std::transform( UpFiLmb.begin() , --(UpFiLmb.end()) , UpRifFi.begin() ,
-                 ++(DF.begin()) , std::minus< double >() );
-
  UpRifFi = UpFiLmb;        // set UpFiLmb as the reference values
  RifeqFi = true;
 
- // shift the per-cut linearization errors in the master to reflect the
- // change of the reference values. Recall that, for a diagonal (subgradient)
- // cut i of component k,
- //
- //    alpha^k_i = UpRifFi[ k ] - linearization_value_at_Lambda( i )
- //
- // so when UpRifFi[ k ] increases by DF[ k+1 ] every alpha^k_i must be
- // refreshed by the same amount. Vertical (feasibility) cuts encode a
- // fixed rhs that does not depend on UpRifFi and must therefore be left
- // alone, hence the is_subgradient( k , slot ) filter. Easy components
- // are skipped: their contribution is materialised by the stolen
- // sub-Block's own Objective and does not carry per-cut alphas here.
- // This is the alpha refresh after a current-point change.
- if( MasterPB )
+ // refresh the master reference cache: only the per-component
+ // F_k( x_bar ) values change (the stability centre x_bar itself is the
+ // same as before, since GotoLambda is reached after a NS that does not
+ // move the centre). Stored alpha_raw values are immutable, so no
+ // per-cut shift is needed: the linearization-error form is rebuilt on
+ // demand by MasterProblemBlock::get_aggregated_alpha
+ if( MasterPB ) {
+  std::vector< double > F_hard;
+  F_hard.reserve( NrFi );
   for( Index k = 0 ; k < NrFi ; ++k ) {
    if( NrEasy && IsEasy[ k ] )
     continue;
-   const auto dk = DF[ k + 1 ];
-   if( dk == 0 )
-    continue;
-   for( Index slot = 0 ; slot < InvItemVcblr[ k ].size() ; ++slot ) {
-    if( InvItemVcblr[ k ][ slot ] >= vBPar2.back() )
-     continue;  // empty slot
-    if( ! MasterPB->is_subgradient( int( k ) , int( slot ) ) )
-     continue;  // vertical (feasibility) cut: rhs is fixed, no shift
-    const auto a = MasterPB->get_alpha( int( k ) , int( slot ) );
-    MasterPB->modify_alpha( int( k ) , int( slot ) , a + dk );
-    }
+   F_hard.push_back( UpRifFi[ k ] );
    }
+  MasterPB->set_reference( Lambda , F_hard );
+  }
 
  #if CHECK_DS & 4
   CheckAlpha();
@@ -5327,9 +5259,21 @@ void BundleSolver::ReSetAlg( unsigned char RstLvl )
 
   if( nonzero ) {
    // shift the stability centre to Lambda: oldLambda == 0 by
-   // construction, so just push the new value into the master
-   if( MasterPB )
-    MasterPB->set_x_bar( Lambda );
+   // construction. UpRifFi is still all-0 at this point (no function
+   // has been evaluated yet), so the per-component F_k( x_bar ) cache
+   // installed inside MasterPB starts at 0; subsequent set_reference()
+   // calls after the first SS will refresh both x_bar and F_k( x_bar )
+   // atomically
+   if( MasterPB ) {
+    std::vector< double > F_hard;
+    F_hard.reserve( NrFi );
+    for( Index k = 0 ; k < NrFi ; ++k ) {
+     if( NrEasy && IsEasy[ k ] )
+      continue;
+     F_hard.push_back( UpRifFi[ k ] );
+     }
+    MasterPB->set_reference( Lambda , F_hard );
+    }
    Fi0Lmb = INFshift;  // the value of the linear part must be computed
    }
   else  // Lambda was all-0 anyway
@@ -5344,6 +5288,22 @@ void BundleSolver::ReSetAlg( unsigned char RstLvl )
   for( Index i = 0 ; i < NumVar ; ++i )
    LamVcblr[ i++ ]->set_value( 0 );
   Fi0Lmb = 0;  // then the value of the linear part is quite obvious ...
+
+  // also seed the master reference cache: x_bar = 0, F_k( 0 ) = 0 for
+  // every hard component. This guarantees that the very first add_cut()
+  // sees a well-formed f_x_bar / f_F_at_x_bar pair (otherwise the
+  // on-insert translation to lin-error form would silently use a
+  // zero-sized x_bar and produce wrong stored b values)
+  if( MasterPB ) {
+   std::vector< double > F_hard;
+   F_hard.reserve( NrFi );
+   for( Index k = 0 ; k < NrFi ; ++k ) {
+    if( NrEasy && IsEasy[ k ] )
+     continue;
+    F_hard.push_back( 0.0 );
+    }
+   MasterPB->set_reference( Lambda , F_hard );
+   }
   }
  }  // end( BundleSolver::ReSetAlg )
 
@@ -7660,35 +7620,22 @@ void BundleSolver::process_outstanding_Modification( void )
                   "inexistent linearization" ) );
      #endif
 
-     // recover the linearization coefficients
+     // recover the linearization coefficients (subgradient stays native;
+     // the chgsign below is only for the BS-internal heuristic path, the
+     // master receives g via the make_dense_g1 wrap from GetGi)
      v_c05f[ k ]->get_linearization_coefficients( Gi.data() ,
                                                   Range( 0 , NumVar ) , i );
      if( ! f_convex )
       chgsign( Gi.data() , NumVar );
 
-     // compute the new "Ai" value for the master problem; this depends on
-     // whether the linearization is diagonal (a subgradient, contributing
-     // a constraint v >= G d - alpha to the master in d-space, where alpha
-     // is the linearization error in Lambda) or vertical (a constraint
-     // SubG (Lambda + d) <= alpha = b_i, contributing SubG d <= alpha -
-     // SubG Lambda to the master in d-space). Treating both alike with
-     // the diagonal formula corrupts vertical-linearization rhs values
-     // by an offset equal to UpRifFi[k] (= Fi at the stable center),
-     // which yields stale/incorrect feasibility cuts when constants change
-     if( v_c05f[ k ]->is_linearization_vertical( i ) ) {
-      // CheckCnst-style adjustment: rhs = -alpha - SubG . Lambda (for the
-      // sign convention here, since Ai = rs( get_linearization_constant ),
-      // and a final "Ai = -Ai" in CheckCnst is what brings the rhs back
-      // into the master's "<= rhs" form)
-      Ai = - Ai - std::inner_product( Lambda.begin() , Lambda.end() ,
-                                      Gi.begin() , double( 0 ) );
-      }
-     else {
-      // diagonal: linearization error in Lambda
-      Ai = UpRifFi[ k ] - Ai - std::inner_product( Lambda.begin() ,
-                                                  Lambda.end() ,
-                                                  Gi.begin() , double( 0 ) );
-     }
+     // re-install the raw cut constant in the master. For diagonal cuts the
+     // native value rs(get_linearization_constant) already is the
+     // alpha_raw the master keeps as b[ i ]; for vertical cuts the
+     // convention layer between C05Function ( g . x + alpha <= 0 ) and
+     // PolyhedralFunction ( A . x + b >= 0 ) still requires the local sign
+     // flip on alpha (and the equivalent flip on g handled inside add_cut)
+     if( v_c05f[ k ]->is_linearization_vertical( i ) )
+      Ai = - Ai;
     if( MasterPB )
      MasterPB->modify_alpha( int( k ) , int( InvItemVcblr[ k ][ i ] ) , Ai );
     }

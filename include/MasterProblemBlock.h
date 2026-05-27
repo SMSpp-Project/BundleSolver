@@ -3,7 +3,7 @@
 /*--------------------------------------------------------------------------*/
 /** @file
  * Header file for the class MasterProblemBlock, which derives from Block to
- * implement the Master Problem of a generic (Generalized) Bundle algorithm
+ * implement the Master Problem of a generic Bundle algorithm
  * within the SMS++ framework.
  *
  * MasterProblemBlock represents and solves the Master Problem (MP) of a Bundle
@@ -70,9 +70,9 @@
  * - **Doubly-Stabilized**: combines both, see [Astorino, Frangioni,
  *   Fuduli, Gorgone, MP 2017].
  *
- * MasterProblemBlock is meant to be driven by a BundleSolver
+ * MasterProblemBlock is meant to be driven by a bundle driver
  * which is responsible for keeping the bundles B^k updated as the algorithm
- * proceeds; the BundleSolver does *not* directly call any MILP backend, it only
+ * proceeds; the driver does *not* directly call any MILP backend, it only
  * manipulates the MP at the Block/Modification level and triggers compute() on
  * the [MILP]Solver attached to the MasterProblemBlock.
  *
@@ -158,7 +158,7 @@ class LagBFunction;
 /*--------------------------------------------------------------------------*/
 /*--------------------------- GENERAL NOTES --------------------------------*/
 /*--------------------------------------------------------------------------*/
-/// A Block representing the Master Problem of a (Generalized) Bundle Method
+/// A Block representing the Master Problem of a Bundle Method
 /** MasterProblemBlock implements, as an SMS++ Block, the Master Problem (MP)
  * of a Generalized Bundle Method (cf. \link MasterProblemBlock.h \endlink for
  * the mathematical description of the supported primal and dual forms, and for
@@ -277,14 +277,14 @@ class MasterProblemBlock : public Block {
  /// one-shot configuration of MasterProblemBlock
  /** Single-call configuration that bundles dimensioning, primal/dual
   * variant selection and easy-component registration into one entry
-  * point. This is the API the surrounding BundleSolver /
+  * point. This is the API the surrounding driver /
   * BendersDecompositionSolver uses to populate MasterProblemBlock with
   * everything it needs.
   *
   * MasterProblemBlock never sees the "hard" components directly: only
   * their number (\p num_hard_cmps) is fed in, since their bundles B^k
   * are built up internally as empty PolyhedralFunctionBlock(s) under
-  * *this* and populated by the surrounding (Generalized)BundleSolver
+  * *this* and populated by the surrounding bundle driver
   * through the add_cut() / remove_cut() interface. The "easy" components
   * are passed in via \p easy_components, type-dispatched (LagBFunction,
   * BendersBFunction, ...) and absorbed into the master in the form
@@ -319,7 +319,7 @@ class MasterProblemBlock : public Block {
   *                          in #NumVars.
   * @param num_hard_cmps     number of "hard" components, i.e. components
   *                          whose bundle is built up incrementally by the
-  *                          driving (Generalized)BundleSolver through
+  *                          driving bundle driver through
   *                          add_cut() / remove_cut(); stored in
   *                          #NoHardCmps.
   * @param easy_components   pointers to the easy C05Function components.
@@ -555,7 +555,7 @@ class MasterProblemBlock : public Block {
  /** Returns the PolyhedralFunctionBlock used to model the k-th "hard"
   * component of the sum-function, for k in [0, NoHardCmps). The pointer stays
   * valid as long as the MP is not torn down by clear() or SetDim(); it is meant
-  * to be used by the BundleSolver to feed cuts into the underlying
+  * to be used by the driver to feed cuts into the underlying
   * PolyhedralFunction via the Modification interface. */
 
  [[nodiscard]] Block * get_hard_component( int k ) const;
@@ -582,15 +582,19 @@ class MasterProblemBlock : public Block {
  [[nodiscard]] double get_dual_norm_squared( void ) const;
 
 /*--------------------------------------------------------------------------*/
- /// add a new linearization (g, alpha) at slot \p slot of bundle B^k
+ /// add a new linearization (g, alpha_raw) at slot \p slot of bundle B^k
  /** Appends one new linearization to the bundle B^k of the k-th "hard"
   * component, occupying the persistent NDOFi-style "slot" \p slot of that
   * component. \p slot must lie in [0, MaxBSize) and must currently be empty (an
   * std::logic_error is thrown otherwise). \p g is the new subgradient (size
-  * NumVars; moved into the PolyhedralFunction); \p alpha is the linearization
-  * error.
+  * NumVars; moved into the PolyhedralFunction); \p alpha is the *raw* cut
+  * constant (the b such that  F_k( x ) >= b + g . x  in convex-min sign,
+  * un-translated). The caller is *not* expected to pre-promote alpha to
+  * the linearization-error-at-x_bar form: the master keeps the raw value
+  * in its bundle and rebuilds the linearization-error form on demand from
+  * the cached F_k( x_bar ) installed via set_reference().
   *
-  * The (k, slot) pair lets the surrounding BundleSolver keep its
+  * The (k, slot) pair lets the surrounding driver keep its
   * ItemVcblr / InvItemVcblr name-management *unchanged* across subsequent
   * remove_cut() calls: MasterPB internally tracks the slot -> local-row mapping
   * into the PolyhedralFunction of HardCmps[k] (rows are renumbered on
@@ -607,9 +611,9 @@ class MasterProblemBlock : public Block {
   * and the return value is the (k, slot) of the duplicate. Otherwise the
   * cut is installed as described above and the return value is the
   * sentinel #kCutInserted (== -1), signalling that the master problem has
-  * effectively changed. The surrounding bundle solver consumes this
-  * return code to decide whether the new cut warrants treating the master
-  * as "changed" for the purposes of the SS/NS bookkeeping. */
+  * effectively changed. The surrounding driver consumes this return code
+  * to decide whether the new cut warrants treating the master as
+  * "changed" for the purposes of the SS/NS bookkeeping. */
 
  static constexpr int kCutInserted = -1;
 
@@ -642,7 +646,7 @@ class MasterProblemBlock : public Block {
   * integer "name" used to map slots to items; MasterPB does not maintain such a
   * mapping (PolyhedralFunction rows are simply indexed [0, get_nrows())
   * sequentially), so this method returns get_bundle_size(k). Provided as a
-  * drop-in for the surrounding BundleSolver code that iterates with Index j =
+  * drop-in for the surrounding driver code that iterates with Index j =
   * Master->MaxName() ; j-- ; ... */
 
  [[nodiscard]] int get_max_cut_name( int k ) const
@@ -678,9 +682,16 @@ class MasterProblemBlock : public Block {
                   std::vector< double > && g , double alpha );
 
 /*--------------------------------------------------------------------------*/
- /// replace only the linearization error alpha at slot \p slot of B^k
+ /// replace only the raw constant alpha_raw at slot \p slot of B^k
  /** Like modify_cut() but only the constant term is touched (a cheaper
-  * Modification, C05FunctionModLin instead of full row replacement). */
+  * Modification, C05FunctionModLin instead of full row replacement).
+  *
+  * Stored cut constants are otherwise *immutable* from the driver's point
+  * of view: this entry point exists exclusively to keep the master in
+  * sync with C05Function modifications that change the native cut
+  * constant (e.g. when the inner Block evolves and the linearization is
+  * still in the global pool); the legacy "shift after a stability-centre
+  * move" use is gone, replaced by set_reference(). */
 
  void modify_alpha( int k , int slot , double alpha );
 
@@ -728,14 +739,38 @@ class MasterProblemBlock : public Block {
  [[nodiscard]] int get_vertical_count( void ) const;
 
 /*--------------------------------------------------------------------------*/
- /// returns Sigma* = sum_i theta^k_i * alpha^k_i over the dual bundle B^k
- /** NDOFi counterpart of Master->ReadSigma() / Master->ReadSigma(k+1).
+ /// returns Sigma* = aggregated linearization error of the dual bundle
+ /** Computes the bundle-method "Sigma" = aggregated linearization error at
+  * the current stability centre x_bar.
+  *
+  * Each cut is stored in its native (un-translated) form, i.e. as a pair
+  * (g, alpha_raw) that bounds the function as
+  *     F_k( x ) >= alpha_raw + g . x      (convex case)
+  *     F_k( x ) <= alpha_raw + g . x      (concave case)
+  * The per-cut linearization error at x_bar is therefore
+  *     e_i = | F_k( x_bar ) - alpha_raw_i - g_i . x_bar |
+  * (positive by construction). This method assembles
+  *     Sigma_k = sum_i theta^k_i * e_i
+  * on the fly from the bundle, the cached F_k( x_bar ) installed via
+  * set_reference / set_F_at_x_bar, and the cached stability centre f_x_bar.
+  *
   * \p k == -1 (default) sums over every hard component (the global aggregated
   * linearization error); \p k in [0, NoHardCmps) restricts the sum to component
   * k. Meaningful only after solve_master() and only in the dual MP form;
   * returns 0 otherwise. */
 
  [[nodiscard]] double get_aggregated_alpha( int k = -1 ) const;
+
+/*--------------------------------------------------------------------------*/
+ /// returns sum_i theta^k_i * alpha_raw_i (the un-translated convex combination)
+ /** Companion of #get_aggregated_alpha that exposes the *raw* convex
+  * combination of the native cut constants stored in the bundle, without
+  * applying the F_k( x_bar ) / g . x_bar translation. Useful for callers
+  * that want to perform the translation themselves or just need the raw
+  * aggregate (e.g. diagnostics). \p k == -1 sums over every hard component;
+  * returns 0 outside the dual MP form. */
+
+ [[nodiscard]] double get_raw_aggregated_alpha( int k = -1 ) const;
 
 /*--------------------------------------------------------------------------*/
  /// returns the model value v*[k] of the cutting-plane model at the step
@@ -826,7 +861,7 @@ class MasterProblemBlock : public Block {
 /*--------------------------------------------------------------------------*/
  /// linear-in-t sensitivity of v*(t) around the current t_stab
  /** NDOFi counterpart of Master->SensitAnals(vl, vc). The
-  * BundleSolver uses these two scalars to predict
+  * The driver uses these two scalars to predict
   *     v( t_new ) >= vc + t_new * vl
   * in the long-term "hard" t-strategy. With the proximal dual MP
   *   v*(t) = sum_k sum_i theta^k_i alpha^k_i + gamma^k LB^k + x_bar . z*
@@ -868,7 +903,7 @@ class MasterProblemBlock : public Block {
   * Lvl into Lvl_xbar = Lvl + C. The shift is depositied as a member and
   * applied on top of the value passed to set_global_LB() / set_f_lev() /
   * set_LB() when their coefficients are committed to the dual Objective.
-  * Should be called by the driver BundleSolver whenever the stability
+  * Should be called by the driver whenever the stability
   * centre x_bar moves; default is 0 (= no shift, suitable for kProximal
   * without explicit global LB / level). */
 
@@ -896,9 +931,53 @@ class MasterProblemBlock : public Block {
  void set_x_bar( const std::vector< double > & x_bar );
 
 /*--------------------------------------------------------------------------*/
+ /// atomically refresh the master reference (x_bar + per-component F_k)
+ /** Single-call companion of set_x_bar that, in one shot, installs the new
+  * stability centre and the (hard) per-component reference values F_k( x_bar ).
+  * The atomic form exists so callers can not forget to update either side:
+  * the master's notion of "current reference" is one indivisible piece of
+  * state.
+  *
+  * \p x_bar must have size NumVars (same contract as set_x_bar).
+  *
+  * \p F_at_x_bar must have one entry per *hard* component, in the same order
+  * used by HardCmps (i.e. F_at_x_bar[ k ] is F_k( x_bar ) for the k-th hard
+  * component). Internally each value is cached as a member and used to
+  * translate, on demand, the raw α stored in the bundle (each cut keeps the
+  * native b such that  F_k( x ) >= b + g . x  ) into the linearization-error
+  *   e_i = F_k( x_bar ) - b_i - g_i . x_bar
+  * which the bundle-method stop test consumes; the cuts themselves stay
+  * untouched. Default for every entry is 0.
+  *
+  * The two sides may still be poked individually via the lower-level
+  * set_x_bar() / set_F_at_x_bar() if a partial refresh is genuinely
+  * meaningful (e.g. the very first call when F_k( x_bar ) is not yet known),
+  * but the supported pattern is the atomic one. */
+
+ void set_reference( const std::vector< double > & x_bar ,
+                     const std::vector< double > & F_at_x_bar );
+
+/*--------------------------------------------------------------------------*/
+ /// lower-level: set the per-component reference value F_k( x_bar )
+ /** Per-component poke used internally by set_reference and exposed as a
+  * fallback. The driver is normally expected to call set_reference()
+  * instead. Default for every entry is 0.
+  *
+  * \p k is the index in HardCmps; must satisfy 0 <= k < NoHardCmps. */
+
+ void set_F_at_x_bar( int k , double value );
+
+/*--------------------------------------------------------------------------*/
+ /// read back the cached reference value F_k( x_bar )
+ /** Returns the last value passed to set_F_at_x_bar / set_reference for \p k ;
+  * 0 if never set or if \p k is out of range. */
+
+ [[nodiscard]] double get_F_at_x_bar( int k ) const;
+
+/*--------------------------------------------------------------------------*/
  /// set the per-coordinate box  L <= x <= U  on the optimization variables
  /** Installs the lower / upper bounds on the optimization variable x that
-  * the surrounding BundleSolver is minimising on. In terms of the step
+  * the surrounding driver is minimising on. In terms of the step
   * variable  d = x - x_bar  the box reads
   *     L - x_bar <= d <= U - x_bar
   * which on the dual MP enters as
@@ -1008,7 +1087,7 @@ class MasterProblemBlock : public Block {
  /** Sets the log ostream on the first Solver registered to
   * MasterProblemBlock. The verbosity itself is left to the Solver's own
   * ComputeConfig (typically the `intLogVerb` knob in the MPBSolverCfg
-  * file), so the surrounding BundleSolver does not need to
+  * file), so the surrounding driver does not need to
   * carry a duplicate "MP log verbosity" parameter. No-op if no Solver
   * is registered. */
 
@@ -1081,7 +1160,7 @@ class MasterProblemBlock : public Block {
  /// returns the current value of the proximal stabilization parameter t
  /** Returns the proximal stabilization parameter t currently used in the
   * quadratic / linear term of the MP Objective. Needed by the caller (e.g.
-  * BundleSolver::FormLambda1) to convert the master-side step
+  * the driver) to convert the master-side step
   * d* = -t * z* back to a t-independent displacement when applying a
   * different Tau (as in t-strategies). */
 
@@ -1120,7 +1199,7 @@ class MasterProblemBlock : public Block {
  /// load a MasterProblemBlock out of an istream
  /** Required by the abstract interface of Block, but currently not
   * implemented (a MasterProblemBlock is always built programmatically by its
-  * driving BundleSolver): always throws an std::logic_error. */
+  * driving solver): always throws an std::logic_error. */
 
  void load( std::istream & input , char frmt = 0 ) override {
   throw( std::logic_error(
@@ -1292,6 +1371,14 @@ class MasterProblemBlock : public Block {
                     ///< refresh logic to compute (L - x_bar) and
                     ///< (U - x_bar) without re-asking the caller
 
+ std::vector< double > f_F_at_x_bar;
+                    ///< per-hard-component cache of  F_k( x_bar ) ; sized
+                    ///< NoHardCmps in configure(), refreshed by the driver
+                    ///< via set_F_at_x_bar() at every stability-centre
+                    ///< change. Used (or will be used) to derive Sigma in
+                    ///< linearization-error form without forcing the
+                    ///< driver to pre-promote each cut's alpha
+
  double f_lev;      ///< current value of the level f_lev (level / doubly only)
 
  int z_obj_idx;     ///< index of the first z_j entry in the DQuadFunction
@@ -1331,7 +1418,7 @@ class MasterProblemBlock : public Block {
   * index of the cut occupying slot s in the PolyhedralFunction of the k-th hard
   * component, or -1 if the slot is empty. PolyhedralFunction rows shift on
   * delete_row(); this map absorbs the shift so that the surrounding
-  * BundleSolver can keep its NDOFi-style persistent name (ItemVcblr) intact
+  * the driver can keep its NDOFi-style persistent name (ItemVcblr) intact
   * across remove_cut() calls. */
  std::vector< std::vector< int > > slot_to_local;
 
