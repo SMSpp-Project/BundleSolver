@@ -514,8 +514,12 @@ int BundleSolver::compute( bool changedvars )
  // initializations - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // if there is a 0-th component and the value had not been computed before
- // (maybe because the 0-th component has changed), do it now
- if( f_lf && ( Fi0Lmb == INFshift ) ) {
+ // (maybe because the 0-th component has changed), do it now. Fi0Lmb is
+ // reset to INFshift both at the very first call and whenever a
+ // C05FunctionModLin* mutates the linear part's coefficients, so it
+ // doubles as the "the master's linear part is out of date" signal below
+ const bool lin_recompute = f_lf && ( Fi0Lmb == INFshift );
+ if( lin_recompute ) {
   f_lf->compute( true );
   Fi0Lmb = rs( f_lf->get_upper_estimate() );
   if( UpFiLmbdef == NrFi ) {  // ready to compute the total upper bound
@@ -533,12 +537,14 @@ int BundleSolver::compute( bool changedvars )
  // hand the constant gradient of the linear 0-th component f_lf to the
  // master problem so that the dual coupling rows pick up the affine drift
  //   z_j = b_j - sum_k sum_i theta^k_i * A^k_{i,j}
- // The LinearFunction's coefficients are part of the problem data and do
- // not change across calls to compute(), so this is done at most once per
- // solver instance (the f_linear_part_set guard); for problems treated as
- // concave maxima (f_convex == false) the gradient is flipped in sign to
- // match the convex-min convention used inside MasterProblemBlock
- if( MasterPB && f_lf && ( ! f_linear_part_set ) ) {
+ // This must be (re)done at the first call and again every time the
+ // LinearFunction's coefficients change (e.g. a "change linear objective"
+ // oracle Modification): lin_recompute, captured above, is exactly that
+ // signal. A stale linear part silently corrupts the dual coupling RHS and
+ // hence the search direction. For problems treated as concave maxima
+ // (f_convex == false) the gradient is flipped in sign to match the
+ // convex-min convention used inside MasterProblemBlock
+ if( MasterPB && f_lf && ( ( ! f_linear_part_set ) || lin_recompute ) ) {
   std::vector< double > b( NumVar , 0.0 );
   const auto & cf = f_lf->get_v_var();
   for( Index i = 0 ; i < cf.size() && i < NumVar ; ++i )
@@ -592,6 +598,41 @@ int BundleSolver::compute( bool changedvars )
    BLOG( 1 , " ~ stop due to time-periodic event" << std::endl );
    break;
    }
+
+  // fictitious-LB sync for empty components - - - - - - - - - - - - - - - - -
+  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  // A hard component whose bundle is empty models its F_k as the max over
+  // an empty set of affine pieces, i.e. the improper constant -infinity:
+  // the dual master is then infeasible (the per-component simplex row
+  // sum_i theta^k_i + gamma^k = lambda collapses to gamma^k = lambda with
+  // gamma^k structurally fixed to 0). Following the historical QP-bundle /
+  // OSIMPSolver device, install a *fictitious* model lower bound on every
+  // such component, which makes it "disappear" (gamma^k becomes a free
+  // multiplier absorbing the simplex mass) and restores master
+  // feasibility. The fictitious bound value is handled inside
+  // MasterProblemBlock::set_fictitious_LB: 0 when no global LB exists, or
+  // strictly below the genuine global LB otherwise, so it never tightens
+  // the master beyond the aggregate bound (the subtle point OSIMPSolver
+  // makes via "gamma_i cost = global_LB - 1"). The subsequent Fi(.)
+  // evaluation then either refills the bundle (proper function -> cut
+  // added, fictitious removed next time) or returns F_k = -INF (improper
+  // function -> the UpFiLmb1.back() == -INFshift path right after
+  // InnerLoop propagates kUnbounded, *not* masked by the fictitious
+  // bound). Components owning a genuine individual LB never need this.
+  // The all-empty case is left to the MasterProblemBlock::solve_master
+  // short-circuit, so this only fires for the *partially* empty state
+  // typical of a post-oracle-mutation restart
+  if( MasterPB && ( ! MasterPB->is_bundle_empty() ) )
+   for( Index k = 0 ; k < NrFi ; ++k ) {
+    if( NrEasy && IsEasy[ k ] )
+     continue;
+    const bool want = ( NrItems[ k ] == 0 ) &&
+                      ( LowerBound[ k ] <= - INFshift );
+    if( want != FictLB[ k ] ) {
+     MasterPB->set_fictitious_LB( int( k ) , want );
+     FictLB[ k ] = want;
+     }
+    }
 
   // construct the direction d- - - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1798,6 +1839,7 @@ void BundleSolver::set_Block( Block * block )
  NrItems.resize( NrFi + 1 , 0 );
  FrFItem.resize( NrFi , 0 );
  MaxItem.resize( NrFi , 0 );
+ FictLB.assign( NrFi , false );  // no fictitious LB installed yet
 
  FreList = {};
  whisZ.resize( NrFi , InINF );
@@ -2711,10 +2753,12 @@ void BundleSolver::FormD( void )
   if( LwrBndk != LowerBound[ k ] ) {  // if it has changed
    LowerBound[ k ] = LwrBndk;         // record the new value
 
-   if( LwrBndk > -INFshift )  // translate it w.r.t. UpRifFi
-    LwrBndk -= UpRifFi[ k ];
-
-   // pass it to the master problem
+   // pass the raw lower bound to the master: MPB stores it as the
+   // native bound of its PFB and handles any required translation
+   // (gamma * LB term coefficient) internally as the reference
+   // F_k( x_bar ) evolves via set_reference. The legacy pre-shift
+   // " LwrBndk -= UpRifFi[ k ] " is gone, paralleling the removal of
+   // the per-cut alpha promotion in GetGi
    if( MasterPB )
     MasterPB->set_LB( int( k ) , LwrBndk );
    }
@@ -4872,8 +4916,21 @@ void BundleSolver::InitMPB( void )
  // (LagBFunction::IsConvex is set to inner_sense == eMax, i.e. the inner
  // primal of a convex LBF is eMax and of a concave LBF is eMin). To
  // match, MasterPB receives !f_convex.
+ //
+ // MaxBSize passed to MasterPB is the *global* pool size, not the
+ // per-component cap BPar2. BundleSolver picks slot names through
+ // FindAPlace() from a single global pool (with size vBPar2.back() =
+ // sum_k vBPar2[ k ]), so add_cut() sees slot indices that can reach
+ // up to that total even though each component never owns more than
+ // vBPar2[ k ] = BPar2 of them simultaneously. Routing BPar2 (or even
+ // max_k vBPar2[ k ]) to MasterPB would under-allocate slot_to_local[]
+ // and trip "slot out of range" the first time a slot >= BPar2 is
+ // legitimately allocated by FindAPlace
+ const int max_bsize = vBPar2.empty()
+                       ? int( BPar2 )
+                       : int( vBPar2.back() );
  MasterPB->configure( want_primal ,
-                      int( BPar2 ) ,
+                      std::max( int( BPar2 ) , max_bsize ) ,
                       int( NumVar ) ,
                       n_hard ,
                       easy_cmps ,
@@ -5289,18 +5346,28 @@ void BundleSolver::ReSetAlg( unsigned char RstLvl )
    LamVcblr[ i++ ]->set_value( 0 );
   Fi0Lmb = 0;  // then the value of the linear part is quite obvious ...
 
-  // also seed the master reference cache: x_bar = 0, F_k( 0 ) = 0 for
-  // every hard component. This guarantees that the very first add_cut()
-  // sees a well-formed f_x_bar / f_F_at_x_bar pair (otherwise the
-  // on-insert translation to lin-error form would silently use a
-  // zero-sized x_bar and produce wrong stored b values)
+  // Seed / refresh the master reference cache. Lambda has just been
+  // reset to 0 so x_bar moves to 0 too; the per-component F_k( x_bar )
+  // values, on the other hand, are *not* known at this point (Fi(.)
+  // has not been re-evaluated since the previous compute()). To keep
+  // the cuts still living in the bundle (from a previous compute())
+  // consistent with the new x_bar, we re-use whatever F values
+  // MasterPB has cached: this yields a pure x_bar shift (delta =
+  // A . ( x_new - x_old )) on every stored b[ i ], with no spurious
+  // dF jolt that would otherwise corrupt their lin-error meaning.
+  // The "true" F_k( 0 ) will be installed at the next SS / NS via
+  // GotoLambda1 / GotoLambda's set_reference call once Fi(.) has been
+  // evaluated. At the very first ever compute() call the bundle is
+  // empty and the cached values default to 0, so the same code path
+  // also serves as initial seeding
   if( MasterPB ) {
    std::vector< double > F_hard;
    F_hard.reserve( NrFi );
+   int hard_idx = 0;
    for( Index k = 0 ; k < NrFi ; ++k ) {
     if( NrEasy && IsEasy[ k ] )
      continue;
-    F_hard.push_back( 0.0 );
+    F_hard.push_back( MasterPB->get_F_at_x_bar( hard_idx++ ) );
     }
    MasterPB->set_reference( Lambda , F_hard );
    }
@@ -7606,9 +7673,10 @@ void BundleSolver::process_outstanding_Modification( void )
  if( std::find_if( Cchg.begin() , Cchg.end() ,
                    []( Subset & Ck ) { return( ! Ck.empty() ); }
                    ) != Cchg.end() ) {
-  std::vector< VarValue > Gi( NumVar );
-
-  for( Index k = 0 ; k < NrFi ; ++k )
+  for( Index k = 0 ; k < NrFi ; ++k ) {
+   const Index loc_NV = f_sparse_lambda ? v_c05f[ k ]->get_num_active_var()
+                                        : NumVar;
+   std::vector< VarValue > Gi( loc_NV );
    for( auto i : Cchg[ k ] )
     if( InvItemVcblr[ k ][ i ] < vBPar2.back() ) {
      auto Ai = rs( v_c05f[ k ]->get_linearization_constant( i ) );
@@ -7620,25 +7688,46 @@ void BundleSolver::process_outstanding_Modification( void )
                   "inexistent linearization" ) );
      #endif
 
-     // recover the linearization coefficients (subgradient stays native;
-     // the chgsign below is only for the BS-internal heuristic path, the
-     // master receives g via the make_dense_g1 wrap from GetGi)
+     // recover the (possibly changed) subgradient of linearization i: an
+     // AllEntriesChanged / AllLinearizationChanged oracle Modification is
+     // routed here as a constant change, but it may also have moved g (the
+     // PolyhedralFunction component case: a "modify rows" alters the active
+     // piece). Re-installing only the constant via modify_alpha would leave
+     // the master carrying a stale g and hence a cut that no longer
+     // under-estimates the new function: the dual master would then pick a
+     // direction along which the true Fi worsens. So push both g and the
+     // constant through modify_cut. chgsign matches the convex-min space of
+     // get_linearization_coefficients for concave problems
      v_c05f[ k ]->get_linearization_coefficients( Gi.data() ,
-                                                  Range( 0 , NumVar ) , i );
+                                                  Range( 0 , loc_NV ) , i );
      if( ! f_convex )
-      chgsign( Gi.data() , NumVar );
+      chgsign( Gi.data() , loc_NV );
 
-     // re-install the raw cut constant in the master. For diagonal cuts the
-     // native value rs(get_linearization_constant) already is the
-     // alpha_raw the master keeps as b[ i ]; for vertical cuts the
+     // for diagonal cuts the native value rs(get_linearization_constant)
+     // already is the alpha_raw the master keeps; for vertical cuts the
      // convention layer between C05Function ( g . x + alpha <= 0 ) and
-     // PolyhedralFunction ( A . x + b >= 0 ) still requires the local sign
-     // flip on alpha (and the equivalent flip on g handled inside add_cut)
+     // PolyhedralFunction ( A . x + b >= 0 ) requires the local sign flip
+     // on alpha (the equivalent flip on g is the global negation below)
      if( v_c05f[ k ]->is_linearization_vertical( i ) )
       Ai = - Ai;
-    if( MasterPB )
-     MasterPB->modify_alpha( int( k ) , int( InvItemVcblr[ k ][ i ] ) , Ai );
+
+     if( MasterPB ) {
+      // master-side subgradient convention A = - g_internal, scattered to
+      // global Variable slots, exactly as make_dense_g1() does in GetGi
+      std::vector< double > g_master( NumVar , 0.0 );
+      if( f_sparse_lambda ) {
+       const auto & m = v_local2global[ k ];
+       for( Index li = 0 ; li < loc_NV ; ++li )
+        g_master[ m[ li ] ] = - Gi[ li ];
+       }
+      else
+       for( Index j = 0 ; j < NumVar ; ++j )
+        g_master[ j ] = - Gi[ j ];
+      MasterPB->modify_cut( int( k ) , int( InvItemVcblr[ k ][ i ] ) ,
+                            std::move( g_master ) , Ai );
+      }
     }
+   }
   }
 
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -

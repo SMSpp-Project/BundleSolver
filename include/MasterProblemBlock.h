@@ -662,6 +662,28 @@ class MasterProblemBlock : public Block {
  [[nodiscard]] bool is_bundle_empty( void ) const;
 
 /*--------------------------------------------------------------------------*/
+ /// returns whether any hard component is in the "stuck simplex" state
+ /** Returns true iff there exists a hard component k whose dual simplex
+  * row
+  *     sum_i theta^k_i + gamma^k = lambda
+  * cannot be made satisfiable by the inner :MILPSolver, because:
+  *  - gamma^k is fixed to 0 (no global LB has been installed on
+  *    HardCmps[k], so the gamma^k * LB^k contribution is structurally
+  *    absent), AND
+  *  - the bundle of theta^k_i is empty (no cuts pushed via add_cut()
+  *    have survived for this component).
+  * Under these conditions the row collapses to lambda = 0, which
+  * contradicts K * lambda = 1 (always true with Var_r and Var_omega
+  * pinned). The surrounding driver can use this hook to detect a
+  * transient warm-start state - typically after an oracle mutation
+  * has invalidated every cut of some component - and short-circuit
+  * the master solve with a trivial direction, letting the next
+  * Fi(.) evaluation refill the affected bundles before the master
+  * is asked to solve a non-degenerate dual MP. */
+
+ [[nodiscard]] bool has_pinned_empty_cmp( void ) const;
+
+/*--------------------------------------------------------------------------*/
  /// remove the cut occupying slot \p slot from bundle B^k
  /** Deletes the cut stored at the NDOFi-style slot \p slot of the
   * k-th hard component; \p slot must lie in [0, MaxBSize) and must currently be
@@ -1184,6 +1206,28 @@ class MasterProblemBlock : public Block {
  void set_LB( int k , double LB );
 
 /*--------------------------------------------------------------------------*/
+ /// install (\p on == true) or remove a fictitious model LB v^k >= 0
+ /** Installs (\p on == true) or removes (\p on == false) a *fictitious*
+  * lower bound  v^k >= 0  on the model value of the k-th hard component.
+  *
+  * It is meant for the transient state in which the bundle of component
+  * k is empty: an empty PolyhedralFunction models F_k as the max over an
+  * empty set of affine pieces, i.e. the improper constant -infinity, so
+  * the master would be primal-unbounded / dual-infeasible. The fictitious
+  * v^k >= 0 (the historical QP-bundle device) makes the empty component
+  * "disappear": v^k is held at 0 and gamma^k becomes a free, zero-cost
+  * multiplier that absorbs the per-PFB simplex mass lambda.
+  *
+  * The bound is expressed directly in the d-space / linearization-error
+  * frame (no F_k(x_bar) translation, unlike a genuine native bound passed
+  * to set_LB), because the model value v^k already lives in that frame.
+  * The driver must remove it (\p on == false) as soon as the component
+  * gets a real cut, restoring the gamma^k-fixed "no bound" state. \p k
+  * must lie in [0, NoHardCmps). */
+
+ void set_fictitious_LB( int k , bool on );
+
+/*--------------------------------------------------------------------------*/
  /// update the level stabilization parameter f_lev
  /** Sets the level target f_lev used by the #kLevel / #kDoublyStabilized
   * stabilization schemes. The value enters the dual MP objective as the linear
@@ -1354,6 +1398,13 @@ class MasterProblemBlock : public Block {
                     ///< - sum_H f^{k,H}( x_bar ); refreshed by set_C() at
                     ///< every stability-centre move
 
+ double f_global_LB_xbar = - Inf< Function::FunctionValue >();
+                    ///< translated global lower bound LB + f_C last
+                    ///< installed by set_global_LB(); -INF means "no
+                    ///< global LB". Read by set_fictitious_LB() to place
+                    ///< the fictitious per-component bound strictly below
+                    ///< the aggregate one (legacy OSIMPSolver device)
+
  std::vector< double > f_L;
                     ///< per-coordinate lower bound L on x for the box
                     ///< constraint L - x_bar <= d <= U - x_bar; a
@@ -1378,6 +1429,15 @@ class MasterProblemBlock : public Block {
                     ///< change. Used (or will be used) to derive Sigma in
                     ///< linearization-error form without forcing the
                     ///< driver to pre-promote each cut's alpha
+
+ std::vector< double > f_LB_raw;
+                    ///< per-hard-component cache of the raw native lower
+                    ///< bound LB^k installed via set_LB(); -INFshift means
+                    ///< "no bound" (gamma^k stays fixed to 0). MPB feeds
+                    ///< the dual master gamma * LB^k contribution in
+                    ///< linearization-error form ( LB^k - F_k( x_bar ) )
+                    ///< and refreshes it on every set_reference() so the
+                    ///< driver does not have to re-call set_LB
 
  double f_lev;      ///< current value of the level f_lev (level / doubly only)
 

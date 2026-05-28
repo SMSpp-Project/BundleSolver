@@ -2947,6 +2947,15 @@ public:
 
  Subset NrItems;  ///< number of items in the bundle for each component
 
+ /** FictLB[ k ] tracks whether a *fictitious* model lower bound is
+  * currently installed on hard component k inside MasterProblemBlock,
+  * to keep the dual master feasible while k's bundle is transiently
+  * empty and k has no genuine individual lower bound. Set when k is
+  * empty, cleared as soon as it receives a real cut. Only meaningful
+  * when MasterPB != nullptr; sized NrFi. */
+
+ std::vector< bool > FictLB;
+
  /** FrFItem[ k ] contains the index of the first position in the global
   * pool of component k where BundleSolver can put a new
   * linearization when the corresponding item is added to the bundle
