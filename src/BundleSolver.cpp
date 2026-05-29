@@ -1872,6 +1872,26 @@ void BundleSolver::set_Block( Block * block )
 
  InitMPB();
 
+ // install the per-coordinate box  L <= Lambda <= U  on the dual master, so
+ // that the proximal direction d* = Lambda1 - Lambda is projected onto the
+ // feasible Lambda region (exactly the box FormLambda1 clamps Lambda1
+ // against). Without it the dual MasterProblemBlock returns the
+ // *unconstrained* d* = -t z*, which inflates || z* || (and hence v*) and
+ // stalls the bundle on finite optima: the legacy NDOFiOracle MPSolvers
+ // receive the same box from the NDOSolver interface and project d*. A
+ // non-positive coordinate maps to a -INF lower bound (no bound) and the
+ // ColVariable's own upper bound is used as U; set_box() treats any
+ // non-finite entry as "no bound" (the matching slack stays fixed to 0)
+ if( MasterPB ) {
+  std::vector< double > Lbox( NumVar ) , Ubox( NumVar );
+  for( Index i = 0 ; i < NumVar ; ++i ) {
+   Lbox[ i ] = LamVcblr[ i ]->is_positive()
+               ? 0.0 : - std::numeric_limits< double >::infinity();
+   Ubox[ i ] = LamVcblr[ i ]->get_ub();
+   }
+  MasterPB->set_box( Lbox , Ubox );
+  }
+
  // cleanup easy-component caches - - - - - - - - - - - - - - - - - - - - - -
  // - - - -  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // now that the MPSolver has read all the information it needs out of the
@@ -3004,21 +3024,19 @@ void BundleSolver::FormD( void )
    vStar[ k ] = MasterPB->get_FiBLambda( int( k ) );
 
  if( NrEasy ) {  // there are easy components
-  // adjust the contribution of the easy components to v* and Sigma*
-  // easy components are treated differently from hard ones in that their
-  // value in the model is *not* translated by their (reference) Fi-value in
-  // Lambda; however, v* has to measure the total decrease predicted by the
-  // model in Lambda1 w.r.t. the (reference) Fi-value in Lambda, and Sigma*
-  // the error, again, w.r.t. the (reference) Fi-value in Lambda. since the
-  // MPSolver provides non-translated Fi-values, the correction has to be
-  // made here.
+  // adjust the contribution of the easy components to v* and Sigma*.
+  // get_FiBLambda() / get_aggregated_alpha() already return v* and Sigma*
+  // *translated* by the reference Fi-value for the HARD components (their
+  // cuts are stored in linearization-error form, refreshed against the
+  // current reference by set_reference). The EASY components, instead, have
+  // their value entered into the model un-translated, so only their
+  // reference Fi-value has to be corrected here (note that v* and Sigma*
+  // carry opposite signs, hence the "-=" and the "+=")
   VarValue EasyRifFi = 0;
   for( Index k = 0 ; k < NrFi ; ++k )
    if( IsEasy[ k ] )
     EasyRifFi += UpRifFi[ k ];
 
-  // note that v* and Sigma* have "opposite signs" (the former is negative,
-  // the latter positive) which justifies why one finds a "-=" and a "+="
   if( vStar.back() < INFshift )
    vStar.back() -= EasyRifFi;
   Sigma += EasyRifFi;
@@ -4027,10 +4045,7 @@ bool BundleSolver::GetGi( Index wFi )
   bool to_insert = true;  // if it has to be inserted
 
   // tracks whether the new cut effectively modified MasterPB; the copy
-  // branch never reaches the add_cut call (it just rewrites alpha on an
-  // existing slot through modify_alpha further below) so the value
-  // stays at the default true and the bookkeeping behaves as if a real
-  // insertion took place
+  // branch never reaches the add_cut call so the value stays at the default
   bool master_changed = true;
 
   if( cp < InINF ) {  // the item is a copy - - - - - - - - - - - - - - - - -
@@ -4133,14 +4148,9 @@ bool BundleSolver::GetGi( Index wFi )
      accumulate_G1();
     }
 
-   // ( G1k , Alfa1k_for_master ) is the cut at slot wh of HardCmps[ wFi ]
-   // and the master receives alpha already promoted to "linearization
-   // error at the current reference point". The return of add_cut is
-   // either MasterProblemBlock::kCutInserted (the cut is genuinely new
-   // and has been appended to the bundle) or a non-negative slot index
-   // pointing at an algebraically identical cut already in the bundle;
-   // in the second case the master problem stays unchanged and the
-   // bookkeeping below should not count this round as a real insertion
+   // ( G1k , Alfa1k_for_master ) is the cut at slot wh of HardCmps[ wFi ];
+   // the master receives alpha already promoted to "linearization error at
+   // the current reference point"
    if( MasterPB )
     master_changed = ( MasterPB->add_cut(
                                 int( wFi ) , int( wh ) , make_dense_g1() ,
@@ -4171,14 +4181,6 @@ bool BundleSolver::GetGi( Index wFi )
    v_c05f[ wFi ]->store_linearization( gpp );
    inhibit_Modification( false );
 
-   // only count this round as a true insertion when the master problem
-   // actually absorbed the new cut. A duplicate (same g and same alpha
-   // as a linearization already in HardCmps[wFi]) reaches this branch
-   // because the global-pool bookkeeping has to be kept consistent, but
-   // it leaves the master unchanged: forwarding "insrtd = true" in that
-   // case would mislead the SS/NS decision in the outer InnerLoop and
-   // suppress the noise-reduction t-update that would otherwise unstick
-   // a stalled iteration
    if( master_changed )
     insrtd = true;
    add_to_global_pool( wFi , gpp , wh );

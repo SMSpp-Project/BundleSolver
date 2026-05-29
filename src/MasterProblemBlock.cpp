@@ -680,33 +680,23 @@ void MasterProblemBlock::CreateDualMP( stabilization_type Stbl )
   add_static_variable( Var_s_minus , "MPB_s_minus" );
   }
 
- // ---- global normalization row: K * lambda + r - omega = 1 --------------
- // K = NoHardCmps multiplies lambda here to compensate the "shared
- // lambda" convention of PolyhedralFunctionBlock::set_lambda. The
- // per-PFB row is
- //     sum_i theta^k_i + gamma^k - lambda = 0   (one per hard k)
- // i.e. sum_i theta^k_i + gamma^k = lambda for every k. Summing across
- // all K hard components yields
- //     sum_k ( sum_i theta^k_i + gamma^k ) = K * lambda
- // and, to recover the classic simplex "total mass equals 1" (with
- // r * LB + omega * level slacks layered on top by the stabilization
- // wrapper), we need K * lambda + r - omega = 1. Equivalently, under
- // the proximal-classic regime where the LB / level rows are inactive
- // (i.e. r = omega = 0), this collapses to lambda = 1 / K, so each
- // per-PFB simplex sum_i theta + gamma = lambda = 1 / K and the global
- // sum across all PFBs equals 1, as the textbook requires.
- //
- // Without the K factor the master would let lambda drift along the
- // direction omega -> +infinity / r -> 0 (both have default LP bounds
- // [ 0 , +infinity ) when no global LB / level is installed), and the
- // per-PFB rows would propagate that drift into gamma^k -> +infinity .
- // Combined with the negative gamma^k objective coefficient that the
- // lin-error stored bound gives in min form, the LP would be
- // unbounded
+ // ---- global normalization row: lambda + r - omega = 1 -----------------
+ // The disaggregated proximal dual stationarity in v_k (the per-component
+ // model decrease) reads
+ //     dL/dv_k = 1 - sum_i theta^k_i - gamma^k - r + omega = 0
+ // hence per component sum_i theta^k_i + gamma^k = 1 - r + omega =: lambda.
+ // The per-PFB simplex row enforces sum_i theta^k_i + gamma^k = lambda for
+ // every hard k, so this global row only has to pin lambda + r - omega = 1
+ // (coefficient 1 on lambda, NOT NoHardCmps): the dual aggregates the
+ // *sum* of the K components f = sum_k f_k, and each one carries unit
+ // convexity mass independently. A K factor here would instead force
+ // lambda = 1 / K when r = omega = 0, i.e. it would average the components
+ // rather than sum them, shrinking the aggregate subgradient z = sum theta g
+ // by 1 / K and the proximal step d = - t z with it.
  {
   LinearFunction::v_coeff_pair norm_terms;
   norm_terms.reserve( 3 );
-  norm_terms.emplace_back( & Var_lambda , double( NoHardCmps ) );
+  norm_terms.emplace_back( & Var_lambda , 1.0 );
   norm_terms.emplace_back( & Var_r      ,  1.0 );
   norm_terms.emplace_back( & Var_omega  , -1.0 );
 
@@ -2302,17 +2292,42 @@ void MasterProblemBlock::set_x_bar( const std::vector< double > & x_bar )
  if( ! dqf )
   return;
 
- // refresh only the linear coefficient on every z_j; the quadratic
- // coefficient ±t/2 (or 0 under kLevel) is left consistent with the
- // sense chosen at CreateDualMP time. The +x̄·z textbook contribution
- // is negated under IsConvex (whole Objective negated).
+ // refresh only the quadratic coefficient ±t/2 (or 0 under kLevel) of every
+ // z_j; the linear coefficient stays 0. The cuts are stored in the
+ // linearization-error frame b = F(x_bar) - alpha - g . x_bar, which has
+ // already absorbed the stability centre into sigma: the disaggregated
+ // proximal dual then reads max_theta [ - Sigma - (t/2)||z||^2 ] with NO
+ // explicit x_bar . z term (the centre lives entirely in d-space). Adding a
+ // separate x_bar . z linear term here on top of the lin-error frame would
+ // double-count the centre, so set_x_bar only moves f_x_bar (above) and the
+ // proximal diagonal; the linear z coefficient is left at its 0 value from
+ // CreateDualMP. The sign convention ±t/2 follows the Objective sense
+ // (negated under IsConvex).
  const double sgn = IsConvex ? -1.0 : 1.0;
  const double quad_coeff = ( StblType == kProximal ||
                              StblType == kDoublyStabilized )
                            ? - sgn * t_stab / 2.0 : 0.0;
  for( int j = 0 ; j < NumVars ; ++j )
   dqf->modify_term( DQuadFunction::Index( z_obj_idx + j ) ,
-                    sgn * x_bar[ j ] , quad_coeff );
+                    0.0 , quad_coeff );
+
+ // refresh the Lambda-box slack coefficients: s^+_j carries sgn*(L_j -
+ // x_bar_j) and s^-_j carries -sgn*(U_j - x_bar_j), both of which move with
+ // the stability centre (cf. set_box, which installs the bounds and the
+ // is_fixed flags once). Re-applying them here keeps the box consistent
+ // after a serious step moved x_bar; entries with a non-finite bound keep
+ // their fixed-to-0 slack and 0 coefficient
+ if( ( s_plus_obj_idx >= 0 ) && ( s_minus_obj_idx >= 0 ) &&
+     ( ! f_L.empty() || ! f_U.empty() ) )
+  for( int j = 0 ; j < NumVars ; ++j ) {
+   const double xj = ( j < int( f_x_bar.size() ) ) ? f_x_bar[ j ] : 0.0;
+   const bool has_L = ! f_L.empty() && std::isfinite( f_L[ j ] );
+   dqf->modify_term( DQuadFunction::Index( s_plus_obj_idx + j ) ,
+                     has_L ? sgn * ( f_L[ j ] - xj ) : 0.0 , 0.0 );
+   const bool has_U = ! f_U.empty() && std::isfinite( f_U[ j ] );
+   dqf->modify_term( DQuadFunction::Index( s_minus_obj_idx + j ) ,
+                     has_U ? - sgn * ( f_U[ j ] - xj ) : 0.0 , 0.0 );
+   }
  }
 
 /*--------------------------------------------------------------------------*/
