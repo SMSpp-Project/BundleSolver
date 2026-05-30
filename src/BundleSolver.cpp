@@ -4939,7 +4939,8 @@ void BundleSolver::InitMPB( void )
                       nullptr ,
                       get_excluded_blocks() ,
                       MPStbl ,
-                      ! f_convex );
+                      ! f_convex ,
+                      IsEasy );
 
  tHasChgd = true;
 

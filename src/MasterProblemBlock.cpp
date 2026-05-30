@@ -231,7 +231,8 @@ void MasterProblemBlock::configure(
                           Block * original_block ,
                           std::unordered_set< Block * > ignored_blocks ,
                           stabilization_type reg ,
-                          bool convex )
+                          bool convex ,
+                          const std::vector< bool > & is_easy )
 {
  // - - - sanity checks - - - - - - - - - - - - - - - - - - - - - - - - - -
  if( max_bundle_size < 0 || num_vars < 0 || num_hard_cmps < 0 )
@@ -245,6 +246,15 @@ void MasterProblemBlock::configure(
  // SetDim() starts from a clean slate (it calls clear()) and re-initialises
  // MaxBSize / NumVars / NoTotCmps / NoEasyCmps / NoHardCmps
  SetDim( max_bundle_size , num_vars , n_total , n_easy );
+
+ // record the per-global-k easy/hard flag so the per-cmp getters
+ // (get_FiBLambda, get_aggregated_alpha, ...) can dispatch the EASY
+ // branch. SetDim() above already initialised IsEasyCmp to all-false;
+ // we overwrite it here when the caller supplies a flag vector of the
+ // right size. The default empty vector preserves the legacy all-hard
+ // behaviour for callers that have not yet adopted the new parameter
+ if( ! is_easy.empty() && int( is_easy.size() ) == n_total )
+  IsEasyCmp = is_easy;
 
  IsPrimal = primal;
  IsConvex = convex;
@@ -1155,17 +1165,38 @@ void MasterProblemBlock::absorb_LBF_into_dual_MP( LagBFunction * lbf )
  // we const_cast the outer container (the inner Block now lives under
  // *this*, so there is no aliasing concern with other observers).
  // Each entry holds either a single FRowConstraint, a vector of them
- // or a std::list of them (dynamic only).
+ // or a std::list of them (dynamic only). Blocks may register such
+ // groups either *by value* (the Block owns the storage and boost::any
+ // holds a copy/container directly) or *by pointer* (the Block keeps
+ // the storage as a member and registers its address into boost::any);
+ // both flavours must be handled here. BoxConstraints (variable bounds
+ // of the inner Block) are NOT absorbed: they live in u-space and the
+ // inner :MILPSolver of the dual MP will enforce them as ordinary
+ // variable bounds, so we skip them silently
  auto walk_any = [ & process_one ]( boost::any & any ) {
-  if( auto * one = boost::any_cast< FRowConstraint >( & any ) ) {
+  if( auto * one = boost::any_cast< FRowConstraint >( & any ) )
    process_one( *one );
+  else if( auto * one_p = boost::any_cast< FRowConstraint * >( & any ) ) {
+   if( *one_p ) process_one( **one_p );
    }
   else if( auto * vec = boost::any_cast< std::vector< FRowConstraint > >( & any ) ) {
    for( auto & ci : *vec ) process_one( ci );
    }
+  else if( auto * vec_p =
+                boost::any_cast< std::vector< FRowConstraint > * >( & any ) ) {
+   if( *vec_p ) for( auto & ci : **vec_p ) process_one( ci );
+   }
   else if( auto * lst = boost::any_cast< std::list< FRowConstraint > >( & any ) ) {
    for( auto & ci : *lst ) process_one( ci );
    }
+  else if( auto * lst_p =
+                boost::any_cast< std::list< FRowConstraint > * >( & any ) ) {
+   if( *lst_p ) for( auto & ci : **lst_p ) process_one( ci );
+   }
+  else if( boost::any_cast< std::vector< BoxConstraint > * >( & any ) )
+   ;  // variable bounds, kept on the inner Block - intentionally skipped
+  else if( boost::any_cast< std::vector< BoxConstraint > >( & any ) )
+   ;  // ditto, by-value form
   };
 
  auto & s_cnst =

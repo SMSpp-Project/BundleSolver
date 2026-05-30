@@ -342,6 +342,16 @@ class MasterProblemBlock : public Block {
   *                          (the master is minimised), false if it is
   *                          concave (the master is maximised). */
 
+ /** \param is_easy
+  *        per-global-component flag distinguishing easy from hard. When
+  *        provided (and of size num_hard_cmps + easy_components.size())
+  *        it is copied into MasterProblemBlock::IsEasyCmp, which the
+  *        per-component getters (\see get_FiBLambda(k), and similar)
+  *        consult to dispatch the EASY branch. Empty by default for
+  *        backward compatibility with callers that do not yet maintain
+  *        such a flag vector; in that case IsEasyCmp stays at the
+  *        all-false default initialised by SetDim() and only the legacy
+  *        all-hard path is taken. */
  void configure( bool primal ,
                  int max_bundle_size ,
                  int num_vars ,
@@ -350,7 +360,8 @@ class MasterProblemBlock : public Block {
                  Block * original_block ,
                  std::unordered_set< Block * > ignored_blocks = {} ,
                  stabilization_type reg = kDoublyStabilized ,
-                 bool convex = true );
+                 bool convex = true ,
+                 const std::vector< bool > & is_easy = {} );
 
 /*--------------------------------------------------------------------------*/
  /// provide MasterProblemBlock with the basic dimensions of the MP
