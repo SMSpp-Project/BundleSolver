@@ -1554,19 +1554,13 @@ double MasterProblemBlock::get_theta( int k , int slot ) const
  if( loc < 0 )
   return( 0.0 );
 
- const auto pfb = dynamic_cast< const PolyhedralFunctionBlock * >( HardCmps[ k ] );
+ const auto * pfb = 
+     dynamic_cast< const PolyhedralFunctionBlock * >( HardCmps[ k ] );
  if( ! pfb )
   return( 0.0 );
- const auto thetas = const_cast< PolyhedralFunctionBlock * >( pfb )
-                       ->get_dynamic_variable< ColVariable >( "PolyF_theta" );
- if( ! thetas || loc >= int( thetas->size() ) )
-  return( 0.0 );
 
- // f_theta is a std::list, so linear traversal is needed; the bundle
- // sizes are bounded by intBPar2 (typically a few hundred per component)
- auto it = thetas->cbegin();
- std::advance( it , loc );
- return( it->get_value() );
+ return( pfb->get_row_multiplier(
+          PolyhedralFunctionBlock::Index( loc ) ) );
  }
 
 /*--------------------------------------------------------------------------*/
@@ -2048,20 +2042,20 @@ std::vector< double > MasterProblemBlock::get_thetas( int k ) const
   return( out );
  if( k < 0 || k >= int( HardCmps.size() ) )
   return( out );
- const auto pfb = dynamic_cast< const PolyhedralFunctionBlock * >( HardCmps[ k ] );
+
+ const auto * pfb =
+  dynamic_cast< const PolyhedralFunctionBlock * >( HardCmps[ k ] );
  if( ! pfb )
   return( out );
 
- const auto thetas = const_cast< PolyhedralFunctionBlock * >( pfb )
-                       ->get_dynamic_variable< ColVariable >( "PolyF_theta" );
- if( ! thetas )
-  return( out );
+ const auto n = pfb->get_PolyhedralFunction().get_nrows();
+ out.reserve( n );
 
- out.reserve( thetas->size() );
- for( const auto & v : *thetas )
-  out.push_back( v.get_value() );
+ for( PolyhedralFunctionBlock::Index i = 0 ; i < n ; ++i )
+  out.push_back( pfb->get_row_multiplier( i ) );
+
  return( out );
- }
+}
 
 /*--------------------------------------------------------------------------*/
 
