@@ -1428,10 +1428,9 @@ bool MasterProblemBlock::has_pinned_empty_cmp( void ) const
 
 /*--------------------------------------------------------------------------*/
 
-namespace {
-
-PolyhedralFunctionBlock * pfb_at( const std::vector< Block * > & HardCmps ,
-                                  int k , const char * fn )
+PolyhedralFunctionBlock *
+MasterProblemBlock::pfb_at( const std::vector< Block * > & HardCmps ,
+                            int k , const char * fn )
 {
  if( k < 0 || k >= int( HardCmps.size() ) )
   throw( std::invalid_argument(
@@ -1444,8 +1443,6 @@ PolyhedralFunctionBlock * pfb_at( const std::vector< Block * > & HardCmps ,
        ": HardCmps[k] is not a PolyhedralFunctionBlock" ) );
  return( pfb );
  }
-
-}  // namespace ( anonymous )
 
 /*--------------------------------------------------------------------------*/
 
