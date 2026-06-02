@@ -145,6 +145,30 @@ using Range = BundleSolver::Range;
 using LinearCombination = BundleSolver::LinearCombination;
 using Vec_VarValue = BundleSolver::Vec_VarValue;
 
+std::pair< double , double >
+BundleSolver::effective_bounds( const ColVariable * var )
+{
+ double lb = var->is_positive()
+             ? 0.0 : - std::numeric_limits< double >::infinity();
+ double ub = var->get_ub();
+
+ for( Index i = 0 ; i < var->get_num_active() ; ++i ) {
+  const auto c = var->get_active( i );
+  if( dynamic_cast< const NNConstraint * >( c ) )
+   lb = std::max( lb , 0.0 );
+  else if( const auto b = dynamic_cast< const LB0Constraint * >( c ) ) {
+   lb = std::max( lb , 0.0 );
+   ub = std::min( ub , double( b->get_rhs() ) );
+   }
+  else if( const auto b = dynamic_cast< const BoxConstraint * >( c ) ) {
+   lb = std::max( lb , double( b->get_lhs() ) );
+   ub = std::min( ub , double( b->get_rhs() ) );
+   }
+  }
+
+ return( std::pair< double , double >( lb , ub ) );
+}
+
 /*--------------------------------------------------------------------------*/
 /*-------------------------------- CONSTANTS -------------------------------*/
 /*--------------------------------------------------------------------------*/
@@ -1879,15 +1903,15 @@ void BundleSolver::set_Block( Block * block )
  // *unconstrained* d* = -t z*, which inflates || z* || (and hence v*) and
  // stalls the bundle on finite optima: the legacy NDOFiOracle MPSolvers
  // receive the same box from the NDOSolver interface and project d*. A
- // non-positive coordinate maps to a -INF lower bound (no bound) and the
- // ColVariable's own upper bound is used as U; set_box() treats any
- // non-finite entry as "no bound" (the matching slack stays fixed to 0)
+ // effective bounds combine the ColVariable's own bounds with any supported
+ // active bound constraint; set_box() treats any non-finite entry as "no bound"
+ // (the matching slack stays fixed to 0)
  if( MasterPB ) {
   std::vector< double > Lbox( NumVar ) , Ubox( NumVar );
   for( Index i = 0 ; i < NumVar ; ++i ) {
-   Lbox[ i ] = LamVcblr[ i ]->is_positive()
-               ? 0.0 : - std::numeric_limits< double >::infinity();
-   Ubox[ i ] = LamVcblr[ i ]->get_ub();
+   const auto bounds = effective_bounds( LamVcblr[ i ] );
+   Lbox[ i ] = bounds.first;
+   Ubox[ i ] = bounds.second;
    }
   MasterPB->set_box( Lbox , Ubox );
   }
@@ -3216,17 +3240,15 @@ void BundleSolver::FormLambda1( double Tau )
    Lambda1[ i ] = Lambda[ i ] + scale * ( i < d.size() ? d[ i ] : 0.0 );
   }
 
- // walk LamVcblr to clamp Lambda1[ i ] into [ lb , ub ] of the
- // underlying ColVariable. is_positive() and get_ub() are SMS++-native,
- // so we don't need a separate bookkeeping -- the information lives
- // in the ColVariable / BoxConstraint of the Block
+ // walk LamVcblr to clamp Lambda1[ i ] into the effective [ lb , ub ]:
+ // ColVariable bounds combined with any supported active bound constraint
  if( MasterPB )
   for( Index i = 0 ; i < NumVar ; ++i ) {
-   if( LamVcblr[ i ]->is_positive() && ( Lambda1[ i ] < 0 ) )
-    Lambda1[ i ] = 0;
-   const double UBh = LamVcblr[ i ]->get_ub();
-   if( Lambda1[ i ] > UBh )
-    Lambda1[ i ] = UBh;
+   const auto bounds = effective_bounds( LamVcblr[ i ] );
+   if( Lambda1[ i ] < bounds.first )
+    Lambda1[ i ] = bounds.first;
+   if( Lambda1[ i ] > bounds.second )
+    Lambda1[ i ] = bounds.second;
    }
 
  // move the value from Lambda1 to the ColVariable - - - - - - - - - - - - - -
