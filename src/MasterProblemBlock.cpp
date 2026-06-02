@@ -1741,71 +1741,45 @@ std::vector< double > MasterProblemBlock::get_z_vector( void ) const
 
 /*--------------------------------------------------------------------------*/
 
-std::vector< double > MasterProblemBlock::get_aggregated_subgradient( int k ) const
+std::vector< double >
+MasterProblemBlock::get_aggregated_subgradient( int k ) const
 {
+ // The abstract multiplier is stored differently in the two linearized PFB
+ // representations: as the dual value of a cut constraint in the primal one,
+ // and as an explicit theta variable in the dual one. PFB::get_row_multiplier()
+ // hides this distinction and also maps the value back to the units of the
+ // original unscaled row. Therefore MPB must not read the abstract objects
+ // directly or apply any scaling factor itself.
  std::vector< double > out( NumVars , 0.0 );
 
  if( k < 0 || k >= int( HardCmps.size() ) )
   return( out );
- const auto pfb = dynamic_cast< const PolyhedralFunctionBlock * >( HardCmps[ k ] );
+
+ const auto * pfb =
+  dynamic_cast< const PolyhedralFunctionBlock * >( HardCmps[ k ] );
  if( ! pfb )
   return( out );
 
- // The aggregated subgradient is the convex combination
- //
- //   z^k = sum_i theta^k_i * g^k_i
- //
- // where g^k_i is row i of f_polyf.A and theta^k_i is the multiplier
- // attached to the i-th bundle row. The dual MP and the linearized
- // primal MP store theta in different places:
- //
- //  - in the dual MP, the PolyhedralFunctionBlock allocates a
- //    "PolyF_theta" dynamic ColVariable group (one entry per bundle row)
- //    and the master Solver writes the optimal multipliers there;
- //  - in the linearized primal MP, theta is the dual multiplier of the
- //    bundle row v_k >= g^k_i . d + b^k_i carried by the f_const
- //    dynamic FRowConstraint list, and is recovered via
- //    RowConstraint::get_dual().
- //
- // Both branches share the same g^k_i source (f_polyf.A)
- const auto & A = const_cast< PolyhedralFunctionBlock * >( pfb )
-                       ->get_PolyhedralFunction().get_A();
+ const auto & A =
+  const_cast< PolyhedralFunctionBlock * >( pfb )
+    ->get_PolyhedralFunction().get_A();
 
- auto add_row = [ & ]( std::size_t i , double th ) {
-  if( th == 0.0 )
-   return;
-  if( i >= A.size() )
-   return;
+ for( std::size_t i = 0 ; i < A.size() ; ++i ) {
+  const double theta =
+   pfb->get_row_multiplier( PolyhedralFunctionBlock::Index( i ) );
+
+  if( theta == 0.0 )
+   continue;
+
   const auto & gi = A[ i ];
   const std::size_t n = std::min( gi.size() , out.size() );
-  for( std::size_t j = 0 ; j < n ; ++j )
-   out[ j ] += th * gi[ j ];
-  };
 
- if( IsPrimal ) {
-  const auto cgroup = const_cast< PolyhedralFunctionBlock * >( pfb )
-                        ->get_dynamic_constraint< FRowConstraint >( "" );
-  if( ! cgroup )
-   return( out );
-  std::size_t i = 0;
-  for( const auto & ci : *cgroup ) {
-   add_row( i , ci.get_dual() );
-   ++i;
-   }
-  return( out );
+  for( std::size_t j = 0 ; j < n ; ++j )
+   out[ j ] += theta * gi[ j ];
   }
 
- const auto thetas = const_cast< PolyhedralFunctionBlock * >( pfb )
-                       ->get_dynamic_variable< ColVariable >( "PolyF_theta" );
- if( ! thetas )
-  return( out );
- if( thetas->size() != A.size() )
-  return( out );
- auto it = thetas->cbegin();
- for( std::size_t i = 0 ; i < A.size() ; ++i , ++it )
-  add_row( i , it->get_value() );
  return( out );
- }
+}
 
 /*--------------------------------------------------------------------------*/
 
