@@ -1926,56 +1926,51 @@ double MasterProblemBlock::get_raw_aggregated_alpha( int k ) const
  if( IsPrimal )
   return( 0.0 );
 
- // The bundle stores diagonal cuts in linearization-error form,
- //   b[ i ] = F_k( x_bar ) - alpha_raw_i + g_i . x_bar
- // (the sign of the g . x_bar contribution absorbs the flip applied by
- // the driver before handing g over to add_cut). Reverting yields
- //   alpha_raw_i = F_k( x_bar ) - b[ i ] + g_i . x_bar
- // and aggregating
- //   raw_k = sum_i theta_i * alpha_raw_i
- //         = F_k( x_bar ) * ( sum_i theta_i ) - sum_i theta_i b[ i ]
- //                                            + sum_i theta_i ( g_i . x_bar )
- // (vertical cuts store their feasibility-constraint constant directly;
- // they are included in the sum with the same sign as the raw form, since
- // for them the storage already equals the raw constant)
+ // A[i] and b[i] are stored in the physical PolyhedralFunction units.
+ // get_row_multiplier() returns the corresponding physical theta_i,
+ // independently of the active PFB representation and internal scaling.
  auto contrib = [ this ]( int kk ) -> double {
   if( kk < 0 || kk >= int( HardCmps.size() ) )
    return( 0.0 );
-  const auto pfb = dynamic_cast< const PolyhedralFunctionBlock * >( HardCmps[ kk ] );
+
+  const auto * pfb =
+   dynamic_cast< const PolyhedralFunctionBlock * >( HardCmps[ kk ] );
   if( ! pfb )
    return( 0.0 );
-  auto * th = const_cast< PolyhedralFunctionBlock * >( pfb )
-                ->get_dynamic_variable< ColVariable >( "PolyF_theta" );
-  if( ! th )
-   return( 0.0 );
-  auto & poly = const_cast< PolyhedralFunctionBlock * >( pfb )
-                    ->get_PolyhedralFunction();
+
+  auto & poly =
+   const_cast< PolyhedralFunctionBlock * >( pfb )
+     ->get_PolyhedralFunction();
+
   const auto & b = poly.get_b();
   const auto & A = poly.get_A();
-  if( th->size() != b.size() )
-   return( 0.0 );
 
-  double b_sum   = 0.0;
-  double sum_th  = 0.0;
-  double z_dot   = 0.0;
-  std::size_t i  = 0;
-  for( const auto & v : *th ) {
-   const double theta = v.get_value();
+  double b_sum  = 0.0;
+  double sum_th = 0.0;
+  double z_dot  = 0.0;
+
+  for( std::size_t i = 0 ; i < b.size() ; ++i ) {
+   const double theta =
+    pfb->get_row_multiplier( PolyhedralFunction::Index( i ) );
+
    b_sum  += theta * b[ i ];
    sum_th += theta;
+
    if( i < A.size() ) {
     const auto & Ai = A[ i ];
     const std::size_t n = std::min( Ai.size() , f_x_bar.size() );
+
     double dot = 0.0;
     for( std::size_t j = 0 ; j < n ; ++j )
      dot += Ai[ j ] * f_x_bar[ j ];
+
     z_dot += theta * dot;
     }
-   ++i;
    }
 
   const double F_xb = ( kk < int( f_F_at_x_bar.size() ) )
                       ? f_F_at_x_bar[ kk ] : 0.0;
+
   return( F_xb * sum_th - b_sum + z_dot );
   };
 
@@ -1985,8 +1980,9 @@ double MasterProblemBlock::get_raw_aggregated_alpha( int k ) const
  double total = 0.0;
  for( int kk = 0 ; kk < int( HardCmps.size() ) ; ++kk )
   total += contrib( kk );
+
  return( total );
- }
+}
 
 /*--------------------------------------------------------------------------*/
 
