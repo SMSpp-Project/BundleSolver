@@ -1885,32 +1885,27 @@ double MasterProblemBlock::get_aggregated_alpha( int k ) const
  if( IsPrimal )
   return( 0.0 );
 
- // Each diagonal cut stores, in PolyhedralFunction.v_b[ i ], the
- // linearization error at the current x_bar (set on insertion and kept
- // refreshed by set_reference). The bundle-method Sigma is therefore the
- // direct convex combination
- //   Sigma_k = sum_i theta^k_i * b[ i ]
- // walked here in O( bundle size )
+ // b[i] is stored in the physical PolyhedralFunction units. The multiplier
+ // must therefore also be expressed in physical units. get_row_multiplier()
+ // hides both the active PFB representation and any internal row scaling.
  auto contrib = [ this ]( int kk ) -> double {
   if( kk < 0 || kk >= int( HardCmps.size() ) )
    return( 0.0 );
-  const auto pfb = dynamic_cast< const PolyhedralFunctionBlock * >( HardCmps[ kk ] );
+
+  const auto * pfb =
+   dynamic_cast< const PolyhedralFunctionBlock * >( HardCmps[ kk ] );
   if( ! pfb )
    return( 0.0 );
-  auto * th = const_cast< PolyhedralFunctionBlock * >( pfb )
-                ->get_dynamic_variable< ColVariable >( "PolyF_theta" );
-  if( ! th )
-   return( 0.0 );
-  const auto & b = const_cast< PolyhedralFunctionBlock * >( pfb )
-                       ->get_PolyhedralFunction().get_b();
-  if( th->size() != b.size() )
-   return( 0.0 );
+
+  const auto & b =
+   const_cast< PolyhedralFunctionBlock * >( pfb )
+     ->get_PolyhedralFunction().get_b();
+
   double s = 0.0;
-  std::size_t i = 0;
-  for( const auto & v : *th ) {
-   s += v.get_value() * b[ i ];
-   ++i;
-   }
+  for( std::size_t i = 0 ; i < b.size() ; ++i )
+   s += pfb->get_row_multiplier(
+           PolyhedralFunction::Index( i ) ) * b[ i ];
+
   return( s );
   };
 
@@ -1920,8 +1915,9 @@ double MasterProblemBlock::get_aggregated_alpha( int k ) const
  double total = 0.0;
  for( int kk = 0 ; kk < int( HardCmps.size() ) ; ++kk )
   total += contrib( kk );
+
  return( total );
- }
+}
 
 /*--------------------------------------------------------------------------*/
 
