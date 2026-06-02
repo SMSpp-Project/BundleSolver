@@ -38,6 +38,11 @@ include(FindPackageHandleStandardArgs)
 # ----- Requirements -------------------------------------------------------- #
 find_package(BZip2 REQUIRED QUIET)
 
+# CoinUtils uses BLAS/LAPACK routines (e.g. dgetrf_); when CoinUtils is a static
+# library these must be linked explicitly. Conda's coin-or-utils links MKL
+# instead (handled below), so this serves as the fallback for non-MKL setups.
+find_package(LAPACK QUIET)
+
 # Conda coin-or-utils package links MKL BLAS library
 # https://github.com/conda-forge/coin-or-utils-feedstock/blob/main/recipe/build.sh#L12
 if (WIN32 AND DEFINED ENV{LIBRARY_PREFIX})
@@ -109,6 +114,8 @@ if (CoinUtils_FOUND)
         target_link_libraries(Coin::CoinUtils INTERFACE "BZip2::BZip2")
         if (MKL_RT_LIBRARY)
             target_link_libraries(Coin::CoinUtils INTERFACE ${MKL_RT_LIBRARY})
+        elseif (LAPACK_FOUND)
+            target_link_libraries(Coin::CoinUtils INTERFACE ${LAPACK_LIBRARIES})
         endif ()
     endif ()
 endif ()
