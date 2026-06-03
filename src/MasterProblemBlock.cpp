@@ -1286,11 +1286,12 @@ int MasterProblemBlock::add_cut( int k , int slot ,
      ( k < int( f_F_at_x_bar.size() ) ) ) {
   if( f_v2_form )    // iterate form: function-value-relative raw alpha; the
    incoming_b = - alpha + f_F_at_x_bar[ k ];   // g . x_bar lives in the lin-z
-  else {             // displacement form: linearization error at x_bar
-   const std::size_t n = std::min( g.size() , f_x_bar.size() );
+  else {             // displacement form: linearization error at x_ref
+   const auto & xref = cut_ref();
+   const std::size_t n = std::min( g.size() , xref.size() );
    double dot = 0.0;
    for( std::size_t j = 0 ; j < n ; ++j )
-    dot += g[ j ] * f_x_bar[ j ];
+    dot += g[ j ] * xref[ j ];
    incoming_b = f_F_at_x_bar[ k ] - alpha + dot;
    }
   }
@@ -1497,11 +1498,12 @@ void MasterProblemBlock::modify_cut( int k , int slot ,
      ( k < int( f_F_at_x_bar.size() ) ) ) {
   if( f_v2_form )    // iterate form: function-value-relative raw alpha
    b_store = - alpha + f_F_at_x_bar[ k ];
-  else {             // displacement form: linearization error at x_bar
-   const std::size_t n = std::min( g.size() , f_x_bar.size() );
+  else {             // displacement form: linearization error at x_ref
+   const auto & xref = cut_ref();
+   const std::size_t n = std::min( g.size() , xref.size() );
    double dot = 0.0;
    for( std::size_t j = 0 ; j < n ; ++j )
-    dot += g[ j ] * f_x_bar[ j ];
+    dot += g[ j ] * xref[ j ];
    b_store = f_F_at_x_bar[ k ] - alpha + dot;
    }
   }
@@ -1536,10 +1538,11 @@ void MasterProblemBlock::modify_alpha( int k , int slot , double alpha )
    b_store = - alpha + f_F_at_x_bar[ k ];
   else if( loc >= 0 && loc < int( A.size() ) ) {
    const auto & Ai = A[ loc ];
-   const std::size_t n = std::min( Ai.size() , f_x_bar.size() );
+   const auto & xref = cut_ref();
+   const std::size_t n = std::min( Ai.size() , xref.size() );
    double dot = 0.0;
    for( std::size_t j = 0 ; j < n ; ++j )
-    dot += Ai[ j ] * f_x_bar[ j ];
+    dot += Ai[ j ] * xref[ j ];
    b_store = f_F_at_x_bar[ k ] - alpha + dot;
    }
   }
@@ -1908,11 +1911,19 @@ double MasterProblemBlock::get_aggregated_alpha( int k ) const
    const_cast< PolyhedralFunctionBlock * >( pfb )->get_PolyhedralFunction();
   const auto & b = poly.get_b();
 
-  // displacement form: the stored b[ i ] IS the linearization error at
-  // x_bar, so Sigma_k = sum_i theta_i b_i directly. Iterate form: b[ i ]
-  // omits the g . x_bar term ( it rides in the +x_bar^T R lin-z ), so add it
-  // back as sum_i theta_i ( A_i . x_bar ) to recover the same Sigma_k
+  // recover the true linearization error Sigma_k = sum_i theta_i ( the
+  // lin-error at x_bar ) from the stored b[ i ].
+  //  iterate form: b omits g . x_bar entirely ( it rides in the +x_bar^T R
+  //    lin-z ), so add back sum_i theta_i ( A_i . x_bar );
+  //  displacement form with a lazy reference: b baked g . x_ref, so add back
+  //    only the residual sum_i theta_i ( A_i . ( x_bar - x_ref ) );
+  //  plain displacement ( f_xref_tol == 0 ): b is already the lin-error at
+  //    x_bar, add nothing.
   const bool iterate = ( f_v2_form != 0 );
+  const auto & xref = cut_ref();
+  const bool lazy = ( ! iterate ) && ( f_xref_tol > 0.0 ) &&
+                    ( xref.size() == f_x_bar.size() ) &&
+                    ( &xref != &f_x_bar );
   const auto & A = poly.get_A();
 
   double s = 0.0;
@@ -1920,13 +1931,14 @@ double MasterProblemBlock::get_aggregated_alpha( int k ) const
    const double theta =
     pfb->get_row_multiplier( PolyhedralFunction::Index( i ) );
    s += theta * b[ i ];
-   if( iterate && i < A.size() ) {
+   if( ( iterate || lazy ) && i < A.size() ) {
     const auto & Ai = A[ i ];
     const std::size_t n = std::min( Ai.size() , f_x_bar.size() );
-    double dot = 0.0;
+    double add = 0.0;
     for( std::size_t j = 0 ; j < n ; ++j )
-     dot += Ai[ j ] * f_x_bar[ j ];
-    s += theta * dot;
+     add += Ai[ j ] * ( iterate ? f_x_bar[ j ]
+                                : ( f_x_bar[ j ] - xref[ j ] ) );
+    s += theta * add;
     }
    }
 
@@ -1989,11 +2001,14 @@ double MasterProblemBlock::get_raw_aggregated_alpha( int k ) const
 
    if( ( ! iterate ) && i < A.size() ) {
     const auto & Ai = A[ i ];
-    const std::size_t n = std::min( Ai.size() , f_x_bar.size() );
+    // reconstruct the raw alpha from b in its OWN stored frame: b baked
+    // g . x_ref (= x_bar when not lazy), so the z . x term must use x_ref
+    const auto & xref = cut_ref();
+    const std::size_t n = std::min( Ai.size() , xref.size() );
 
     double dot = 0.0;
     for( std::size_t j = 0 ; j < n ; ++j )
-     dot += Ai[ j ] * f_x_bar[ j ];
+     dot += Ai[ j ] * xref[ j ];
 
     z_dot += theta * dot;
     }
@@ -2199,10 +2214,52 @@ void MasterProblemBlock::set_reference(
  const std::vector< double > old_x_bar = f_x_bar;
  const std::vector< double > old_F     = f_F_at_x_bar;
 
+ // the iterate form ( f_v2_form == 1 ) stores no g . x_bar in the cuts, so
+ // their refresh is the uniform per-component dF alone ( no g-shift ); only
+ // the displacement form carries a per-cut g-shift dxbar
+ const bool with_gx = ( f_v2_form == 0 );
+
+ // Decide the per-cut shift dxbar AND re-align the lazy storage reference
+ // BEFORE refreshing x_bar, so set_x_bar() computes the final lin-z gap in a
+ // single pass ( = 0 when re-aligning, since f_x_ref is moved to x_bar here ).
+ //  - plain displacement ( f_xref_tol == 0 ): shift by g . ( x_bar -
+ //    old_x_bar ) every serious step ( exactly the legacy behaviour );
+ //  - lazy reference ( f_xref_tol > 0 ): shift by g . ( x_bar - x_ref ) and
+ //    re-align x_ref to x_bar ONLY when || x_bar - x_ref ||_inf exceeds the
+ //    tolerance; otherwise defer the whole g . ( x_bar - x_ref ) to the lin-z
+ //    and shift the cut constants by the uniform dF alone.
+ // ( iterate form: with_gx is false, dxbar stays empty -> dF-only refresh. )
+ std::vector< double > dxbar;
+ if( ( ! IsPrimal ) && with_gx && old_x_bar.size() == x_bar.size() ) {
+  if( f_xref_tol > 0.0 ) {
+   if( f_x_ref.size() != x_bar.size() )
+    f_x_ref = old_x_bar;
+   double drift = 0.0;
+   for( std::size_t j = 0 ; j < x_bar.size() ; ++j )
+    drift = std::max( drift , std::abs( x_bar[ j ] - f_x_ref[ j ] ) );
+   if( drift > f_xref_tol ) {
+    dxbar.resize( x_bar.size() );
+    for( std::size_t j = 0 ; j < x_bar.size() ; ++j )
+     dxbar[ j ] = x_bar[ j ] - f_x_ref[ j ];
+    f_x_ref = x_bar;  // re-align now so set_x_bar's lin-z gap is 0
+    }
+   }
+  else {
+   dxbar.resize( x_bar.size() );
+   for( std::size_t j = 0 ; j < x_bar.size() ; ++j )
+    dxbar[ j ] = x_bar[ j ] - old_x_bar[ j ];
+   }
+  }
+
  // refresh x_bar via the regular setter (which also updates any state that
- // depends on it, e.g. the x_bar * z term in the dual Objective and the
- // box-slack coefficients)
+ // depends on it, e.g. the lin-z gap on Var_z and the box-slack
+ // coefficients); the re-align decision is already baked into f_x_ref
  set_x_bar( x_bar );
+
+ // first-contact init of the lazy storage reference ( harmless / unused when
+ // f_xref_tol == 0, where dxbar shifts against old_x_bar )
+ if( ( ! IsPrimal ) && f_x_ref.size() != f_x_bar.size() )
+  f_x_ref = f_x_bar;
 
  // commit the new per-component reference values
  f_F_at_x_bar = F_at_x_bar;
@@ -2221,8 +2278,6 @@ void MasterProblemBlock::set_reference(
  // walked once and the update is invisible to the surrounding driver
  if( IsPrimal )
   return;  // primal MP carries the raw lin-error elsewhere; nothing to shift
-
- const bool with_gx = ( f_v2_form == 0 );
 
  for( int k = 0 ; k < int( HardCmps.size() ) ; ++k ) {
   if( old_x_bar.size() != f_x_bar.size() )
@@ -2245,11 +2300,11 @@ void MasterProblemBlock::set_reference(
    if( poly.is_row_vertical( PolyhedralFunction::Index( i ) ) )
     continue;
    double dx_dot = 0.0;
-   if( with_gx ) {
-    const auto & Ai = A[ i ];
-    const std::size_t n = std::min( Ai.size() , f_x_bar.size() );
-    for( std::size_t j = 0 ; j < n ; ++j )
-     dx_dot += Ai[ j ] * ( f_x_bar[ j ] - old_x_bar[ j ] );
+   if( ! dxbar.empty() ) {  // displacement g-shift ( x_bar - old_x_bar, or
+    const auto & Ai = A[ i ];          // x_bar - x_ref under a lazy reference;
+    const std::size_t n = std::min( Ai.size() , dxbar.size() );  // empty when
+    for( std::size_t j = 0 ; j < n ; ++j )       // deferred or in iterate form )
+     dx_dot += Ai[ j ] * dxbar[ j ];
     }
    const double delta = dF + dx_dot;
    if( delta == 0.0 )
@@ -2330,20 +2385,29 @@ void MasterProblemBlock::set_x_bar( const std::vector< double > & x_bar )
  // the disaggregated proximal dual then reads max_theta [ - Sigma -
  // (t/2)||z||^2 ] with NO explicit x_bar . z term (the centre lives entirely
  // in d-space), so the linear z coefficient is normally left at 0.
- // EXCEPTION (iterate form, f_v2_form == 1): the cuts carry NO g . x_bar at
- // all, so the master objective must reproduce that baked term as the
- // explicit +x_bar^T R cross-term, i.e. the linear coefficient on Var_z[ j ]
- // becomes -sgn * x_bar_j ( for the convex / eMin master sgn = -1, giving
- // + x_bar_j, matching the displacement frame bit-for-bit at the optimum ).
- // The sign convention ±t/2 follows the Objective sense (negated under
- // IsConvex).
+ // EXCEPTIONS carrying an explicit linear z term:
+ //  iterate form ( f_v2_form == 1 ): the cuts carry NO g . x_bar at all, so
+ //   the master objective reproduces it as the explicit +x_bar^T R cross-term,
+ //   lin_coeff = -sgn * x_bar_j;
+ //  lazy reference ( displacement, f_xref_tol > 0 ): the cuts bake g . x_ref,
+ //   so only the deferred residual rides here, lin_coeff = -sgn (x_bar_j -
+ //   x_ref_j) ( = 0 when x_ref tracks x_bar, i.e. tol == 0 -> plain frame ).
+ // ( for the convex / eMin master sgn = -1, giving + the gap, matching the
+ // plain displacement frame bit-for-bit at the optimum ). The sign convention
+ // ±t/2 follows the Objective sense (negated under IsConvex).
  const double sgn = IsConvex ? -1.0 : 1.0;
  const double quad_coeff = ( StblType == kProximal ||
                              StblType == kDoublyStabilized )
                            ? - sgn * t_stab / 2.0 : 0.0;
  const bool iterate = ( f_v2_form != 0 );
+ const bool lazy = ( ! iterate ) && ( f_xref_tol > 0.0 ) &&
+                   ( int( f_x_ref.size() ) == NumVars );
  for( int j = 0 ; j < NumVars ; ++j ) {
-  const double lin_coeff = iterate ? - sgn * f_x_bar[ j ] : 0.0;
+  double lin_coeff = 0.0;
+  if( iterate )
+   lin_coeff = - sgn * f_x_bar[ j ];
+  else if( lazy )
+   lin_coeff = - sgn * ( f_x_bar[ j ] - f_x_ref[ j ] );
   dqf->modify_term( DQuadFunction::Index( z_obj_idx + j ) ,
                     lin_coeff , quad_coeff );
   }

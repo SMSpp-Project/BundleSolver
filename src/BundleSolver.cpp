@@ -4971,6 +4971,14 @@ void BundleSolver::InitMPB( void )
      env && env[ 0 ] )
   MasterPB->set_v2_form( std::atoi( env ) );
 
+ // optional "lazy reference" for the displacement form: defer the per-cut
+ // g . ( x_bar - x_ref ) shift to the lin-z and re-align x_ref only when the
+ // centre drifts past the tolerance. 0 ( the default ) keeps the plain
+ // displacement frame; > 0 is opt-in via the environment.
+ if( const char * env = std::getenv( "BUNDLE_MPB_XREFTOL" ) ;
+     env && env[ 0 ] )
+  MasterPB->set_xref_tol( std::atof( env ) );
+
  tHasChgd = true;
 
  }  // end( BundleSolver::InitMPB )
@@ -5819,6 +5827,18 @@ void BundleSolver::reset_bundle( void )
   for( Index k = 0 ; k < NrFi ; ++k )
    if( ! ( NrEasy && IsEasy[ k ] ) )
     MasterPB->invalidate_subgradients( int( k ) );
+
+ // reset the proximal parameter to its initial value: after a full reset the
+ // bundle re-converges from an empty model, which takes a long run of null
+ // steps; with t decreased on every null step ( e.g. intMnNSC == 1 ) t would
+ // otherwise collapse ( observed ~1e-6 ) and, never reset, carry the collapsed
+ // value across successive resets, so the trial point d* = -t z* stops moving
+ // and every cut becomes a duplicate -> the bundle stalls in an endless
+ // null-step loop. Starting each re-convergence from tInit avoids that
+ t = tInit;
+ Prevt = INFshift;
+ if( MasterPB )
+  MasterPB->set_t( t );
 
  }  // end( BundleSolver::reset_bundle )
 

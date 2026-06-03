@@ -1034,6 +1034,22 @@ class MasterProblemBlock : public Block {
  void set_F_at_x_bar( int k , double value );
 
 /*--------------------------------------------------------------------------*/
+ /// set the "lazy reference" tolerance for the displacement form
+ /** The diagonal cuts store the linearization error at a reference x_ref. By
+  * default x_ref tracks the stability centre x_bar at every serious step
+  * ( tol == 0 ), i.e. the plain displacement form that re-bakes the per-cut
+  * g . delta dot product on every move. Setting tol > 0 lets x_ref lag behind
+  * x_bar: the residual g . ( x_bar - x_ref ) is carried by the explicit lin-z
+  * coefficient on Var_z ( O( NumVars ) per move, no per-cut dot product ), and
+  * x_ref is re-aligned to x_bar ( paying the per-cut shift once ) only when
+  * || x_bar - x_ref ||_inf > tol. The master Problem is UNCHANGED for any tol
+  * ( exact identity ); tol only trades the per-serious-step cost against the
+  * per-cut constant magnitude. tol == 0 is a strict no-op. */
+
+ void set_xref_tol( double tol ) noexcept
+  { f_xref_tol = ( tol > 0.0 ) ? tol : 0.0; }
+
+/*--------------------------------------------------------------------------*/
  /// read back the cached reference value F_k( x_bar )
  /** Returns the last value passed to set_F_at_x_bar / set_reference for \p k ;
   * 0 if never set or if \p k is out of range. */
@@ -1473,6 +1489,29 @@ class MasterProblemBlock : public Block {
                     ///< change. Used (or will be used) to derive Sigma in
                     ///< linearization-error form without forcing the
                     ///< driver to pre-promote each cut's alpha
+
+ double f_xref_tol = 0.0;
+                    ///< "lazy reference" tolerance (see set_xref_tol). 0 =
+                    ///< x_ref tracks x_bar at every serious step (plain
+                    ///< displacement, strict no-op); > 0 defers the per-cut
+                    ///< g . ( x_bar - x_ref ) shift to the lin-z and re-aligns
+                    ///< x_ref only when || x_bar - x_ref ||_inf exceeds it
+
+ std::vector< double > f_x_ref;
+                    ///< the lazy storage reference: the diagonal cut constants
+                    ///< bake g . x_ref ( not g . x_bar ); the residual
+                    ///< g . ( x_bar - x_ref ) rides in the Var_z lin-z. Equal
+                    ///< to f_x_bar whenever f_xref_tol == 0
+
+ // the reference vector against which the diagonal cut constants are baked:
+ // x_ref under an active lazy reference ( f_xref_tol > 0, sized ), x_bar
+ // otherwise. At f_xref_tol == 0 this is x_bar, so every cut-baking site
+ // ( add_cut / modify_cut / modify_alpha / get_raw_aggregated_alpha )
+ // reduces to the plain displacement frame
+ const std::vector< double > & cut_ref() const {
+  return ( ( f_xref_tol > 0.0 ) &&
+           ( f_x_ref.size() == f_x_bar.size() ) ) ? f_x_ref : f_x_bar;
+  }
 
  std::vector< double > f_LB_raw;
                     ///< per-hard-component cache of the raw native lower
