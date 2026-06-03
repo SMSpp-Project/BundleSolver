@@ -5097,6 +5097,12 @@ Index BundleSolver::BStrategy( Index wFi )
  if( ! MasterPB )
   return( wh );  // no master to query: fall back to the slot picked above
 
+ const double lambda = MasterPB->get_lambda();
+ const double lambda_eps =
+  1e-12 * std::max( { std::abs( lambda ) , double( 1 ) } );
+ if( lambda <= lambda_eps )
+  return( InINF );
+
  LinearCombination coeff;
  coeff.reserve( InvItemVcblr[ wFi ].size() );
  for( Index slot = 0 ; slot < InvItemVcblr[ wFi ].size() ; ++slot ) {
@@ -5106,7 +5112,7 @@ Index BundleSolver::BStrategy( Index wFi )
   const auto th = MasterPB->get_theta( int( wFi ) , int( slot ) );
   if( th == 0 )
    continue;
-  coeff.emplace_back( slot , th );
+  coeff.emplace_back( slot , th / lambda );
   }
 
  Index whZ = InINF;  // the position where Z[ wFi ] has to go
@@ -5136,13 +5142,18 @@ Index BundleSolver::BStrategy( Index wFi )
 
  remove_cut_global( whZ );  // remove the old item in position whZ
 
- // materialise Z[ wFi ] = sum_i theta^k_i g^k_i directly from MasterPB
+ // materialise the V2 aggregate cut:
+ //   g* = (1/lambda) sum_i theta_i g_i
+ //   a* = (1/lambda) (sum_i theta_i a_i + gamma LB)
  std::vector< double > tZ_buf =
                               MasterPB->get_aggregated_subgradient( wFi );
  if( tZ_buf.empty() )
   tZ_buf.assign( NumVar , 0.0 );
+ for( auto & v : tZ_buf )
+  v /= lambda;
 
- const double Ai = MasterPB->get_aggregated_alpha( wFi );
+ const double Ai =
+  MasterPB->get_raw_aggregated_alpha_with_LB( wFi ) / lambda;
 
  // First remove any pre-existing cut at slot whZ, then re-add the
  // aggregated one

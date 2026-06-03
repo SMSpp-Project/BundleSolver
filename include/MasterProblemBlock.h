@@ -807,6 +807,15 @@ class MasterProblemBlock : public Block {
  [[nodiscard]] double get_raw_aggregated_alpha( int k = -1 ) const;
 
 /*--------------------------------------------------------------------------*/
+ /// returns sum_i theta_i alpha_i + gamma LB for the k-th hard component
+ /** This is the un-normalized raw constant used when building the aggregate
+  * V2 cut. The theta part is the same raw aggregate returned by
+  * get_raw_aggregated_alpha(k); the gamma contribution is the horizontal
+  * lower-bound cut, if a genuine finite LB^k is installed. */
+
+ [[nodiscard]] double get_raw_aggregated_alpha_with_LB( int k ) const;
+
+/*--------------------------------------------------------------------------*/
  /// returns the model value v*[k] of the cutting-plane model at the step
  /** NDOFi counterpart of Master->ReadFiBLambda() / ReadFiBLambda(k+1).
   * In the primal MP this is just Var_v_hard[k].get_value() (per-cmp, \p k >= 0)
@@ -1201,6 +1210,14 @@ class MasterProblemBlock : public Block {
 
  [[nodiscard]] double get_lambda( void ) const
   { return( Var_lambda.get_value() ); }
+
+/*--------------------------------------------------------------------------*/
+ /// returns the physical gamma multiplier of the k-th hard component
+ /** The PFB stores gamma in the same locally-scaled units as its internal
+  * normalization row. Multiplying it by get_v_scale() maps it back to the
+  * physical mass where sum_i theta_i + gamma = lambda. */
+
+ [[nodiscard]] double get_gamma( int k ) const;
 
 /*--------------------------------------------------------------------------*/
  /// returns the current optimal value of r

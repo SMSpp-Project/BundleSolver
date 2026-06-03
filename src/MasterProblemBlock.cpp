@@ -1575,6 +1575,29 @@ double MasterProblemBlock::get_theta( int k , int slot ) const
 
 /*--------------------------------------------------------------------------*/
 
+double MasterProblemBlock::get_gamma( int k ) const
+{
+ if( IsPrimal )
+  return( 0.0 );
+ if( k < 0 || k >= int( HardCmps.size() ) )
+  return( 0.0 );
+
+ const auto * pfb =
+  dynamic_cast< const PolyhedralFunctionBlock * >( HardCmps[ k ] );
+ if( ! pfb )
+  return( 0.0 );
+
+ auto * gamma =
+  const_cast< PolyhedralFunctionBlock * >( pfb )
+    ->get_static_variable< ColVariable >( "PolyF_gamma" );
+ if( ! gamma )
+  return( 0.0 );
+
+ return( pfb->get_v_scale() * gamma->get_value() );
+ }
+
+/*--------------------------------------------------------------------------*/
+
 double MasterProblemBlock::get_alpha( int k , int slot ) const
 {
  if( k < 0 || k >= int( HardCmps.size() ) )
@@ -2028,6 +2051,23 @@ double MasterProblemBlock::get_raw_aggregated_alpha( int k ) const
   total += contrib( kk );
 
  return( total );
+}
+
+/*--------------------------------------------------------------------------*/
+
+double MasterProblemBlock::get_raw_aggregated_alpha_with_LB( int k ) const
+{
+ if( IsPrimal )
+  return( 0.0 );
+ if( k < 0 || k >= int( HardCmps.size() ) )
+  return( 0.0 );
+
+ double alpha = get_raw_aggregated_alpha( k );
+
+ if( k < int( f_LB_raw.size() ) && std::isfinite( f_LB_raw[ k ] ) )
+  alpha += get_gamma( k ) * f_LB_raw[ k ];
+
+ return( alpha );
 }
 
 /*--------------------------------------------------------------------------*/
