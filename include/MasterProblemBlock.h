@@ -944,6 +944,38 @@ class MasterProblemBlock : public Block {
  void set_C( double C );
 
 /*--------------------------------------------------------------------------*/
+ /// select the dual master formulation ( displacement form vs iterate form )
+ /** Select which algebraically-equivalent storage frame the dual master uses
+  * for the diagonal cuts. The choice is INTERNAL to MasterProblemBlock and
+  * invisible to the driver, which always passes / reads raw alpha.
+  *
+  * - 0 = displacement form ( default, production ): cuts are stored in the
+  *   linearization-error frame  b = F_k( x_bar ) - alpha + g . x_bar; the
+  *   x_bar dependence is "baked" into the cut constants ( which stay ~ 0 at
+  *   tight cuts, well scaled ), the linear coefficient on Var_z is 0, and
+  *   set_reference() re-shifts the constants as the centre moves. This path
+  *   is left exactly as-is.
+  *
+  * - 1 = iterate form: the x_bar dependence is carried by the explicit
+  *   linear coefficient  -sgn * x_bar  on Var_z ( the +x_bar^T R cross-term
+  *   of the prox expansion ), the box stays invariant, and the cut constant
+  *   is stored function-value-relative  b = -alpha + F_k( x_bar )
+  *   ( substitution v^k = vt^k + F_k( x_bar ) ) to keep it O( g . x_bar )
+  *   rather than the raw O( |F_k| ). Provided for reference / diagnosing the
+  *   QP conditioning gap against the displacement form.
+  *
+  * Set after configure() and before the first set_reference / set_x_bar /
+  * add_cut; switching mid-solve is not supported. Out-of-range -> 0. */
+
+ void set_v2_form( int form = 1 ) noexcept
+  { f_v2_form = ( form < 0 || form > 1 ) ? 0 : form; }
+
+/*--------------------------------------------------------------------------*/
+ /// query the dual master formulation ( 0 = displacement, 1 = iterate )
+
+ [[ nodiscard ]] int get_v2_form() const noexcept { return( f_v2_form ); }
+
+/*--------------------------------------------------------------------------*/
  /// set the global lower bound LB on the value of the sum-function
  /** In the dual MP the global lower bound enters as the linear coefficient
   * of the r multiplier in the master Objective (+ r * LB_xbar term, with
@@ -1452,6 +1484,13 @@ class MasterProblemBlock : public Block {
                     ///< driver does not have to re-call set_LB
 
  double f_lev;      ///< current value of the level f_lev (level / doubly only)
+
+ int f_v2_form = 0; ///< dual master storage frame: 0 = displacement form
+                    ///< (default, production; cuts in the lin-error frame,
+                    ///< x_bar baked into the constants, 0 linear z term),
+                    ///< 1 = iterate form (x_bar in the explicit +x_bar^T R
+                    ///< z linear term, cut constants function-value-relative
+                    ///< -alpha + F_k( x_bar )). See set_v2_form
 
  int z_obj_idx;     ///< index of the first z_j entry in the DQuadFunction
                     ///< triples (the NumVars entries z_0..z_{NumVars-1} are

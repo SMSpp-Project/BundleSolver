@@ -4964,6 +4964,13 @@ void BundleSolver::InitMPB( void )
                       ! f_convex ,
                       IsEasy );
 
+ // optional dual-master storage frame: 0 = displacement form ( default,
+ // production ), 1 = iterate form ( reference, for diagnosing the QP
+ // conditioning gap ). Opt-in via the environment; internal to MasterPB.
+ if( const char * env = std::getenv( "BUNDLE_MPB_V2L" ) ;
+     env && env[ 0 ] )
+  MasterPB->set_v2_form( std::atoi( env ) );
+
  tHasChgd = true;
 
  }  // end( BundleSolver::InitMPB )

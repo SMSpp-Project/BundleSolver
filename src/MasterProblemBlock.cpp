@@ -1284,11 +1284,15 @@ int MasterProblemBlock::add_cut( int k , int slot ,
  double incoming_b = alpha;
  if( ( ! here_is_vert ) && ( ! IsPrimal ) &&
      ( k < int( f_F_at_x_bar.size() ) ) ) {
-  const std::size_t n = std::min( g.size() , f_x_bar.size() );
-  double dot = 0.0;
-  for( std::size_t j = 0 ; j < n ; ++j )
-   dot += g[ j ] * f_x_bar[ j ];
-  incoming_b = f_F_at_x_bar[ k ] - alpha + dot;
+  if( f_v2_form )    // iterate form: function-value-relative raw alpha; the
+   incoming_b = - alpha + f_F_at_x_bar[ k ];   // g . x_bar lives in the lin-z
+  else {             // displacement form: linearization error at x_bar
+   const std::size_t n = std::min( g.size() , f_x_bar.size() );
+   double dot = 0.0;
+   for( std::size_t j = 0 ; j < n ; ++j )
+    dot += g[ j ] * f_x_bar[ j ];
+   incoming_b = f_F_at_x_bar[ k ] - alpha + dot;
+   }
   }
 
  const auto cuts_match = [ & ]( std::size_t i ) -> bool {
@@ -1491,11 +1495,15 @@ void MasterProblemBlock::modify_cut( int k , int slot ,
  double b_store = alpha;
  if( ( ! is_vert ) && ( ! IsPrimal ) &&
      ( k < int( f_F_at_x_bar.size() ) ) ) {
-  const std::size_t n = std::min( g.size() , f_x_bar.size() );
-  double dot = 0.0;
-  for( std::size_t j = 0 ; j < n ; ++j )
-   dot += g[ j ] * f_x_bar[ j ];
-  b_store = f_F_at_x_bar[ k ] - alpha + dot;
+  if( f_v2_form )    // iterate form: function-value-relative raw alpha
+   b_store = - alpha + f_F_at_x_bar[ k ];
+  else {             // displacement form: linearization error at x_bar
+   const std::size_t n = std::min( g.size() , f_x_bar.size() );
+   double dot = 0.0;
+   for( std::size_t j = 0 ; j < n ; ++j )
+    dot += g[ j ] * f_x_bar[ j ];
+   b_store = f_F_at_x_bar[ k ] - alpha + dot;
+   }
   }
 
  poly.modify_row( PolyhedralFunction::Index( loc ) ,
@@ -1524,7 +1532,9 @@ void MasterProblemBlock::modify_alpha( int k , int slot , double alpha )
  if( ( ! is_vert ) && ( ! IsPrimal ) &&
      ( k < int( f_F_at_x_bar.size() ) ) ) {
   const auto & A = poly.get_A();
-  if( loc >= 0 && loc < int( A.size() ) ) {
+  if( f_v2_form )    // iterate form: function-value-relative raw alpha
+   b_store = - alpha + f_F_at_x_bar[ k ];
+  else if( loc >= 0 && loc < int( A.size() ) ) {
    const auto & Ai = A[ loc ];
    const std::size_t n = std::min( Ai.size() , f_x_bar.size() );
    double dot = 0.0;
@@ -1894,14 +1904,31 @@ double MasterProblemBlock::get_aggregated_alpha( int k ) const
   if( ! pfb )
    return( 0.0 );
 
-  const auto & b =
-   const_cast< PolyhedralFunctionBlock * >( pfb )
-     ->get_PolyhedralFunction().get_b();
+  auto & poly =
+   const_cast< PolyhedralFunctionBlock * >( pfb )->get_PolyhedralFunction();
+  const auto & b = poly.get_b();
+
+  // displacement form: the stored b[ i ] IS the linearization error at
+  // x_bar, so Sigma_k = sum_i theta_i b_i directly. Iterate form: b[ i ]
+  // omits the g . x_bar term ( it rides in the +x_bar^T R lin-z ), so add it
+  // back as sum_i theta_i ( A_i . x_bar ) to recover the same Sigma_k
+  const bool iterate = ( f_v2_form != 0 );
+  const auto & A = poly.get_A();
 
   double s = 0.0;
-  for( std::size_t i = 0 ; i < b.size() ; ++i )
-   s += pfb->get_row_multiplier(
-           PolyhedralFunction::Index( i ) ) * b[ i ];
+  for( std::size_t i = 0 ; i < b.size() ; ++i ) {
+   const double theta =
+    pfb->get_row_multiplier( PolyhedralFunction::Index( i ) );
+   s += theta * b[ i ];
+   if( iterate && i < A.size() ) {
+    const auto & Ai = A[ i ];
+    const std::size_t n = std::min( Ai.size() , f_x_bar.size() );
+    double dot = 0.0;
+    for( std::size_t j = 0 ; j < n ; ++j )
+     dot += Ai[ j ] * f_x_bar[ j ];
+    s += theta * dot;
+    }
+   }
 
   return( s );
   };
@@ -1942,6 +1969,13 @@ double MasterProblemBlock::get_raw_aggregated_alpha( int k ) const
   const auto & b = poly.get_b();
   const auto & A = poly.get_A();
 
+  // recover the raw alpha aggregate sum_i theta_i alpha_i from the stored b.
+  //  displacement form: b_i = F_k - alpha_i + g_i . x_bar, hence
+  //    sum theta alpha = F_k sum_th - b_sum + sum theta ( A_i . x_bar ).
+  //  iterate form: b_i = F_k - alpha_i ( no g . x_bar ), hence
+  //    sum theta alpha = F_k sum_th - b_sum, with NO z_dot term.
+  const bool iterate = ( f_v2_form != 0 );
+
   double b_sum  = 0.0;
   double sum_th = 0.0;
   double z_dot  = 0.0;
@@ -1953,7 +1987,7 @@ double MasterProblemBlock::get_raw_aggregated_alpha( int k ) const
    b_sum  += theta * b[ i ];
    sum_th += theta;
 
-   if( i < A.size() ) {
+   if( ( ! iterate ) && i < A.size() ) {
     const auto & Ai = A[ i ];
     const std::size_t n = std::min( Ai.size() , f_x_bar.size() );
 
@@ -2173,14 +2207,22 @@ void MasterProblemBlock::set_reference(
  // commit the new per-component reference values
  f_F_at_x_bar = F_at_x_bar;
 
- // shift each *diagonal* cut's stored linearization error by
- //     delta = ( F_new - F_old ) + ( A[ i ] . x_bar_new - A[ i ] . x_bar_old )
+ // shift each *diagonal* cut's stored constant to track the moving reference.
+ //  displacement form ( f_v2_form == 0 ): the stored full lin-error
+ //    b[ i ] = F_k - alpha + g . x_bar  is refreshed by
+ //    delta = ( F_new - F_old ) + A[ i ] . ( x_bar_new - x_bar_old ).
+ //  iterate form ( f_v2_form == 1 ): the stored constant is only the
+ //    F_k-relative b[ i ] = F_k - alpha ( the g . x_bar cross-term lives in
+ //    the explicit +x_bar^T R lin-z ), so its refresh is the UNIFORM
+ //    per-component delta dF = F_new - F_old with NO per-cut dot product.
  // (vertical cuts encode a feasibility constraint whose right-hand side is
  // reference-independent and are left alone). The math is the dual of the
  // legacy "shift after a current-point change" loop, but here the bundle is
  // walked once and the update is invisible to the surrounding driver
  if( IsPrimal )
   return;  // primal MP carries the raw lin-error elsewhere; nothing to shift
+
+ const bool with_gx = ( f_v2_form == 0 );
 
  for( int k = 0 ; k < int( HardCmps.size() ) ; ++k ) {
   if( old_x_bar.size() != f_x_bar.size() )
@@ -2202,11 +2244,13 @@ void MasterProblemBlock::set_reference(
   for( std::size_t i = 0 ; i < b.size() ; ++i ) {
    if( poly.is_row_vertical( PolyhedralFunction::Index( i ) ) )
     continue;
-   const auto & Ai = A[ i ];
-   const std::size_t n = std::min( Ai.size() , f_x_bar.size() );
    double dx_dot = 0.0;
-   for( std::size_t j = 0 ; j < n ; ++j )
-    dx_dot += Ai[ j ] * ( f_x_bar[ j ] - old_x_bar[ j ] );
+   if( with_gx ) {
+    const auto & Ai = A[ i ];
+    const std::size_t n = std::min( Ai.size() , f_x_bar.size() );
+    for( std::size_t j = 0 ; j < n ; ++j )
+     dx_dot += Ai[ j ] * ( f_x_bar[ j ] - old_x_bar[ j ] );
+    }
    const double delta = dF + dx_dot;
    if( delta == 0.0 )
     continue;
@@ -2280,35 +2324,41 @@ void MasterProblemBlock::set_x_bar( const std::vector< double > & x_bar )
  if( ! dqf )
   return;
 
- // refresh only the quadratic coefficient ±t/2 (or 0 under kLevel) of every
- // z_j; the linear coefficient stays 0. The cuts are stored in the
- // linearization-error frame b = F(x_bar) - alpha - g . x_bar, which has
- // already absorbed the stability centre into sigma: the disaggregated
- // proximal dual then reads max_theta [ - Sigma - (t/2)||z||^2 ] with NO
- // explicit x_bar . z term (the centre lives entirely in d-space). Adding a
- // separate x_bar . z linear term here on top of the lin-error frame would
- // double-count the centre, so set_x_bar only moves f_x_bar (above) and the
- // proximal diagonal; the linear z coefficient is left at its 0 value from
- // CreateDualMP. The sign convention ±t/2 follows the Objective sense
- // (negated under IsConvex).
+ // refresh the quadratic coefficient ±t/2 (or 0 under kLevel) of every z_j.
+ // The cuts are stored in the linearization-error frame b = F(x_bar) - alpha
+ // - g . x_bar, which has already absorbed the stability centre into sigma:
+ // the disaggregated proximal dual then reads max_theta [ - Sigma -
+ // (t/2)||z||^2 ] with NO explicit x_bar . z term (the centre lives entirely
+ // in d-space), so the linear z coefficient is normally left at 0.
+ // EXCEPTION (iterate form, f_v2_form == 1): the cuts carry NO g . x_bar at
+ // all, so the master objective must reproduce that baked term as the
+ // explicit +x_bar^T R cross-term, i.e. the linear coefficient on Var_z[ j ]
+ // becomes -sgn * x_bar_j ( for the convex / eMin master sgn = -1, giving
+ // + x_bar_j, matching the displacement frame bit-for-bit at the optimum ).
+ // The sign convention ±t/2 follows the Objective sense (negated under
+ // IsConvex).
  const double sgn = IsConvex ? -1.0 : 1.0;
  const double quad_coeff = ( StblType == kProximal ||
                              StblType == kDoublyStabilized )
                            ? - sgn * t_stab / 2.0 : 0.0;
- for( int j = 0 ; j < NumVars ; ++j )
+ const bool iterate = ( f_v2_form != 0 );
+ for( int j = 0 ; j < NumVars ; ++j ) {
+  const double lin_coeff = iterate ? - sgn * f_x_bar[ j ] : 0.0;
   dqf->modify_term( DQuadFunction::Index( z_obj_idx + j ) ,
-                    0.0 , quad_coeff );
+                    lin_coeff , quad_coeff );
+  }
 
- // refresh the Lambda-box slack coefficients: s^+_j carries sgn*(L_j -
- // x_bar_j) and s^-_j carries -sgn*(U_j - x_bar_j), both of which move with
- // the stability centre (cf. set_box, which installs the bounds and the
- // is_fixed flags once). Re-applying them here keeps the box consistent
- // after a serious step moved x_bar; entries with a non-finite bound keep
+ // refresh the Lambda-box slack coefficients: in the displacement form
+ // s^+_j carries sgn*(L_j - x_bar_j) and s^-_j carries -sgn*(U_j - x_bar_j),
+ // both moving with the stability centre; in the iterate form the box stays
+ // invariant ( s^+_j = sgn*L_j, s^-_j = -sgn*U_j ) because x_bar lives in the
+ // Var_z linear coefficient instead. Entries with a non-finite bound keep
  // their fixed-to-0 slack and 0 coefficient
  if( ( s_plus_obj_idx >= 0 ) && ( s_minus_obj_idx >= 0 ) &&
      ( ! f_L.empty() || ! f_U.empty() ) )
   for( int j = 0 ; j < NumVars ; ++j ) {
-   const double xj = ( j < int( f_x_bar.size() ) ) ? f_x_bar[ j ] : 0.0;
+   const double xj = ( ( ! iterate ) && j < int( f_x_bar.size() ) )
+                     ? f_x_bar[ j ] : 0.0;
    const bool has_L = ! f_L.empty() && std::isfinite( f_L[ j ] );
    dqf->modify_term( DQuadFunction::Index( s_plus_obj_idx + j ) ,
                      has_L ? sgn * ( f_L[ j ] - xj ) : 0.0 , 0.0 );
