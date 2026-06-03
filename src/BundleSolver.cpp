@@ -5759,7 +5759,10 @@ void BundleSolver::add_to_bundle( Index k , Index i )
  if( ! f_convex )
   chgsign( G1.data() , NumVar );
 
- // recover the constant and "translate" it w.r.t. Lambda
+ // recover the raw constant. MasterPB owns the raw -> stored-b translation
+ // for diagonal cuts; doing the Lambda-dependent promotion here would make
+ // add_cut() translate the constant a second time. Vertical cuts keep the
+ // master-side sign convention used by GetGi().
  auto Ai = rs( v_c05f[ k ]->get_linearization_constant( i ) );
 
  if( v_c05f[ k ]->is_linearization_vertical( i ) ) {
@@ -5770,10 +5773,6 @@ void BundleSolver::add_to_bundle( Index k , Index i )
   // the rs() flip too)
   Ai = - Ai;
   }
- else
-  Ai = UpRifFi[ k ] - Ai -
-       std::inner_product( Lambda.begin() , Lambda.end() , G1.begin() ,
-                           double( 0 ) );
 
  // append the ( G1 , Ai ) cut at slot wh of HardCmps[ k ]. The
  // subgradient stored locally lives in the convex-min sign convention
