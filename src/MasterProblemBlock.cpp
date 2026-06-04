@@ -163,6 +163,10 @@ void MasterProblemBlock::SetDim( int MxBSz , int NVars ,
  // driver feeds the actual reference values via set_F_at_x_bar
  f_F_at_x_bar.assign( NoHardCmps , 0.0 );
 
+ // gradient of the linear 0-th component; default 0 until the driver
+ // installs the actual coefficients via set_linear_part()
+ f_linear_part.assign( NumVars , 0.0 );
+
  // per-hard-component cache of the raw native lower bound LB^k;
  // -INFshift = "no bound" by default until set_LB() is called
  f_LB_raw.assign( NoHardCmps , - Inf< double >() );
@@ -2021,8 +2025,19 @@ double MasterProblemBlock::get_aggregated_alpha( int k ) const
   // in the concave/max representation the objective sense stores the negated
   // value. Recover the common minimization value first, then subtract D.
   const auto * obj = get_objective();
-  const double signed_obj =
+  double signed_obj =
    ( obj && obj->get_sense() == Objective::eMax ) ? - mp_obj : mp_obj;
+
+  // The iterate form keeps the hard-component cuts relative to F_k(x_bar),
+  // but writes the linear 0-th component as b . x rather than b . (x-x_bar).
+  // Since the coupling rows contain -lambda * b, converting the signed
+  // objective back to the displacement-form model gap requires adding the
+  // solution-independent constant lambda * b . x_bar.
+  if( f_v2_form && f_linear_part.size() == f_x_bar.size() )
+   signed_obj += get_lambda() *
+    std::inner_product( f_linear_part.begin() , f_linear_part.end() ,
+                        f_x_bar.begin() , 0.0 );
+
   return( signed_obj - 0.5 * t_stab * get_dual_norm_squared() );
   }
 
@@ -2521,8 +2536,8 @@ void MasterProblemBlock::set_x_bar( const std::vector< double > & x_bar )
  // in d-space), so the linear z coefficient is normally left at 0.
  // EXCEPTIONS carrying an explicit linear z term:
  //  iterate form ( f_v2_form == 1 ): the cuts carry NO g . x_bar at all, so
- //   the master objective reproduces it as the explicit +x_bar^T R cross-term,
- //   lin_coeff = -sgn * x_bar_j;
+ //   the master objective reproduces it as the explicit +x_bar^T z cross-term
+ //   in the textbook max form, lin_coeff = sgn * x_bar_j;
  //  lazy reference ( displacement, f_xref_tol > 0 ): the cuts bake g . x_ref,
  //   so only the deferred residual rides here, lin_coeff = -sgn (x_bar_j -
  //   x_ref_j) ( = 0 when x_ref tracks x_bar, i.e. tol == 0 -> plain frame ).
@@ -2539,7 +2554,7 @@ void MasterProblemBlock::set_x_bar( const std::vector< double > & x_bar )
  for( int j = 0 ; j < NumVars ; ++j ) {
   double lin_coeff = 0.0;
   if( iterate )
-   lin_coeff = - sgn * f_x_bar[ j ];
+   lin_coeff = sgn * f_x_bar[ j ];
   else if( lazy )
    lin_coeff = - sgn * ( f_x_bar[ j ] - f_x_ref[ j ] );
   dqf->modify_term( DQuadFunction::Index( z_obj_idx + j ) ,
@@ -2596,6 +2611,8 @@ void MasterProblemBlock::set_linear_part( const std::vector< double > & b )
  if( int( b.size() ) != NumVars )
   throw( std::invalid_argument(
        "MasterProblemBlock::set_linear_part: b must have NumVars entries" ) );
+
+ f_linear_part = b;
 
  // under the primal MP the linear part is folded directly into the master
  // Objective by set_b and there is nothing to install in the coupling rows

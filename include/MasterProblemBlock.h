@@ -966,7 +966,7 @@ class MasterProblemBlock : public Block {
   *   is left exactly as-is.
   *
   * - 1 = iterate form: the x_bar dependence is carried by the explicit
-  *   linear coefficient  -sgn * x_bar  on Var_z ( the +x_bar^T R cross-term
+  *   linear coefficient  sgn * x_bar  on Var_z ( the +x_bar^T R cross-term
   *   of the prox expansion ), the box stays invariant, and the cut constant
   *   is stored function-value-relative  b = -alpha + F_k( x_bar )
   *   ( substitution v^k = vt^k + F_k( x_bar ) ) to keep it O( g . x_bar )
@@ -1498,6 +1498,10 @@ class MasterProblemBlock : public Block {
                     ///< to set_x_bar(), used by set_box() and the box
                     ///< refresh logic to compute (L - x_bar) and
                     ///< (U - x_bar) without re-asking the caller
+
+ std::vector< double > f_linear_part;
+                    ///< gradient b of the linear 0-th component installed
+                    ///< in the dual coupling rows by set_linear_part()
 
  std::vector< double > f_F_at_x_bar;
                     ///< per-hard-component cache of  F_k( x_bar ) ; sized
