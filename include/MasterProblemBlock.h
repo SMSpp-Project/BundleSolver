@@ -1530,6 +1530,8 @@ class MasterProblemBlock : public Block {
            ( f_x_ref.size() == f_x_bar.size() ) ) ? f_x_ref : f_x_bar;
   }
 
+ [[nodiscard]] double get_master_objective_value() const;
+
  std::vector< double > f_LB_raw;
                     ///< per-hard-component cache of the raw native lower
                     ///< bound LB^k installed via set_LB(); -INFshift means

@@ -746,7 +746,8 @@ int BundleSolver::compute( bool changedvars )
   // reference value, since then the fact that linearization errors are
   // negative is not meaningful
 
-  if( RifeqFi && ( Sigma < - max_error( UpRifFi.back() , RelAcc ) ) &&
+  if( RifeqFi && ( vStar.back() < INFshift ) &&
+      ( Sigma < - max_error( UpRifFi.back() , RelAcc ) ) &&
       ( Sigma <= - m3 * DST ) ) {
    if( t >= tMaior ) {
     BLOG( 1 , " ~ stop: NR required but t maximum" << std::endl );

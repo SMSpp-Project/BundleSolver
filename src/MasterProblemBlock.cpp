@@ -1274,8 +1274,9 @@ int MasterProblemBlock::add_cut( int k , int slot ,
 
  // The duplicate-detection compares the incoming ( g , alpha_raw ) against
  // the stored ( A[ i ] , b[ i ] ). Stored diagonal b is the linearization
- // error at the current x_bar; to keep the comparison fair we translate the
- // incoming alpha_raw into the same form before comparing
+ // error at the current x_bar, signed to match the master objective sense; to
+ // keep the comparison fair we translate the incoming alpha_raw into the same
+ // form before comparing
  //   incoming_b = F_k( x_bar ) - alpha_raw + g . x_bar
  // (when g matches A[ i ] perfectly, this incoming_b matches b[ i ] iff
  // alpha_raw matches the cut's own raw constant, i.e. it really is a
@@ -1294,6 +1295,8 @@ int MasterProblemBlock::add_cut( int k , int slot ,
     dot += g[ j ] * xref[ j ];
    incoming_b = f_F_at_x_bar[ k ] - alpha + dot;
    }
+  if( ! IsConvex )
+   incoming_b = - incoming_b;
   }
 
  const auto cuts_match = [ & ]( std::size_t i ) -> bool {
@@ -1506,6 +1509,8 @@ void MasterProblemBlock::modify_cut( int k , int slot ,
     dot += g[ j ] * xref[ j ];
    b_store = f_F_at_x_bar[ k ] - alpha + dot;
    }
+  if( ! IsConvex )
+   b_store = - b_store;
   }
 
  poly.modify_row( PolyhedralFunction::Index( loc ) ,
@@ -1545,6 +1550,8 @@ void MasterProblemBlock::modify_alpha( int k , int slot , double alpha )
     dot += Ai[ j ] * xref[ j ];
    b_store = f_F_at_x_bar[ k ] - alpha + dot;
    }
+  if( ! IsConvex )
+   b_store = - b_store;
   }
 
  poly.modify_constant( PolyhedralFunction::Index( loc ) , b_store );
@@ -1735,7 +1742,32 @@ double MasterProblemBlock::get_FiBLambda( int k ) const
  // made the bundle accept spurious serious steps, and corrupted the
  // trajectory (the master appeared to "ascend" on a minimisation)
  const double t = t_stab;
+ auto has_model_row = [ this ]( int kk ) -> bool {
+  if( kk < 0 || kk >= int( HardCmps.size() ) )
+   return( false );
+
+  if( kk < int( f_LB_raw.size() ) && std::isfinite( f_LB_raw[ kk ] ) )
+   return( true );
+
+  const auto * pfb =
+   dynamic_cast< const PolyhedralFunctionBlock * >( HardCmps[ kk ] );
+  if( ! pfb )
+   return( false );
+
+  auto & poly =
+   const_cast< PolyhedralFunctionBlock * >( pfb )->get_PolyhedralFunction();
+  const auto n = poly.get_nrows();
+  for( PolyhedralFunction::Index i = 0 ; i < n ; ++i )
+   if( ! poly.is_row_vertical( i ) )
+    return( true );
+
+  return( false );
+  };
+
  if( k >= 0 ) {
+  if( ! has_model_row( k ) )
+   return( Inf< double >() );
+
   const double sigma_k = get_aggregated_alpha( k );
   const auto zk = get_aggregated_subgradient( k );
   const auto zt = get_z_vector();
@@ -1745,6 +1777,10 @@ double MasterProblemBlock::get_FiBLambda( int k ) const
    dot += zk[ j ] * zt[ j ];
   return( - sigma_k + t * dot );
   }
+
+ for( int kk = 0 ; kk < int( HardCmps.size() ) ; ++kk )
+  if( ! has_model_row( kk ) )
+   return( Inf< double >() );
 
  // total v* = -( Sigma + t || z* ||^2 ), with || z* ||^2 the squared
  // norm of the *total* aggregated subgradient (linear part included)
@@ -1934,8 +1970,8 @@ double MasterProblemBlock::get_aggregated_alpha( int k ) const
    const_cast< PolyhedralFunctionBlock * >( pfb )->get_PolyhedralFunction();
   const auto & b = poly.get_b();
 
-  // recover the true linearization error Sigma_k = sum_i theta_i ( the
-  // lin-error at x_bar ) from the stored b[ i ].
+  // recover the true physical linearization error Sigma_k = sum_i theta_i
+  // ( the lin-error at x_bar ) from the objective-sense-signed stored b[ i ].
   //  iterate form: b omits g . x_bar entirely ( it rides in the +x_bar^T R
   //    lin-z ), so add back sum_i theta_i ( A_i . x_bar );
   //  displacement form with a lazy reference: b baked g . x_ref, so add back
@@ -1953,7 +1989,7 @@ double MasterProblemBlock::get_aggregated_alpha( int k ) const
   for( std::size_t i = 0 ; i < b.size() ; ++i ) {
    const double theta =
     pfb->get_row_multiplier( PolyhedralFunction::Index( i ) );
-   s += theta * b[ i ];
+   s += theta * ( IsConvex ? b[ i ] : - b[ i ] );
    if( ( iterate || lazy ) && i < A.size() ) {
     const auto & Ai = A[ i ];
     const std::size_t n = std::min( Ai.size() , f_x_bar.size() );
@@ -1965,17 +2001,72 @@ double MasterProblemBlock::get_aggregated_alpha( int k ) const
     }
    }
 
+  // The component lower bound is a valid horizontal row. If gamma carries
+  // mass, it contributes no subgradient, but it does contribute its
+  // linearization error F_k(x_bar) - LB_k to Sigma_k.
+  if( kk < int( f_LB_raw.size() ) && kk < int( f_F_at_x_bar.size() ) &&
+      std::isfinite( f_LB_raw[ kk ] ) )
+   s += get_gamma( kk ) * ( f_F_at_x_bar[ kk ] - f_LB_raw[ kk ] );
+
   return( s );
   };
 
  if( k >= 0 )
   return( contrib( k ) );
 
+ const double mp_obj = get_master_objective_value();
+ if( std::isfinite( mp_obj ) ) {
+  // The full dual master objective contains the model gap and the quadratic
+  // stabilization term. In the convex/min representation it is Sigma + D;
+  // in the concave/max representation the objective sense stores the negated
+  // value. Recover the common minimization value first, then subtract D.
+  const auto * obj = get_objective();
+  const double signed_obj =
+   ( obj && obj->get_sense() == Objective::eMax ) ? - mp_obj : mp_obj;
+  return( signed_obj - 0.5 * t_stab * get_dual_norm_squared() );
+  }
+
  double total = 0.0;
  for( int kk = 0 ; kk < int( HardCmps.size() ) ; ++kk )
   total += contrib( kk );
 
  return( total );
+}
+
+/*--------------------------------------------------------------------------*/
+
+double MasterProblemBlock::get_master_objective_value( void ) const
+{
+ // At the very first iteration, no known objective value is yet known.
+ // We simply return 0.0 as the main solver should be aware of discarding
+ // such value.
+ if( is_bundle_empty() ){
+  return( 0.0 );
+ }
+
+ const auto & solvers = get_registered_solvers();
+ if( solvers.empty() )
+  return( Inf< double >() );
+
+ const auto * obj = get_objective();
+ if( ! obj )
+  return( Inf< double >() );
+
+ auto * slv = solvers.front();
+ double val = Inf< double >();
+ if( obj->get_sense() == Objective::eMin )
+  val = slv->get_ub();
+ else if( obj->get_sense() == Objective::eMax )
+  val = slv->get_lb();
+
+ if( std::isfinite( val ) )
+  return( val );
+
+ // Some Solver implementations may expose only the bound side even at
+ // optimality. Use it as a harmless fallback when it is finite.
+ val = ( obj->get_sense() == Objective::eMin ) ? slv->get_lb()
+                                               : slv->get_ub();
+ return( std::isfinite( val ) ? val : Inf< double >() );
 }
 
 /*--------------------------------------------------------------------------*/
@@ -2004,7 +2095,8 @@ double MasterProblemBlock::get_raw_aggregated_alpha( int k ) const
   const auto & b = poly.get_b();
   const auto & A = poly.get_A();
 
-  // recover the raw alpha aggregate sum_i theta_i alpha_i from the stored b.
+  // recover the raw alpha aggregate sum_i theta_i alpha_i from the stored b,
+  // first mapping the objective-sense-signed b back to physical error units.
   //  displacement form: b_i = F_k - alpha_i + g_i . x_bar, hence
   //    sum theta alpha = F_k sum_th - b_sum + sum theta ( A_i . x_bar ).
   //  iterate form: b_i = F_k - alpha_i ( no g . x_bar ), hence
@@ -2019,7 +2111,7 @@ double MasterProblemBlock::get_raw_aggregated_alpha( int k ) const
    const double theta =
     pfb->get_row_multiplier( PolyhedralFunction::Index( i ) );
 
-   b_sum  += theta * b[ i ];
+   b_sum  += theta * ( IsConvex ? b[ i ] : - b[ i ] );
    sum_th += theta;
 
    if( ( ! iterate ) && i < A.size() ) {
@@ -2246,9 +2338,9 @@ void MasterProblemBlock::set_reference(
 
  // capture the old reference *before* writing the new one, so the per-cut
  // shift below can be expressed as a delta against the old state. Diagonal
- // cuts in the master store the linearization error at the current x_bar
- // (= a small non-negative quantity), not the raw cut constant: this is an
- // internal numerical-stability choice and the caller never sees it. When
+ // cuts in the master store the linearization error at the current x_bar,
+ // signed to match the master objective sense, not the raw cut constant: this
+ // is an internal numerical-stability choice and the caller never sees it. When
  // the reference moves to ( x_bar_new , F_new ) the stored b[ i ] must be
  // refreshed to track the new x_bar
  const std::vector< double > old_x_bar = f_x_bar;
@@ -2306,8 +2398,9 @@ void MasterProblemBlock::set_reference(
 
  // shift each *diagonal* cut's stored constant to track the moving reference.
  //  displacement form ( f_v2_form == 0 ): the stored full lin-error
- //    b[ i ] = F_k - alpha + g . x_bar  is refreshed by
- //    delta = ( F_new - F_old ) + A[ i ] . ( x_bar_new - x_bar_old ).
+ //    b[ i ] = sense_sign * ( F_k - alpha + g . x_bar ) is refreshed by
+ //    sense_sign * ( ( F_new - F_old ) +
+ //                    A[ i ] . ( x_bar_new - x_bar_old ) ).
  //  iterate form ( f_v2_form == 1 ): the stored constant is only the
  //    F_k-relative b[ i ] = F_k - alpha ( the g . x_bar cross-term lives in
  //    the explicit +x_bar^T R lin-z ), so its refresh is the UNIFORM
@@ -2346,7 +2439,7 @@ void MasterProblemBlock::set_reference(
     for( std::size_t j = 0 ; j < n ; ++j )       // deferred or in iterate form )
      dx_dot += Ai[ j ] * dxbar[ j ];
     }
-   const double delta = dF + dx_dot;
+   const double delta = ( IsConvex ? 1.0 : -1.0 ) * ( dF + dx_dot );
    if( delta == 0.0 )
     continue;
    poly.modify_constant( PolyhedralFunction::Index( i ) , b[ i ] + delta );
@@ -2359,7 +2452,8 @@ void MasterProblemBlock::set_reference(
   if( k < int( f_LB_raw.size() ) ) {
    const double LB_raw = f_LB_raw[ k ];
    if( std::isfinite( LB_raw ) )
-    poly.modify_bound( F_at_x_bar[ k ] - LB_raw );
+    poly.modify_bound( ( IsConvex ? 1.0 : -1.0 ) *
+                       ( F_at_x_bar[ k ] - LB_raw ) );
    }
   }
  }
@@ -2849,15 +2943,12 @@ void MasterProblemBlock::set_LB( int k , double LB )
   // master-side stored value is therefore the same linearization-error form
   // add_cut() uses for the diagonal cuts ( incoming_b = F_k(x_bar) - alpha +
   // g . x_bar, here with g = 0 and alpha = LB ), i.e. F_k(x_bar) - LB >= 0.
-  // The per-PFB dual Objective then carries +gamma^k * ( F_k(x_bar) - LB ),
-  // a non-negative coefficient consistent with the +theta_i * b_i terms, so
-  // the (concave -> minimize) master keeps gamma^k = 0 while the bound is
-  // slack and only lets it grow when the bound is tight ( F_k = LB ), the
-  // correct complementary slackness. The opposite sign ( LB - F_xb ) gives a
-  // negative coefficient that the minimize-master exploits by parking the
-  // whole simplex mass lambda on gamma^k, dropping the component's
-  // subgradient from the aggregate z* and corrupting the search direction
-  poly.modify_bound( F_xb - LB );
+  // The per-PFB dual Objective carries the error with the sign of the master
+  // sense: +error in the convex/min representation, -error in the concave/max
+  // representation. Thus a slack bound is unattractive in either sense and
+  // gamma^k can grow only when the bound is tight ( F_k = LB ), as required by
+  // complementary slackness.
+  poly.modify_bound( ( IsConvex ? 1.0 : -1.0 ) * ( F_xb - LB ) );
  else {
   const double no_bound = poly.is_convex()
                           ? - Inf< Function::FunctionValue >()
@@ -2916,7 +3007,7 @@ void MasterProblemBlock::set_fictitious_LB( int k , bool on )
   return;
  auto & poly = pfb->get_PolyhedralFunction();
  if( on )
-  poly.modify_bound( fict );
+  poly.modify_bound( ( IsConvex ? 1.0 : -1.0 ) * fict );
  else {
   const double no_bound = poly.is_convex()
                           ? - Inf< Function::FunctionValue >()
