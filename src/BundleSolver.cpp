@@ -2076,6 +2076,12 @@ void BundleSolver::set_par( idx_type par , int value )
    break;
   case( intMPPrimal ): IsMPPrimal = bool( value ); break;
   case( intRstAlg ): RstAlgPrm = value; break;
+  case( intMPV2Form ):
+   if( value < 0 || value > 1 )
+    throw( std::invalid_argument(
+               "BundleSolver::set_par: MPV2Form must be either 0 or 1" ) );
+   MPV2Form = value;
+   break;
   default: CDASolver::set_par( par , value );
   }
  }  // end( BundleSolver::set_par( int ) )
@@ -2483,6 +2489,7 @@ int BundleSolver::get_int_par( idx_type par ) const
   case( intMPStbl ):    return( MPStbl );
   case( intMPPrimal ):  return( int( IsMPPrimal ) );
   case( intRstAlg ):    return( RstAlgPrm  );
+  case( intMPV2Form ):  return( MPV2Form );
   default:              return( CDASolver::get_int_par( par ) );
   }
  }  // end( BundleSolver::get_int_par )
@@ -4957,12 +4964,10 @@ void BundleSolver::InitMPB( void )
                       ! f_convex ,
                       IsEasy );
 
- // optional dual-master storage frame: 0 = displacement form ( default,
- // production ), 1 = iterate form ( reference, for diagnosing the QP
- // conditioning gap ). Opt-in via the environment; internal to MasterPB.
- if( const char * env = std::getenv( "BUNDLE_MPB_V2L" ) ;
-     env && env[ 0 ] )
-  MasterPB->set_v2_form( std::atoi( env ) );
+ // Dual-master storage frame: 0 = displacement form (default), 1 = iterate
+ // form. This is an algorithmic BundleSolver parameter so it can be selected
+ // from the ComputeConfig, e.g. NDOPar.txt, without process-wide flags.
+ MasterPB->set_v2_form( MPV2Form );
 
  // optional "lazy reference" for the displacement form: defer the per-cut
  // g . ( x_bar - x_ref ) shift to the lin-z and re-align x_ref only when the
