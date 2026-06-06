@@ -93,6 +93,7 @@ void MasterProblemBlock::clear()
  // back to the "default" MP type
  IsPrimal      = false;
  StblType      = kDoublyStabilized;
+ HardCmpScaling = 0;
  t_stab        = 1.0;
  f_lev         = 0.0;
  z_obj_idx     = -1;
@@ -236,12 +237,16 @@ void MasterProblemBlock::configure(
                           std::unordered_set< Block * > ignored_blocks ,
                           stabilization_type reg ,
                           bool convex ,
-                          const std::vector< bool > & is_easy )
+                          const std::vector< bool > & is_easy ,
+                          int hard_cmp_scaling )
 {
  // - - - sanity checks - - - - - - - - - - - - - - - - - - - - - - - - - -
  if( max_bundle_size < 0 || num_vars < 0 || num_hard_cmps < 0 )
   throw( std::invalid_argument(
        "MasterProblemBlock::configure: negative size" ) );
+ if( hard_cmp_scaling < 0 || hard_cmp_scaling > 3 )
+  throw( std::invalid_argument(
+       "MasterProblemBlock::configure: hard_cmp_scaling must be between 0 and 3" ) );
 
  const int n_easy  = int( easy_components.size() );
  const int n_total = num_hard_cmps + n_easy;
@@ -263,6 +268,7 @@ void MasterProblemBlock::configure(
  IsPrimal = primal;
  IsConvex = convex;
  StblType = reg;
+ HardCmpScaling = hard_cmp_scaling;
 
  // - - - steal original_block into the master - - - - - - - - - - - - - -
  // detach the model Block from its previous parent and reattach it under
@@ -485,7 +491,12 @@ void MasterProblemBlock::CreatePrimalMP( stabilization_type Stbl )
 
  HardCmps.clear();
  HardCmps.reserve( NoHardCmps );
- const SimpleConfiguration< int > rep_lin_primal( 1 );  // bit 0 = 1, bit 1 = 0
+ // PFB stvv bits 2 and 3 enable local and global scaling, respectively.
+ // Keep bit 0 set so this remains the linearized-primal representation:
+ // no scaling / local / global / both map to 1 / 5 / 9 / 13.
+ const int scaling_cfg = ( ( HardCmpScaling & 1 ) ? 4 : 0 ) |
+                         ( ( HardCmpScaling & 2 ) ? 8 : 0 );
+ const SimpleConfiguration< int > rep_lin_primal( 1 | scaling_cfg );
 
  for( int k = 0 ; k < NoHardCmps ; ++k ) {
   auto * pfb = new PolyhedralFunctionBlock( this );
@@ -789,7 +800,11 @@ void MasterProblemBlock::CreateDualMP( stabilization_type Stbl )
 
  HardCmps.clear();
  HardCmps.reserve( NoHardCmps );
- const SimpleConfiguration< int > rep_dual( 3 );  // bit 0 = 1, bit 1 = 1
+ // Keep bits 0 and 1 set so this remains the linearized-dual
+ // representation: no scaling / local / global / both map to 3 / 7 / 11 / 15.
+ const int scaling_cfg = ( ( HardCmpScaling & 1 ) ? 4 : 0 ) |
+                         ( ( HardCmpScaling & 2 ) ? 8 : 0 );
+ const SimpleConfiguration< int > rep_dual( 3 | scaling_cfg );
 
  for( int k = 0 ; k < NoHardCmps ; ++k ) {
   auto * pfb = new PolyhedralFunctionBlock( this );

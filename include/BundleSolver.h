@@ -388,6 +388,8 @@ public:
 
  intMPV2Form ,  ///< dual MP storage frame: displacement or iterate form
 
+ intMPHScaling ,  ///< bit-wise scaling of hard-component PFBs
+
  intLastBndSlvPar  ///< first allowed new int parameter for derived classes
                    /**< Convenience value for easily allow derived classes
                     * to extend the set of int algorithmic parameters. */
@@ -559,6 +561,7 @@ public:
                                               get_dflt_int_par( intMPStbl ) );
   IsMPPrimal = bool( get_dflt_int_par( intMPPrimal ) );
   MPV2Form = get_dflt_int_par( intMPV2Form );
+  MPHScaling = get_dflt_int_par( intMPHScaling );
 
   MaxTime = CDASolver::get_dflt_dbl_par( dblMaxTime );
   RelAcc = CDASolver::get_dflt_dbl_par( dblRelAcc );
@@ -1013,6 +1016,13 @@ public:
   *                    0 selects the displacement form, while 1 selects the
   *                    iterate form. The parameter has no effect on the primal
   *                    Master Problem.
+  *
+  * - intMPHScaling [0]: bit-wise numerical scaling of the
+  *                     PolyhedralFunctionBlock representing each hard
+  *                     component in the Master Problem:
+  *                     bit 0 enables local row scaling, bit 1 enables global
+  *                     epigraph scaling. Hence 0 = none, 1 = local only,
+  *                     2 = global only, 3 = both.
   */
 
  void set_par( idx_type par , int value ) override;
@@ -1909,7 +1919,7 @@ public:
 /*--------------------------------------------------------------------------*/
 
  [[nodiscard]] int get_dflt_int_par( idx_type par ) const override {
-  static const std::array< int , 18 > dflt_int_par = {
+  static const std::array< int , 19 > dflt_int_par = {
     10 ,  // intBPar1
    100 ,  // intBPar2
      1 ,  // intBPar3
@@ -1929,7 +1939,8 @@ public:
      2 ,  // intRstAlg, default value:
           // RstAlg = 0  -  reset algorithmic parameters
           // RstCrr = 1  -  set current point to using values of the Variable
-     0    // intMPV2Form (default value is displacement form)
+     0 ,  // intMPV2Form (default value is displacement form)
+     0    // intMPHScaling (default value is no hard-component scaling)
      };
 
   if( ( par >= intLastParCDAS ) && ( par < intLastBndSlvPar ) )
@@ -2050,6 +2061,7 @@ public:
    { "intMPPrimal" , BundleSolver::intMPPrimal } ,
    { "intRstAlg" , BundleSolver::intRstAlg } ,
    { "intMPV2Form" , BundleSolver::intMPV2Form } ,
+   { "intMPHScaling" , BundleSolver::intMPHScaling } ,
    };
 
   const auto it = int_pars_map.find( name );
@@ -2137,11 +2149,12 @@ public:
 
  [[nodiscard]] const std::string & int_par_idx2str( idx_type idx )
   const override {
-  static const std::array< std::string , 18 > int_pars_str = {
+  static const std::array< std::string , 19 > int_pars_str = {
    "intBPar1" , "intBPar2" , "intBPar3" , "intBPar4" , "intBPar6" ,
    "intBPar7" , "intMnSSC" , "intMnNSC" , "inttSPar1" , "intMaxNrEvls" ,
    "intDoEasy" , "intWZNorm" , "intFrcLstSS" , "intTrgtMng" ,
-   "intMPStbl" , "intMPPrimal" , "intRstAlg" , "intMPV2Form" };
+   "intMPStbl" , "intMPPrimal" , "intRstAlg" , "intMPV2Form" ,
+   "intMPHScaling" };
 
   if( ( idx >= intLastParCDAS ) && ( idx < intLastBndSlvPar ) )
    return( int_pars_str[ idx - intBPar1 ] );
@@ -2812,6 +2825,8 @@ public:
  int RstAlgPrm;     ///< reset parameter, bit-wise coded
 
  int MPV2Form;      ///< dual MP storage frame: 0 = displacement, 1 = iterate
+
+ int MPHScaling;    ///< bit-wise hard-component PFB scaling: local / global
 
  std::string EasyCfg;
  ///< filename for the Block[Solver]Config of easy components

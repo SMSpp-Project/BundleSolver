@@ -352,7 +352,12 @@ class MasterProblemBlock : public Block {
   *        backward compatibility with callers that do not yet maintain
   *        such a flag vector; in that case IsEasyCmp stays at the
   *        all-false default initialised by SetDim() and only the legacy
-  *        all-hard path is taken. */
+  *        all-hard path is taken.
+  *  \param hard_cmp_scaling
+  *        bit-wise numerical scaling requested for every hard-component
+  *        PolyhedralFunctionBlock: bit 0 enables local row scaling and bit 1
+  *        enables global epigraph scaling. Thus 0 = none, 1 = local only,
+  *        2 = global only, 3 = both. */
  void configure( bool primal ,
                  int max_bundle_size ,
                  int num_vars ,
@@ -362,7 +367,8 @@ class MasterProblemBlock : public Block {
                  std::unordered_set< Block * > ignored_blocks = {} ,
                  stabilization_type reg = kDoublyStabilized ,
                  bool convex = true ,
-                 const std::vector< bool > & is_easy = {} );
+                 const std::vector< bool > & is_easy = {} ,
+                 int hard_cmp_scaling = 0 );
 
 /*--------------------------------------------------------------------------*/
  /// provide MasterProblemBlock with the basic dimensions of the MP
@@ -1553,6 +1559,10 @@ class MasterProblemBlock : public Block {
                     ///< 1 = iterate form (x_bar in the explicit +x_bar^T R
                     ///< z linear term, cut constants function-value-relative
                     ///< -alpha + F_k( x_bar )). See set_v2_form
+
+ int HardCmpScaling = 0;
+                    ///< bit-wise PFB scaling for hard components:
+                    ///< bit 0 = local rows, bit 1 = global epigraph
 
  int z_obj_idx;     ///< index of the first z_j entry in the DQuadFunction
                     ///< triples (the NumVars entries z_0..z_{NumVars-1} are

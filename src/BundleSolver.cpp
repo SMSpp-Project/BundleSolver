@@ -2082,6 +2082,12 @@ void BundleSolver::set_par( idx_type par , int value )
                "BundleSolver::set_par: MPV2Form must be either 0 or 1" ) );
    MPV2Form = value;
    break;
+  case( intMPHScaling ):
+   if( value < 0 || value > 3 )
+    throw( std::invalid_argument(
+               "BundleSolver::set_par: MPHScaling must be between 0 and 3" ) );
+   MPHScaling = value;
+   break;
   default: CDASolver::set_par( par , value );
   }
  }  // end( BundleSolver::set_par( int ) )
@@ -2490,6 +2496,7 @@ int BundleSolver::get_int_par( idx_type par ) const
   case( intMPPrimal ):  return( int( IsMPPrimal ) );
   case( intRstAlg ):    return( RstAlgPrm  );
   case( intMPV2Form ):  return( MPV2Form );
+  case( intMPHScaling ): return( MPHScaling );
   default:              return( CDASolver::get_int_par( par ) );
   }
  }  // end( BundleSolver::get_int_par )
@@ -4962,7 +4969,8 @@ void BundleSolver::InitMPB( void )
                       get_excluded_blocks() ,
                       MPStbl ,
                       ! f_convex ,
-                      IsEasy );
+                      IsEasy ,
+                      MPHScaling );
 
  // Dual-master storage frame: 0 = displacement form (default), 1 = iterate
  // form. This is an algorithmic BundleSolver parameter so it can be selected
