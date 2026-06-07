@@ -531,7 +531,7 @@ class MasterProblemBlock : public Block {
   * dual MP at the pi^k variables of the easy linear program (cf.
   * ) reads instead
   *
-  *      E^k_i u^k + lambda * e^k_i = 0    for every row i,
+  *      E^k_i u^k - lambda * e^k_i = 0    for every row i,
   *
   * where lambda is the global multiplier owned by *this* (Var_lambda)
   * and e^k_i is taken from the side of the original RowConstraint:
@@ -543,16 +543,19 @@ class MasterProblemBlock : public Block {
   * For every RowConstraint of the inner Block this method snapshots its
   * (lhs_i, rhs_i, function), relaxes it (LHS = -INF, RHS = +INF) and
   * installs on *this* a fresh FRowConstraint with the cloned
-  * LinearFunction augmented by the +e^k_i coefficient on Var_lambda and
+  * LinearFunction augmented by the -e^k_i coefficient on Var_lambda and
   * with LHS = RHS = 0. Quadratic / non-linear function types are not
   * supported and trigger an exception, since the underlying primal LP of
   * the easy component is linear by assumption.
   *
   * @param lbf  pointer to the LagBFunction to absorb; must be non-null
   *             and its inner Block must have been already transferred to
-  *             *this* by configure(). */
+  *             *this* by configure().
+  * @param component  global index k of the easy component; its generated
+  *                   rows are kept in a separate, correspondingly named
+  *                   static-constraint group. */
 
- void absorb_LBF_into_dual_MP( LagBFunction * lbf );
+ void absorb_LBF_into_dual_MP( LagBFunction * lbf , int component );
 
 /*--------------------------------------------------------------------------*/
  /// hand the abstract representation of the MP to the registered Solver
@@ -1399,6 +1402,10 @@ class MasterProblemBlock : public Block {
   };
 
  std::vector< EasyBBFRow > EasyBBFRows;
+
+ std::vector< std::vector< FRowConstraint > > EasyLBFCns;
+                                   ///< generated rows indexed by original
+                                   ///< component k and row
 
  // - - - - - - - - - - -  static MP entities (primal form)  - - - - - - - - -
 

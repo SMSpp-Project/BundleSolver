@@ -79,6 +79,7 @@ void MasterProblemBlock::clear()
  // absorbed BendersBFunction RowConstraints live as static_constraint
  // on *this* and are owned by the base Block; just drop the bookkeeping
  EasyBBFRows.clear();
+ EasyLBFCns.clear();
 
  // reset every size / structural field
  MaxBSize   = 0;
@@ -255,6 +256,7 @@ void MasterProblemBlock::configure(
  // SetDim() starts from a clean slate (it calls clear()) and re-initialises
  // MaxBSize / NumVars / NoTotCmps / NoEasyCmps / NoHardCmps
  SetDim( max_bundle_size , num_vars , n_total , n_easy );
+ EasyLBFCns.resize( n_total );
 
  // record the per-global-k easy/hard flag so the per-cmp getters
  // (get_FiBLambda, get_aggregated_alpha, ...) can dispatch the EASY
@@ -311,7 +313,18 @@ void MasterProblemBlock::configure(
  // instance a PolyhedralFunction, which is a hard component by design)
  // is also reported as "unsupported": such a component should never be
  // marked easy.
+ int next_global_easy = 0;
  for( int k = 0 ; k < n_easy ; ++k ) {
+  int component = k;
+  if( int( is_easy.size() ) == n_total ) {
+   while( next_global_easy < n_total && ! is_easy[ next_global_easy ] )
+    ++next_global_easy;
+   if( next_global_easy >= n_total )
+    throw( std::invalid_argument(
+         "MasterProblemBlock::configure: inconsistent easy-component flags" ) );
+   component = next_global_easy++;
+   }
+
   auto * c05 = easy_components[ k ];
   if( ! c05 )
    throw( std::invalid_argument(
@@ -336,7 +349,7 @@ void MasterProblemBlock::configure(
    // absorb_LBF_into_dual_MP() reaches into the inner Block via
    // lbf->get_inner_block(), which still resolves to `inner` here but
    // would return nullptr after transfer_ownership_to
-   absorb_LBF_into_dual_MP( lbf );
+   absorb_LBF_into_dual_MP( lbf , component );
    inner->transfer_ownership_to( this );
    EasyCmps.push_back( inner );
    continue;
@@ -367,6 +380,11 @@ void MasterProblemBlock::configure(
        "supported are LagBFunction (in the dual MP) and "
        "BendersBFunction (in the primal MP)" ) );
   }
+
+ for( int k = 0 ; k < n_total ; ++k )
+  if( ! EasyLBFCns[ k ].empty() )
+   add_static_constraint( EasyLBFCns[ k ] ,
+                          "MPB_LBF_easy_" + std::to_string( k ) );
 
  // - - - stash ignored sub-Blocks until a Solver is registered - - - - - -
  // configure() and register_Solver() can be called in any order; whichever
@@ -1109,18 +1127,22 @@ void MasterProblemBlock::absorb_BBF_into_primal_MP( BendersBFunction * bbf )
 
 /*--------------------------------------------------------------------------*/
 
-void MasterProblemBlock::absorb_LBF_into_dual_MP( LagBFunction * lbf )
+void MasterProblemBlock::absorb_LBF_into_dual_MP( LagBFunction * lbf ,
+                                                  int component )
 {
  if( ! lbf )
   throw( std::invalid_argument(
        "MasterProblemBlock::absorb_LBF_into_dual_MP: null LagBFunction" ) );
+ if( component < 0 || component >= int( EasyLBFCns.size() ) )
+  throw( std::invalid_argument(
+       "MasterProblemBlock::absorb_LBF_into_dual_MP: invalid component" ) );
 
  // walk every RowConstraint of the inner Block of the LagBFunction
  // (already transferred under *this* by configure()) and re-install it
  // on the master as the stationarity row of the dual MP at pi^k
  // ():
  //
- //     E^k_i u^k + lambda * e^k_i = 0    for every row i.
+ //     E^k_i u^k - lambda * e^k_i = 0    for every row i.
  //
  // The original RowConstraint of the inner Block is relaxed in place
  // (LHS = -INF, RHS = +INF) so that the inner :MILPSolver loaded by the
@@ -1131,7 +1153,35 @@ void MasterProblemBlock::absorb_LBF_into_dual_MP( LagBFunction * lbf )
   throw( std::invalid_argument(
        "MasterProblemBlock::absorb_LBF_into_dual_MP: null inner Block" ) );
 
- auto process_one = [ this ]( FRowConstraint & ci ) {
+ auto & easy_cns = EasyLBFCns[ component ];
+
+ auto count_any = []( const boost::any & any ) -> std::size_t {
+  if( boost::any_cast< FRowConstraint >( & any ) )
+   return( 1 );
+  if( auto one_p = boost::any_cast< FRowConstraint * >( & any ) )
+   return( *one_p ? 1 : 0 );
+  if( auto vec =
+            boost::any_cast< std::vector< FRowConstraint > >( & any ) )
+   return( vec->size() );
+  if( auto vec_p =
+            boost::any_cast< std::vector< FRowConstraint > * >( & any ) )
+   return( *vec_p ? ( *vec_p )->size() : 0 );
+  if( auto lst = boost::any_cast< std::list< FRowConstraint > >( & any ) )
+   return( lst->size() );
+  if( auto lst_p =
+            boost::any_cast< std::list< FRowConstraint > * >( & any ) )
+   return( *lst_p ? ( *lst_p )->size() : 0 );
+  return( 0 );
+  };
+
+ std::size_t num_rows = 0;
+ for( const auto & any : inner->get_static_constraints() )
+  num_rows += count_any( any );
+ for( const auto & any : inner->get_dynamic_constraints() )
+  num_rows += count_any( any );
+ easy_cns.reserve( num_rows );
+
+ auto process_one = [ this , & easy_cns ]( FRowConstraint & ci ) {
   auto * lf = dynamic_cast< LinearFunction * >( ci.get_function() );
   if( ! lf )
    throw( std::logic_error(
@@ -1157,21 +1207,20 @@ void MasterProblemBlock::absorb_LBF_into_dual_MP( LagBFunction * lbf )
         "is unbounded on both sides; cannot derive e^k_i" ) );
 
   // build the master-side LinearFunction: original ( u^k, E^k_{i,j} )
-  // pairs plus the +e^k_i coupling on Var_lambda
+  // pairs plus the -e^k_i coupling on Var_lambda
   LinearFunction::v_coeff_pair pairs;
   pairs.reserve( lf->get_num_active_var() + 1 );
   for( Function::Index j = 0 ; j < lf->get_num_active_var() ; ++j )
    pairs.emplace_back(
         static_cast< ColVariable * >( lf->get_active_var( j ) ) ,
         lf->get_coefficient( j ) );
-  pairs.emplace_back( & Var_lambda , e_i );
+  pairs.emplace_back( & Var_lambda , - e_i );
 
-  auto * new_fun = new LinearFunction( std::move( pairs ) );
-  auto * new_cns = new FRowConstraint();
-  new_cns->set_function( new_fun , eNoMod );
-  new_cns->set_lhs( 0.0 , eNoMod );
-  new_cns->set_rhs( 0.0 , eNoMod );
-  add_static_constraint( *new_cns , "MPB_LBF_easy" );
+  easy_cns.emplace_back();
+  auto & new_cns = easy_cns.back();
+  new_cns.set_function( new LinearFunction( std::move( pairs ) ) , eNoMod );
+  new_cns.set_lhs( 0.0 , eNoMod );
+  new_cns.set_rhs( 0.0 , eNoMod );
 
   // relax the original RowConstraint on the inner Block
   ci.set_lhs( - Inf< double >() , eNoMod );
