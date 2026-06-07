@@ -169,6 +169,12 @@ void MasterProblemBlock::SetDim( int MxBSz , int NVars ,
  // installs the actual coefficients via set_linear_part()
  f_linear_part.assign( NumVars , 0.0 );
 
+ // The initial master is built around the zero stability centre. Keeping
+ // the correctly-sized vector from the start also lets the first
+ // set_reference() translate cuts that were inserted before F(x_bar) became
+ // known, instead of mistaking that update for an uninitialised reference.
+ f_x_bar.assign( NumVars , 0.0 );
+
  // per-hard-component cache of the raw native lower bound LB^k;
  // -INFshift = "no bound" by default until set_LB() is called
  f_LB_raw.assign( NoHardCmps , - Inf< double >() );
