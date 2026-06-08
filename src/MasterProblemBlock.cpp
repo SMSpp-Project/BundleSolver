@@ -1334,72 +1334,7 @@ int MasterProblemBlock::add_cut( int k , int slot ,
        "MasterProblemBlock::add_cut: HardCmps[k] is not a "
        "PolyhedralFunctionBlock" ) );
 
- // duplicate detection: walk the bundle of HardCmps[k] and look for an
- // entry that matches (g, alpha) within a relative tolerance. A
- // duplicate brings no new information to the master problem, so the
- // insertion is suppressed and the matching slot is reported back; the
- // surrounding bundle solver consults this return value to refrain
- // from declaring the master as "changed", which in turn lets the
- // noise-reduction machinery kick in when the oracle keeps returning
- // the same subgradient at a frozen Lambda
- const auto & A = pfb->get_PolyhedralFunction().get_A();
- const auto & b = pfb->get_PolyhedralFunction().get_b();
- constexpr double rel_tol = 1e-12;
-
- // The duplicate-detection compares the incoming ( g , alpha_raw ) against
- // the stored ( A[ i ] , b[ i ] ). Stored diagonal b is the linearization
- // error at the current x_bar, signed to match the master objective sense; to
- // keep the comparison fair we translate the incoming alpha_raw into the same
- // form before comparing
- //   incoming_b = F_k( x_bar ) - alpha_raw + g . x_bar
- // (when g matches A[ i ] perfectly, this incoming_b matches b[ i ] iff
- // alpha_raw matches the cut's own raw constant, i.e. it really is a
- // duplicate). Vertical cuts skip this translation: they store raw
- const bool here_is_vert = is_vert;
- double incoming_b = alpha;
- if( ( ! here_is_vert ) && ( ! IsPrimal ) &&
-     ( k < int( f_F_at_x_bar.size() ) ) ) {
-  if( f_v2_form )    // iterate form: function-value-relative raw alpha; the
-   incoming_b = - alpha + f_F_at_x_bar[ k ];   // g . x_bar lives in the lin-z
-  else {             // displacement form: linearization error at x_ref
-   const auto & xref = cut_ref();
-   const std::size_t n = std::min( g.size() , xref.size() );
-   double dot = 0.0;
-   for( std::size_t j = 0 ; j < n ; ++j )
-    dot += g[ j ] * xref[ j ];
-   incoming_b = f_F_at_x_bar[ k ] - alpha + dot;
-   }
-  if( ! IsConvex )
-   incoming_b = - incoming_b;
-  }
-
- const auto cuts_match = [ & ]( std::size_t i ) -> bool {
-  if( i >= b.size() || i >= A.size() )
-   return( false );
-  const double a_tol = rel_tol * std::max( { std::abs( incoming_b ) ,
-                                              std::abs( b[ i ] ) ,
-                                              double( 1 ) } );
-  if( std::abs( incoming_b - b[ i ] ) > a_tol )
-   return( false );
-  const auto & gi = A[ i ];
-  const std::size_t n = std::min( g.size() , gi.size() );
-  for( std::size_t j = 0 ; j < n ; ++j ) {
-   const double g_tol = rel_tol * std::max( { std::abs( g[ j ] ) ,
-                                               std::abs( gi[ j ] ) ,
-                                               double( 1 ) } );
-   if( std::abs( g[ j ] - gi[ j ] ) > g_tol )
-    return( false );
-   }
-  return( true );
-  };
-
- for( int s = 0 ; s < int( slot_to_local[ k ].size() ) ; ++s ) {
-  const int local = slot_to_local[ k ][ s ];
-  if( local < 0 )
-   continue;
-  if( cuts_match( std::size_t( local ) ) )
-   return( s );  // duplicate: do not touch the bundle, report the slot
-  }
+ const double incoming_b = get_stored_constant( k , g , alpha , is_vert );
 
  // defensive eviction: the bundle treats `slot` as a *global* pool index
  // (one occupant across all k); MasterPB stores slot_to_local as a 2D
@@ -1426,10 +1361,8 @@ int MasterProblemBlock::add_cut( int k , int slot ,
  //
  // For numerical stability the bundle stores, on the master side, the
  // linearization-error form of the diagonal cut rather than its raw
- // constant: incoming_b (computed once above for the duplicate-detection)
- // is exactly the value that goes into v_b[ i ]. Vertical cuts skip the
- // translation: their feasibility-constraint constant is reference-
- // independent and stored as-is
+ // constant: incoming_b is exactly the value that goes into v_b[ i ].
+ // Vertical cuts keep their reference-independent raw constant.
  const int new_local = int( pfb->get_PolyhedralFunction().get_nrows() );
  pfb->get_PolyhedralFunction().add_row( std::move( g ) , incoming_b ,
                                         eModBlck , is_vert );
@@ -1698,6 +1631,64 @@ double MasterProblemBlock::get_alpha( int k , int slot ) const
   return( 0.0 );
  return( b[ loc ] );
  }
+
+/*--------------------------------------------------------------------------*/
+
+int MasterProblemBlock::find_identical_cut(
+                         int k , const std::vector< double > & g ,
+                         bool is_vert ) const
+{
+ if( k < 0 || k >= int( HardCmps.size() ) )
+  return( -1 );
+
+ const auto pfb =
+  dynamic_cast< const PolyhedralFunctionBlock * >( HardCmps[ k ] );
+ if( ! pfb )
+  return( -1 );
+
+ auto & poly = const_cast< PolyhedralFunctionBlock * >( pfb )
+                    ->get_PolyhedralFunction();
+ const auto & A = poly.get_A();
+ for( int slot = 0 ; slot < int( slot_to_local[ k ].size() ) ; ++slot ) {
+  const int loc = slot_to_local[ k ][ slot ];
+  if( loc < 0 || loc >= int( A.size() ) )
+   continue;
+  if( poly.is_row_vertical( PolyhedralFunction::Index( loc ) ) != is_vert )
+   continue;
+  if( A[ loc ] == g )
+   return( slot );
+  }
+
+ return( -1 );
+}
+
+/*--------------------------------------------------------------------------*/
+
+double MasterProblemBlock::get_stored_constant(
+                         int k , const std::vector< double > & g ,
+                         double alpha , bool is_vert ) const
+{
+ double stored = alpha;
+ if( is_vert || IsPrimal || k < 0 ||
+     k >= int( f_F_at_x_bar.size() ) )
+  return( stored );
+
+ if( f_v2_form )   // iterate form: g . x_bar lives in the linear z term
+  stored = - alpha + f_F_at_x_bar[ k ];
+ else {
+  const auto & xref = cut_ref();
+  const std::size_t n = std::min( g.size() , xref.size() );
+  double dot = 0.0;
+  for( std::size_t j = 0 ; j < n ; ++j )
+   dot += g[ j ] * xref[ j ];
+  stored = f_F_at_x_bar[ k ] - alpha + dot;
+  }
+
+ if( ! IsConvex )
+  stored = - stored;
+
+ return( stored );
+}
 
 /*--------------------------------------------------------------------------*/
 

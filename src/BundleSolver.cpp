@@ -441,7 +441,7 @@ BundleSolver::read_alpha_global( Index name ) const
   const auto & loc = ItemVcblr[ name ];
   // ItemVcblr[ name ].second == InINF means "empty slot"; nothing to read
   if( loc.second < Inf< Index >() )
-   return( MasterPB->get_alpha( int( loc.first ) , int( loc.second ) ) );
+   return( MasterPB->get_alpha( int( loc.first ) , int( name ) ) );
   }
  return( 0 );
  }
@@ -454,7 +454,7 @@ BundleSolver::read_theta_global( Index name ) const
  if( MasterPB && name < ItemVcblr.size() ) {
   const auto & loc = ItemVcblr[ name ];
   if( loc.second < Inf< Index >() )
-   return( MasterPB->get_theta( int( loc.first ) , int( loc.second ) ) );
+   return( MasterPB->get_theta( int( loc.first ) , int( name ) ) );
   }
  return( 0 );
  }
@@ -466,7 +466,7 @@ void BundleSolver::remove_cut_global( Index name )
  if( MasterPB && name < ItemVcblr.size() ) {
   const auto & loc = ItemVcblr[ name ];
   if( loc.second < Inf< Index >() )
-   MasterPB->remove_cut( int( loc.first ) , int( loc.second ) );
+   MasterPB->remove_cut( int( loc.first ) , int( name ) );
   }
  }
 
@@ -3911,7 +3911,7 @@ bool BundleSolver::GetGi( Index wFi )
 
   // compute ScPr1k and Alfa1k- - - - - - - - - - - - - - - - - - - - - - - -
 
-  Index cp;
+  Index cp = InINF;
   double ScPr1k;
   bool is_rep = diagonal && ( ! Ftchd ) && ( ! CurrNrEvls[ wFi ] );
   // if it is the first subgradient of the first call to GetGi() for this
@@ -3956,7 +3956,6 @@ bool BundleSolver::GetGi( Index wFi )
    // (g, alpha) is built locally and pushed directly into
    // MasterPB->add_cut, so no in-place rewrite is needed; duplicate
    // detection is delegated to MasterPB further below
-   cp = InINF;
    if( f_sparse_lambda ) {
     ScPr1k = 0;
     const auto & m = v_local2global[ wFi ];
@@ -4010,7 +4009,6 @@ bool BundleSolver::GetGi( Index wFi )
    else
     ScPr1k = std::inner_product( Lambda.begin() , Lambda.end() , G1k ,
                                  double( 0 ) );
-   cp = InINF;
    }
 
   // helper: materialise a dense (NumVar-sized) copy of G1k either by
@@ -4058,6 +4056,14 @@ bool BundleSolver::GetGi( Index wFi )
     vect_sum( G1 , G1k );
    };
 
+  auto dense_g = make_dense_g1();
+  if( MasterPB ) {
+   const int identical =
+    MasterPB->find_identical_cut( int( wFi ) , dense_g , ! diagonal );
+   if( identical >= 0 )
+    cp = Index( identical );
+   }
+
   Index gpp = InINF;  // position in the global pool where to put it
 
   if( f_log && ( LogVerb > 2 ) ) {
@@ -4081,22 +4087,21 @@ bool BundleSolver::GetGi( Index wFi )
 
   bool to_insert = true;  // if it has to be inserted
 
-  // tracks whether the new cut effectively modified MasterPB; the copy
-  // branch never reaches the add_cut call so the value stays at the default
-  bool master_changed = true;
-
   if( cp < InINF ) {  // the item is a copy - - - - - - - - - - - - - - - - -
    BLOG( 2 , " is copy of " << cp << " (" << ItemVcblr[ cp ].second << ")" );
 
    wh = cp;  // we have it already
 
-   auto OldA1k = read_alpha_global( cp );
+   const auto OldA1k = read_alpha_global( cp );
+   const auto NewA1k =
+    MasterPB->get_stored_constant( int( wFi ) , dense_g ,
+                                   Alfa1k_for_master , ! diagonal );
 
    assert( ( ItemVcblr[ cp ].first == wFi ) &&
            ( ItemVcblr[ cp ].second < vBPar2[ wFi ] ) &&
            ( InvItemVcblr[ wFi ][ ItemVcblr[ cp ].second ] == cp ) );
 
-   if( OldA1k >= Alfa1k + std::max( std::abs( Alfa1k ) , double( 1 ) )
+   if( OldA1k >= NewA1k + std::max( std::abs( NewA1k ) , double( 1 ) )
                           * RelAcc / 10 ) {
     // if the copy has a *substantially* smaller Alfa than the original,
     // replace the original with the copy; in principle relative differences
@@ -4135,10 +4140,10 @@ bool BundleSolver::GetGi( Index wFi )
      }
 
     if( MasterPB ) {
-     // replace the cut at slot ItemVcblr[ cp ].second of HardCmps[ wFi ]
+     // replace the cut at global bundle slot cp of HardCmps[ wFi ]
      // with the new ( G1k , Alfa1k ) pair
-     MasterPB->modify_cut( int( wFi ) , int( ItemVcblr[ cp ].second ) ,
-                           make_dense_g1() , Alfa1k );
+     MasterPB->modify_cut( int( wFi ) , int( cp ) ,
+                           std::move( dense_g ) , Alfa1k_for_master );
      }
     // note that the number of items of component wFi in the master problem
     // is unchanged
@@ -4162,29 +4167,19 @@ bool BundleSolver::GetGi( Index wFi )
     break;              // the cycle ends
     }
 
-   const auto old_k = ItemVcblr[ wh ].first;
-   const bool occupied = ( old_k < NrFi ) &&
-                         ( ItemVcblr[ wh ].second < vBPar2[ old_k ] );
-
-   // ( G1k , Alfa1k_for_master ) is the cut at slot wh of HardCmps[ wFi ];
-   // ask MasterPB to check for duplicates before changing BundleSolver's
-   // bookkeeping. add_cut() performs any required eviction only when the
-   // new row is actually inserted, so a duplicate leaves both views of the
-   // bundle untouched
-   if( MasterPB ) {
-    const auto cut_status =
-     MasterPB->add_cut( int( wFi ) , int( wh ) , make_dense_g1() ,
-                        Alfa1k_for_master , ! diagonal );
-    master_changed = ( cut_status == MasterProblemBlock::kCutInserted );
-    if( ! master_changed ) {
-     wh = Index( cut_status );  // existing slot holding the duplicate
-     to_insert = false;
-     }
+   if( ItemVcblr[ wh ].second < vBPar2[ wFi ] )
+    // the place is occupied already: this happens if the bundle was full
+    // (and, possibly aggregation has been performed for safety)
+    remove_cut_global( wh );  // the old item has to be removed first
+   else {                   // the place is unoccupied
+    ++NrItems[ wFi ];       // one more item in the bundle (otherwise the
+    ++NrItems[ NrFi ];      // number remains the same as one is replaced)
     }
 
    // if it is the "representative subgradient", add its contribution to
-   // the required ones of Alfa1, ScPr1 and G1. For a duplicate, wh now
-   // identifies the already existing row that represents this information
+   // the required ones of Alfa1, ScPr1 and G1 (if any); do this before
+   // the call to add_cut() because the state of the G1k memory after
+   // the call is unclear
    if( is_rep ) {
     whisG1[ wFi ] = wh;
     if( NeedsAlfa1() )
@@ -4195,28 +4190,26 @@ bool BundleSolver::GetGi( Index wFi )
      accumulate_G1();
     }
 
-   if( to_insert ) {
-    if( ! occupied ) {
-     ++NrItems[ wFi ];       // one more item in the bundle (otherwise the
-     ++NrItems[ NrFi ];      // number remains the same as one is replaced)
-     }
+   // ( G1k , Alfa1k_for_master ) is the cut at slot wh of HardCmps[ wFi ]
+   if( MasterPB )
+    MasterPB->add_cut( int( wFi ) , int( wh ) , std::move( dense_g ) ,
+                       Alfa1k_for_master , ! diagonal );
 
-    // now find a position in the global pool of component wFi where to store
-    // the new linearization
-    gpp = find_place_in_global_pool( wFi );
+   // now find a position in the global pool of component wFi where to store
+   // the new linearization
+   gpp = find_place_in_global_pool( wFi );
 
-    if( gpp == InINF ) {     // there is none
-     // this means that not only the global pool is full, but also the bundle
-     // is full: one can therefore put it in the very place of the item it
-     // replaces, which must be an item of the same component because
-     // BStrategy() ensures this
-     assert( ItemVcblr[ wh ].first == wFi );
-     gpp = ItemVcblr[ wh ].second;
-     assert( gpp < vBPar2.back() );
-     }
-
-    BLOG( 2 , " stored in " << wh << " (" << gpp << ")"  );
+   if( gpp == InINF ) {     // there is none
+    // this means that not only the global pool is full, but also the bundle
+    // is full: one can therefore put it in the very place of the item it
+    // replaces, which must be an item of the same component because
+    // BStrategy() ensures this
+    assert( ItemVcblr[ wh ].first == wFi );
+    gpp = ItemVcblr[ wh ].second;
+    assert( gpp < vBPar2.back() );
     }
+
+   BLOG( 2 , " stored in " << wh << " (" << gpp << ")"  );
    }
 
   // if something was inserted, bookkeeping is needed - - - - - - - - - - - -
@@ -4226,8 +4219,7 @@ bool BundleSolver::GetGi( Index wFi )
    v_c05f[ wFi ]->store_linearization( gpp );
    inhibit_Modification( false );
 
-   if( master_changed )
-    insrtd = true;
+   insrtd = true;
    add_to_global_pool( wFi , gpp , wh );
 
    if( diagonal )       // it is a subgradient

@@ -623,18 +623,10 @@ class MasterProblemBlock : public Block {
   *
   * The call issues the appropriate PolyhedralFunctionModAddd through the usual
   * Modification interface, so the [MILP]Solver attached to MasterProblemBlock
-  * picks it up on the next compute().
-  *
-  * Before committing the new row, the incoming (g, alpha) is compared
-  * coefficient-by-coefficient against every linearization already in the
-  * bundle of HardCmps[k]: if a match is found (within an absolute
-  * tolerance scaled by the magnitudes involved) no insertion takes place
-  * and the return value is the (k, slot) of the duplicate. Otherwise the
-  * cut is installed as described above and the return value is the
-  * sentinel #kCutInserted (== -1), signalling that the master problem has
-  * effectively changed. The surrounding driver consumes this return code
-  * to decide whether the new cut warrants treating the master as
-  * "changed" for the purposes of the SS/NS bookkeeping. */
+  * picks it up on the next compute(). Each bundle item owns a physical row,
+  * even when its coefficients coincide with another item: duplicate
+  * management is an algorithmic responsibility of BundleSolver, not of the
+  * master representation. The return value is #kCutInserted. */
 
  static constexpr int kCutInserted = -1;
 
@@ -754,6 +746,26 @@ class MasterProblemBlock : public Block {
   * is empty. */
 
  [[nodiscard]] double get_alpha( int k , int slot ) const;
+
+/*--------------------------------------------------------------------------*/
+ /// find an item with exactly the same coefficient vector
+ /** Returns the slot of a cut in component \p k whose coefficient vector is
+  * element-wise identical to \p g and whose diagonal/vertical type matches
+  * \p is_vert. The comparison is exact, matching the historical
+  * MPSolver::CheckBCopy semantics. Returns -1 if no copy exists. */
+
+ [[nodiscard]] int find_identical_cut(
+                         int k , const std::vector< double > & g ,
+                         bool is_vert = false ) const;
+
+/*--------------------------------------------------------------------------*/
+ /// convert an incoming raw constant to the representation stored by MPB
+ /** Applies the same reference-frame and objective-sense transformation used
+  * by add_cut() without modifying the master. */
+
+ [[nodiscard]] double get_stored_constant(
+                         int k , const std::vector< double > & g ,
+                         double alpha , bool is_vert = false ) const;
 
 /*--------------------------------------------------------------------------*/
  /// returns the subgradient at slot \p slot of B^k
