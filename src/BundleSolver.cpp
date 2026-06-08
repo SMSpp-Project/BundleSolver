@@ -4162,19 +4162,29 @@ bool BundleSolver::GetGi( Index wFi )
     break;              // the cycle ends
     }
 
-   if( ItemVcblr[ wh ].second < vBPar2[ wFi ] )
-    // the place is occupied already: this happens if the bundle was full
-    // (and, possibly aggregation has been performed for safety)
-    remove_cut_global( wh );  // the old item has to be removed first
-   else {                   // the place is unoccupied
-    ++NrItems[ wFi ];       // one more item in the bundle (otherwise the
-    ++NrItems[ NrFi ];      // number remains the same as one is replaced)
+   const auto old_k = ItemVcblr[ wh ].first;
+   const bool occupied = ( old_k < NrFi ) &&
+                         ( ItemVcblr[ wh ].second < vBPar2[ old_k ] );
+
+   // ( G1k , Alfa1k_for_master ) is the cut at slot wh of HardCmps[ wFi ];
+   // ask MasterPB to check for duplicates before changing BundleSolver's
+   // bookkeeping. add_cut() performs any required eviction only when the
+   // new row is actually inserted, so a duplicate leaves both views of the
+   // bundle untouched
+   if( MasterPB ) {
+    const auto cut_status =
+     MasterPB->add_cut( int( wFi ) , int( wh ) , make_dense_g1() ,
+                        Alfa1k_for_master , ! diagonal );
+    master_changed = ( cut_status == MasterProblemBlock::kCutInserted );
+    if( ! master_changed ) {
+     wh = Index( cut_status );  // existing slot holding the duplicate
+     to_insert = false;
+     }
     }
 
    // if it is the "representative subgradient", add its contribution to
-   // the required ones of Alfa1, ScPr1 and G1 (if any); do this before
-   // the call to add_cut() because the state of the G1k memory after
-   // the call is unclear
+   // the required ones of Alfa1, ScPr1 and G1. For a duplicate, wh now
+   // identifies the already existing row that represents this information
    if( is_rep ) {
     whisG1[ wFi ] = wh;
     if( NeedsAlfa1() )
@@ -4185,30 +4195,28 @@ bool BundleSolver::GetGi( Index wFi )
      accumulate_G1();
     }
 
-   // ( G1k , Alfa1k_for_master ) is the cut at slot wh of HardCmps[ wFi ];
-   // the master receives alpha already promoted to "linearization error at
-   // the current reference point"
-   if( MasterPB )
-    master_changed = ( MasterPB->add_cut(
-                                int( wFi ) , int( wh ) , make_dense_g1() ,
-                                Alfa1k_for_master , ! diagonal )
-                       == MasterProblemBlock::kCutInserted );
+   if( to_insert ) {
+    if( ! occupied ) {
+     ++NrItems[ wFi ];       // one more item in the bundle (otherwise the
+     ++NrItems[ NrFi ];      // number remains the same as one is replaced)
+     }
 
-   // now find a position in the global pool of component wFi where to store
-   // the new linearization
-   gpp = find_place_in_global_pool( wFi );
+    // now find a position in the global pool of component wFi where to store
+    // the new linearization
+    gpp = find_place_in_global_pool( wFi );
 
-   if( gpp == InINF ) {     // there is none
-    // this means that not only the global pool is full, but also the bundle
-    // is full: one can therefore put it in the very place of the item it
-    // replaces, which must be an item of the same component because
-    // BStrategy() ensures this
-    assert( ItemVcblr[ wh ].first == wFi );
-    gpp = ItemVcblr[ wh ].second;
-    assert( gpp < vBPar2.back() );
+    if( gpp == InINF ) {     // there is none
+     // this means that not only the global pool is full, but also the bundle
+     // is full: one can therefore put it in the very place of the item it
+     // replaces, which must be an item of the same component because
+     // BStrategy() ensures this
+     assert( ItemVcblr[ wh ].first == wFi );
+     gpp = ItemVcblr[ wh ].second;
+     assert( gpp < vBPar2.back() );
+     }
+
+    BLOG( 2 , " stored in " << wh << " (" << gpp << ")"  );
     }
-
-   BLOG( 2 , " stored in " << wh << " (" << gpp << ")"  );
    }
 
   // if something was inserted, bookkeeping is needed - - - - - - - - - - - -
