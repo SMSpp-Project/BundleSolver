@@ -499,6 +499,16 @@ void MasterProblemBlock::CreatePrimalMP( stabilization_type Stbl )
  if( NumVars > 0 )
   add_static_variable( Var_d , f_v2_form ? "MPB_x" : "MPB_d" );
 
+ Bounds_d.clear();
+ Bounds_d.resize( NumVars );
+ for( int j = 0 ; j < NumVars ; ++j ) {
+  Bounds_d[ j ].set_variable( & Var_d[ j ] , eNoMod );
+  Bounds_d[ j ].set_lhs( - Inf< double >() , eNoMod );
+  Bounds_d[ j ].set_rhs( Inf< double >() , eNoMod );
+  }
+ if( NumVars > 0 )
+  add_static_constraint( Bounds_d , "MPB_box" );
+
  // ---- one PolyhedralFunctionBlock sub-Block per "hard" component ---------
  //
  // The PFB is wired in its *linearized primal* representation (rep == 1).
@@ -614,6 +624,7 @@ void MasterProblemBlock::CreatePrimalMP( stabilization_type Stbl )
   }
  obj->set_sense( Objective::eMin , eNoMod );
  set_objective( obj , eNoMod );
+ f_primal_objective_dirty = false;
 
  // bookkeeping fields: Bounds_v_hard / Var_v_hard are *unused* in this
  // refactor; we keep them clean so the dual MP code path (which still
@@ -1308,8 +1319,20 @@ Block * MasterProblemBlock::get_easy_component( int k ) const
 
 double MasterProblemBlock::get_dual_norm_squared( void ) const
 {
- if( IsPrimal )
-  return( 0.0 );
+ if( IsPrimal ) {
+  if( t_stab <= 0.0 ||
+      ( StblType != kProximal && StblType != kDoublyStabilized ) )
+   return( 0.0 );
+
+  const auto d = get_d_vector();
+  const double inv_t = 1.0 / t_stab;
+  return( std::transform_reduce(
+             d.cbegin() , d.cend() , 0.0 , std::plus<>() ,
+             [ inv_t ]( double dj ) {
+              const double zj = - inv_t * dj;
+              return( zj * zj );
+              } ) );
+  }
 
  return( std::transform_reduce(
               Var_z.cbegin() , Var_z.cend() , 0.0 , std::plus<>() ,
@@ -1339,6 +1362,9 @@ int MasterProblemBlock::add_cut( int k , int slot ,
        "PolyhedralFunctionBlock" ) );
 
  const double incoming_b = get_stored_constant( k , g , alpha , is_vert );
+ if( ! IsPrimal )
+  for( auto & gj : g )
+   gj = - gj;
 
  // defensive eviction: the bundle treats `slot` as a *global* pool index
  // (one occupant across all k); MasterPB stores slot_to_local as a 2D
@@ -1363,10 +1389,9 @@ int MasterProblemBlock::add_cut( int k , int slot ,
  // as a BlockModAdd<FRowConstraint> picked up by the attached :MILPSolver
  // via the standard dynamic_modification -> add_dynamic_constraint path
  //
- // For numerical stability the bundle stores, on the master side, the
- // linearization-error form of the diagonal cut rather than its raw
- // constant: incoming_b is exactly the value that goes into v_b[ i ].
- // Vertical cuts keep their reference-independent raw constant.
+ // The driver always passes the physical cut (g, alpha). MPB stores the row in
+ // the active representation: primal raw keeps it as-is, while the dual stores
+ // the row with the sign required by the coupling equations.
  const int new_local = int( pfb->get_PolyhedralFunction().get_nrows() );
  pfb->get_PolyhedralFunction().add_row( std::move( g ) , incoming_b ,
                                         eModBlck , is_vert );
@@ -1498,31 +1523,16 @@ void MasterProblemBlock::modify_cut( int k , int slot ,
   throw( std::invalid_argument(
        "MasterProblemBlock::modify_cut: slot empty or out of range" ) );
 
- // mirror the on-insert translation done in add_cut(): the diagonal
- // cut's stored constant is the linearization error at the current
- // x_bar, derived from the raw alpha the caller passes in. The new g is
- // already in the master-side convention, so its contribution to the
- // dot product uses g as received
+ // mirror the on-insert conversion done in add_cut(): callers pass the
+ // physical cut (g, alpha), MPB stores the active primal/dual representation.
  const int loc = slot_to_local[ k ][ slot ];
  auto & poly = pfb->get_PolyhedralFunction();
  const bool is_vert = poly.is_row_vertical( PolyhedralFunction::Index( loc ) );
 
- double b_store = alpha;
- if( ( ! is_vert ) && ( ! IsPrimal ) &&
-     ( k < int( f_F_at_x_bar.size() ) ) ) {
-  if( f_v2_form )    // iterate form: function-value-relative raw alpha
-   b_store = - alpha + f_F_at_x_bar[ k ];
-  else {             // displacement form: linearization error at x_ref
-   const auto & xref = cut_ref();
-   const std::size_t n = std::min( g.size() , xref.size() );
-   double dot = 0.0;
-   for( std::size_t j = 0 ; j < n ; ++j )
-    dot += g[ j ] * xref[ j ];
-   b_store = f_F_at_x_bar[ k ] - alpha + dot;
-   }
-  if( ! IsConvex )
-   b_store = - b_store;
-  }
+ const double b_store = get_stored_constant( k , g , alpha , is_vert );
+ if( ! IsPrimal )
+  for( auto & gj : g )
+   gj = - gj;
 
  poly.modify_row( PolyhedralFunction::Index( loc ) ,
                   std::move( g ) , b_store );
@@ -1538,32 +1548,22 @@ void MasterProblemBlock::modify_alpha( int k , int slot , double alpha )
   throw( std::invalid_argument(
        "MasterProblemBlock::modify_alpha: slot empty or out of range" ) );
 
- // mirror the on-insert translation: the diagonal cut's stored constant
- // is the linearization error at the current x_bar. To rebuild it we
- // need the cut's own g (already in the PolyhedralFunction row); vertical
- // cuts store the raw constant directly, no translation
+ // mirror the on-insert conversion. The stored row may be dual-signed, so
+ // recover the physical g before converting the new physical alpha.
  const int loc = slot_to_local[ k ][ slot ];
  auto & poly = pfb->get_PolyhedralFunction();
  const bool is_vert = poly.is_row_vertical( PolyhedralFunction::Index( loc ) );
 
- double b_store = alpha;
- if( ( ! is_vert ) && ( ! IsPrimal ) &&
-     ( k < int( f_F_at_x_bar.size() ) ) ) {
-  const auto & A = poly.get_A();
-  if( f_v2_form )    // iterate form: function-value-relative raw alpha
-   b_store = - alpha + f_F_at_x_bar[ k ];
-  else if( loc >= 0 && loc < int( A.size() ) ) {
-   const auto & Ai = A[ loc ];
-   const auto & xref = cut_ref();
-   const std::size_t n = std::min( Ai.size() , xref.size() );
-   double dot = 0.0;
-   for( std::size_t j = 0 ; j < n ; ++j )
-    dot += Ai[ j ] * xref[ j ];
-   b_store = f_F_at_x_bar[ k ] - alpha + dot;
-   }
-  if( ! IsConvex )
-   b_store = - b_store;
+ std::vector< double > physical_g;
+ const auto & A = poly.get_A();
+ if( loc >= 0 && loc < int( A.size() ) ) {
+  physical_g = A[ loc ];
+  if( ! IsPrimal )
+   for( auto & gj : physical_g )
+    gj = - gj;
   }
+ const double b_store =
+  get_stored_constant( k , physical_g , alpha , is_vert );
 
  poly.modify_constant( PolyhedralFunction::Index( loc ) , b_store );
  }
@@ -1572,8 +1572,6 @@ void MasterProblemBlock::modify_alpha( int k , int slot , double alpha )
 
 double MasterProblemBlock::get_theta( int k , int slot ) const
 {
- if( IsPrimal )
-  return( 0.0 );
  if( k < 0 || k >= int( HardCmps.size() ) )
   return( 0.0 );
  if( slot < 0 || slot >= int( slot_to_local[ k ].size() ) )
@@ -1595,8 +1593,6 @@ double MasterProblemBlock::get_theta( int k , int slot ) const
 
 double MasterProblemBlock::get_gamma( int k ) const
 {
- if( IsPrimal )
-  return( 0.0 );
  if( k < 0 || k >= int( HardCmps.size() ) )
   return( 0.0 );
 
@@ -1604,6 +1600,18 @@ double MasterProblemBlock::get_gamma( int k ) const
   dynamic_cast< const PolyhedralFunctionBlock * >( HardCmps[ k ] );
  if( ! pfb )
   return( 0.0 );
+
+ if( IsPrimal ) {
+  auto & poly =
+   const_cast< PolyhedralFunctionBlock * >( pfb )->get_PolyhedralFunction();
+  double diagonal_mass = 0.0;
+  for( PolyhedralFunction::Index i = 0 ; i < poly.get_nrows() ; ++i )
+   if( ! poly.is_row_vertical( i ) )
+    diagonal_mass += pfb->get_row_multiplier( i );
+
+  const double gamma = 1.0 - diagonal_mass;
+  return( gamma > 0.0 ? gamma : 0.0 );
+  }
 
  auto * gamma =
   const_cast< PolyhedralFunctionBlock * >( pfb )
@@ -1659,7 +1667,15 @@ int MasterProblemBlock::find_identical_cut(
    continue;
   if( poly.is_row_vertical( PolyhedralFunction::Index( loc ) ) != is_vert )
    continue;
-  if( A[ loc ] == g )
+  if( A[ loc ].size() != g.size() )
+   continue;
+  bool same = true;
+  for( std::size_t j = 0 ; j < g.size() ; ++j )
+   if( A[ loc ][ j ] != ( IsPrimal ? g[ j ] : - g[ j ] ) ) {
+    same = false;
+    break;
+    }
+  if( same )
    return( slot );
   }
 
@@ -1673,8 +1689,22 @@ double MasterProblemBlock::get_stored_constant(
                          double alpha , bool is_vert ) const
 {
  double stored = alpha;
- if( is_vert || IsPrimal || k < 0 ||
-     k >= int( f_F_at_x_bar.size() ) )
+ if( is_vert )
+  return( IsPrimal ? stored : - stored );
+
+ if( IsPrimal ) {
+  if( f_v2_form || k < 0 || k >= int( f_F_at_x_bar.size() ) )
+   return( stored );
+
+  const auto & xbar = f_x_bar;
+  const std::size_t n = std::min( g.size() , xbar.size() );
+  double dot = 0.0;
+  for( std::size_t j = 0 ; j < n ; ++j )
+   dot += g[ j ] * xbar[ j ];
+  return( stored + dot - f_F_at_x_bar[ k ] );
+  }
+
+ if( k < 0 || k >= int( f_F_at_x_bar.size() ) )
   return( stored );
 
  if( f_v2_form )   // iterate form: g . x_bar lives in the linear z term
@@ -1685,7 +1715,7 @@ double MasterProblemBlock::get_stored_constant(
   double dot = 0.0;
   for( std::size_t j = 0 ; j < n ; ++j )
    dot += g[ j ] * xref[ j ];
-  stored = f_F_at_x_bar[ k ] - alpha + dot;
+  stored = f_F_at_x_bar[ k ] - alpha - dot;
   }
 
  if( ! IsConvex )
@@ -1769,20 +1799,35 @@ double MasterProblemBlock::get_FiBLambda( int k ) const
   // that component; k == -1 (default) sums v^k* over every hard cmp.
   // The proximal/level stabilization terms on d / v are not subtracted
   // out: the surrounding bundle solver expects the "model value" v*
-  auto v_of = [ this ]( int kk ) -> double {
+  auto delta_v_of = [ this ]( int kk ) -> double {
    if( kk < 0 || kk >= int( HardCmps.size() ) )
     return( 0.0 );
    auto * pfb = dynamic_cast< PolyhedralFunctionBlock * >( HardCmps[ kk ] );
    if( ! pfb )
     return( 0.0 );
    const auto * v = pfb->get_v();
-   return( v ? v->get_value() : 0.0 );
+   if( ! v )
+    return( 0.0 );
+
+   const double reference =
+    ( f_v2_form && kk < int( f_F_at_x_bar.size() ) )
+    ? f_F_at_x_bar[ kk ] : 0.0;
+   return( v->get_value() - reference );
    };
   if( k >= 0 )
-   return( v_of( k ) );
+   return( delta_v_of( k ) );
+
   double sum = 0.0;
   for( int kk = 0 ; kk < int( HardCmps.size() ) ; ++kk )
-   sum += v_of( kk );
+   sum += delta_v_of( kk );
+
+  const auto d = get_d_vector();
+  const std::size_t n = std::min( d.size() , f_linear_part.size() );
+  double bd = 0.0;
+  for( std::size_t j = 0 ; j < n ; ++j )
+   bd += f_linear_part[ j ] * d[ j ];
+  sum += bd;
+
   return( sum );
   }
 
@@ -1798,11 +1843,10 @@ double MasterProblemBlock::get_FiBLambda( int k ) const
  // and, summing the linear-part contribution < b , d* > too,
  //   v* (total) = -t || z* ||^2 - Sigma   ( = -( Sigma + 2 D*_t(z*) ) ).
  //
- // get_aggregated_subgradient(k) returns sum_i theta^k_i A^k_i, and the
- // stored A^k_i is the sign-flipped image -g^k_i (the duality wiring in
- // make_dense_g1), so g^k = - get_aggregated_subgradient(k) and the dot
- // product flips accordingly:
- //   v*[k] = -Sigma_k + t < get_aggregated_subgradient(k) , z* >
+ // get_aggregated_subgradient(k) returns the physical aggregate g^k even
+ // when the dual PFB stores the sign-flipped row -g^k_i internally, so the
+ // per-component expression keeps the textbook sign:
+ //   v*[k] = -Sigma_k - t < get_aggregated_subgradient(k) , z* >
  //
  // The previous implementation returned + Sigma_k, i.e. the
  // linearization error with the wrong sign and the wrong meaning: it
@@ -1844,7 +1888,7 @@ double MasterProblemBlock::get_FiBLambda( int k ) const
   const std::size_t n = std::min( zk.size() , zt.size() );
   for( std::size_t j = 0 ; j < n ; ++j )
    dot += zk[ j ] * zt[ j ];
-  return( - sigma_k + t * dot );
+  return( - sigma_k - t * dot );
   }
 
  for( int kk = 0 ; kk < int( HardCmps.size() ) ; ++kk )
@@ -1862,13 +1906,16 @@ std::vector< double > MasterProblemBlock::get_z_vector( void ) const
 {
  std::vector< double > out;
  if( IsPrimal ) {
-  // primal MP: z* = sum_k sum_i theta^k_i g^k_i across every hard cmp
-  out.assign( NumVars , 0.0 );
-  for( int k = 0 ; k < int( HardCmps.size() ) ; ++k ) {
-   const auto zk = get_aggregated_subgradient( k );
-   for( int j = 0 ; j < NumVars && j < int( zk.size() ) ; ++j )
-    out[ j ] += zk[ j ];
-   }
+  // Under proximal stabilization, stationarity of the primal master gives
+  // z* + d*/t = 0. This recovers the complete essential subgradient,
+  // including the linear part and active-domain/box multipliers.
+  out = get_d_vector();
+  if( t_stab > 0.0 &&
+      ( StblType == kProximal || StblType == kDoublyStabilized ) )
+   for( auto & zj : out )
+    zj = - zj / t_stab;
+  else
+   std::fill( out.begin() , out.end() , 0.0 );
   return( out );
   }
  out.reserve( Var_z.size() );
@@ -1886,8 +1933,9 @@ MasterProblemBlock::get_aggregated_subgradient( int k ) const
  // representations: as the dual value of a cut constraint in the primal one,
  // and as an explicit theta variable in the dual one. PFB::get_row_multiplier()
  // hides this distinction and also maps the value back to the units of the
- // original unscaled row. Therefore MPB must not read the abstract objects
- // directly or apply any scaling factor itself.
+ // original unscaled row. The dual PFB stores rows as -g to satisfy its
+ // coupling equations; flip them back here so callers always see the physical
+ // aggregate subgradient.
  std::vector< double > out( NumVars , 0.0 );
 
  if( k < 0 || k >= int( HardCmps.size() ) )
@@ -1901,6 +1949,7 @@ MasterProblemBlock::get_aggregated_subgradient( int k ) const
  const auto & A =
   const_cast< PolyhedralFunctionBlock * >( pfb )
     ->get_PolyhedralFunction().get_A();
+ const double row_sign = IsPrimal ? 1.0 : -1.0;
 
  for( std::size_t i = 0 ; i < A.size() ; ++i ) {
   const double theta =
@@ -1913,7 +1962,7 @@ MasterProblemBlock::get_aggregated_subgradient( int k ) const
   const std::size_t n = std::min( gi.size() , out.size() );
 
   for( std::size_t j = 0 ; j < n ; ++j )
-   out[ j ] += theta * gi[ j ];
+   out[ j ] += row_sign * theta * gi[ j ];
   }
 
  return( out );
@@ -1974,7 +2023,9 @@ double MasterProblemBlock::get_Gid( int k , int slot ) const
  const auto d = get_d_vector();
  if( d.size() != g.size() )
   return( 0.0 );
- return( std::inner_product( g.begin() , g.end() , d.begin() , 0.0 ) );
+ const double stored_dot =
+  std::inner_product( g.begin() , g.end() , d.begin() , 0.0 );
+ return( IsPrimal ? stored_dot : - stored_dot );
  }
 
 /*--------------------------------------------------------------------------*/
@@ -2022,8 +2073,25 @@ void MasterProblemBlock::set_alphas_bulk( int k ,
 
 double MasterProblemBlock::get_aggregated_alpha( int k ) const
 {
- if( IsPrimal )
-  return( 0.0 );
+ if( IsPrimal ) {
+  // The primal master directly provides d* and the model decrease v*. For
+  // every component the aggregate-cut identity is
+  //     v*[k] = < z*[k] , d* > - Sigma*[k].
+  // Using it here automatically includes horizontal lower-bound mass and
+  // vertical/domain multipliers without exposing their abstract dual objects.
+  const auto d = get_d_vector();
+
+  if( k >= 0 ) {
+   const auto zk = get_aggregated_subgradient( k );
+   const std::size_t n = std::min( zk.size() , d.size() );
+   double zd = 0.0;
+   for( std::size_t j = 0 ; j < n ; ++j )
+    zd += zk[ j ] * d[ j ];
+   return( zd - get_FiBLambda( k ) );
+   }
+
+  return( get_Gid_aggregate() - get_FiBLambda() );
+  }
 
  // b[i] is stored in the physical PolyhedralFunction units. The multiplier
  // must therefore also be expressed in physical units. get_row_multiplier()
@@ -2155,8 +2223,51 @@ double MasterProblemBlock::get_master_objective_value( void ) const
 
 double MasterProblemBlock::get_raw_aggregated_alpha( int k ) const
 {
- if( IsPrimal )
-  return( 0.0 );
+ if( IsPrimal ) {
+  auto contrib = [ this ]( int kk ) -> double {
+   if( kk < 0 || kk >= int( HardCmps.size() ) )
+    return( 0.0 );
+
+   const auto * pfb =
+    dynamic_cast< const PolyhedralFunctionBlock * >( HardCmps[ kk ] );
+   if( ! pfb )
+    return( 0.0 );
+
+   auto & poly =
+    const_cast< PolyhedralFunctionBlock * >( pfb )->get_PolyhedralFunction();
+   const auto & A = poly.get_A();
+   const auto & b = poly.get_b();
+   const double F_xb = kk < int( f_F_at_x_bar.size() )
+                       ? f_F_at_x_bar[ kk ] : 0.0;
+
+   double alpha = 0.0;
+   for( PolyhedralFunction::Index i = 0 ; i < poly.get_nrows() ; ++i ) {
+    if( poly.is_row_vertical( i ) )
+     continue;
+
+    double raw_b = b[ i ];
+    if( ! f_v2_form && i < A.size() ) {
+     const std::size_t n = std::min( A[ i ].size() , f_x_bar.size() );
+     double gxbar = 0.0;
+     for( std::size_t j = 0 ; j < n ; ++j )
+      gxbar += A[ i ][ j ] * f_x_bar[ j ];
+     raw_b += F_xb - gxbar;
+     }
+
+    alpha += pfb->get_row_multiplier( i ) * raw_b;
+    }
+
+   return( alpha );
+   };
+
+  if( k >= 0 )
+   return( contrib( k ) );
+
+  double total = 0.0;
+  for( int kk = 0 ; kk < int( HardCmps.size() ) ; ++kk )
+   total += contrib( kk );
+  return( total );
+  }
 
  // A[i] and b[i] are stored in the physical PolyhedralFunction units.
  // get_row_multiplier() returns the corresponding physical theta_i,
@@ -2231,8 +2342,6 @@ double MasterProblemBlock::get_raw_aggregated_alpha( int k ) const
 
 double MasterProblemBlock::get_raw_aggregated_alpha_with_LB( int k ) const
 {
- if( IsPrimal )
-  return( 0.0 );
  if( k < 0 || k >= int( HardCmps.size() ) )
   return( 0.0 );
 
@@ -2264,8 +2373,6 @@ const std::vector< double > & MasterProblemBlock::get_alphas( int k ) const
 std::vector< double > MasterProblemBlock::get_thetas( int k ) const
 {
  std::vector< double > out;
- if( IsPrimal )
-  return( out );
  if( k < 0 || k >= int( HardCmps.size() ) )
   return( out );
 
@@ -2301,8 +2408,6 @@ void MasterProblemBlock::set_C( double C )
 void MasterProblemBlock::set_box( const std::vector< double > & L ,
                                   const std::vector< double > & U )
 {
- if( IsPrimal )
-  return;
  if( ! L.empty() && int( L.size() ) != NumVars )
   throw( std::invalid_argument(
        "MasterProblemBlock::set_box: L must be empty or of size NumVars" ) );
@@ -2312,6 +2417,28 @@ void MasterProblemBlock::set_box( const std::vector< double > & L ,
 
  f_L = L;
  f_U = U;
+
+ if( IsPrimal ) {
+  if( int( Bounds_d.size() ) != NumVars )
+   return;
+
+  for( int j = 0 ; j < NumVars ; ++j ) {
+   double lhs = ( ! f_L.empty() && std::isfinite( f_L[ j ] ) )
+                ? f_L[ j ] : - Inf< double >();
+   double rhs = ( ! f_U.empty() && std::isfinite( f_U[ j ] ) )
+                ? f_U[ j ] : Inf< double >();
+   if( ! f_v2_form ) {
+    const double xj = j < int( f_x_bar.size() ) ? f_x_bar[ j ] : 0.0;
+    if( std::isfinite( lhs ) )
+     lhs -= xj;
+    if( std::isfinite( rhs ) )
+     rhs -= xj;
+    }
+   Bounds_d[ j ].set_lhs( lhs );
+   Bounds_d[ j ].set_rhs( rhs );
+   }
+  return;
+  }
 
  auto obj = dynamic_cast< FRealObjective * >( get_objective() );
  auto dqf = obj ? dynamic_cast< DQuadFunction * >( obj->get_function() )
@@ -2565,24 +2692,21 @@ void MasterProblemBlock::set_x_bar( const std::vector< double > & x_bar )
  // marked dynamic by the original ConstraintSide; the static side(s)
  // keep their snapshot from absorb_BBF_into_primal_MP()
  if( IsPrimal ) {
-  // Raw primal form: Var_d stores the absolute point x. Expanding
-  // ||x-x_bar||^2/(2t) adds -x_bar/t to the linear coefficient; the omitted
-  // constant ||x_bar||^2/(2t) does not affect the minimizer.
-  if( f_v2_form ) {
-   auto obj = dynamic_cast< FRealObjective * >( get_objective() );
-   auto dqf = obj ? dynamic_cast< DQuadFunction * >( obj->get_function() )
-                  : nullptr;
-   if( dqf ) {
-    const bool has_quad = ( StblType == kProximal ||
-                            StblType == kDoublyStabilized );
-    const double quad = has_quad ? 1.0 / ( 2.0 * t_stab ) : 0.0;
-    for( int j = 0 ; j < NumVars ; ++j ) {
-     const double lin = f_linear_part[ j ] -
-                        ( has_quad ? f_x_bar[ j ] / t_stab : 0.0 );
-     dqf->modify_term( DQuadFunction::Index( j ) , lin , quad );
-     }
+  // In raw form x_bar changes the linear part of
+  // ||x-x_bar||^2/(2t). Defer the abstract objective update until the next
+  // actual solve, where it is batched with any intervening t / b changes.
+  if( f_v2_form )
+   f_primal_objective_dirty = true;
+
+  if( ! f_v2_form && int( Bounds_d.size() ) == NumVars )
+   for( int j = 0 ; j < NumVars ; ++j ) {
+    const double lhs = ( ! f_L.empty() && std::isfinite( f_L[ j ] ) )
+                       ? f_L[ j ] - f_x_bar[ j ] : - Inf< double >();
+    const double rhs = ( ! f_U.empty() && std::isfinite( f_U[ j ] ) )
+                       ? f_U[ j ] - f_x_bar[ j ] : Inf< double >();
+    Bounds_d[ j ].set_lhs( lhs );
+    Bounds_d[ j ].set_rhs( rhs );
     }
-   }
 
   for( auto & row : EasyBBFRows ) {
    double coupling = row.b_i;
@@ -2811,6 +2935,53 @@ void MasterProblemBlock::set_max_time( double t )
 
 /*--------------------------------------------------------------------------*/
 
+void MasterProblemBlock::refresh_primal_objective( void )
+{
+ if( ! IsPrimal || ! f_primal_objective_dirty )
+  return;
+
+ if( NumVars == 0 ) {
+  f_primal_objective_dirty = false;
+  return;
+  }
+
+ auto * obj = dynamic_cast< FRealObjective * >( get_objective() );
+ auto * dqf = obj ? dynamic_cast< DQuadFunction * >( obj->get_function() )
+                  : nullptr;
+ if( ! dqf )
+  throw( std::logic_error(
+       "MasterProblemBlock::refresh_primal_objective: expected "
+       "DQuadFunction" ) );
+
+ const bool has_quad = ( StblType == kProximal ||
+                         StblType == kDoublyStabilized );
+ const double quad = has_quad ? 1.0 / ( 2.0 * t_stab ) : 0.0;
+
+ std::vector< double > linear( NumVars );
+ std::vector< double > quadratic( NumVars , quad );
+ bool changed = false;
+
+ for( int j = 0 ; j < NumVars ; ++j ) {
+  linear[ j ] = f_linear_part[ j ];
+  if( f_v2_form && has_quad )
+   linear[ j ] -= f_x_bar[ j ] / t_stab;
+
+  changed = changed ||
+   ( linear[ j ] !=
+     dqf->get_linear_coefficient( DQuadFunction::Index( j ) ) ) ||
+   ( quadratic[ j ] !=
+     dqf->get_quadratic_coefficient( DQuadFunction::Index( j ) ) );
+  }
+
+ if( changed )
+  dqf->modify_terms( quadratic.cbegin() , linear.cbegin() ,
+                     Range( 0 , DQuadFunction::Index( NumVars ) ) );
+
+ f_primal_objective_dirty = false;
+}
+
+/*--------------------------------------------------------------------------*/
+
 int MasterProblemBlock::solve_master( void )
 {
  const auto & solvers = this->get_registered_solvers();
@@ -2850,6 +3021,8 @@ int MasterProblemBlock::solve_master( void )
   return( Solver::kOK );
   }
 
+ refresh_primal_objective();
+
  const int rc = slv->compute();
 
  // SMS++ pattern: compute() only writes the solution to the Solver's internal
@@ -2874,22 +3047,20 @@ void MasterProblemBlock::set_t( double t )
 
  t_stab = t;
 
- // Pure #kNone has no stabilization at all and pure #kLevel (in the
- // dual MP) only uses the level row; in both cases the Objective is a
- // plain LinearFunction (or a DQuadFunction with no quadratic d/z
- // entries), so there is nothing to refresh.
+ if( IsPrimal ) {
+  f_primal_objective_dirty = true;
+  return;
+  }
+
+ // From here on only the dual MP is handled. Pure #kNone has no
+ // stabilization and pure #kLevel only uses the level row.
  if( StblType == kNone )
   return;
- if( ! IsPrimal && StblType == kLevel )
+ if( StblType == kLevel )
   return;
 
- // The diagonal quadratic coefficient lives in the DQuadFunction wrapped
- // by the FRealObjective set by CreatePrimal/DualMP. Both layouts place
- // the quadratic terms on the first NumVars triple entries:
- //   - primal:  d_i with coefficient  +1/(2t)
- //   - dual:    z_j with coefficient  -t/2
- // so the refresh is a straight loop over [0, NumVars).
- if( ( IsPrimal && Var_d.empty() ) || ( ! IsPrimal && Var_z.empty() ) )
+ // The z_j quadratic terms occupy the first NumVars entries.
+ if( Var_z.empty() )
   return;
 
  auto obj = dynamic_cast< FRealObjective * >( get_objective() );
@@ -2899,24 +3070,13 @@ void MasterProblemBlock::set_t( double t )
  if( ! dqf )
   return;
 
- // refresh only the quadratic coefficient on every d_i / z_j; the linear
- // coefficient carries the b*d term (primal, via set_b) or the ±x_bar*z
- // term (dual, via set_x_bar) and must be preserved as-is. The primal is
- // in min form (quad +1/(2t) on d); the dual carries quad -t/2 on z in
- // textbook max form, negated under IsConvex (whole Objective in min).
+ // Refresh only the quadratic coefficient; the linear coefficient carries
+ // the centre-dependent z term installed by set_x_bar().
  const double sgn = IsConvex ? -1.0 : 1.0;
- const bool primal_has_quad = ( StblType == kProximal ||
-                                StblType == kDoublyStabilized );
- const double quad_coeff = IsPrimal
-                           ? ( primal_has_quad ? 1.0 / ( 2.0 * t_stab )
-                                               : 0.0 )
-                           : - sgn * t_stab / 2.0;
+ const double quad_coeff = - sgn * t_stab / 2.0;
  for( int i = 0 ; i < NumVars ; ++i ) {
-  double lin_coeff = dqf->get_linear_coefficient(
+  const double lin_coeff = dqf->get_linear_coefficient(
                                        DQuadFunction::Index( i ) );
-  if( IsPrimal && f_v2_form )
-   lin_coeff = f_linear_part[ i ] -
-               ( primal_has_quad ? f_x_bar[ i ] / t_stab : 0.0 );
   dqf->modify_term( DQuadFunction::Index( i ) , lin_coeff , quad_coeff );
   }
 
@@ -2991,23 +3151,7 @@ void MasterProblemBlock::set_b( const std::vector< double > & b )
  if( ! IsPrimal || Var_d.empty() )
   return;
 
- auto obj = dynamic_cast< FRealObjective * >( get_objective() );
- if( ! obj )
-  return;
- auto dqf = dynamic_cast< DQuadFunction * >( obj->get_function() );
- if( ! dqf )
-  return;
-
- // The primal variables sit at the first NumVars triple entries. In raw form
- // the proximal expansion adds -x_bar/t to the linear b coefficient.
- const double quad_coeff = ( StblType == kProximal ||
-                             StblType == kDoublyStabilized )
-                           ? 1.0 / ( 2.0 * t_stab ) : 0.0;
- for( int i = 0 ; i < NumVars ; ++i ) {
-  const double lin_coeff = b[ i ] -
-   ( ( f_v2_form && quad_coeff != 0.0 ) ? f_x_bar[ i ] / t_stab : 0.0 );
-  dqf->modify_term( DQuadFunction::Index( i ) , lin_coeff , quad_coeff );
-  }
+ f_primal_objective_dirty = true;
 
  }  // end( MasterProblemBlock::set_b )
 

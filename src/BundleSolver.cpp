@@ -3992,14 +3992,12 @@ bool BundleSolver::GetGi( Index wFi )
    //
    //       ( 1 , - g ) ( v , x ) >= \alpha
    //
-   // The constant produced by get_linearization_constant() therefore
-   // requires a sign flip to match the master-problem convention; the
-   // same flip applies to Alfa1k in the diagonal case above. For a
-   // vertical constraint there is no Lambda1-based promotion to apply,
-   // so the master-side counterpart of Alfa1k_for_master is simply the
-   // flipped raw constant
+   // The master receives the physical row pair (g, alpha) for both diagonal
+   // and vertical linearizations; MasterProblemBlock converts it to the
+   // active primal/dual storage convention. Keep the local sign used by the
+   // old heuristic accumulators, but do not pre-convert the master copy.
    Alfa1k = - Alfa1k;
-   Alfa1k_for_master = - rs( fwFi->get_linearization_constant() );
+   Alfa1k_for_master = rs( fwFi->get_linearization_constant() );
    if( f_sparse_lambda ) {
     ScPr1k = 0;
     const auto & m = v_local2global[ wFi ];
@@ -4011,36 +4009,21 @@ bool BundleSolver::GetGi( Index wFi )
                                  double( 0 ) );
    }
 
-  // helper: materialise a dense (NumVar-sized) copy of G1k either by
-  // scattering sparse coefficients into their global slots or, in dense
-  // mode, by a straight copy. Used by every downstream call that pushes
-  // the linearization into MasterPB (which expects a dense Variable-
-  // -indexed vector). The sign of the subgradient handed to the master
-  // is the opposite of the one carried locally by G1k: when the working
-  // function is concave (f_convex == false), G1k was flipped in place
-  // right after get_linearization_coefficients to live in the convex-min
-  // space used by the heuristic accumulators (Alfa1, eps, ScPr1) and by
-  // the inner pieces of GBS. The dual master, on the other hand, reads
-  // the coupling row
-  //   Var_z[ j ] + sum_i theta_i * A[ i ][ j ] = 0
-  // so installing A == G1k there would yield Var_z = -sum theta * G1k,
-  // i.e. the *opposite* of the textbook bundle aggregate z_aggr =
-  // sum theta * g. The downstream d* = -t * Var_z would then point in
-  // the direction that *increases* F_k instead of decreasing it. Pushing
-  // -G1k to add_cut realigns A with the textbook convention and yields
-  // Var_z = +z_aggr and d* = -t * z_aggr, the genuine direction of
-  // descent of the convex-min image of F
+  // helper: materialise a dense (NumVar-sized) physical copy of G1k either by
+  // scattering sparse coefficients into their global slots or, in dense mode,
+  // by a straight copy. MasterProblemBlock owns the conversion from this
+  // physical cut convention to the active primal/dual storage convention.
   auto make_dense_g1 = [ & ]() -> std::vector< double > {
    if( f_sparse_lambda ) {
     std::vector< double > g( NumVar , 0.0 );
     const auto & m = v_local2global[ wFi ];
     for( Index li = 0 ; li < loc_NV ; ++li )
-     g[ m[ li ] ] = - G1k[ li ];
+     g[ m[ li ] ] = G1k[ li ];
     return( g );
     }
    std::vector< double > g( NumVar );
    for( Index j = 0 ; j < NumVar ; ++j )
-    g[ j ] = - G1k[ j ];
+    g[ j ] = G1k[ j ];
    return( g );
    };
 
@@ -5775,39 +5758,13 @@ void BundleSolver::add_to_bundle( Index k , Index i )
  if( ! f_convex )
   chgsign( G1.data() , NumVar );
 
- // recover the raw constant. MasterPB owns the raw -> stored-b translation
- // for diagonal cuts; doing the Lambda-dependent promotion here would make
- // add_cut() translate the constant a second time. Vertical cuts keep the
- // master-side sign convention used by GetGi().
+ // recover the physical raw constant. MasterPB owns the raw -> stored-b
+ // translation/sign conversion for both diagonal and vertical cuts.
  auto Ai = rs( v_c05f[ k ]->get_linearization_constant( i ) );
 
- if( v_c05f[ k ]->is_linearization_vertical( i ) ) {
-  // mirror the sign convention used in GetGi(): the C05Function returns
-  // alpha for the constraint "g x + alpha [<=|>=] 0", but the master
-  // problem encodes constraints in the form "SubG Lambda <= Ai", which
-  // requires alpha to be negated (for convex; the concave path handles
-  // the rs() flip too)
-  Ai = - Ai;
-  }
-
- // append the ( G1 , Ai ) cut at slot wh of HardCmps[ k ]. The
- // subgradient stored locally lives in the convex-min sign convention
- // (the chgsign above), but the dual master expects every cut's A[i]
- // row to point along the *original* oracle direction so that the
- // coupling
- //
- //   Var_z[ j ] + sum_i theta_i * A[ i ][ j ] = 0
- //
- // produces Var_z = +z_aggr (textbook bundle aggregate), and the
- // derived d* = -t * Var_z = -t * z_aggr is the actual direction of
- // decrease of F. The matching transformation on the GetGi path is
- // performed by the make_dense_g1 helper, which negates G1k before
- // handing the cut over; here we apply the same flip in place. The
- // linearization constant Ai is independent of the gradient sign and
- // is left untouched
+ // append the physical ( G1 , Ai ) cut at slot wh of HardCmps[ k ];
+ // MasterProblemBlock stores it in the requested primal/dual representation.
  if( MasterPB ) {
-  for( auto & v : G1 )
-   v = - v;
   MasterPB->add_cut( int( k ) , int( wh ) , std::move( G1 ) , Ai ,
                      v_c05f[ k ]->is_linearization_vertical( i ) );
   }
@@ -7773,26 +7730,18 @@ void BundleSolver::process_outstanding_Modification( void )
      if( ! f_convex )
       chgsign( Gi.data() , loc_NV );
 
-     // for diagonal cuts the native value rs(get_linearization_constant)
-     // already is the alpha_raw the master keeps; for vertical cuts the
-     // convention layer between C05Function ( g . x + alpha <= 0 ) and
-     // PolyhedralFunction ( A . x + b >= 0 ) requires the local sign flip
-     // on alpha (the equivalent flip on g is the global negation below)
-     if( v_c05f[ k ]->is_linearization_vertical( i ) )
-      Ai = - Ai;
-
      if( MasterPB ) {
-      // master-side subgradient convention A = - g_internal, scattered to
-      // global Variable slots, exactly as make_dense_g1() does in GetGi
+      // scatter the physical subgradient to global Variable slots; MPB will
+      // convert it to the active primal/dual storage convention.
       std::vector< double > g_master( NumVar , 0.0 );
       if( f_sparse_lambda ) {
        const auto & m = v_local2global[ k ];
        for( Index li = 0 ; li < loc_NV ; ++li )
-        g_master[ m[ li ] ] = - Gi[ li ];
+        g_master[ m[ li ] ] = Gi[ li ];
        }
       else
        for( Index j = 0 ; j < NumVar ; ++j )
-        g_master[ j ] = - Gi[ j ];
+        g_master[ j ] = Gi[ j ];
       MasterPB->modify_cut( int( k ) , int( InvItemVcblr[ k ][ i ] ) ,
                             std::move( g_master ) , Ai );
       }

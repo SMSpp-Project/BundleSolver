@@ -1098,9 +1098,13 @@ class MasterProblemBlock : public Block {
   * the matching side is finite; otherwise the slack stays fixed to 0,
   * meaning the bound does not really apply.
   *
+  * In the primal MP the same box is installed directly on the absolute x
+  * variables in raw form, or translated to [ L - x_bar , U - x_bar ] on the
+  * displacement variables.
+  *
   * \p L and \p U must both have size NumVars; passing an empty vector is
   * equivalent to "no bound on that side" (= all slacks of that side
-  * stay / become fixed to 0). No-op under the primal MP. */
+  * stay / become fixed to 0). */
 
  void set_box( const std::vector< double > & L ,
                const std::vector< double > & U );
@@ -1228,7 +1232,7 @@ class MasterProblemBlock : public Block {
   * after solve_master(). */
 
  [[nodiscard]] double get_lambda( void ) const
-  { return( Var_lambda.get_value() ); }
+  { return( IsPrimal ? 1.0 : Var_lambda.get_value() ); }
 
 /*--------------------------------------------------------------------------*/
  /// returns the physical gamma multiplier of the k-th hard component
@@ -1263,10 +1267,10 @@ class MasterProblemBlock : public Block {
 /*--------------------------------------------------------------------------*/
  /// update the proximal stabilization parameter t
  /** Sets the proximal stabilization parameter t used in the quadratic /
-  * linear term of the MP Objective. The new value is stored in #t_stab; the
-  * coefficients of the Objective are updated only if the MP has already been
-  * built (i.e. after a CreateEmptyMP() call) so that the same value can also be
-  * configured before the MP is generated.
+  * linear term of the MP Objective. The new value is stored in #t_stab. In the
+  * primal MP the abstract Objective update is deferred and batched with any
+  * intervening centre / linear-part changes immediately before the next actual
+  * solve; in the dual MP the quadratic coefficient is updated immediately.
   *
   * \note this method only updates the proximal coefficient. The Bundle
   *       algorithm is responsible for issuing the call at every t-change
@@ -1289,7 +1293,9 @@ class MasterProblemBlock : public Block {
  /** Sets the linear coefficient on every d_i of the primal MP Objective
   * to the value \p b[i] (i.e. the "b" of the paper's primal MP b * d + sum_k
   * v^k + (1/(2t)) || d ||^2_2). \p b must have size #NumVars. The call is a
-  * no-op under the dual MP. */
+  * no-op under the dual MP. The abstract primal Objective is synchronized
+  * immediately before the next actual master solve, together with any pending
+  * t / centre change. */
 
  void set_b( const std::vector< double > & b );
 
@@ -1423,6 +1429,10 @@ class MasterProblemBlock : public Block {
                                 ///< d in translated primal form, absolute x
                                 ///< in raw primal form (free, size NumVars)
 
+ std::vector< BoxConstraint > Bounds_d;
+                                ///< per-coordinate primal box on x (raw form)
+                                ///< or on d (translated form)
+
  std::vector< ColVariable > Var_v_hard;
                                 ///< the epigraph variables v^k
                                 ///< per hard component
@@ -1493,6 +1503,10 @@ class MasterProblemBlock : public Block {
  // - - - - - - - - - - - - - - -  stabilization parameters  - - - - - - - -
 
  double t_stab;     ///< current value of the proximal parameter t
+
+ bool f_primal_objective_dirty = false;
+                    ///< whether the primal objective must be synchronized
+                    ///< before the next actual master solve
 
  double f_C = 0.0;  ///< additive shift used to express LB_xbar = LB + C
                     ///< and Lvl_xbar = Lvl + C, with C = -f^0( x_bar )
@@ -1614,6 +1628,10 @@ class MasterProblemBlock : public Block {
 /*--------------------------------------------------------------------------*/
 /*---------------------------- PRIVATE METHODS -----------------------------*/
 /*--------------------------------------------------------------------------*/
+
+ void refresh_primal_objective();
+                    ///< emit one batched objective Modification from the
+                    ///< current t, x_bar and linear-part state
 
  static PolyhedralFunctionBlock *
  pfb_at( const std::vector< Block * > & HardCmps , int k , const char * fn );
