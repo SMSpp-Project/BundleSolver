@@ -495,16 +495,16 @@ void MasterProblemBlock::CreatePrimalMP( stabilization_type Stbl )
  // directly via get_v(), so no v_k coupling row is needed
 
  Var_d.clear();
- Var_d.resize( NumVars );          // d is free by default
+ Var_d.resize( NumVars );          // x (raw form) or d (translated form)
  if( NumVars > 0 )
-  add_static_variable( Var_d , "MPB_d" );
+  add_static_variable( Var_d , f_v2_form ? "MPB_x" : "MPB_d" );
 
  // ---- one PolyhedralFunctionBlock sub-Block per "hard" component ---------
  //
  // The PFB is wired in its *linearized primal* representation (rep == 1).
- // Each PFB's "x" variables are bound to Var_d (the master step), so each
- // cut v_k >= a_i . d + b_i pushed by add_row hits the right master-side
- // variables. We do NOT call set_lambda() here: that is dual-form specific
+ // Each PFB's variables are bound to Var_d. In raw form these are the
+ // absolute x variables; in translated form they are the step d.
+ // We do NOT call set_lambda() here: that is dual-form specific
  // and would introduce an extra slack in the bundle's normalization; the
  // linearized-primal rep does not have a lambda at all (no dual
  // normalization row).
@@ -573,7 +573,8 @@ void MasterProblemBlock::CreatePrimalMP( stabilization_type Stbl )
 
  // ---- Objective ---------------------------------------------------------
  //
- //   min  b * d + sum_k f_v[ k ] + (1/(2t)) || d ||^2_2
+ // translated: min b*d + sum_k f_v[k] + (1/(2t)) ||d||^2
+ // raw:        min b*x + sum_k f_v[k] + (1/(2t)) ||x-x_bar||^2
  //
  // The proximal quadratic term (1/(2t))||d||^2_2 is present only under
  // kProximal / kDoublyStabilized; under pure kLevel the master is an LP
@@ -598,8 +599,11 @@ void MasterProblemBlock::CreatePrimalMP( stabilization_type Stbl )
  triples.reserve( NumVars );
 
  const double quad_coeff = has_quad ? 1.0 / ( 2.0 * t_stab ) : 0.0;
- for( int i = 0 ; i < NumVars ; ++i )
-  triples.emplace_back( & Var_d[ i ] , 0.0 , quad_coeff );
+ for( int i = 0 ; i < NumVars ; ++i ) {
+  const double lin_coeff = ( f_v2_form && has_quad )
+                           ? - f_x_bar[ i ] / t_stab : 0.0;
+  triples.emplace_back( & Var_d[ i ] , lin_coeff , quad_coeff );
+  }
 
  FRealObjective * obj;
  if( triples.empty() ) {
@@ -1923,8 +1927,9 @@ std::vector< double > MasterProblemBlock::get_d_vector( void ) const
 
  if( IsPrimal ) {
   out.reserve( Var_d.size() );
-  for( const auto & di : Var_d )
-   out.push_back( di.get_value() );
+  for( std::size_t i = 0 ; i < Var_d.size() ; ++i )
+   out.push_back( Var_d[ i ].get_value() -
+                  ( f_v2_form ? f_x_bar[ i ] : 0.0 ) );
   return( out );
   }
 
@@ -1944,12 +1949,13 @@ double MasterProblemBlock::get_Gid_aggregate( void ) const
   // the per-PFB get_aggregated_subgradient and d directly read from
   // the master-side Var_d
   const auto z = get_z_vector();
-  if( z.empty() || Var_d.empty() )
+  const auto d = get_d_vector();
+  if( z.empty() || d.empty() )
    return( 0.0 );
-  const std::size_t n = std::min( z.size() , Var_d.size() );
+  const std::size_t n = std::min( z.size() , d.size() );
   double s = 0.0;
   for( std::size_t j = 0 ; j < n ; ++j )
-   s += z[ j ] * Var_d[ j ].get_value();
+   s += z[ j ] * d[ j ];
   return( s );
   }
 
@@ -2559,6 +2565,25 @@ void MasterProblemBlock::set_x_bar( const std::vector< double > & x_bar )
  // marked dynamic by the original ConstraintSide; the static side(s)
  // keep their snapshot from absorb_BBF_into_primal_MP()
  if( IsPrimal ) {
+  // Raw primal form: Var_d stores the absolute point x. Expanding
+  // ||x-x_bar||^2/(2t) adds -x_bar/t to the linear coefficient; the omitted
+  // constant ||x_bar||^2/(2t) does not affect the minimizer.
+  if( f_v2_form ) {
+   auto obj = dynamic_cast< FRealObjective * >( get_objective() );
+   auto dqf = obj ? dynamic_cast< DQuadFunction * >( obj->get_function() )
+                  : nullptr;
+   if( dqf ) {
+    const bool has_quad = ( StblType == kProximal ||
+                            StblType == kDoublyStabilized );
+    const double quad = has_quad ? 1.0 / ( 2.0 * t_stab ) : 0.0;
+    for( int j = 0 ; j < NumVars ; ++j ) {
+     const double lin = f_linear_part[ j ] -
+                        ( has_quad ? f_x_bar[ j ] / t_stab : 0.0 );
+     dqf->modify_term( DQuadFunction::Index( j ) , lin , quad );
+     }
+    }
+   }
+
   for( auto & row : EasyBBFRows ) {
    double coupling = row.b_i;
    for( int j = 0 ; j < NumVars ; ++j )
@@ -2675,10 +2700,11 @@ void MasterProblemBlock::set_linear_part( const std::vector< double > & b )
 
  f_linear_part = b;
 
- // under the primal MP the linear part is folded directly into the master
- // Objective by set_b and there is nothing to install in the coupling rows
- if( IsPrimal )
+ // Under the primal MP the linear part belongs directly to the Objective.
+ if( IsPrimal ) {
+  set_b( b );
   return;
+  }
 
  // Dual MP: the linear part b of the original sum-function enters the
  // j-th coupling row *scaled by the master multiplier lambda*
@@ -2817,7 +2843,8 @@ int MasterProblemBlock::solve_master( void )
  // kOK to the caller
  if( is_bundle_empty() ) {
   if( IsPrimal )
-   for( auto & di : Var_d ) di.set_value( 0.0 );
+   for( int i = 0 ; i < int( Var_d.size() ) ; ++i )
+    Var_d[ i ].set_value( f_v2_form ? f_x_bar[ i ] : 0.0 );
   else
    for( auto & zi : Var_z ) zi.set_value( 0.0 );
   return( Solver::kOK );
@@ -2878,11 +2905,18 @@ void MasterProblemBlock::set_t( double t )
  // in min form (quad +1/(2t) on d); the dual carries quad -t/2 on z in
  // textbook max form, negated under IsConvex (whole Objective in min).
  const double sgn = IsConvex ? -1.0 : 1.0;
- const double quad_coeff = IsPrimal ? 1.0 / ( 2.0 * t_stab )
-                                    : - sgn * t_stab / 2.0;
+ const bool primal_has_quad = ( StblType == kProximal ||
+                                StblType == kDoublyStabilized );
+ const double quad_coeff = IsPrimal
+                           ? ( primal_has_quad ? 1.0 / ( 2.0 * t_stab )
+                                               : 0.0 )
+                           : - sgn * t_stab / 2.0;
  for( int i = 0 ; i < NumVars ; ++i ) {
-  const double lin_coeff = dqf->get_linear_coefficient(
-                                            DQuadFunction::Index( i ) );
+  double lin_coeff = dqf->get_linear_coefficient(
+                                       DQuadFunction::Index( i ) );
+  if( IsPrimal && f_v2_form )
+   lin_coeff = f_linear_part[ i ] -
+               ( primal_has_quad ? f_x_bar[ i ] / t_stab : 0.0 );
   dqf->modify_term( DQuadFunction::Index( i ) , lin_coeff , quad_coeff );
   }
 
@@ -2949,7 +2983,9 @@ void MasterProblemBlock::set_b( const std::vector< double > & b )
   throw( std::invalid_argument(
        "MasterProblemBlock::set_b: b must have NumVars entries" ) );
 
- // Only the primal MP exposes a linear b*d term: in the dual MP the
+ f_linear_part = b;
+
+ // Only the primal MP exposes a linear b*d / b*x term: in the dual MP the
  // contribution x_bar*b lives in the driver-managed x_bar*z linear
  // part, which is updated through a different API.
  if( ! IsPrimal || Var_d.empty() )
@@ -2962,12 +2998,16 @@ void MasterProblemBlock::set_b( const std::vector< double > & b )
  if( ! dqf )
   return;
 
- // d_i sit at the first NumVars triple entries of the DQuadFunction
+ // The primal variables sit at the first NumVars triple entries. In raw form
+ // the proximal expansion adds -x_bar/t to the linear b coefficient.
  const double quad_coeff = ( StblType == kProximal ||
                              StblType == kDoublyStabilized )
                            ? 1.0 / ( 2.0 * t_stab ) : 0.0;
- for( int i = 0 ; i < NumVars ; ++i )
-  dqf->modify_term( DQuadFunction::Index( i ) , b[ i ] , quad_coeff );
+ for( int i = 0 ; i < NumVars ; ++i ) {
+  const double lin_coeff = b[ i ] -
+   ( ( f_v2_form && quad_coeff != 0.0 ) ? f_x_bar[ i ] / t_stab : 0.0 );
+  dqf->modify_term( DQuadFunction::Index( i ) , lin_coeff , quad_coeff );
+  }
 
  }  // end( MasterProblemBlock::set_b )
 

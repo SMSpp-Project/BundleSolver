@@ -872,9 +872,9 @@ class MasterProblemBlock : public Block {
 
 /*--------------------------------------------------------------------------*/
  /// returns the primal direction d in a fresh std::vector
- /** NDOFi counterpart of Master->Readd(). In the primal MP the step
-  * direction d is a static-variable group (Var_d); the call materialises its
-  * current value. In the dual MP under proximal stabilization the primal
+ /** NDOFi counterpart of Master->Readd(). In the translated primal MP the step
+  * d is stored directly in Var_d. In the raw primal MP Var_d stores absolute x
+  * and the call returns x - x_bar. In the dual MP under proximal stabilization the primal
   * direction is d* = -t * z*, hence the result is -t_stab times get_z_vector().
   * Meaningful only after solve_master(). */
 
@@ -974,10 +974,10 @@ class MasterProblemBlock : public Block {
  void set_C( double C );
 
 /*--------------------------------------------------------------------------*/
- /// select the dual master formulation ( displacement form vs iterate form )
- /** Select which algebraically-equivalent storage frame the dual master uses
-  * for the diagonal cuts. The choice is INTERNAL to MasterProblemBlock and
-  * invisible to the driver, which always passes / reads raw alpha.
+ /// select the master storage frame ( translated vs raw/iterate )
+ /** Select which algebraically-equivalent storage frame the master uses.
+  * The choice is INTERNAL to MasterProblemBlock and invisible to the driver,
+  * which always passes / reads raw alpha.
   *
   * - 0 = displacement form ( default, production ): cuts are stored in the
   *   linearization-error frame  b = F_k( x_bar ) - alpha + g . x_bar; the
@@ -986,22 +986,20 @@ class MasterProblemBlock : public Block {
   *   set_reference() re-shifts the constants as the centre moves. This path
   *   is left exactly as-is.
   *
-  * - 1 = iterate form: the x_bar dependence is carried by the explicit
-  *   linear coefficient  sgn * x_bar  on Var_z ( the +x_bar^T R cross-term
-  *   of the prox expansion ), the box stays invariant, and the cut constant
-  *   is stored function-value-relative  b = -alpha + F_k( x_bar )
-  *   ( substitution v^k = vt^k + F_k( x_bar ) ) to keep it O( g . x_bar )
-  *   rather than the raw O( |F_k| ). Provided for reference / diagnosing the
-  *   QP conditioning gap against the displacement form.
+  * - 1 = raw/iterate form: in the primal MP the optimization variable is the
+  *   absolute point x and the proximal term is ||x-x_bar||^2/(2t). In the
+  *   dual MP the x_bar dependence is carried by the explicit linear
+  *   coefficient sgn * x_bar on Var_z and the cut constant is stored
+  *   function-value-relative as b = -alpha + F_k( x_bar ).
   *
-  * Set after configure() and before the first set_reference / set_x_bar /
-  * add_cut; switching mid-solve is not supported. Out-of-range -> 0. */
+  * Set before configure(); switching mid-solve is not supported.
+  * Out-of-range -> 0. */
 
  void set_v2_form( int form = 1 ) noexcept
   { f_v2_form = ( form < 0 || form > 1 ) ? 0 : form; }
 
 /*--------------------------------------------------------------------------*/
- /// query the dual master formulation ( 0 = displacement, 1 = iterate )
+ /// query the master storage frame ( 0 = translated, 1 = raw/iterate )
 
  [[ nodiscard ]] int get_v2_form() const noexcept { return( f_v2_form ); }
 
@@ -1422,7 +1420,8 @@ class MasterProblemBlock : public Block {
  // - - - - - - - - - - -  static MP entities (primal form)  - - - - - - - - -
 
  std::vector< ColVariable > Var_d;
-                                ///< the step variables d (free, size NumVars)
+                                ///< d in translated primal form, absolute x
+                                ///< in raw primal form (free, size NumVars)
 
  std::vector< ColVariable > Var_v_hard;
                                 ///< the epigraph variables v^k
@@ -1572,12 +1571,13 @@ class MasterProblemBlock : public Block {
 
  double f_lev;      ///< current value of the level f_lev (level / doubly only)
 
- int f_v2_form = 0; ///< dual master storage frame: 0 = displacement form
+ int f_v2_form = 0; ///< master storage frame: 0 = translated/displacement
                     ///< (default, production; cuts in the lin-error frame,
                     ///< x_bar baked into the constants, 0 linear z term),
-                    ///< 1 = iterate form (x_bar in the explicit +x_bar^T R
-                    ///< z linear term, cut constants function-value-relative
-                    ///< -alpha + F_k( x_bar )). See set_v2_form
+                    ///< 1 = raw/iterate form. The primal variable is absolute
+                    ///< x; in the dual MP x_bar is in the explicit +x_bar^T R
+                    ///< z term and cut constants are function-value-relative.
+                    ///< See set_v2_form
 
  int HardCmpScaling = 0;
                     ///< bit-wise PFB scaling for hard components:

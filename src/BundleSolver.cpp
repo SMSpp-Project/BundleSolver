@@ -4914,6 +4914,11 @@ void BundleSolver::CreateMPB( void )
 
 void BundleSolver::InitMPB( void )
 {
+ // configure() constructs the primal variables and Objective, so select the
+ // storage frame before calling it. In primal raw mode the optimization
+ // variable is the absolute point x rather than the displacement d.
+ MasterPB->set_v2_form( MPV2Form );
+
  // pick primal vs dual: easy components force the dual form
  const bool want_primal = IsMPPrimal && ! ( DoEasy && ( NrEasy > 0 ) );
  if( IsMPPrimal && ! want_primal )
@@ -4972,11 +4977,8 @@ void BundleSolver::InitMPB( void )
                       IsEasy ,
                       MPHScaling );
 
- // Dual-master storage frame: 0 = displacement form (default), 1 = iterate
- // form. This is an algorithmic BundleSolver parameter so it can be selected
- // from the ComputeConfig, e.g. NDOPar.txt, without process-wide flags.
- MasterPB->set_v2_form( MPV2Form );
-
+ // The storage frame has already been selected before configure(): 0 is the
+ // translated/displacement form, 1 the raw/iterate form.
  // optional "lazy reference" for the displacement form: defer the per-cut
  // g . ( x_bar - x_ref ) shift to the lin-z and re-align x_ref only when the
  // centre drifts past the tolerance. 0 ( the default ) keeps the plain
