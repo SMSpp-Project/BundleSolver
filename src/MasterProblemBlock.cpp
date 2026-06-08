@@ -3019,13 +3019,25 @@ void MasterProblemBlock::set_LB( int k , double LB )
   throw( std::invalid_argument(
        "MasterProblemBlock::set_LB: hard-component index out of range" ) );
 
- // Primal MP: v^k >= LB^k via BoxConstraint LHS.
+ if( k >= int( HardCmps.size() ) || ! HardCmps[ k ] )
+  return;
+ auto pfb = dynamic_cast< PolyhedralFunctionBlock * >( HardCmps[ k ] );
+ if( ! pfb )
+  return;
+
+ if( k < int( f_LB_raw.size() ) )
+  f_LB_raw[ k ] = LB;
+
+ auto & poly = pfb->get_PolyhedralFunction();
+ const double no_bound = poly.is_convex()
+                         ? - Inf< Function::FunctionValue >()
+                         :   Inf< Function::FunctionValue >();
+
+ // Primal raw MP: the PFB epigraph variable is the physical value v^k, so its
+ // native global bound is exactly the row v^k >= LB^k. The PFB dispatcher
+ // propagates modify_bound() to its f_bcv BoxConstraint.
  if( IsPrimal ) {
-  if( int( Bounds_v_hard.size() ) != NoHardCmps )
-   throw( std::logic_error(
-        "MasterProblemBlock::set_LB: primal MP not built or bounds "
-        "group has the wrong size" ) );
-  Bounds_v_hard[ k ].set_lhs( LB );
+  poly.modify_bound( std::isfinite( LB ) ? LB : no_bound );
   return;
   }
 
@@ -3037,14 +3049,6 @@ void MasterProblemBlock::set_LB( int k , double LB )
  // to the per-PFB gamma * (.) contribution in the dual Objective via
  // PolyhedralFunction::modify_bound(). When LB^k is at -INFshift the
  // bound is genuinely absent and gamma stays fixed to 0
- if( k >= int( HardCmps.size() ) || ! HardCmps[ k ] )
-  return;
- auto pfb = dynamic_cast< PolyhedralFunctionBlock * >( HardCmps[ k ] );
- if( ! pfb )
-  return;
-
- if( k < int( f_LB_raw.size() ) )
-  f_LB_raw[ k ] = LB;
  const double F_xb = ( k < int( f_F_at_x_bar.size() ) )
                      ? f_F_at_x_bar[ k ] : 0.0;
 
@@ -3055,7 +3059,6 @@ void MasterProblemBlock::set_LB( int k , double LB )
  // LB through the side-appropriate "no bound" sentinel: this collapses
  // the gamma^k * LB^k term in the dual Objective to zero, the same
  // effect as set_global_LB() under !isfinite(LB)
- auto & poly = pfb->get_PolyhedralFunction();
  if( std::isfinite( LB ) )
   // the lower bound LB^k is a *horizontal* cut ( g = 0, constant = LB ): its
   // master-side stored value is therefore the same linearization-error form
@@ -3068,9 +3071,6 @@ void MasterProblemBlock::set_LB( int k , double LB )
   // complementary slackness.
   poly.modify_bound( ( IsConvex ? 1.0 : -1.0 ) * ( F_xb - LB ) );
  else {
-  const double no_bound = poly.is_convex()
-                          ? - Inf< Function::FunctionValue >()
-                          :   Inf< Function::FunctionValue >();
   poly.modify_bound( no_bound );
   }
 
@@ -3111,27 +3111,22 @@ void MasterProblemBlock::set_fictitious_LB( int k , bool on )
  const double fict = std::isfinite( f_global_LB_xbar )
                      ? ( f_global_LB_xbar - 1.0 ) : 0.0;
 
- if( IsPrimal ) {
-  if( int( Bounds_v_hard.size() ) == NoHardCmps )
-   Bounds_v_hard[ k ].set_lhs( on ? fict
-                                   : - Inf< Function::FunctionValue >() );
-  return;
-  }
-
  if( k >= int( HardCmps.size() ) || ! HardCmps[ k ] )
   return;
  auto pfb = dynamic_cast< PolyhedralFunctionBlock * >( HardCmps[ k ] );
  if( ! pfb )
   return;
  auto & poly = pfb->get_PolyhedralFunction();
- if( on )
-  poly.modify_bound( ( IsConvex ? 1.0 : -1.0 ) * fict );
- else {
-  const double no_bound = poly.is_convex()
-                          ? - Inf< Function::FunctionValue >()
-                          :   Inf< Function::FunctionValue >();
-  poly.modify_bound( no_bound );
-  }
+ const double no_bound = poly.is_convex()
+                         ? - Inf< Function::FunctionValue >()
+                         :   Inf< Function::FunctionValue >();
+
+ if( IsPrimal )
+  // In the raw primal frame fict is a horizontal epigraph row. Its value does
+  // not affect the direction and is removed as soon as a real cut arrives.
+  poly.modify_bound( on ? fict : no_bound );
+ else
+  poly.modify_bound( on ? ( IsConvex ? 1.0 : -1.0 ) * fict : no_bound );
  }  // end( MasterProblemBlock::set_fictitious_LB )
 
 /*--------------------------------------------------------------------------*/
