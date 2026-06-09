@@ -3029,8 +3029,16 @@ int MasterProblemBlock::solve_master( void )
  // buffers; the ColVariable on the Block stay at their stale values until
  // get_var_solution() is called. Without this push, the driver
  // would read d* / z* / theta as zeros after every master solve
- if( rc == Solver::kOK || rc == Solver::kLowPrecision )
+ if( rc == Solver::kOK || rc == Solver::kLowPrecision ) {
   slv->get_var_solution( nullptr );
+  // In the primal linearized PFB representation the bundle multipliers are
+  // the dual values of the cut constraints, rather than explicit theta
+  // variables. Bundle management and aggregation therefore need both sides
+  // of the QP solution.
+  if( IsPrimal )
+   if( auto * cda = dynamic_cast< CDASolver * >( slv ) )
+    cda->get_dual_solution( nullptr );
+  }
 
  return( rc );
  }  // end( MasterProblemBlock::solve_master )
@@ -3265,10 +3273,16 @@ void MasterProblemBlock::set_fictitious_LB( int k , bool on )
                          ? - Inf< Function::FunctionValue >()
                          :   Inf< Function::FunctionValue >();
 
- if( IsPrimal )
-  // In the raw primal frame fict is a horizontal epigraph row. Its value does
-  // not affect the direction and is removed as soon as a real cut arrives.
-  poly.modify_bound( on ? fict : no_bound );
+ if( IsPrimal ) {
+  // In the translated primal frame v_k is already relative to F_k(x_bar), so
+  // the empty component disappears with v_k >= 0. In the raw frame v_k is
+  // the physical function value instead: use F_k(x_bar), which again gives
+  // zero after get_FiBLambda() subtracts the reference.
+  const double primal_fict =
+   ( f_v2_form && k < int( f_F_at_x_bar.size() ) )
+   ? f_F_at_x_bar[ k ] : 0.0;
+  poly.modify_bound( on ? primal_fict : no_bound );
+  }
  else
   poly.modify_bound( on ? ( IsConvex ? 1.0 : -1.0 ) * fict : no_bound );
  }  // end( MasterProblemBlock::set_fictitious_LB )

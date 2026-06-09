@@ -652,7 +652,11 @@ int BundleSolver::compute( bool changedvars )
      continue;
     const bool want = ( NrItems[ k ] == 0 ) &&
                       ( LowerBound[ k ] <= - INFshift );
-    if( want != FictLB[ k ] ) {
+    // A raw-primal fictitious bound is F_k(x_bar), rather than the constant
+    // zero used by the translated/dual frames, so refresh it after every
+    // possible reference-point change while the component remains empty.
+    if( ( want != FictLB[ k ] ) ||
+        ( want && IsMPPrimal && MPV2Form ) ) {
      MasterPB->set_fictitious_LB( int( k ) , want );
      FictLB[ k ] = want;
      }
@@ -4588,6 +4592,13 @@ bool BundleSolver::FindNext( void )
   f_wFi = ( f_wFi + 1 ) % NrFi;    // next patient, please
   if( NrEasy && IsEasy[ f_wFi ] )  // skip easy components
    continue;
+  // A fictitious lower bound only keeps the master well-defined while a
+  // hard component has no cuts; it is not a substitute for its model.
+  // Force that component to be evaluated again so a real linearization can
+  // refill the bundle.
+  if( ( NrItems[ f_wFi ] == 0 ) &&
+      ( CurrNrEvls[ f_wFi ] < MaxNrEvls ) )
+   return( true );
   if( ( FiStatus[ f_wFi ] == kUnEval ) ||
       ( ( FiStatus[ f_wFi ] < kError ) && ( FiStatus[ f_wFi ] > kOK ) &&
         ( CurrNrEvls[ f_wFi ] < MaxNrEvls ) ) )
