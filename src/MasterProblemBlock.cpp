@@ -284,7 +284,7 @@ void MasterProblemBlock::configure(
  // inner Solver as part of the master, except for sub-Block subtrees
  // listed in ignored_blocks (which the inner Solver will skip via
  // Solver::set_excluded_blocks(), installed by BlockSolverConfig::apply
- // inside register_Solver)
+ // inside register_Solver) TODO
  f_original_block = original_block;
  if( f_original_block )
   f_original_block->transfer_ownership_to( this );
@@ -349,13 +349,24 @@ void MasterProblemBlock::configure(
     throw( std::invalid_argument(
          "MasterProblemBlock::configure: easy component " +
          std::to_string( k ) + " is a LagBFunction with no inner Block" ) );
-   // generate the per-row stationarity constraints
-   //     E^k_i u^k + lambda * e^k_i = 0
-   // BEFORE moving the inner Block under *this*:
-   // absorb_LBF_into_dual_MP() reaches into the inner Block via
-   // lbf->get_inner_block(), which still resolves to `inner` here but
-   // would return nullptr after transfer_ownership_to
-   absorb_LBF_into_dual_MP( lbf , component );
+
+   /* IMPORTANT NOTE: In the dual version, the per-row stationarity
+    * constraints of each easy components would read:
+    *       
+    *       E^k_i u^k + lambda * e^k_i = 0
+    * 
+    * However, in the current implementation we simply register the inner
+    * block of the LagBFunction to *this, directly importing the constraints
+    * 
+    *       E^k_i u^k + e^k_i = 0
+    * 
+    * Adding the contribution of \lambda would require "hacking" the internal
+    * representation of LagBFunction, hence contradicting the general idea 
+    * of SMS++. For this reason, if easy components are available in the dual
+    * master problem, we simply force \lambda = 1, making the two formulations
+    * equivalent. Hopefully, this will be addressed in the future with some
+    * copy or scaling mechanism. */
+
    inner->transfer_ownership_to( this );
    EasyCmps.push_back( inner );
    continue;
@@ -657,14 +668,16 @@ void MasterProblemBlock::CreateDualMP( stabilization_type Stbl )
  //
  //     v = d b + sum_E pi^k e^k + sum_H v_x^k
  //
- // of the lower model  and the
- // stationarity condition (ii) at v_x^k: lambda = sum_i theta^k_i +
- // gamma^k for every k in H). Hence the same lambda enters the simplex
- // (= normalization) row of *every* hard component PFB sub-Block with
- // coefficient +1 (cf. PolyhedralFunctionBlock::set_lambda, called below
- // with a single shared pointer), so each per-PFB row reads
+ // of the lower model and the stationarity condition (ii) at 
+ //     
+ //     v_x^k: lambda = sum_i theta^k_i + gamma^k for every k in H. 
  //
- //     sum_i theta^k_i + gamma^k + lambda = 1.
+ // Hence the same lambda enters the simplex (= normalization) row of *every* 
+ // hard component PFB sub-Block with coefficient +1 
+ // (cf. PolyhedralFunctionBlock::set_lambda, called below with a single 
+ // shared pointer), so each per-PFB row reads
+ //
+ //     sum_i theta^k_i + gamma^k = lambda.
  //
  // r is the non-negative multiplier of the global lower bound v >= LB;
  // omega is the non-negative multiplier of the level row Lvl >= v,
@@ -675,8 +688,24 @@ void MasterProblemBlock::CreateDualMP( stabilization_type Stbl )
  //
  // which becomes the single static "normalization" constraint installed
  // below; the per-PFB rows are owned by the PFB sub-Blocks themselves.
+ //
+ // NOTE: when easy components are considered, \lambda is fixed to 1 (see 
+ // MasterProblemBlock.353 for further details). This means that the above
+ // equation reads
+ //
+ //      r = omega.
+ //
+ // Therefore the global lower-bound multiplier r and the level multiplier 
+ // omega can only appear in a perfectly balanced way. In particular, if 
+ // omega is absent or fixed to zero, then r is forced to zero as well, 
+ // so the global lower bound cannot contribute through its dual multiplier.
 
- Var_lambda.is_positive( true , eNoMod );
+ if( EasyCmps.size() > 0 ){
+  Var_lambda.set_value( 1 );
+  Var_lambda.is_fixed( true , eNoMod );
+ }
+ else
+  Var_lambda.is_positive( true , eNoMod );
 
  // Var_r is the dual multiplier of the global LB row. It is structurally
  // present in every stabilization type, but only carries an objective
