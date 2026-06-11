@@ -1633,6 +1633,17 @@ class MasterProblemBlock : public Block {
                     ///< index of the first s^-_j entry in the DQuadFunction
                     ///< triples; carries the -sgn*(U_j - x_bar_j) coefficient
 
+ int easy_obj_idx = -1;
+                    ///< index of the first displacement-form easy objective
+                    ///< correction in the root DQuadFunction, or -1
+
+ std::vector< ColVariable * > EasyObjVars;
+                    ///< unique easy inner variables receiving x_bar * g(u)
+
+ std::vector< std::vector< std::pair< Index , double > > > EasyObjCoeffs;
+                    ///< per easy variable, the (global j, g coefficient)
+                    ///< contributions determining its objective coefficient
+
 /*--------------------------------------------------------------------------*/
 /*--------------------- PRIVATE PART OF THE CLASS --------------------------*/
 /*--------------------------------------------------------------------------*/

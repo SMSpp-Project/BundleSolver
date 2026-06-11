@@ -75,6 +75,8 @@ void MasterProblemBlock::clear()
  // are owned by the base Block, which will dispose of them in due time)
  EasyCmps.clear();
  EasyCmps_SB.clear();
+ EasyObjVars.clear();
+ EasyObjCoeffs.clear();
  HardCmps.clear();
 
  // absorbed BendersBFunction RowConstraints live as static_constraint
@@ -102,6 +104,7 @@ void MasterProblemBlock::clear()
  z_obj_idx     = -1;
  r_obj_idx     = -1;
  omega_obj_idx = -1;
+ easy_obj_idx  = -1;
 
  // drop the dynamically-sized variable / constraint groups (primal d /
  // v^k / Bounds_v_hard, dual z / CouplingCns); the scalar members
@@ -1019,6 +1022,53 @@ void MasterProblemBlock::CreateDualMP( stabilization_type Stbl )
   s_minus_obj_idx = int( triples.size() );
   for( int j = 0 ; j < NumVars ; ++j )
    triples.emplace_back( & Var_s_minus[ j ] , 0.0 , 0.0 );
+  }
+
+ // In iterate form, x_bar * z already contains x_bar * g^k(u^k) for every
+ // exact easy component through the coupling equations. Displacement form
+ // has no x_bar * z term, so carry the equivalent contribution explicitly:
+ //
+ //     sum_k sum_j x_bar_j g^k_j(u^k).
+ //
+ // Register each involved inner variable once. set_x_bar() will update only
+ // these linear coefficients when the stability centre changes.
+ EasyObjVars.clear();
+ EasyObjCoeffs.clear();
+ easy_obj_idx = -1;
+ if( ! f_v2_form ) {
+  for( Index easy_id = 0 ; easy_id < EasyCmps.size() ; ++easy_id ) {
+   auto * lbf = EasyCmps[ easy_id ];
+   for( Index i = 0 ; i < lbf->get_num_active_var() ; ++i ) {
+    const Index j = easy_local_to_global( easy_id , i );
+    auto * gi = dynamic_cast< LinearFunction * >(
+                                      lbf->get_Lagrangian_term( i ) );
+    if( ! gi )
+     throw( std::logic_error(
+          "MasterProblemBlock::CreateDualMP: LagBFunction term is not "
+          "a LinearFunction" ) );
+
+    for( Function::Index h = 0 ; h < gi->get_num_active_var() ; ++h ) {
+     auto * u = static_cast< ColVariable * >( gi->get_active_var( h ) );
+     auto it = std::find( EasyObjVars.begin() , EasyObjVars.end() , u );
+     std::size_t pos;
+     if( it == EasyObjVars.end() ) {
+      pos = EasyObjVars.size();
+      EasyObjVars.push_back( u );
+      EasyObjCoeffs.emplace_back();
+      }
+     else
+      pos = std::size_t( std::distance( EasyObjVars.begin() , it ) );
+
+     EasyObjCoeffs[ pos ].emplace_back( j , gi->get_coefficient( h ) );
+     }
+    }
+   }
+
+  if( ! EasyObjVars.empty() ) {
+   easy_obj_idx = int( triples.size() );
+   for( auto * u : EasyObjVars )
+    triples.emplace_back( u , 0.0 , 0.0 );
+   }
   }
 
  auto obj = new FRealObjective( this ,
@@ -2825,6 +2875,19 @@ void MasterProblemBlock::set_x_bar( const std::vector< double > & x_bar )
    const bool has_U = ! f_U.empty() && std::isfinite( f_U[ j ] );
    dqf->modify_term( DQuadFunction::Index( s_minus_obj_idx + j ) ,
                      has_U ? - sgn * ( f_U[ j ] - xj ) : 0.0 , 0.0 );
+   }
+
+ // Displacement form has no explicit x_bar * z term. Restore its exact easy
+ // component part directly as x_bar * g^k(u^k), using the cached sparse map
+ // built in CreateDualMP(). Iterate form needs no such correction.
+ if( ( ! iterate ) && easy_obj_idx >= 0 )
+  for( std::size_t h = 0 ; h < EasyObjCoeffs.size() ; ++h ) {
+   double coeff = 0.0;
+   for( const auto & [ j , a ] : EasyObjCoeffs[ h ] )
+    if( j < f_x_bar.size() )
+     coeff += f_x_bar[ j ] * a;
+   dqf->modify_term( DQuadFunction::Index( easy_obj_idx + int( h ) ) ,
+                     coeff , 0.0 );
    }
  }
 
