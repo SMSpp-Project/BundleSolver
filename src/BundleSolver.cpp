@@ -643,10 +643,13 @@ int BundleSolver::compute( bool changedvars )
   // function -> the UpFiLmb1.back() == -INFshift path right after
   // InnerLoop propagates kUnbounded, *not* masked by the fictitious
   // bound). Components owning a genuine individual LB never need this.
-  // The all-empty case is left to the MasterProblemBlock::solve_master
-  // short-circuit, so this only fires for the *partially* empty state
-  // typical of a post-oracle-mutation restart
-  if( MasterPB && ( ! MasterPB->is_bundle_empty() ) )
+  // With no easy components, the all-empty case is left to the
+  // MasterProblemBlock::solve_master short-circuit. With exact easy
+  // components, however, that master must be solved immediately; therefore
+  // every empty hard component also needs its fictitious bound from the first
+  // iteration, otherwise gamma^k = 0 forces lambda = 0 in its normalization
+  // row while the easy master fixes lambda = 1.
+  if( MasterPB && ( NrEasy || ( ! MasterPB->is_bundle_empty() ) ) )
    for( Index k = 0 ; k < NrFi ; ++k ) {
     if( NrEasy && IsEasy[ k ] )
      continue;
