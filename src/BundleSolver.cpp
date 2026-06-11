@@ -655,14 +655,24 @@ int BundleSolver::compute( bool changedvars )
      continue;
     const bool want = ( NrItems[ k ] == 0 ) &&
                       ( LowerBound[ k ] <= - INFshift );
-    // A raw-primal fictitious bound is F_k(x_bar), rather than the constant
-    // zero used by the translated/dual frames, so refresh it after every
-    // possible reference-point change while the component remains empty.
-    if( ( want != FictLB[ k ] ) ||
-        ( want && IsMPPrimal && MPV2Form ) ) {
+    // Refresh an active fictitious bound after every possible reference-point
+    // change. set_reference() rebuilds the PFB bound from the physical lower
+    // bound and can therefore overwrite the fictitious value even though the
+    // BundleSolver-side FictLB flag is still true.
+    if( want ) {
      MasterPB->set_fictitious_LB( int( k ) , want );
-     FictLB[ k ] = want;
+     FictLB[ k ] = true;
      }
+    else
+     if( FictLB[ k ] ) {
+      // A finite physical bound collected by FormD() has already replaced
+      // the fictitious one through set_LB(). In that case only clear our
+      // bookkeeping flag: calling set_fictitious_LB(false) would erase the
+      // genuine bound that has just been installed.
+      if( LowerBound[ k ] <= - INFshift )
+       MasterPB->set_fictitious_LB( int( k ) , false );
+      FictLB[ k ] = false;
+      }
     }
 
   // construct the direction d- - - - - - - - - - - - - - - - - - - - - - - -
@@ -5481,6 +5491,18 @@ void BundleSolver::Delete( Index i , bool ModDelete )
  OOBase[ i ] = Inf< SIndex >();
  --NrItems[ k ];
  --NrItems[ NrFi ];
+
+ // FormD() may delete an item as part of its emergency recovery and
+ // immediately re-solve the master, without returning to the outer loop
+ // where fictitious bounds are normally synchronized. If this was the last
+ // cut of a hard component with no genuine lower bound, install its
+ // fictitious bound now so the component normalization remains feasible.
+ if( MasterPB && ( NrItems[ k ] == 0 ) &&
+     ( ( ! NrEasy ) || ( ! IsEasy[ k ] ) ) &&
+     ( LowerBound[ k ] <= - INFshift ) && ( ! FictLB[ k ] ) ) {
+  MasterPB->set_fictitious_LB( int( k ) , true );
+  FictLB[ k ] = true;
+  }
 
  // remove from the global pool: the removal is "hard" if either BPar7 says
  // so, or the linearization had been deleted anyway
