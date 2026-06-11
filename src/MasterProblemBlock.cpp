@@ -74,6 +74,7 @@ void MasterProblemBlock::clear()
  // forget any per-component sub-Block (the sub-Block objects themselves
  // are owned by the base Block, which will dispose of them in due time)
  EasyCmps.clear();
+ EasyCmps_SB.clear();
  HardCmps.clear();
 
  // absorbed BendersBFunction RowConstraints live as static_constraint
@@ -90,6 +91,7 @@ void MasterProblemBlock::clear()
  NoHardCmps = 0;
  DoEasy     = 0;
  IsEasyCmp.clear();
+ EasyLocal2Global.clear();
 
  // back to the "default" MP type
  IsPrimal      = false;
@@ -155,6 +157,8 @@ void MasterProblemBlock::SetDim( int MxBSz , int NVars ,
  // multipliers gamma^k live inside each PolyhedralFunctionBlock sub-Block
  // (its own f_gamma) and are therefore *not* materialized here.
  EasyCmps.reserve( NoEasyCmps );
+ EasyCmps_SB.reserve( NoEasyCmps );
+ EasyLocal2Global.reserve( NoEasyCmps );
  HardCmps.reserve( NoHardCmps );
 
  // pre-allocate the slot -> local-row mapping: MaxBSize slots per hard
@@ -245,7 +249,8 @@ void MasterProblemBlock::configure(
                           stabilization_type reg ,
                           bool convex ,
                           const std::vector< bool > & is_easy ,
-                          int hard_cmp_scaling )
+                          int hard_cmp_scaling ,
+                          const std::vector< std::vector< Index > > & easy_local2global )
 {
  // - - - sanity checks - - - - - - - - - - - - - - - - - - - - - - - - - -
  if( max_bundle_size < 0 || num_vars < 0 || num_hard_cmps < 0 )
@@ -270,8 +275,10 @@ void MasterProblemBlock::configure(
  // we overwrite it here when the caller supplies a flag vector of the
  // right size. The default empty vector preserves the legacy all-hard
  // behaviour for callers that have not yet adopted the new parameter
- if( ! is_easy.empty() && int( is_easy.size() ) == n_total )
+ if( ! is_easy.empty() && int( is_easy.size() ) == n_total ){
   IsEasyCmp = is_easy;
+  EasyLocal2Global = easy_local2global;
+ }
 
  IsPrimal = primal;
  IsConvex = convex;
@@ -368,7 +375,8 @@ void MasterProblemBlock::configure(
     * copy or scaling mechanism. */
 
    inner->transfer_ownership_to( this );
-   EasyCmps.push_back( inner );
+   EasyCmps.push_back( lbf );
+   EasyCmps_SB.push_back( inner );
    continue;
    }
 
@@ -387,7 +395,7 @@ void MasterProblemBlock::configure(
          " is a BendersBFunction with no inner Block" ) );
    absorb_BBF_into_primal_MP( bbf );
    inner->transfer_ownership_to( this );
-   EasyCmps.push_back( inner );
+   EasyCmps_SB.push_back( inner );
    continue;
    }
 
@@ -700,7 +708,7 @@ void MasterProblemBlock::CreateDualMP( stabilization_type Stbl )
  // omega is absent or fixed to zero, then r is forced to zero as well, 
  // so the global lower bound cannot contribute through its dual multiplier.
 
- if( EasyCmps.size() > 0 ){
+ if( NoEasyCmps > 0 ){
   Var_lambda.set_value( 1 );
   Var_lambda.is_fixed( true , eNoMod );
  }
@@ -810,9 +818,10 @@ void MasterProblemBlock::CreateDualMP( stabilization_type Stbl )
  // the driver knows the linear part b of the original sum-function;
  // the theta-side terms are appended by PolyhedralFunctionBlock::set_-
  // conjugate_constraint() called below for every hard component; the
- // u^k A^k terms (easy components in the dual MP) live inside the
- // stolen LagBFunction inner Block. CouplingCns is exposed as a *dynamic*
- // group because PolyhedralFunctionBlock::set_conjugate_constraint takes
+ // u^k A^k terms (easy components in the dual MP) must be set explicity
+ // using the mapping provided by the LagBFunction class.
+ // CouplingCns is exposed as a *dynamic* group because
+ // PolyhedralFunctionBlock::set_conjugate_constraint takes
  // a std::list< FRowConstraint > & by reference; the list size itself
  // stays constant (NumVars) throughout the algorithm.
  //
@@ -826,19 +835,33 @@ void MasterProblemBlock::CreateDualMP( stabilization_type Stbl )
  CouplingCns.clear();
  CouplingCns.resize( NumVars );
  {
-  auto it = CouplingCns.begin();
-  for( int j = 0 ; j < NumVars ; ++j , ++it ) {
+  // Prepare a vector that will contain the pairs of (var,coeff) for each coupling
+  // constraint.
+  std::vector< LinearFunction::v_coeff_pair > vp_Cns( NumVars );
+  for( int j = 0 ; j < NumVars ; ++j ) {
    LinearFunction::v_coeff_pair vp;
    vp.reserve( 4 );
    vp.emplace_back( & Var_z[ j ]        ,  1.0 );  // pos 0
    vp.emplace_back( & Var_lambda        ,  0.0 );  // pos 1 (set by set_linear_part)
    vp.emplace_back( & Var_s_plus[ j ]   ,  1.0 );  // pos 2
    vp.emplace_back( & Var_s_minus[ j ]  , -1.0 );  // pos 3
-   it->set_function( new LinearFunction( std::move( vp ) , 0.0 ) , eNoMod );
+
+   vp_Cns[ j ] = vp;
+  }
+
+  // Now append easy-component terms to the vectors
+  if( NoEasyCmps > 0 )
+   add_LBF_to_coupling_rows( vp_Cns );
+
+  // Finally, initialize the Linear function with each prepared list
+  auto it = CouplingCns.begin();
+  for( int j = 0 ; j < NumVars ; ++j , ++it ) {
+   it->set_function( new LinearFunction( std::move( vp_Cns[ j ] ) , 0.0 ) , eNoMod );
    it->set_lhs( 0.0 , eNoMod );
    it->set_rhs( 0.0 , eNoMod );
-   }
   }
+ }
+
  if( NumVars > 0 )
   add_dynamic_constraint( CouplingCns , "MPB_coupling" );
 
@@ -1177,154 +1200,87 @@ void MasterProblemBlock::absorb_BBF_into_primal_MP( BendersBFunction * bbf )
 
 /*--------------------------------------------------------------------------*/
 
-void MasterProblemBlock::absorb_LBF_into_dual_MP( LagBFunction * lbf ,
-                                                  int component )
+void MasterProblemBlock::add_LBF_to_coupling_rows(
+     std::vector< LinearFunction::v_coeff_pair > & vp_Cns )
 {
- if( ! lbf )
+ if( EasyCmps.empty() )
   throw( std::invalid_argument(
-       "MasterProblemBlock::absorb_LBF_into_dual_MP: null LagBFunction" ) );
- if( component < 0 || component >= int( EasyLBFCns.size() ) )
-  throw( std::invalid_argument(
-       "MasterProblemBlock::absorb_LBF_into_dual_MP: invalid component" ) );
+       "MasterProblemBlock::add_LBF_to_coupling_rows: there are no "
+       "easy components" ) );
 
- // walk every RowConstraint of the inner Block of the LagBFunction
- // (already transferred under *this* by configure()) and re-install it
- // on the master as the stationarity row of the dual MP at pi^k
- // ():
- //
- //     E^k_i u^k - lambda * e^k_i = 0    for every row i.
- //
- // The original RowConstraint of the inner Block is relaxed in place
- // (LHS = -INF, RHS = +INF) so that the inner :MILPSolver loaded by the
- // dual MP back-end does not enforce it twice.
+ for( Index easy_id = 0 ; easy_id < EasyCmps.size() ; ++easy_id ) {
+  // Retrieve specific easy component
+  auto * lbf = EasyCmps[ easy_id ];
 
- auto * inner = lbf->get_inner_block();
- if( ! inner )
-  throw( std::invalid_argument(
-       "MasterProblemBlock::absorb_LBF_into_dual_MP: null inner Block" ) );
+  for( Index i = 0 ; i < lbf->get_num_active_var() ; ++i ){
+   // Retrieve global index of i-th local variable
+   const Index j = easy_local_to_global( easy_id , i );
 
- auto & easy_cns = EasyLBFCns[ component ];
+   if( j >= Index( NumVars ) )
+    throw( std::logic_error(
+        "MasterProblemBlock::add_LBF_to_coupling_rows: "
+        "global index outside master dimension" ) );
 
- auto count_any = []( const boost::any & any ) -> std::size_t {
-  if( boost::any_cast< FRowConstraint >( & any ) )
-   return( 1 );
-  if( auto one_p = boost::any_cast< FRowConstraint * >( & any ) )
-   return( *one_p ? 1 : 0 );
-  if( auto vec =
-            boost::any_cast< std::vector< FRowConstraint > >( & any ) )
-   return( vec->size() );
-  if( auto vec_p =
-            boost::any_cast< std::vector< FRowConstraint > * >( & any ) )
-   return( *vec_p ? ( *vec_p )->size() : 0 );
-  if( auto lst = boost::any_cast< std::list< FRowConstraint > >( & any ) )
-   return( lst->size() );
-  if( auto lst_p =
-            boost::any_cast< std::list< FRowConstraint > * >( & any ) )
-   return( *lst_p ? ( *lst_p )->size() : 0 );
-  return( 0 );
-  };
+   // Collect lagrangian terms associated with the variable
+   auto * gi = dynamic_cast< LinearFunction * >(
+     lbf->get_Lagrangian_term( i ) );
 
- std::size_t num_rows = 0;
- for( const auto & any : inner->get_static_constraints() )
-  num_rows += count_any( any );
- for( const auto & any : inner->get_dynamic_constraints() )
-  num_rows += count_any( any );
- easy_cns.reserve( num_rows );
+   if( ! gi )
+    throw( std::logic_error(
+        "MasterProblemBlock::add_LBF_to_coupling_rows: "
+        "LagBFunction term is not a LinearFunction" ) );
 
- auto process_one = [ this , & easy_cns ]( FRowConstraint & ci ) {
-  auto * lf = dynamic_cast< LinearFunction * >( ci.get_function() );
-  if( ! lf )
-   throw( std::logic_error(
-        "MasterProblemBlock::absorb_LBF_into_dual_MP: only LinearFunction "
-        "constraints are supported on the inner Block (the easy component's "
-        "feasible set must be polyhedral)" ) );
+   // Coupling convention:
+   //
+   //   z_j - lambda b_j + s+_j - s-_j
+   //       - sign(F_internal) g_i(u) - hard_terms = 0.
+   //
+   // For a convex minimisation F_internal = F, hence append -g_i(u).
+   // For a concave maximisation BundleSolver minimises -F internally,
+   // hence the easy-component subgradient is -g_i(u) and we append +g_i(u).
+   const double easy_sign = IsConvex ? 1.0 : -1.0;
+   for( Function::Index h = 0 ; h < gi->get_num_active_var() ; ++h ) {
+    auto * u = static_cast< ColVariable * >( gi->get_active_var( h ) );
+    const double a = gi->get_coefficient( h );
 
-  // pick e^k_i from the side the original constraint was using: an
-  // equality constraint has lhs = rhs (= eBoth in BBF jargon); an
-  // upper-bounded one stores e^k_i as the rhs; a lower-bounded one as
-  // the lhs. Pure two-sided inequalities are ambiguous in ,
-  // since stationarity wants a single e^k_i; we currently accept them
-  // by taking the finite side (rhs if finite, else lhs).
-  const double orig_lhs = ci.get_lhs();
-  const double orig_rhs = ci.get_rhs();
-  double e_i;
-  if( orig_lhs == orig_rhs )                e_i = orig_rhs;
-  else if( std::isfinite( orig_rhs ) )      e_i = orig_rhs;
-  else if( std::isfinite( orig_lhs ) )      e_i = orig_lhs;
-  else
-   throw( std::invalid_argument(
-        "MasterProblemBlock::absorb_LBF_into_dual_MP: inner RowConstraint "
-        "is unbounded on both sides; cannot derive e^k_i" ) );
-
-  // build the master-side LinearFunction: original ( u^k, E^k_{i,j} )
-  // pairs plus the -e^k_i coupling on Var_lambda
-  LinearFunction::v_coeff_pair pairs;
-  pairs.reserve( lf->get_num_active_var() + 1 );
-  for( Function::Index j = 0 ; j < lf->get_num_active_var() ; ++j )
-   pairs.emplace_back(
-        static_cast< ColVariable * >( lf->get_active_var( j ) ) ,
-        lf->get_coefficient( j ) );
-  pairs.emplace_back( & Var_lambda , - e_i );
-
-  easy_cns.emplace_back();
-  auto & new_cns = easy_cns.back();
-  new_cns.set_function( new LinearFunction( std::move( pairs ) ) , eNoMod );
-  new_cns.set_lhs( 0.0 , eNoMod );
-  new_cns.set_rhs( 0.0 , eNoMod );
-
-  // relax the original RowConstraint on the inner Block
-  ci.set_lhs( - Inf< double >() , eNoMod );
-  ci.set_rhs(   Inf< double >() , eNoMod );
-  };
-
- // static / dynamic constraints are exposed as const vector<boost::any>
- // by Block::get_static_constraints / get_dynamic_constraints; we need
- // mutable access to relax LHS/RHS of the absorbed RowConstraints, so
- // we const_cast the outer container (the inner Block now lives under
- // *this*, so there is no aliasing concern with other observers).
- // Each entry holds either a single FRowConstraint, a vector of them
- // or a std::list of them (dynamic only). Blocks may register such
- // groups either *by value* (the Block owns the storage and boost::any
- // holds a copy/container directly) or *by pointer* (the Block keeps
- // the storage as a member and registers its address into boost::any);
- // both flavours must be handled here. BoxConstraints (variable bounds
- // of the inner Block) are NOT absorbed: they live in u-space and the
- // inner :MILPSolver of the dual MP will enforce them as ordinary
- // variable bounds, so we skip them silently
- auto walk_any = [ & process_one ]( boost::any & any ) {
-  if( auto * one = boost::any_cast< FRowConstraint >( & any ) )
-   process_one( *one );
-  else if( auto * one_p = boost::any_cast< FRowConstraint * >( & any ) ) {
-   if( *one_p ) process_one( **one_p );
+    // Append the new term to the coupling constraint terms associated
+    // with the j-th global variable
+    vp_Cns[ j ].emplace_back( u , easy_sign * a );
    }
-  else if( auto * vec = boost::any_cast< std::vector< FRowConstraint > >( & any ) ) {
-   for( auto & ci : *vec ) process_one( ci );
-   }
-  else if( auto * vec_p =
-                boost::any_cast< std::vector< FRowConstraint > * >( & any ) ) {
-   if( *vec_p ) for( auto & ci : **vec_p ) process_one( ci );
-   }
-  else if( auto * lst = boost::any_cast< std::list< FRowConstraint > >( & any ) ) {
-   for( auto & ci : *lst ) process_one( ci );
-   }
-  else if( auto * lst_p =
-                boost::any_cast< std::list< FRowConstraint > * >( & any ) ) {
-   if( *lst_p ) for( auto & ci : **lst_p ) process_one( ci );
-   }
-  else if( boost::any_cast< std::vector< BoxConstraint > * >( & any ) )
-   ;  // variable bounds, kept on the inner Block - intentionally skipped
-  else if( boost::any_cast< std::vector< BoxConstraint > >( & any ) )
-   ;  // ditto, by-value form
-  };
 
- auto & s_cnst =
-  const_cast< Vec_any & >( inner->get_static_constraints() );
- for( auto & any : s_cnst ) walk_any( any );
-
- auto & d_cnst =
-  const_cast< Vec_any & >( inner->get_dynamic_constraints() );
- for( auto & any : d_cnst ) walk_any( any );
+   /*
+   const double cst = gi->get_constant_term();
+   if( cst != 0.0 ) {
+    // Since the row receives -g_i(u), it also receives -cst.
+    row_lf->modify_constant( row_lf->get_constant_term() - cst , eNoMod );
+   }*/
+  }
  }
+}
+
+/*--------------------------------------------------------------------------*/
+
+Index MasterProblemBlock::easy_local_to_global(
+    Index easy_id,
+    Index local_i ) const
+{
+ // Dense case: no sparse map provided.
+ if( EasyLocal2Global.empty() )
+  return local_i;
+
+ if( easy_id >= EasyLocal2Global.size() )
+  throw( std::logic_error(
+     "easy_local_to_global: invalid easy component index" ) );
+
+ // Retrieve easy components specific map
+ const auto & map = EasyLocal2Global[ easy_id ];
+
+ if( local_i >= map.size() )
+  throw( std::logic_error( "easy_local_to_global: invalid local variable "
+     "index" ) );
+ // return global index
+ return map[ local_i ];
+}
 
 /*--------------------------------------------------------------------------*/
 
@@ -1339,9 +1295,9 @@ Block * MasterProblemBlock::get_hard_component( int k ) const
 
 Block * MasterProblemBlock::get_easy_component( int k ) const
 {
- if( k < 0 || k >= int( EasyCmps.size() ) )
+ if( k < 0 || k >= int( EasyCmps_SB.size() ) )
   return( nullptr );
- return( EasyCmps[ k ] );
+ return( EasyCmps_SB[ k ] );
  }
 
 /*--------------------------------------------------------------------------*/
@@ -1821,6 +1777,55 @@ int MasterProblemBlock::get_vertical_count( void ) const
 
 double MasterProblemBlock::get_FiBLambda( int k ) const
 {
+ // Easy components are represented exactly in the dual master. Therefore,
+ // for a global easy-component index k, return its true value at the
+ // tentative point x_bar + d*, rather than a translated bundle-model value.
+ if( ( ! IsPrimal ) && k >= 0 && k < int( IsEasyCmp.size() ) &&
+     IsEasyCmp[ k ] ) {
+  const int easy_k = int( std::count( IsEasyCmp.cbegin() ,
+                                     IsEasyCmp.cbegin() + k , true ) );
+  if( easy_k >= int( EasyCmps.size() ) ||
+      easy_k >= int( EasyCmps_SB.size() ) )
+   return( Inf< double >() );
+
+  double value = 0.0;
+  std::function< void( Block * ) > add_objectives =
+   [ & value , & add_objectives ]( Block * block ) {
+    if( ! block )
+     return;
+
+    if( auto * obj = dynamic_cast< RealObjective * >(
+                                              block->get_objective() ) ) {
+     obj->compute();
+     value += obj->value();
+     }
+
+    for( auto * sub_block : block->get_nested_Blocks() )
+     add_objectives( sub_block );
+    };
+
+  add_objectives( EasyCmps_SB[ easy_k ] );
+
+  const auto d = get_d_vector();
+  auto * lbf = EasyCmps[ easy_k ];
+  for( Index i = 0 ; i < lbf->get_num_active_var() ; ++i ) {
+   const Index j = easy_local_to_global( Index( easy_k ) , i );
+   if( j >= f_x_bar.size() || j >= d.size() )
+    return( Inf< double >() );
+
+   auto * gi = lbf->get_Lagrangian_term( i );
+   if( ! gi )
+    return( Inf< double >() );
+
+   gi->compute();
+   value += ( f_x_bar[ j ] + d[ j ] ) * gi->get_value();
+   }
+
+  // BundleSolver represents a concave maximisation as the minimisation of
+  // -F. Return the easy value in those same internal units.
+  return( IsConvex ? - value : value );
+  }
+
  if( IsPrimal ) {
   // primal linearized rep: every hard component k owns its own epigraph
   // variable f_v inside the PolyhedralFunctionBlock; the master-side
@@ -2219,7 +2224,10 @@ double MasterProblemBlock::get_master_objective_value( void ) const
  // At the very first iteration, no known objective value is yet known.
  // We simply return 0.0 as the main solver should be aware of discarding
  // such value.
- if( is_bundle_empty() ){
+ // With exact easy components the master is not empty even before the first
+ // hard cut: their inner variables, objective and coupling terms already
+ // define a nontrivial optimization problem.
+ if( is_bundle_empty() && ( NoEasyCmps == 0 ) ){
   return( 0.0 );
  }
 
@@ -3038,10 +3046,10 @@ int MasterProblemBlock::solve_master( void )
  // call (bundle empty, no Fi(.) value known yet) no master needs to
  // be solved at all: the surrounding driver will compute
  // Fi(Lambda1 = Lambda = 0) and push the first round of subgradients,
- // then re-enter solve_master with a non-empty bundle. We therefore
- // short-circuit here, returning d = 0 (no movement) and signaling
- // kOK to the caller
- if( is_bundle_empty() ) {
+ // then re-enter solve_master with a non-empty bundle. This does not apply
+ // when exact easy components are present: their objective and coupling
+ // terms already make the master non-empty and must be optimized.
+ if( is_bundle_empty() && ( NoEasyCmps == 0 ) ) {
   if( IsPrimal )
    for( int i = 0 ; i < int( Var_d.size() ) ; ++i )
     Var_d[ i ].set_value( f_v2_form ? f_x_bar[ i ] : 0.0 );

@@ -368,7 +368,8 @@ class MasterProblemBlock : public Block {
                  stabilization_type reg = kDoublyStabilized ,
                  bool convex = true ,
                  const std::vector< bool > & is_easy = {} ,
-                 int hard_cmp_scaling = 0 );
+                 int hard_cmp_scaling = 0 ,
+                 const std::vector< std::vector< Index > > & easy_local2global = {} );
 
 /*--------------------------------------------------------------------------*/
  /// provide MasterProblemBlock with the basic dimensions of the MP
@@ -520,42 +521,50 @@ class MasterProblemBlock : public Block {
  void absorb_BBF_into_primal_MP( BendersBFunction * bbf );
 
 /*--------------------------------------------------------------------------*/
- /// absorb a LagBFunction's inner constraints into the dual MP
- /** Embeds an easy LagBFunction into the dual Master Problem. The
-  * polyhedral feasible set U^k of the LagBFunction is described by the
-  * RowConstraints living in its inner Block in the fixed-rhs form
+ /// Append the contribution of all easy LagBFunction components to the dual
+ /// coupling rows.
+ /** In the dual MP, each easy LagBFunction contributes to the stationarity
+  * rows associated with the master-space variables. For every active variable
+  * y_i of an easy LagBFunction, this method retrieves the corresponding
+  * Lagrangian term
   *
-  *      lhs_i <= ( E^k_i u^k ) <= rhs_i
+  *     g_i( u ) = sum_h a_ih u_h + c_i
   *
-  * (with constants lhs_i / rhs_i). The stationarity condition of the
-  * dual MP at the pi^k variables of the easy linear program (cf.
-  * ) reads instead
+  * through LagBFunction::get_Lagrangian_term( i ), maps the local active
+  * index i to the global master coordinate j, and appends the
+  * objective-sense-adjusted easy subgradient to CouplingCns[ j ].
+  * Thus the dual coupling row becomes
   *
-  *      E^k_i u^k - lambda * e^k_i = 0    for every row i,
+  *     z_j - lambda b_j + s^+_j - s^-_j
+  *          - sign( F_internal ) sum_E g^k_j( u^k )
+  *          - hard-component terms = 0.
   *
-  * where lambda is the global multiplier owned by *this* (Var_lambda)
-  * and e^k_i is taken from the side of the original RowConstraint:
-  *
-  *  - if S_i = eRHS  -> e^k_i := rhs_i ;
-  *  - if S_i = eLHS  -> e^k_i := lhs_i ;
-  *  - if S_i = eBoth -> e^k_i := rhs_i (= lhs_i, equality constraint).
-  *
-  * For every RowConstraint of the inner Block this method snapshots its
-  * (lhs_i, rhs_i, function), relaxes it (LHS = -INF, RHS = +INF) and
-  * installs on *this* a fresh FRowConstraint with the cloned
-  * LinearFunction augmented by the -e^k_i coefficient on Var_lambda and
-  * with LHS = RHS = 0. Quadratic / non-linear function types are not
-  * supported and trigger an exception, since the underlying primal LP of
-  * the easy component is linear by assumption.
-  *
-  * @param lbf  pointer to the LagBFunction to absorb; must be non-null
-  *             and its inner Block must have been already transferred to
-  *             *this* by configure().
-  * @param component  global index k of the easy component; its generated
-  *                   rows are kept in a separate, correspondingly named
-  *                   static-constraint group. */
+  * This method is meaningful only in the dual MP and only after CouplingCns
+  * has been initialized.
+  */
 
- void absorb_LBF_into_dual_MP( LagBFunction * lbf , int component );
+ void add_LBF_to_coupling_rows(
+  std::vector< LinearFunction::v_coeff_pair > & vp_Cns );
+
+/*--------------------------------------------------------------------------*/
+ /// Map a local active-variable index of an easy component to the global
+ /// master-space coordinate.
+ /** For dense Lambda representations, no explicit map is stored and the
+  * local index is already the global index, so this method returns local_i.
+  *
+  * For sparse Lambda representations, EasyLocal2Global[ easy_id ][ local_i ]
+  * stores the global master coordinate corresponding to the local active
+  * variable local_i of easy component easy_id.
+  *
+  * @param easy_id  local index of the easy component among EasyCmps.
+  * @param local_i  local active-variable index inside that easy component.
+  *
+  * @return the global coordinate j such that the corresponding contribution
+  *         must be inserted into CouplingCns[ j ].
+  */
+
+ [[nodiscard]] Index easy_local_to_global( Index easy_id ,
+                                           Index local_i ) const;
 
 /*--------------------------------------------------------------------------*/
  /// hand the abstract representation of the MP to the registered Solver
@@ -1388,9 +1397,14 @@ class MasterProblemBlock : public Block {
  std::vector< bool > IsEasyCmp;
                               ///< IsEasyCmp[k] == true iff component k is easy
 
+ std::vector< LagBFunction * > EasyCmps;  ///< the "easy" components
+
+ std::vector< std::vector< Index > > EasyLocal2Global;
+                    ///< map local index of easy components into MP global ones
+
  // - - - - - - - - -  pointers to the per-component sub-Blocks - - - - - - - -
 
- std::vector< Block * > EasyCmps;  ///< sub-Blocks of the "easy" components
+ std::vector< Block * > EasyCmps_SB;  ///< sub-Blocks of the "easy" components
 
  std::vector< Block * > HardCmps;  ///< sub-Blocks of the "hard" components
 

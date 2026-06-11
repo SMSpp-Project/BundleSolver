@@ -4932,12 +4932,19 @@ void BundleSolver::InitMPB( void )
  //
  // build the easy_components vector by walking v_c05f and keeping only
  // the components flagged as easy (IsEasy is sized only when DoEasy != 0,
- // so the trivial "all hard" case yields an empty vector)
+ // so the trivial "all hard" case yields an empty vector). Here we also
+ // store the local2global map for easy components, as this may be needed
+ // by MPB to build the coupling constraints.
  std::vector< C05Function * > easy_cmps;
+ std::vector< std::vector< Index > > easy_local2global;
  if( IsEasy.size() == NrFi )
   for( Index k = 0 ; k < NrFi ; ++k )
-   if( IsEasy[ k ] )
+   if( IsEasy[ k ] ){
     easy_cmps.push_back( v_c05f[ k ] );
+
+    if( f_sparse_lambda )
+     easy_local2global.push_back( v_local2global[ k ] );
+   }
 
  const int n_hard = int( NrFi ) - int( easy_cmps.size() );
 
@@ -4969,7 +4976,8 @@ void BundleSolver::InitMPB( void )
                       MPStbl ,
                       ! f_convex ,
                       IsEasy ,
-                      MPHScaling );
+                      MPHScaling ,
+                      easy_local2global );
 
  // The storage frame has already been selected before configure(): 0 is the
  // translated/displacement form, 1 the raw/iterate form.
