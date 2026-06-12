@@ -177,7 +177,7 @@ target_link_libraries(${modName} PUBLIC
         NDOFiOracle::NDOFiOracle)
 
 if (Torch_FOUND)
-    message(STATUS "${modName}: libTorch found, configuring BundleSolverML")
+    message(STATUS "${modName}: Torch found, configuring BundleSolverML")
     target_sources(${modName} PRIVATE src/BundleSolverML.cpp)
     separate_arguments(TORCH_CXX_FLAGS_LIST UNIX_COMMAND "${TORCH_CXX_FLAGS}")
     target_compile_options(${modName} PRIVATE ${TORCH_CXX_FLAGS_LIST})
