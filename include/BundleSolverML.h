@@ -1,438 +1,545 @@
-#pragma once
+/*--------------------------------------------------------------------------*/
+/*--------------------- File BundleSolverML.h ------------------------------*/
+/*--------------------------------------------------------------------------*/
+/** @file
+ * Header file for the BundleSolverML class, which derives from BundleSolver
+ * and replaces the classical rule-based step-size heuristics with a small
+ * feedforward neural network (implemented with the LibTorch C++ API) that
+ * predicts the proximal regularization parameter t out of a set of features
+ * describing the current state of the algorithm.
+ *
+ * The network can be trained online: after each compute() the caller can
+ * invoke Backward(), which computes a loss out of the recorded iterations,
+ * back-propagates it through the network and applies an Adam update to its
+ * weights. A single network can be shared among multiple BundleSolverML
+ * objects (one per instance of the problem) so that the gradient updates of
+ * all of them accumulate into the same weights, which is the standard
+ * pattern for multi-instance training. The weights can be saved to / loaded
+ * from TorchScript archives that are cross-compatible with Python.
+ *
+ * \author Francesca Demelas \n
+ *         Laboratoire d'Informatique de Paris Nord \n
+ *         Universite' Sorbonne Paris Nord \n
+ *
+ * \author Antonio Frangioni \n
+ *         Dipartimento di Informatica \n
+ *         Universita' di Pisa \n
+ *
+ * \author Donato Meoli \n
+ *         Dipartimento di Informatica \n
+ *         Universita' di Pisa \n
+ *
+ * \copyright &copy; by Francesca Demelas, Antonio Frangioni, Donato Meoli
+ */
+/*--------------------------------------------------------------------------*/
+/*----------------------------- DEFINITIONS --------------------------------*/
+/*--------------------------------------------------------------------------*/
 
-#include <ctime>
+#ifndef __BundleSolverML
+ #define __BundleSolverML
+                      /* self-identification: #endif at the end of the file */
+
+/*--------------------------------------------------------------------------*/
+/*------------------------------ INCLUDES ----------------------------------*/
+/*--------------------------------------------------------------------------*/
+
+#include <iostream>
 #include <memory>
-#include <queue>
 #include <string>
+
 #include <torch/torch.h>
-#include "BundleSolver.h"
 #include <torch/optim.h>
 
-// ============================================================================
-// VERBOSE macro: set to 1 to enable debug output, 0 to disable.
-// Must be consistent with the definition in BundleSolverML.cpp.
-// ============================================================================
+#include "BundleSolver.h"
+
+/*--------------------------------------------------------------------------*/
+/*------------------------------- MACROS -----------------------------------*/
+/*--------------------------------------------------------------------------*/
+/* BML_LOG (so named to avoid clashing with LibTorch's c10 LOG( n ) macro)
+ * prints debug output of BundleSolverML on std::cout; it is governed by the
+ * VERBOSE macro, set to 1 to enable the output and to 0 to disable it. */
+
 #ifndef VERBOSE
-  #define VERBOSE 1
+ #define VERBOSE 0
 #endif
 
 #if VERBOSE
-#define BML_LOG(x) std::cout << x
+ #define BML_LOG( x ) std::cout << x
 #else
-#define BML_LOG(x) do {} while(0)
+ #define BML_LOG( x )
 #endif
 
 /*--------------------------------------------------------------------------*/
-/*-------------------------- A SIMPLE NEURAL NETWORK -----------------------*/
+/*-------------------------- NAMESPACE & USING -----------------------------*/
 /*--------------------------------------------------------------------------*/
-/**
- * @struct Net
- * @brief Two-layer feedforward neural network used to predict the step-size t.
+
+/// namespace for the Structured Modeling System++ (SMS++)
+namespace SMSpp_di_unipi_it
+{
+/*--------------------------------------------------------------------------*/
+/*------------------------------- CLASSES ----------------------------------*/
+/*--------------------------------------------------------------------------*/
+/*----------------------------- CLASS Net ----------------------------------*/
+/*--------------------------------------------------------------------------*/
+/// two-layer feedforward neural network predicting the step-size t
+/** Net is a simple two-layer feedforward neural network used by
+ * BundleSolverML to predict the step-size t:
  *
- * Architecture:
- *   - Input layer  : 20 features describing the current bundle solver state.
- *   - Hidden layer : 16 units with Softplus activation.
- *   - Output layer : 1 unit with Softplus activation, producing t > 0.
+ * - input layer: 20 features describing the current state of the bundle
+ *   algorithm;
  *
- * The Softplus output ensures the predicted step-size is always strictly
- * positive, which is required for the bundle method's convergence.
+ * - hidden layer: 16 units with Softplus activation;
  *
- * Sharing across instances
- * ------------------------
- * A single Net instance can be shared across multiple BundleSolverML objects
- * (one per MMCF instance) via BundleSolverML::set_shared_net() /
+ * - output layer: 1 unit with Softplus activation, producing t > 0.
+ *
+ * The Softplus output ensures that the predicted step-size is always
+ * strictly positive, as required for the convergence of the bundle method.
+ *
+ * A single Net object can be shared among multiple BundleSolverML objects
+ * (one per instance of the problem) via BundleSolverML::set_shared_net() /
  * BundleSolverML::get_shared_net(). This is the recommended pattern for
- * training: all solvers read from and write to the same parameter tensors,
- * so every Backward() call accumulates gradients into the shared weights.
+ * training: all the solvers read from and write to the same parameter
+ * tensors, so that every Backward() call accumulates gradients into the
+ * shared weights.
  *
- * Persistence:
- *   Weights are saved/loaded via BundleSolverML::SaveModel() and
- *   BundleSolverML::LoadModel() (TorchScript .pt format, cross-compatible
- *   with Python's torch.load()).
- */
-struct Net : torch::nn::Module {
-  /// First fully-connected layer: 20 inputs → 16 hidden units
-  torch::nn::Linear fc1{nullptr};
-  /// Second fully-connected layer: 16 hidden units → 1 output (step-size)
-  torch::nn::Linear fc2{nullptr};
+ * The weights are saved / loaded via BundleSolverML::SaveModel() and
+ * BundleSolverML::LoadModel() in the TorchScript .pt format, which is
+ * cross-compatible with Python's torch.load(). */
 
-  /// Minimum admissible step-size (used by the commented sigmoid clamping)
-  float min_val = 0.000001f;
-  /// Maximum admissible step-size (used by the commented sigmoid clamping)
-  float max_val = 10000.0f;
+struct Net : torch::nn::Module
+{
+ /// first fully-connected layer: 20 inputs --> 16 hidden units
+ torch::nn::Linear fc1{ nullptr };
 
-  /// Constructor: registers the two linear layers with the LibTorch module system.
-  Net() {
-    fc1 = register_module("fc1", torch::nn::Linear(20, 16));
-    fc2 = register_module("fc2", torch::nn::Linear(16, 1));
+ /// second fully-connected layer: 16 hidden units --> 1 output (step-size)
+ torch::nn::Linear fc2{ nullptr };
+
+ /// constructor: registers the two layers with the LibTorch module system
+ /** Constructor. The output layer is initialized with small weights and a
+  * bias such that softplus( bias ) is about 1, so that the first
+  * predictions of the untrained network are close to the classical
+  * default initial step-size t = 1 (instead of some arbitrary value
+  * dictated by the random initialization, which can be pathological
+  * enough to stall the bundle algorithm) and the training only has to
+  * refine them. */
+ Net( void ) {
+  fc1 = register_module( "fc1" , torch::nn::Linear( 20 , 16 ) );
+  fc2 = register_module( "fc2" , torch::nn::Linear( 16 , 1 ) );
+
+  torch::NoGradGuard no_grad;
+  fc2->weight *= 0.1;
+  fc2->bias.fill_( 0.5413 );  // softplus( 0.5413 ) ~= 1
   }
 
-  /**
-   * @brief Forward pass: maps a feature vector to a positive step-size.
-   * @param x  Input feature tensor of shape {20} (or {batch, 20}).
-   * @return   Scalar tensor representing the predicted step-size t > 0.
-   */
-  torch::Tensor forward(torch::Tensor x) {
-    x = torch::softplus(fc1->forward(x)); // hidden layer with Softplus activation
-    x = fc2->forward(x);                  // linear output layer
-    // Alternative clamped output (disabled):
-    // x = min_val + (max_val - min_val) * torch::sigmoid(x);
-    return torch::softplus(x)+1.0e-8;            // ensure strictly positive output
+ /// forward pass: maps a feature vector into a positive step-size
+ /** Forward pass of the network: maps the input feature tensor \p x, of
+  * shape { 20 } (or { batch , 20 }), into a scalar tensor representing the
+  * predicted step-size t > 0. */
+ torch::Tensor forward( torch::Tensor x ) {
+  x = torch::softplus( fc1->forward( x ) );
+  x = fc2->forward( x );
+  return( torch::softplus( x ) + 1.0e-8 );  // ensure strictly positive output
   }
-};
+
+ };  // end( struct( Net ) )
 
 /*--------------------------------------------------------------------------*/
-/*--------------------- SMS++ NAMESPACE DECLARATION ------------------------*/
+/*------------------------ CLASS BundleSolverML ----------------------------*/
 /*--------------------------------------------------------------------------*/
-/// Namespace for the Structured Modeling System++ (SMS++)
-namespace SMSpp_di_unipi_it {
+/*--------------------------- GENERAL NOTES --------------------------------*/
+/*--------------------------------------------------------------------------*/
+/// BundleSolver with a machine-learning heuristic for the step-size t
+/** BundleSolverML derives from BundleSolver and replaces the classical
+ * rule-based step-size heuristics (Heuristic1() ... Heuristic4()) with a
+ * neural network (Net) that predicts the proximal regularization parameter
+ * t out of a 20-dimensional feature vector built from the current state of
+ * the algorithm.
+ *
+ * By default each BundleSolverML owns a private Net, allocated at
+ * construction time. For training across multiple instances the caller
+ * should rather create a single shared Net and inject it into every solver:
+ *
+ *     auto shared_net = std::make_shared< Net >();
+ *
+ *     // ... for each instance:
+ *     auto bml = dynamic_cast< BundleSolverML * >( get_solver_for( i ) );
+ *     bml->set_shared_net( shared_net );  // inject the shared weights
+ *     bml->compute( false );
+ *     bml->Backward();                    // update the shared weights
+ *
+ * After set_shared_net() all forward and backward passes operate on the
+ * same parameter tensors, so the gradient updates of every instance
+ * accumulate into the same network, which is exactly the online SGD
+ * pattern needed for multi-instance training. To revert to the private
+ * network call clear_shared_net(). The weights of whichever network is
+ * currently active are saved / loaded with SaveModel() / LoadModel().
+ *
+ * Note that copy and move operations are deleted to protect the LibTorch
+ * nn::Module internals, which manage reference-counted parameter tensors;
+ * all the tensors needed for differentiation are stored in per-iteration
+ * vectors (phi_vecs, w_vecs, Gs, ...) and consumed during Backward(). */
 
-/**
- * @class BundleSolverML
- * @brief Bundle solver with a machine-learning heuristic for step-size selection.
- *
- * Extends BundleSolver by replacing the classical rule-based step-size
- * heuristic with a neural network (Net) that predicts the proximal
- * regularization parameter t from a 20-dimensional feature vector built from
- * the current solver state.
- *
- * Shared network model
- * --------------------
- * By default each BundleSolverML owns a private Net instance (nn_owned_),
- * allocated at construction time. For training across multiple instances the
- * caller should create a single shared Net and inject it into every solver:
- *
- * @code
- *   // Create one shared network (lives as long as training continues)
- *   auto shared_net = std::make_shared<Net>();
- *
- *   // ... for each instance:
- *   auto* bml = dynamic_cast<BundleSolverML*>(Slvr2->get_inner_Solver());
- *   bml->set_shared_net(shared_net);  // inject shared weights
- *   Slvr2->compute(false);
- *   bml->Backward();                  // updates shared_net's parameters
- * @endcode
- *
- * After set_shared_net(), the solver's nn reference points to the shared
- * object. All forward and backward passes operate on the same parameter
- * tensors, so gradient updates from every instance accumulate into the same
- * network — exactly the online SGD pattern needed for multi-instance training.
- *
- * To revert to the private network, call clear_shared_net().
- *
- * Model persistence
- * -----------------
- * @code
- *   bml->SaveModel("checkpoints/model.pt");
- *   bml->LoadModel("checkpoints/model.pt");
- * @endcode
- * Both methods operate on whichever network is currently active (shared or
- * private). The .pt format is readable from Python via torch.load().
- *
- * Key design choices:
- *   - Copy and move operations are deleted to protect the LibTorch nn::Module
- *     internals, which manage reference-counted parameter tensors.
- *   - All tensors needed for differentiation are stored in per-iteration
- *     vectors (phi_vecs, w_vecs, Gs, …) and consumed during Backward().
- */
-class BundleSolverML : public BundleSolver {
-public:
-  using Index = Function::Index;
+class BundleSolverML : public BundleSolver
+{
+/*--------------------------------------------------------------------------*/
+/*----------------------- PUBLIC PART OF THE CLASS --------------------------*/
+/*--------------------------------------------------------------------------*/
 
-  /// A vector of floating-point values (e.g., a single iterate)
-  typedef std::vector<double> VecMem;
-  /// A collection of VecMem vectors (e.g., previous iterates)
-  using MemMultiVector = std::vector<VecMem>;
+ public:
 
-  // --------------------------------------------------------------------------
-  // Constructor / destructor
-  // --------------------------------------------------------------------------
+/*--------------------------------------------------------------------------*/
+/*---------------------------- PUBLIC TYPES --------------------------------*/
+/*--------------------------------------------------------------------------*/
 
-  /**
-   * @brief Default constructor.
-   *
-   * Allocates the private Net (nn_owned_) and sets nn to point to it.
-   * The feature vector is resized to size_features = 20.
-   */
-  BundleSolverML(void) : BundleSolver() {
-    nn_owned_ = std::make_shared<Net>();
-    nn = nn_owned_.get();             // point to the private network by default
-    size_features = 20;
-    features.resize(size_features);
+ using Index = Function::Index;
+
+ typedef std::vector< double > VecMem;
+ ///< a vector of floating-point values (e.g., a single iterate)
+
+ using MemMultiVector = std::vector< VecMem >;
+ ///< a collection of VecMem vectors (e.g., previous iterates)
+
+/*--------------------------------------------------------------------------*/
+/*------------------- CONSTRUCTING AND DESTRUCTING --------------------------*/
+/*--------------------------------------------------------------------------*/
+
+ /// constructor: allocates the private Net
+ /** Constructor: it allocates the private network and makes nn point to
+  * it; the feature vector is sized to the input dimension of Net. */
+
+ BundleSolverML( void ) : BundleSolver() {
+  f_owned_net = std::make_shared< Net >();
+  nn = f_owned_net.get();         // point to the private network by default
+  size_features = 20;
+  features.resize( size_features );
+
+  /* The BundleSolver constructor caches the parameter defaults before the
+   * BundleSolverML overrides of get_dflt_*_par() are active, since virtual
+   * dispatch does not reach the derived class during base construction;
+   * hence, re-apply here the defaults that differ [see
+   * get_dflt_int_par() / get_dflt_dbl_par()]. */
+  set_par( intMnSSC , get_dflt_int_par( intMnSSC ) );
+  set_par( intMnNSC , get_dflt_int_par( intMnNSC ) );
+  set_par( inttSPar1 , get_dflt_int_par( inttSPar1 ) );
+  set_par( dblmnIncr , get_dflt_dbl_par( dblmnIncr ) );
+  set_par( dblmnDecr , get_dflt_dbl_par( dblmnDecr ) );
   }
 
-  /// Copy constructor deleted: copying would invalidate nn's parameter registry
-  BundleSolverML(const BundleSolverML&) = delete;
-  /// Copy assignment deleted: same reason as copy constructor
-  BundleSolverML& operator=(const BundleSolverML&) = delete;
+/*--------------------------------------------------------------------------*/
+ // copy and move constructor and assignment are deleted: copying or moving
+ // would invalidate the parameter registry of the LibTorch nn::Module
 
-  /// Move constructor deleted: moving might invalidate internal nn pointers
-  BundleSolverML(BundleSolverML&&) = delete;
-  /// Move assignment deleted: same reason as move constructor
-  BundleSolverML& operator=(BundleSolverML&&) = delete;
+ BundleSolverML( const BundleSolverML & ) = delete;
 
-  /**
-   * @brief Destructor.
-   *
-   * Detaches the Block before destruction (inherited pattern from BundleSolver).
-   * The shared_net_ shared_ptr is released here; the Net is destroyed only if
-   * no other BundleSolverML still holds a reference to it.
-   */
-  virtual ~BundleSolverML() { set_Block(nullptr); }
+ BundleSolverML & operator=( const BundleSolverML & ) = delete;
 
-  // --------------------------------------------------------------------------
-  // Shared network management
-  // --------------------------------------------------------------------------
+ BundleSolverML( BundleSolverML && ) = delete;
 
-  /**
-   * @brief Injects an externally-owned shared network into this solver.
-   *
-   * After this call, all forward passes (in Heuristic()) and backward passes
-   * (in Backward()) operate on @p net's parameters instead of the private
-   * nn_owned_ instance.  Because multiple BundleSolverML objects can point
-   * to the same Net, gradient updates from all of them accumulate into the
-   * same tensors — enabling true multi-instance online training without any
-   * weight-file I/O between instances.
-   *
-   * The shared_ptr keeps the Net alive as long as at least one solver holds
-   * a reference, regardless of the order in which solvers are destroyed.
-   *
-   * @param net  Shared pointer to the network to use. Must not be nullptr.
-   *
-   * Example (training loop):
-   * @code
-   *   auto shared_net = std::make_shared<Net>();
-   *   for (auto& path : train_paths) {
-   *     auto* bml = get_bml_for(path);      // creates BundleSolverML
-   *     bml->set_shared_net(shared_net);    // inject
-   *     solve_and_backward(bml);            // updates shared_net in-place
-   *   }
-   *   bml->SaveModel("model.pt");           // save final weights
-   * @endcode
-   */
-  void set_shared_net(std::shared_ptr<Net> net) {
-    if (!net)
-      throw std::invalid_argument("set_shared_net: net must not be nullptr");
-    shared_net_ = std::move(net);
-    nn = shared_net_.get();           // redirect the raw pointer used internally
+ BundleSolverML & operator=( BundleSolverML && ) = delete;
+
+/*--------------------------------------------------------------------------*/
+ /// destructor: cleanly detaches the BundleSolverML from the Block
+ /** Destructor. The shared_ptr to the shared network (if any) is released
+  * here; the Net is destroyed only if no other BundleSolverML still holds
+  * a reference to it. */
+
+ virtual ~BundleSolverML() { set_Block( nullptr ); }
+
+/*--------------------------------------------------------------------------*/
+/*-------------------- SHARED NETWORK MANAGEMENT ----------------------------*/
+/*--------------------------------------------------------------------------*/
+ /// injects an externally-owned shared network into this solver
+ /** Injects the externally-owned shared network \p net into this solver:
+  * after this call all the forward passes (in Heuristic()) and backward
+  * passes (in Backward()) operate on the parameters of \p net instead of
+  * those of the private network allocated at construction time.
+  *
+  * Since multiple BundleSolverML objects can point to the same Net, the
+  * gradient updates of all of them accumulate into the same tensors, which
+  * enables true multi-instance online training without any weight-file I/O
+  * between instances. The shared_ptr keeps the Net alive as long as at
+  * least one solver holds a reference, regardless of the order in which
+  * the solvers are destroyed.
+  *
+  * @param net  shared pointer to the network to be used, must not be
+  *             nullptr (exception thrown otherwise) */
+
+ void set_shared_net( std::shared_ptr< Net > net ) {
+  if( ! net )
+   throw( std::invalid_argument(
+	     "BundleSolverML::set_shared_net: net must not be nullptr" ) );
+  f_shared_net = std::move( net );
+  nn = f_shared_net.get();    // redirect the raw pointer used internally
   }
 
-  /**
-   * @brief Returns the currently active network as a shared_ptr.
-   *
-   * - If set_shared_net() was called, returns the shared network.
-   * - Otherwise returns the private nn_owned_ instance (still usable as a
-   *   shared_ptr, e.g. to pass to another solver).
-   *
-   * @return Shared pointer to the active Net (never nullptr).
-   */
-  std::shared_ptr<Net> get_shared_net() const {
-    return shared_net_ ? shared_net_ : nn_owned_;
+/*--------------------------------------------------------------------------*/
+ /// returns the currently active network as a shared_ptr
+ /** Returns the currently active network: the shared one if
+  * set_shared_net() has been called, the private one otherwise (still
+  * usable as a shared_ptr, e.g., to pass it to another solver). The
+  * returned pointer is never nullptr. */
+
+ std::shared_ptr< Net > get_shared_net( void ) const {
+  return( f_shared_net ? f_shared_net : f_owned_net );
   }
 
-  /**
-   * @brief Reverts to the private network, releasing the shared reference.
-   *
-   * After this call, nn points back to nn_owned_ and the solver's
-   * shared_ptr to the external network is released (the Net is destroyed
-   * only if no other solver holds a reference).
-   */
-  void clear_shared_net() {
-    shared_net_.reset();
-    nn = nn_owned_.get();
+/*--------------------------------------------------------------------------*/
+ /// reverts to the private network, releasing the shared reference
+ /** Reverts to the private network: after this call nn points back to the
+  * network allocated at construction time and the shared_ptr to the
+  * external network is released (the Net is destroyed only if no other
+  * solver holds a reference to it). */
+
+ void clear_shared_net( void ) {
+  f_shared_net.reset();
+  nn = f_owned_net.get();
   }
 
-  // --------------------------------------------------------------------------
-  // Core ML-specific methods
-  // --------------------------------------------------------------------------
+/*--------------------------------------------------------------------------*/
+/*-------------------- METHODS FOR HANDLING THE MODEL -----------------------*/
+/*--------------------------------------------------------------------------*/
+ /// saves the active network weights to a TorchScript archive (.pt)
+ /** Saves the weights of the currently active network (shared or private)
+  * to the TorchScript archive \p filepath, whose parent directory must
+  * exist (the file is overwritten if present). The format is
+  * cross-compatible with Python's torch.load(). An std::runtime_error is
+  * thrown on any I/O or LibTorch error. */
 
-  /**
-   * @brief Step-size heuristic overriding the base class rule.
-   *
-   * Called at each bundle iteration. Builds the feature vector from the
-   * current solver state, runs a forward pass through the active network
-   * (shared or private), and returns the predicted step-size t. Also
-   * collects and stores all tensors (G, Q, alpha, w, gs_aggreg, …) needed
-   * by the subsequent Backward() call.
-   *
-   * @param whch  Unused; kept for interface compatibility with BundleSolver.
-   * @return      The predicted step-size t > 0.
-   */
-  virtual HpNum Heuristic(Index whch) override;
+ void SaveModel( const std::string & filepath );
 
-  /**
-   * @brief Computes gradients and updates the active network parameters.
-   *
-   * Iterates over all stored iterations, accumulates a scalar loss
-   * (weighted by step type and function value), then calls loss.backward()
-   * to propagate gradients into the active network's parameters.
-   * If a shared network is active, the gradient update affects all solvers
-   * that share the same Net.
-   *
-   * Should be called once per solve, after compute() returns.
-   */
-  void Backward();
+/*--------------------------------------------------------------------------*/
+ /// loads weights from a TorchScript archive into the active network
+ /** Loads the weights found in the TorchScript archive \p filepath into
+  * the currently active network (shared or private); the architecture
+  * must match exactly (same layer names and tensor shapes). The network
+  * is left in eval() mode; nn->train() is called automatically at the
+  * next Heuristic() or Backward(). An std::runtime_error is thrown if
+  * the file is missing or malformed, or the architecture mismatches. */
 
-  /**
-   * @brief Clears all per-solve tensor buffers.
-   *
-   * Empties phi_vecs, w_vecs, Gs, Qs, alphaS, Gs_aggreg, coeff_vecs,
-   * thetaS, tS, and FiS. Call this between successive solves on the same
-   * BundleSolverML instance to free memory and avoid stale data.
-   *
-   * Not needed when a fresh BundleSolverML is created per instance.
-   */
-  void ClearBuffers() {
-    phi_vecs.clear();
-    w_vecs.clear();
-    coeff_vecs.clear();
-    Gs.clear();
-    Gs_aggreg.clear();
-    Qs.clear();
-    alphaS.clear();
-    thetaS.clear();
-    phiS.clear();
-    lastIndexS.clear();
-    tS.clear();
-    FiS.clear();
+ void LoadModel( const std::string & filepath );
+
+/*--------------------------------------------------------------------------*/
+/*----------------------- ML-SPECIFIC METHODS -------------------------------*/
+/*--------------------------------------------------------------------------*/
+ /// step-size heuristic overriding the base class rule
+ /** Method overriding the rule-based short-term t-strategies of the base
+  * BundleSolver. It is called at each iteration where the corresponding
+  * bits of inttSPar1 are set [see get_dflt_int_par()]: it builds the
+  * feature vector out of the current state of the algorithm, runs a
+  * forward pass through the active network (shared or private) and
+  * returns the predicted step-size t > 0. It also records all the tensors
+  * (G, Q, alpha, w, ...) needed by the subsequent Backward() call.
+  *
+  * @param whch  unused, kept for interface compatibility with BundleSolver
+  *
+  * @return the predicted step-size t > 0 */
+
+ HpNum Heuristic( Index whch ) override;
+
+/*--------------------------------------------------------------------------*/
+ /// computes the gradients and updates the active network parameters
+ /** Iterates over all the recorded iterations, accumulates a scalar loss
+  * (weighted by the step type and discounted over time), back-propagates
+  * it through the active network and applies an Adam update to its
+  * parameters. If a shared network is active the update affects all the
+  * solvers sharing the same Net. This is meant to be called once per
+  * solve, after compute() returns. */
+
+ void Backward( void );
+
+/*--------------------------------------------------------------------------*/
+ /// clears all the per-solve tensor buffers
+ /** Empties all the per-iteration tensor buffers recorded by Heuristic().
+  * Call this between successive solves on the same BundleSolverML object
+  * to free memory and avoid stale data; it is not needed when a fresh
+  * BundleSolverML is created for each instance. */
+
+ void ClearBuffers( void ) {
+  phi_vecs.clear();
+  w_vecs.clear();
+  coeff_vecs.clear();
+  Gs.clear();
+  Gs_aggreg.clear();
+  Qs.clear();
+  alphaS.clear();
+  thetaS.clear();
+  phiS.clear();
+  lastIndexS.clear();
+  tS.clear();
+  FiS.clear();
   }
 
-  /**
-   * @brief Constructs the search direction tensor for iteration f with step t.
-   *
-   * Wraps BundleSolverML_W::apply so the computation is differentiable
-   * w.r.t. the network's output (used internally by Backward()).
-   *
-   * @param f  Iteration index into the stored tensor vectors.
-   * @param t  Step-size value (scalar double).
-   * @return   Scalar tensor representing sum(w), connected to the autograd graph.
-   */
-  torch::Tensor w(size_t f, double t);
+/*--------------------------------------------------------------------------*/
+ /// constructs the search direction tensor for iteration f with step t
+ /** Wraps the custom autograd function computing the search direction so
+  * that the computation is differentiable w.r.t. the output of the
+  * network (used internally by Backward()).
+  *
+  * @param f  iteration index into the recorded tensor vectors
+  *
+  * @param t  step-size value
+  *
+  * @return a scalar tensor representing sum( w ), connected to the
+  *         autograd graph */
 
-  // --------------------------------------------------------------------------
-  // Model persistence
-  // --------------------------------------------------------------------------
+ torch::Tensor w( size_t f , double t );
 
-  /**
-   * @brief Saves the active network weights to a TorchScript archive (.pt).
-   *
-   * Works on whichever network is currently active (shared or private).
-   * The file is cross-compatible with Python:
-   * @code
-   *   import torch; sd = torch.load("model.pt")
-   * @endcode
-   *
-   * @param filepath  Output path (directory must exist; file is overwritten).
-   * @throws std::runtime_error on I/O or LibTorch error.
-   */
-  void SaveModel(const std::string& filepath);
+/*--------------------------------------------------------------------------*/
+/*---------------------- PARAMETERS OF THE SOLVER ----------------------------*/
+/*--------------------------------------------------------------------------*/
+ /// get the default value of an int parameter
+ /** Returns the default value of the int parameter \p par. The defaults
+  * differ from the BundleSolver ones where needed to ensure that the
+  * network actually drives the step-size:
+  *
+  * - inttSPar1 == 3: Heuristic() is called after every SS (bit 0) and
+  *   after every NS (bit 1), with no long-term t-strategy interfering;
+  *
+  * - intMnSSC == intMnNSC == 0: t is allowed to change at every
+  *   iteration, for otherwise the [ tm , tp ] window collapses onto
+  *   { t } and the prediction of the network is computed but discarded. */
 
-  /**
-   * @brief Loads weights from a TorchScript archive into the active network.
-   *
-   * Works on whichever network is currently active (shared or private).
-   * Architecture must match exactly (same layer names and tensor shapes).
-   * Leaves the network in eval() mode; call nn->train() before Backward().
-   *
-   * @param filepath  Path to the .pt file (must exist).
-   * @throws std::runtime_error if the file is missing, malformed, or the
-   *         architecture does not match.
-   */
-  void LoadModel(const std::string& filepath);
+ [[nodiscard]] int get_dflt_int_par( idx_type par ) const override {
+  static const std::array< int , 22 > dflt_int_par = {
+   10 ,   // intBPar1
+   100 ,  // intBPar2
+   1 ,    // intBPar3
+   1 ,    // intBPar4
+   0 ,    // intBPar6
+   3 ,    // intBPar7
+   0 ,    // intMnSSC
+   0 ,    // intMnNSC
+   3 ,    // inttSPar1
+   2 ,    // intMaxNrEvls
+   1 ,    // intDoEasy
+   2 ,    // intWZNorm
+   0 ,    // intFrcLstSS
+   0 ,    // intTrgtMng
+   0 ,    // intMPName
+   0 ,    // intMPlvl
+   0 ,    // intQPmp1
+   0 ,    // intQPmp2
+   4 ,    // intOSImp1
+   0 ,    // intOSImp2
+   1 ,    // intOSImp3
+   2      // intRstAlg
+   };
 
-  // --------------------------------------------------------------------------
-  // Default integer parameter overrides
-  // --------------------------------------------------------------------------
+  if( ( par >= intLastParCDAS ) && ( par < intLastBndSlvPar ) )
+   return( dflt_int_par[ par - intLastParCDAS ] );
 
-  /**
-   * @brief Returns the default value of integer parameter @p par.
-   *
-   * See full parameter table in the implementation for details.
-   */
-  [[nodiscard]] int get_dflt_int_par(idx_type par) const override {
-    static const std::array<int, 22> dflt_int_par = {
-        0,    // intBPar1
-        100,  // intBPar2
-        1,    // intBPar3
-        1,    // intBPar4
-        0,    // intBPar6
-        3,    // intBPar7
-        1000, // intMnSSC
-        1000, // intMnNSC
-        12,   // inttSPar1
-        2,    // intMaxNrEvls
-        1,    // intDoEasy
-        2,    // intWZNorm
-        0,    // intFrcLstSS
-        0,    // intTrgtMng
-        0,    // intMPName
-        0,    // intMPlvl
-        0,    // intQPmp1
-        0,    // intQPmp2
-        4,    // intOSImp1
-        0,    // intOSImp2
-        1,    // intOSImp3
-        2     // intRstAlg
-    };
-    if ((par >= intLastParCDAS) && (par < intLastBndSlvPar))
-      return dflt_int_par[par - intLastParCDAS];
-    return CDASolver::get_dflt_int_par(par);
+  return( CDASolver::get_dflt_int_par( par ) );
   }
 
-  /// Macro that registers BundleSolverML in the SMS++ solver factory
-  SMSpp_insert_in_factory_h;
+/*--------------------------------------------------------------------------*/
+ /// get the default value of a double parameter
+ /** Returns the default value of the double parameter \p par. Same as
+  * BundleSolver except dblmnIncr and dblmnDecr, both (essentially) == 1:
+  * the minimum "significant" change of t is none, so that after a SS the
+  * network can pick any t in [ t , t * mxIncr ] and after a NS any t in
+  * [ t * mxDecr , t ] (including keeping it essentially unchanged)
+  * instead of being forced to move it. Note that mnIncr is required by
+  * BundleSolver::set_par() to be strictly > 1, hence the tiny offset. */
 
-  // --------------------------------------------------------------------------
-  // Data members (public for direct access by train_and_test.cpp)
-  // --------------------------------------------------------------------------
+ [[nodiscard]] double get_dflt_dbl_par( idx_type par ) const override {
+  static const std::array< double , 17 > dflt_dbl_par = {
+   0 ,         // dblNZEps
+   1e+2 ,      // dbltStar
+   0 ,         // dblMinNrEvls
+   30 ,        // dblBPar5
+   0.01 ,      // dblm1
+   0.99 ,      // dblm2
+   0.99 ,      // dblm3
+   10 ,        // dblmxIncr
+   1.000001 ,  // dblmnIncr
+   0.1 ,       // dblmxDecr
+   1 ,         // dblmnDecr
+   1e+6 ,      // dbltMaior
+   1e-6 ,      // dbltMinor
+   1 ,         // dbltInit
+   1e-3 ,      // dbltSPar2
+   0 ,         // dbltSPar3
+   1e-1        // dblCtOff
+   };
 
-  /// Raw pointer to the active network (shared or private). Never nullptr.
-  /// Use set_shared_net() / clear_shared_net() to redirect it; do not
-  /// reassign this pointer directly.
-  Net* nn = nullptr;
+  if( ( par >= dblLastParCDAS ) && ( par < dblLastBndSlvPar ) )
+   return( dflt_dbl_par[ par - dblLastParCDAS ] );
 
-  /// Feature vector built at each iteration and fed to the network (size 20)
-  VecMem features;
+  return( CDASolver::get_dflt_dbl_par( par ) );
+  }
 
-  /// Number of features (always 20, matching the network's input dimension)
-  int size_features;
+/*--------------------------------------------------------------------------*/
+/*---------------------------- PUBLIC FIELDS --------------------------------*/
+/*--------------------------------------------------------------------------*/
+ // the fields are public to allow direct access by training drivers
 
-  /// Starting point Lambda0 (stability center at the beginning of the solve)
-  Vec_VarValue Lambda0;
+ Net * nn = nullptr;
+ ///< raw pointer to the active network (shared or private), never nullptr
+ /**< Raw pointer to the active network; use set_shared_net() /
+  * clear_shared_net() to redirect it, do not reassign it directly. */
 
-  /// History of previous iterates (reserved for future use)
-  MemMultiVector pw;
+ VecMem features;     ///< feature vector fed to the network at each iteration
 
-  // Per-iteration tensors stored for the backward pass
-  std::vector<torch::Tensor> phi_vecs;    ///< Feature tensors (network inputs)
-  std::vector<torch::Tensor> w_vecs;      ///< Search direction tensors w
-  std::vector<torch::Tensor> coeff_vecs;  ///< Step-type signs (+1 SS / -1 NS)
-  std::vector<torch::Tensor> Gs;          ///< Subgradient matrices G
-  std::vector<torch::Tensor> Gs_aggreg;  ///< Aggregated subgradient vectors
-  std::vector<torch::Tensor> Qs;          ///< Gram matrices Q = G @ G^T
-  std::vector<torch::Tensor> alphaS;      ///< Linearization error vectors
-  std::vector<torch::Tensor> thetaS;      ///< Dual multiplier vectors
-  std::vector<torch::Tensor> phiS;        ///< Reserved for future use
-  std::vector<torch::Tensor> lastIndexS;  ///< Reserved for future use
-  std::vector<double>        tS;          ///< Predicted step-sizes
-  std::vector<double>        FiS;         ///< Best upper bounds on f*
+ int size_features;   ///< number of features (the input dimension of Net)
 
-private:
-  // --------------------------------------------------------------------------
-  // Network ownership
-  // --------------------------------------------------------------------------
+ Vec_VarValue Lambda0;  ///< starting point (initial stability center)
 
-  /// Private network allocated at construction (used when no shared net is set)
-  std::shared_ptr<Net> nn_owned_;
+ MemMultiVector pw;     ///< history of previous iterates (currently unused)
 
-  /// Shared network injected by set_shared_net() (nullptr when using nn_owned_)
-  std::shared_ptr<Net> shared_net_;
-  
-  /// Adam optimizer, lazily initialized on first Backward() call.
-  /// Held as a member so moment estimates persist across successive Backward() calls.
-  std::unique_ptr<torch::optim::Adam> optimizer_;
+ // per-iteration tensors recorded by Heuristic() for the backward pass
 
+ std::vector< torch::Tensor > phi_vecs;    ///< feature tensors (net inputs)
+ std::vector< torch::Tensor > w_vecs;      ///< search direction tensors w
+ std::vector< torch::Tensor > coeff_vecs;  ///< step-type signs: +1 SS, -1 NS
+ std::vector< torch::Tensor > Gs;          ///< subgradient matrices G
+ std::vector< torch::Tensor > Gs_aggreg;   ///< aggregated subgradient vectors
+ std::vector< torch::Tensor > Qs;          ///< Gram matrices Q = G G^T
+ std::vector< torch::Tensor > alphaS;      ///< linearization error vectors
+ std::vector< torch::Tensor > thetaS;      ///< currently unused
+ std::vector< torch::Tensor > phiS;        ///< currently unused
+ std::vector< torch::Tensor > lastIndexS;  ///< currently unused
+ std::vector< double > tS;                 ///< predicted step-sizes
+ std::vector< double > FiS;                ///< best upper bounds on f*
 
-}; // class BundleSolverML
+/*--------------------------------------------------------------------------*/
+/*----------------------- PRIVATE PART OF THE CLASS --------------------------*/
+/*--------------------------------------------------------------------------*/
 
-} // namespace SMSpp_di_unipi_it
+ private:
+
+/*--------------------------------------------------------------------------*/
+/*---------------------------- PRIVATE FIELDS -------------------------------*/
+/*--------------------------------------------------------------------------*/
+
+ std::shared_ptr< Net > f_owned_net;
+ ///< private network allocated at construction time
+
+ std::shared_ptr< Net > f_shared_net;
+ ///< shared network injected by set_shared_net(), nullptr if none
+
+ std::unique_ptr< torch::optim::Adam > f_optimizer;
+ ///< Adam optimizer, lazily initialized at the first Backward() call;
+ ///< kept as a field so that the moment estimates persist across calls
+
+/*--------------------------------------------------------------------------*/
+/*-------------------------- PRIVATE METHODS --------------------------------*/
+/*--------------------------------------------------------------------------*/
+
+ SMSpp_insert_in_factory_h;
+
+/*--------------------------------------------------------------------------*/
+
+ };  // end( class( BundleSolverML ) )
+
+/*--------------------------------------------------------------------------*/
+
+}  // end( namespace SMSpp_di_unipi_it )
+
+/*--------------------------------------------------------------------------*/
+/*--------------------------------------------------------------------------*/
+
+#endif  /* BundleSolverML.h included */
+
+/*--------------------------------------------------------------------------*/
+/*--------------------- End File BundleSolverML.h --------------------------*/
+/*--------------------------------------------------------------------------*/

@@ -576,6 +576,7 @@ public:
   algo = get_dflt_int_par( intOSImp1 );
   reduction = get_dflt_int_par( intOSImp2 );
   threads = get_dflt_int_par( intOSImp3 );
+  RstAlgPrm = get_dflt_int_par( intRstAlg );
 
   MaxTime = CDASolver::get_dflt_dbl_par( dblMaxTime );
   RelAcc = CDASolver::get_dflt_dbl_par( dblRelAcc );
@@ -584,6 +585,7 @@ public:
   NZEps = get_dflt_dbl_par( dblNZEps );
   tStar = get_dflt_dbl_par( dbltStar );
   MinNrEvls = get_dflt_dbl_par( dblMinNrEvls );
+  BPar5 = get_dflt_dbl_par( dblBPar5 );
   m1 = get_dflt_dbl_par( dblm1 );
   m2 = get_dflt_dbl_par( dblm2 );
   m3 = get_dflt_dbl_par( dblm3 );
