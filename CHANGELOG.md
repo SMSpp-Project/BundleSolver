@@ -10,9 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - BundleSolverML, a BundleSolver variant whose step-size t is predicted by
-  a neural network (LibTorch) trainable online across solves, with shared
+  a neural network (Torch) trainable online across solves, with shared
   weights among multiple instances and TorchScript model save / load; it is
-  only built if libTorch is available.
+  only built if Torch is available.
 
 ### Changed
 

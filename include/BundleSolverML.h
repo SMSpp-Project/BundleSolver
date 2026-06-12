@@ -4,7 +4,7 @@
 /** @file
  * Header file for the BundleSolverML class, which derives from BundleSolver
  * and replaces the classical rule-based step-size heuristics with a small
- * feedforward neural network (implemented with the LibTorch C++ API) that
+ * feedforward neural network (implemented with the Torch C++ API) that
  * predicts the proximal regularization parameter t out of a set of features
  * describing the current state of the algorithm.
  *
@@ -55,7 +55,7 @@
 /*--------------------------------------------------------------------------*/
 /*------------------------------- MACROS -----------------------------------*/
 /*--------------------------------------------------------------------------*/
-/* BML_LOG (so named to avoid clashing with LibTorch's c10 LOG( n ) macro)
+/* BML_LOG (so named to avoid clashing with Torch's c10 LOG( n ) macro)
  * prints debug output of BundleSolverML on std::cout; it is governed by the
  * VERBOSE macro, set to 1 to enable the output and to 0 to disable it. */
 
@@ -114,7 +114,7 @@ struct Net : torch::nn::Module
  /// second fully-connected layer: 16 hidden units --> 1 output (step-size)
  torch::nn::Linear fc2{ nullptr };
 
- /// constructor: registers the two layers with the LibTorch module system
+ /// constructor: registers the two layers with the Torch module system
  /** Constructor. The output layer is initialized with small weights and a
   * bias such that softplus( bias ) is about 1, so that the first
   * predictions of the untrained network are close to the classical
@@ -174,7 +174,7 @@ struct Net : torch::nn::Module
  * network call clear_shared_net(). The weights of whichever network is
  * currently active are saved / loaded with SaveModel() / LoadModel().
  *
- * Note that copy and move operations are deleted to protect the LibTorch
+ * Note that copy and move operations are deleted to protect the Torch
  * nn::Module internals, which manage reference-counted parameter tensors;
  * all the tensors needed for differentiation are stored in per-iteration
  * vectors (phi_vecs, w_vecs, Gs, ...) and consumed during Backward(). */
@@ -227,7 +227,7 @@ class BundleSolverML : public BundleSolver
 
 /*--------------------------------------------------------------------------*/
  // copy and move constructor and assignment are deleted: copying or moving
- // would invalidate the parameter registry of the LibTorch nn::Module
+ // would invalidate the parameter registry of the Torch nn::Module
 
  BundleSolverML( const BundleSolverML & ) = delete;
 
@@ -303,7 +303,7 @@ class BundleSolverML : public BundleSolver
   * to the TorchScript archive \p filepath, whose parent directory must
   * exist (the file is overwritten if present). The format is
   * cross-compatible with Python's torch.load(). An std::runtime_error is
-  * thrown on any I/O or LibTorch error. */
+  * thrown on any I/O or Torch error. */
 
  void SaveModel( const std::string & filepath );
 

@@ -42,9 +42,9 @@ BNDSLVINC = -I$(BNDSLVSDR)/include
 BNDSLVH   = $(BNDSLVSDR)/include/BundleSolver.h \
 	$(BNDSLVSDR)/include/ParallelBundleSolver.h
 
-# BundleSolverML requires libTorch: it is only compiled if $(BNDSLVML) is
+# BundleSolverML requires Torch: it is only compiled if $(BNDSLVML) is
 # set (see makefile-c / makefile-s), in which case $(libTorchINC) is the
-# -I< include directories > for libTorch
+# -I< include directories > for Torch
 ifdef BNDSLVML
     BNDSLVOBJ += $(BNDSLVSDR)/obj/BundleSolverML.o
     BNDSLVH += $(BNDSLVSDR)/include/BundleSolverML.h

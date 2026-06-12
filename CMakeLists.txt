@@ -57,7 +57,7 @@ if (NOT Clp_FOUND)
     set(NDOFiOracle_USE_CLP OFF)
 endif ()
 
-# libTorch needed for BundleSolverML
+# Torch needed for BundleSolverML
 find_package(Torch HINTS ${Torch_ROOT})
 
 # Set the WHICH_OSI_QP macro according to these following priorities:

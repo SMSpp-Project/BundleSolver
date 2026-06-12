@@ -198,7 +198,7 @@ void BundleSolverML::SaveModel( const std::string & filepath )
  catch( const c10::Error & e ) {
   nn->train();
   throw( std::runtime_error(
-	  std::string( "BundleSolverML::SaveModel: LibTorch error: " ) +
+	  std::string( "BundleSolverML::SaveModel: Torch error: " ) +
 	  e.what() ) );
   }
  catch( const std::exception & e ) {
@@ -221,7 +221,7 @@ void BundleSolverML::LoadModel( const std::string & filepath )
   }
  catch( const c10::Error & e ) {
   throw( std::runtime_error(
-	  std::string( "BundleSolverML::LoadModel: LibTorch error: " ) +
+	  std::string( "BundleSolverML::LoadModel: Torch error: " ) +
 	  e.what() ) );
   }
  catch( const std::exception & e ) {

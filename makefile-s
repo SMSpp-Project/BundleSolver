@@ -49,8 +49,8 @@ include $(libNDOSDR)/lib/makefile-inc
 MILPSSDR = $(BNDSLVSDR)/../MILPSolver
 include $(MILPSSDR)/makefile-s
 
-# define input macros for libTorch library makefile, then include it;
-# BundleSolverML is only compiled in if libTorch is actually installed
+# define input macros for Torch library makefile, then include it;
+# BundleSolverML is only compiled in if Torch is actually installed
 # at $(Torch_ROOT)
 ifneq ($(wildcard $(subst $\",,$(Torch_ROOT))/include/torch/csrc/api/include/torch/torch.h),)
     include $(BNDSLVSDR)/../extlib/makefile-libTorch
