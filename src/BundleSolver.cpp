@@ -1537,8 +1537,13 @@ void BundleSolver::set_Block( Block * block )
      // [MILP]Solver::set_Block() does *not* call Block::register_Solver(),
      // which therefore may have to be done later
      MILPs->set_Block( LagB->get_inner_block() );
-     // the component is easy only if all variables are continuous
-     if( ! MILPs->get_num_integer_vars() ) {
+     // the component is easy only if it is a real LP: all variables are
+     // continuous and there is no quadratic constraint (the master problem
+     // cannot absorb quadratic rows; also, with them the coefficient matrix
+     // is stored row-wise, while GetBDesc() hands the master the column-wise
+     // description, see GetBNC())
+     if( ( ! MILPs->get_num_integer_vars() ) &&
+	 ( ! MILPs->get_numquadrows() ) ) {
       IsEasy[ k ] = MILPs;
       ++NrEasy;
 
