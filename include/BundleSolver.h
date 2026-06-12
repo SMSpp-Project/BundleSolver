@@ -3064,6 +3064,54 @@ class FakeFiOracle : public FiOracle
 
  std::vector< ColVariable * > LamVcblr;  ///< map Lambda -> ColVariable
 
+ // per-component local→global Lambda index map for sparse Lambda mode.
+ // v_local2global[ h ] has size get_num_active_var() + 1 for v_c05f[ h ];
+ // entries [ 0 .. loc_NV - 1 ] are the indices in LamVcblr of h's active
+ // Variables in the order get_linearization_coefficients writes them, and
+ // the last slot is Inf< Index >() so v_local2global[ h ].data() is a
+ // ready-to-use Inf-terminated SGBse for MPSolver::SetItemBse. Empty
+ // (size 0) when f_sparse_lambda is false (legacy dense path).
+ //
+ // Owned by BundleSolver (not by the C05Function), in line with the
+ // policy that Solver-specific bookkeeping never leaks into the
+ // Function interface; the Inf-terminated convention is an OSIMPSolver
+ // implementation detail that will disappear with Bundle 2.0.
+ std::vector< std::vector< Index > > v_local2global;
+
+ // true iff at least one v_c05f[ h ] (or f_lf) exposes a strict subset
+ // of LamVcblr as its active variables (or the same set in a different
+ // order). Auto-detected in two places: at set_Block, by comparing per-
+ // component active sets against the union LamVcblr; and at runtime in
+ // process_outstanding_Modification's 4th loop, where a naked
+ // FunctionModVars* (i.e. one that did NOT arrive as a lockstep
+ // GroupModification covering all components) promotes a dense Solver
+ // to sparse on the spot — materialising identity local-to-global maps
+ // in v_local2global[ * ] and rebuilding Lambda2Idx / v_ref_count from
+ // the dense invariant — before the sparse handlers below process the
+ // Mod. When false, every gather site falls back to the legacy "all
+ // components see the same dense Lambda" code path.
+ bool f_sparse_lambda = false;
+
+ // pointer → global Lambda index map, the inverse of LamVcblr. Kept live
+ // (and incrementally maintained) only when f_sparse_lambda == true; used
+ // to resolve ColVariable * coming from a FunctionModVars* against the
+ // global Lambda index space when v_c05f[ h ] is sparse (i.e. when the
+ // dense invariant "all components have identical active vars in the
+ // same order" does not hold and the Mod's first()/range()/subset()
+ // entries cannot be interpreted globally). In dense mode this map is
+ // cleared after set_Block to save memory.
+ std::unordered_map< ColVariable * , Index > Lambda2Idx;
+
+ // per-LamVcblr-slot refcount: v_ref_count[ i ] is the number of
+ // v_c05f (+ f_lf if any) that have LamVcblr[ i ] as an active
+ // variable. Built in set_Block alongside LamVcblr; decremented by the
+ // sparse FunctionModVarsRngd / FunctionModVarsSbst handlers, and when
+ // it reaches 0 the slot is queued for global removal — at the end of
+ // the 4th Modification loop we compact LamVcblr / Lambda / Lambda2Idx
+ // / v_local2global[ * ] and call Master->RmvVars to reclaim the
+ // master row. Kept live only when f_sparse_lambda == true.
+ std::vector< Index > v_ref_count;
+
  VarValue UpTrgt;        ///< upper target
  VarValue LwTrgt;        ///< lower target
 

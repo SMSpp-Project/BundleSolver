@@ -42,28 +42,28 @@ find_package(CoinUtils REQUIRED)
 
 # ----- Find the headers ---------------------------------------------------- #
 find_path(Clp_INCLUDE_DIR
-          NAMES ClpConfig.h
-          PATHS ${Clp_ROOT}/include
-          PATH_SUFFIXES coin clp/coin coin-or
-          DOC "Clp include directory.")
+        NAMES ClpConfig.h
+        PATHS ${Clp_ROOT}/include
+        PATH_SUFFIXES coin clp/coin coin-or
+        DOC "Clp include directory.")
 
 # ----- Find the library ---------------------------------------------------- #
 find_library(Clp_LIBRARY
-             NAMES Clp
-             PATHS ${Clp_ROOT}/lib
-             DOC "Clp library.")
+        NAMES Clp
+        PATHS ${Clp_ROOT}/lib
+        DOC "Clp library.")
 
 # ----- ClpSolver component ------------------------------------------------- #
 find_path(Clp_ClpSolver_INCLUDE_DIR
-          NAMES ClpSolve.hpp
-          PATHS ${Clp_ROOT}/include
-          PATH_SUFFIXES coin clp/coin coin-or
-          DOC "ClpSolver include directory.")
+        NAMES ClpSolve.hpp
+        PATHS ${Clp_ROOT}/include
+        PATH_SUFFIXES coin clp/coin coin-or
+        DOC "ClpSolver include directory.")
 
 find_library(Clp_ClpSolver_LIBRARY
-             NAMES ClpSolver
-             PATHS ${Clp_ROOT}/lib
-             DOC "ClpSolver library.")
+        NAMES ClpSolver
+        PATHS ${Clp_ROOT}/lib
+        DOC "ClpSolver library.")
 
 if (Clp_ClpSolver_INCLUDE_DIR AND Clp_ClpSolver_LIBRARY)
     set(Clp_ClpSolver_FOUND TRUE)
@@ -71,15 +71,15 @@ endif ()
 
 # ----- OsiClp component ---------------------------------------------------- #
 find_path(Clp_OsiClp_INCLUDE_DIR
-          NAMES OsiClpSolverInterface.hpp
-          PATHS ${Clp_ROOT}/include
-          PATH_SUFFIXES coin clp/coin coin-or
-          DOC "OsiClp include directory.")
+        NAMES OsiClpSolverInterface.hpp
+        PATHS ${Clp_ROOT}/include
+        PATH_SUFFIXES coin clp/coin coin-or
+        DOC "OsiClp include directory.")
 
 find_library(Clp_OsiClp_LIBRARY
-             NAMES OsiClp
-             PATHS ${Clp_ROOT}/lib
-             DOC "OsiClp library.")
+        NAMES OsiClp
+        PATHS ${Clp_ROOT}/lib
+        DOC "OsiClp library.")
 
 if (Clp_OsiClp_INCLUDE_DIR AND Clp_OsiClp_LIBRARY)
     set(Clp_OsiClp_FOUND TRUE)
@@ -159,7 +159,7 @@ endif ()
 # Variables marked as advanced are not displayed in CMake GUIs, see:
 # https://cmake.org/cmake/help/latest/command/mark_as_advanced.html
 mark_as_advanced(Clp_INCLUDE_DIR Clp_ClpSolver_INCLUDE_DIR Clp_OsiClp_INCLUDE_DIR
-                 Clp_LIBRARY Clp_ClpSolver_LIBRARY Clp_OsiClp_LIBRARY
-                 Clp_VERSION)
+        Clp_LIBRARY Clp_ClpSolver_LIBRARY Clp_OsiClp_LIBRARY
+        Clp_VERSION)
 
 # --------------------------------------------------------------------------- #

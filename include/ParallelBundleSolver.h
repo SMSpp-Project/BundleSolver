@@ -17,7 +17,11 @@
  *         Dipartimento di Informatica \n
  *         Universita' di Pisa \n
  *
- * \copyright &copy; by Antonio Frangioni
+ * \author Donato Meoli \n
+ *         Dipartimento di Informatica \n
+ *         Universita' di Pisa \n
+ *
+ * \copyright &copy; by Antonio Frangioni, Donato Meoli
  */
 /*--------------------------------------------------------------------------*/
 /*----------------------------- DEFINITIONS --------------------------------*/
@@ -92,8 +96,32 @@ public:
 
  enum int_par_type_PBndSlv {
 
- intLastPBndSlvPar = intLastBndSlvPar ,
- ///< first allowed new int parameter for derived classes
+ intParFrm = intLastBndSlvPar ,
+ ///< bit-wise selector of the parallel InnerLoop() formulation
+ /**< Bit-wise encoded choice of how the parallel inner loop evaluates and
+  * consumes the function components:
+  *
+  * - bit 0 (1): if 0, the "legacy" formulation is used, whereby ready
+  *   std::future are consumed in completion order; this is fast but the set
+  *   and order of the evaluated components, hence the whole trajectory of
+  *   the algorithm, depend on thread timing and is therefore not
+  *   reproducible. If 1, futures are instead consumed in a fixed round-robin
+  *   index order, which makes the run deterministic;
+  *
+  * - bit 1 (2): only relevant with bit 0 == 1 and bit 2 == 0. If 1, as soon
+  *   as the master problem is guaranteed to change the still in-flight tasks
+  *   are discarded rather than used, so that exactly the same components are
+  *   processed, in the same order, as the sequential BundleSolver would
+  *   (faithful to the sequential run, but not work-conserving);
+  *
+  * - bit 2 (4): only relevant with bit 0 == 1. If 1, all the ( NrFi - NrEasy
+  *   ) components are always evaluated at each iteration (non-incremental
+  *   "batch" mode), which maximises the available parallelism.
+  *
+  * The meaningful combinations are: 0 = legacy, 1 = work-conserving
+  * deterministic, 3 = faithful-to-sequential, 5 = deterministic batch. */
+
+ intLastPBndSlvPar  ///< first allowed new int parameter for derived classes
  /**< Convenience value for easily allow derived classes
   * to extend the set of int algorithmic parameters. */
 
@@ -129,6 +157,7 @@ public:
   // ensure all parameters are properly given their default value
   MaxThread = ThinComputeInterface::get_dflt_int_par( intMaxIter );
   PoolingInt = 1e-4;
+  ParFrm = 0;  // legacy (completion-order) formulation
   }
 
 /*--------------------------------------------------------------------------*/
@@ -159,11 +188,13 @@ public:
   *   when InnerLoop() ends). */
 
  void set_par( idx_type par , int value ) override {
-  if( par == intMaxThread ) {
+  if( par == intMaxThread )
    MaxThread = value;
-   }
   else
-   BundleSolver::set_par( par , value );
+   if( par == intParFrm )
+    ParFrm = value;
+   else
+    BundleSolver::set_par( par , value );
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
@@ -201,11 +232,9 @@ public:
  *
  *  @{ */
 
- /*!!
  idx_type get_num_int_par( void ) const override {
-  return( idx_type( intLastBndSlvPar ) );
+  return( idx_type( intLastPBndSlvPar ) );
   }
-  !!*/
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
@@ -214,7 +243,16 @@ public:
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
- 
+
+ int get_dflt_int_par( idx_type par ) const override {
+  if( par == intParFrm )
+   return( 0 );
+  else
+   return( BundleSolver::get_dflt_int_par( par ) );
+  }
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+
  double get_dflt_dbl_par( idx_type par ) const override {
   if( par == dblPoolingInt )
    return( 1e-4 );
@@ -227,8 +265,9 @@ public:
  int get_int_par( idx_type par ) const override {
   if( par == intMaxThread )
    return( MaxThread );
-  else
-   return( BundleSolver::get_int_par( par ) );
+  if( par == intParFrm )
+   return( ParFrm );
+  return( BundleSolver::get_int_par( par ) );
   }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
@@ -242,15 +281,12 @@ public:
 
 /*--------------------------------------------------------------------------*/
 
- /*!!
  idx_type int_par_str2idx( const std::string & name ) const override {
-  const auto it = int_pars_map.find( name );
-  if( it != int_pars_map.end() )
-   return( it->second );
-  else
-   return( CDASolver::int_par_str2idx( name ) );
+  if( name == "intParFrm" )
+   return( intParFrm );
+
+  return( BundleSolver::int_par_str2idx( name ) );
   }
-  !!*/
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
@@ -263,14 +299,13 @@ public:
 
 /*--------------------------------------------------------------------------*/
 
- /*!!
  const std::string & int_par_idx2str( idx_type idx ) const override {
-  if( ( idx >= intLastParCDAS ) && ( idx < intLastBndSlvPar ) )
-   return( int_pars_str[ idx - intBPar1 ] );
+  static const std::string __pfname = "intParFrm";
+  if( idx == intParFrm )
+   return( __pfname );
 
-  return( CDASolver::int_par_idx2str( idx ) );
+  return( BundleSolver::int_par_idx2str( idx ) );
   }
-  !!*/
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
@@ -303,6 +338,21 @@ public:
  Index InnerLoop( bool extrastep = false ) override;
 
 /*--------------------------------------------------------------------------*/
+ /* Deterministic variant of the parallel inner loop: ready std::future are
+  * consumed in a fixed round-robin index order rather than in completion
+  * order, which makes the whole run reproducible. Selected by bit 0 of
+  * intParFrm. The two boolean arguments encode the remaining bits:
+  *
+  * - discard (bit 1): when the master problem is guaranteed to change, the
+  *   still in-flight tasks are discarded instead of being used, so that the
+  *   processed components match exactly those of the sequential BundleSolver;
+  *
+  * - batch (bit 2): all the ( NrFi - NrEasy ) components are evaluated at
+  *   each iteration, with no early stop (non-incremental). */
+
+ Index InnerLoopOrdered( bool extrastep , bool discard , bool batch );
+
+/*--------------------------------------------------------------------------*/
 /*---------------------------- PROTECTED FIELDS  ---------------------------*/
 /*--------------------------------------------------------------------------*/
 
@@ -311,6 +361,8 @@ public:
  Index MaxThread;    ///< maximum number of different threads (tasks)
 
  double PoolingInt;  ///< waiting time between each pooling round
+
+ int ParFrm;         ///< bit-wise selector of the InnerLoop() formulation
 
  // generic fields- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
