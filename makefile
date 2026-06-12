@@ -42,6 +42,14 @@ BNDSLVINC = -I$(BNDSLVSDR)/include
 BNDSLVH   = $(BNDSLVSDR)/include/BundleSolver.h \
 	$(BNDSLVSDR)/include/ParallelBundleSolver.h
 
+# BundleSolverML requires libTorch: it is only compiled if $(BNDSLVML) is
+# set (see makefile-c / makefile-s), in which case $(libTorchINC) is the
+# -I< include directories > for libTorch
+ifdef BNDSLVML
+    BNDSLVOBJ += $(BNDSLVSDR)/obj/BundleSolverML.o
+    BNDSLVH += $(BNDSLVSDR)/include/BundleSolverML.h
+endif
+
 # clean - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 clean::
@@ -58,5 +66,13 @@ $(BNDSLVSDR)/obj/ParallelBundleSolver.o: $(BNDSLVSDR)/src/ParallelBundleSolver.c
 	$(BNDSLVH) $(SMS++OBJ) $(MILPSH) $(libNDOOBJ)
 	$(CC) -c $(BNDSLVSDR)/src/ParallelBundleSolver.cpp -o $@ \
 	$(BNDSLVINC) $(SMS++INC) $(MILPSINC) $(libNDOINC) $(SW)
+
+ifdef BNDSLVML
+$(BNDSLVSDR)/obj/BundleSolverML.o: $(BNDSLVSDR)/src/BundleSolverML.cpp \
+	$(BNDSLVSDR)/include/BundleSolverML.h \
+	$(BNDSLVSDR)/include/BundleSolver.h $(SMS++OBJ) $(MILPSH) $(libNDOOBJ)
+	$(CC) -c $(BNDSLVSDR)/src/BundleSolverML.cpp -o $@ $(BNDSLVINC) \
+	$(SMS++INC) $(MILPSINC) $(libNDOINC) $(libTorchINC) $(SW)
+endif
 
 ########################## End of makefile ###################################

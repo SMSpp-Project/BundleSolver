@@ -49,6 +49,14 @@ include $(libNDOSDR)/lib/makefile-inc
 MILPSSDR = $(BNDSLVSDR)/../MILPSolver
 include $(MILPSSDR)/makefile-s
 
+# define input macros for libTorch library makefile, then include it;
+# BundleSolverML is only compiled in if libTorch is actually installed
+# at $(Torch_ROOT)
+ifneq ($(wildcard $(subst $\",,$(Torch_ROOT))/include/torch/csrc/api/include/torch/torch.h),)
+    include $(BNDSLVSDR)/../extlib/makefile-libTorch
+    BNDSLVML = 1
+endif
+
 # include the makefile requiring all external modules in input
 include $(BNDSLVSDR)/makefile
 
@@ -57,10 +65,10 @@ include $(BNDSLVSDR)/makefile
 # append external stuff defined in the other makefiles to BNDSLVOBJ,
 # BNDSLVINC and BNDSLVH, thus the := assignment has to be used (use GNU make)
 BNDSLVOBJ := $(BNDSLVOBJ) $(MILPSOBJ) $(libNDOOBJ)
-BNDSLVINC := $(BNDSLVINC) $(MILPSINC) $(libNDOINC)
-BNDSLVH := $(BNDSLVH) $(MILPSH) $(libNDOH) 
+BNDSLVINC := $(BNDSLVINC) $(MILPSINC) $(libNDOINC) $(libTorchINC)
+BNDSLVH := $(BNDSLVH) $(MILPSH) $(libNDOH)
 
 # external libraries for BundleSolver
-BNDSLVLIB = $(libNDOLIB) $(MILPSLIB)
+BNDSLVLIB = $(libNDOLIB) $(MILPSLIB) $(libTorchLIB)
 
 ########################### End of makefile-s ################################
