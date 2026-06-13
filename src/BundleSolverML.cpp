@@ -4,7 +4,7 @@
 /** @file
  * Implementation of the BundleSolverML class.
  *
- * \author Francesca Demelas \n
+ * \author Francesco Demelas \n
  *         Laboratoire d'Informatique de Paris Nord \n
  *         Universite' Sorbonne Paris Nord \n
  *
@@ -16,7 +16,7 @@
  *         Dipartimento di Informatica \n
  *         Universita' di Pisa \n
  *
- * \copyright &copy; by Francesca Demelas, Antonio Frangioni, Donato Meoli
+ * \copyright &copy; by Francesco Demelas, Antonio Frangioni, Donato Meoli
  */
 /*--------------------------------------------------------------------------*/
 /*---------------------------- IMPLEMENTATION ------------------------------*/

@@ -17,7 +17,7 @@
  * pattern for multi-instance training. The weights can be saved to / loaded
  * from TorchScript archives that are cross-compatible with Python.
  *
- * \author Francesca Demelas \n
+ * \author Francesco Demelas \n
  *         Laboratoire d'Informatique de Paris Nord \n
  *         Universite' Sorbonne Paris Nord \n
  *
@@ -29,7 +29,7 @@
  *         Dipartimento di Informatica \n
  *         Universita' di Pisa \n
  *
- * \copyright &copy; by Francesca Demelas, Antonio Frangioni, Donato Meoli
+ * \copyright &copy; by Francesco Demelas, Antonio Frangioni, Donato Meoli
  */
 /*--------------------------------------------------------------------------*/
 /*----------------------------- DEFINITIONS --------------------------------*/

@@ -33,7 +33,7 @@ only built if Torch is available [see Requirements].
 
 ## Getting started
 
-These instructions will let you build MCFBlock and MCFSolver on your system.
+These instructions will let you build the `BundleSolver` module on your system.
 
 ### Requirements
 
@@ -150,6 +150,8 @@ conduct, and the process for submitting merge requests to us.
 - **Enrico Gorgone**  
   Dipartimento di Matematica ed Informatica  
   Università di Cagliari
+
+### Contributors
 
 
 ## License
