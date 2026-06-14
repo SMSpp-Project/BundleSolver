@@ -182,6 +182,22 @@ namespace SMSpp_di_unipi_it
  }
 
 /*--------------------------------------------------------------------------*/
+/*--------------------- METHODS FOR SOLVING THE Block -----------------------*/
+/*--------------------------------------------------------------------------*/
+
+int BundleSolverML::compute( bool changedvars )
+{
+ const int ret = BundleSolver::compute( changedvars );
+
+ if( f_train_online ) {  // online training: learn from the just-ended solve
+  Backward();
+  ClearBuffers();
+  }
+
+ return( ret );
+ }
+
+/*--------------------------------------------------------------------------*/
 /*-------------------- METHODS FOR HANDLING THE MODEL -----------------------*/
 /*--------------------------------------------------------------------------*/
 

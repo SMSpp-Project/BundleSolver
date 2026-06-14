@@ -1,0 +1,78 @@
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - - -  BSPar.txt - - - - - - - - - - - - - - - - -
+#
+# A txt description of the BlockSolverConfig attaching the standard
+# BundleSolver, used as the reference, to the Block solved by the tester
+# for BundleSolverML
+#
+#   Francesco Demelas, Donato Meoli
+#
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+BlockSolverConfig     # exact type of the Configuration object
+
+1  # the BlockSolverConfig is not a "differential" one: values are being set
+
+1  # number of (the names of) Solver in this BlockSolverConfig
+# now all the names of the Solver - - - - - - - - - - - - - - - - - - - - - -
+BundleSolver # name of Solver
+
+1  # number of ComputeConfig in this BlockSolverConfig
+
+# now all the ComputeConfig
+# 1st ComputeConfig - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+ComputeConfig # exact type of the ComputeConfig object
+
+1  # f_diff == 0 ==> all non-provided parameters are set to the default value
+   # f_diff == 1 ==> all non-provided parameters are not changed
+
+7 # number of integer parameters
+
+# now all the integer parameters
+intMaxIter   1000 # MaxIter, max number of iterations for each call
+intLogVerb      0 # LogVerb, log verbosity of main Bundle algorithm
+intBPar2      100 # max bundle size per component
+intMnSSC        0 # min number of consecutive SS with the same t for a t increase
+intMnNSC        1 # min number of consecutive NS with the same t for a t decrease
+inttSPar1      12 # long-term t-strategy (0 = none, 4 = soft, 8 = hard, 12 = balancing)
+intMPName       0 # MP solver: 0 = QPPenaltyMP
+
+3 # number of double parameters
+
+# now all the double parameters
+dblRelAcc    1e-6 # relative accuracy required to solution
+dbltStar     1e+2 # stopping parameter: multiplied to || residual || to estimate gap
+dbltInit        1 # initial value for t
+
+0 # number of string parameters
+
+# now all the string parameters
+# [none]
+
+0 # number of vector-of-int parameters
+
+# now all the vector-of-int parameters
+# [none]
+
+0 # number of vector-of-double parameters
+
+# now all the vector-of-double parameters
+# [none]
+
+0 # number of vector-of-string parameters
+
+# now all the vector-of-string parameters
+# [none]
+
+# pointer to the "extra" Configuration
+* # [none]
+
+# end of 1st ComputeConfig - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+# end of BlockSolverConfig - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - - END BSPar.txt - - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -

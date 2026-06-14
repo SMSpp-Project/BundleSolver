@@ -319,6 +319,22 @@ class BundleSolverML : public BundleSolver
  void LoadModel( const std::string & filepath );
 
 /*--------------------------------------------------------------------------*/
+/*--------------------- METHODS FOR SOLVING THE Block -----------------------*/
+/*--------------------------------------------------------------------------*/
+ /// solve the problem, optionally training the network online
+ /** Runs BundleSolver::compute() and, if intMLTrainOnline is nonzero,
+  * trains the network online on the just-completed solve by calling
+  * Backward() and then ClearBuffers(). This makes online training fully
+  * transparent to the driver: configuring a BundleSolverML with
+  * intMLTrainOnline == 1 is enough, no ML-specific calls are needed.
+  *
+  * @param changedvars  forwarded to BundleSolver::compute()
+  *
+  * @return the status returned by BundleSolver::compute() */
+
+ int compute( bool changedvars = true ) override;
+
+/*--------------------------------------------------------------------------*/
 /*----------------------- ML-SPECIFIC METHODS -------------------------------*/
 /*--------------------------------------------------------------------------*/
  /// step-size heuristic overriding the base class rule
@@ -387,6 +403,113 @@ class BundleSolverML : public BundleSolver
 /*--------------------------------------------------------------------------*/
 /*---------------------- PARAMETERS OF THE SOLVER ----------------------------*/
 /*--------------------------------------------------------------------------*/
+ /// public enum of the int parameters added by BundleSolverML
+ /** Public enum of the additional int algorithmic parameters of
+  * BundleSolverML, on top of those of BundleSolver:
+  *
+  * - intMLTrainOnline: if nonzero, at the end of each compute() the network
+  *   is trained online, i.e. Backward() and then ClearBuffers() are called
+  *   automatically. With the default 0 the solver only predicts t and the
+  *   training, if any, is left to an external driver (as the standalone
+  *   BundleSolverML tester does);
+  *
+  * - intMLSeed: if >= 0, torch::manual_seed() is called with this value and
+  *   the (privately-owned) network is re-initialized, so that the initial
+  *   weights, and hence the whole training trajectory, are reproducible;
+  *   the default -1 leaves the global Torch RNG untouched;
+  *
+  * - intNTrainRounds: number of times the same instance should be (re-)solved
+  *   for online training. It is not used by the solver itself (which cannot
+  *   reload the Block), but it is a hint that the training driver can read to
+  *   set its re-solve loop; the default is 1, i.e. a single solve. */
+
+ enum int_par_type_BndSlvML {
+  intMLTrainOnline = intLastBndSlvPar ,  ///< auto-train at end of compute()
+
+  intMLSeed ,        ///< Torch manual seed (< 0 = leave RNG untouched)
+
+  intNTrainRounds ,  ///< number of training re-solves (read by the driver)
+
+  intLastBndSlvMLPar ///< first allowed new int parameter for derived classes
+  };
+
+/*--------------------------------------------------------------------------*/
+ /// get the number of int parameters
+
+ [[nodiscard]] idx_type get_num_int_par( void ) const override {
+  return( idx_type( intLastBndSlvMLPar ) );
+  }
+
+/*--------------------------------------------------------------------------*/
+ /// get the int parameter par
+
+ [[nodiscard]] int get_int_par( idx_type par ) const override {
+  switch( par ) {
+   case( intMLTrainOnline ): return( f_train_online );
+   case( intMLSeed ):        return( f_ML_seed );
+   case( intNTrainRounds ):  return( f_n_train_rounds );
+   default:                  return( BundleSolver::get_int_par( par ) );
+   }
+  }
+
+/*--------------------------------------------------------------------------*/
+ /// set the int parameter par
+ /** Sets the BundleSolverML-specific int parameters and delegates all the
+  * others to BundleSolver. Setting intMLSeed to a nonnegative value seeds
+  * the global Torch RNG and re-initializes the privately-owned network. */
+
+ using BundleSolver::set_par;  // keep the other set_par() overloads visible
+
+ void set_par( idx_type par , int value ) override {
+  switch( par ) {
+   case( intMLTrainOnline ):
+    f_train_online = value;
+    break;
+   case( intMLSeed ):
+    f_ML_seed = value;
+    if( value >= 0 ) {
+     torch::manual_seed( value );
+     reset_net();  // re-init the owned net so the weights are reproducible
+     }
+    break;
+   case( intNTrainRounds ):
+    if( value < 1 )
+     throw( std::invalid_argument(
+		   "BundleSolverML::set_par: intNTrainRounds must be >= 1" ) );
+    f_n_train_rounds = value;
+    break;
+   default:
+    BundleSolver::set_par( par , value );
+   }
+  }
+
+/*--------------------------------------------------------------------------*/
+ /// string-to-index map for the BundleSolverML int parameters
+
+ [[nodiscard]] idx_type int_par_str2idx( const std::string & name )
+  const override {
+  if( name == "intMLTrainOnline" ) return( intMLTrainOnline );
+  if( name == "intMLSeed" )        return( intMLSeed );
+  if( name == "intNTrainRounds" )  return( intNTrainRounds );
+
+  return( BundleSolver::int_par_str2idx( name ) );
+  }
+
+/*--------------------------------------------------------------------------*/
+ /// index-to-string map for the BundleSolverML int parameters
+
+ [[nodiscard]] const std::string & int_par_idx2str( idx_type idx )
+  const override {
+  static const std::array< std::string , 3 > int_pars_str_ML = {
+   "intMLTrainOnline" , "intMLSeed" , "intNTrainRounds" };
+
+  if( ( idx >= intLastBndSlvPar ) && ( idx < intLastBndSlvMLPar ) )
+   return( int_pars_str_ML[ idx - intLastBndSlvPar ] );
+
+  return( BundleSolver::int_par_idx2str( idx ) );
+  }
+
+/*--------------------------------------------------------------------------*/
  /// get the default value of an int parameter
  /** Returns the default value of the int parameter \p par. The defaults
   * differ from the BundleSolver ones where needed to ensure that the
@@ -424,6 +547,15 @@ class BundleSolverML : public BundleSolver
    1 ,    // intOSImp3
    2      // intRstAlg
    };
+
+  static const std::array< int , 3 > dflt_int_par_ML = {
+   0 ,    // intMLTrainOnline
+   -1 ,   // intMLSeed
+   1      // intNTrainRounds
+   };
+
+  if( ( par >= intLastBndSlvPar ) && ( par < intLastBndSlvMLPar ) )
+   return( dflt_int_par_ML[ par - intLastBndSlvPar ] );
 
   if( ( par >= intLastParCDAS ) && ( par < intLastBndSlvPar ) )
    return( dflt_int_par[ par - intLastParCDAS ] );
@@ -521,8 +653,31 @@ class BundleSolverML : public BundleSolver
  ///< Adam optimizer, lazily initialized at the first Backward() call;
  ///< kept as a field so that the moment estimates persist across calls
 
+ int f_train_online = 0;     ///< value of intMLTrainOnline [0]
+
+ int f_ML_seed = -1;         ///< value of intMLSeed [-1]
+
+ int f_n_train_rounds = 1;   ///< value of intNTrainRounds [1]
+
 /*--------------------------------------------------------------------------*/
 /*-------------------------- PRIVATE METHODS --------------------------------*/
+/*--------------------------------------------------------------------------*/
+
+ /// re-initializes the privately-owned network
+ /** Re-allocates the private network (and drops the stale Adam optimizer,
+  * which is bound to the parameters of the old one); used by set_par() when
+  * intMLSeed is set, so that the new initial weights are drawn right after
+  * the seeding. If a shared network is active it is left untouched, since
+  * it is externally managed and possibly shared with other solvers. */
+
+ void reset_net( void ) {
+  if( f_shared_net )  // shared net is externally managed: do not touch it
+   return;
+  f_owned_net = std::make_shared< Net >();
+  nn = f_owned_net.get();
+  f_optimizer.reset();
+  }
+
 /*--------------------------------------------------------------------------*/
 
  SMSpp_insert_in_factory_h;
