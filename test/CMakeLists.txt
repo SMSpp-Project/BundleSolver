@@ -54,10 +54,9 @@ if (Torch_FOUND)
                 COMMENT "Copying runtime DLLs next to BundleSolverML_test.exe")
     endif ()
 
+    # the test reads BSPar.txt and BSPar-ML.txt from the working directory
     add_test(NAME BundleSolverML_test
              COMMAND BundleSolverML_test
-                     -S ${CMAKE_CURRENT_SOURCE_DIR}/BSPar.txt
-                     -L ${CMAKE_CURRENT_SOURCE_DIR}/BSPar-ML.txt
              WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 
 endif ()

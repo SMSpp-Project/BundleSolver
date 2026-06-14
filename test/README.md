@@ -22,15 +22,15 @@ that the shared-network mechanism (`set_shared_net()`, `get_shared_net()`,
 `clear_shared_net()`) correctly redirects the active network among multiple
 `BundleSolverML` objects.
 
-The usage of the executable is the following:
+The reference (`BundleSolver`) and the ML (`BundleSolverML`) configurations
+are read from `BSPar.txt` and `BSPar-ML.txt` in the current directory. The
+usage of the executable is the following:
 
-       ./BundleSolverML_test -S <plain-BSC> -L <ML-BSC> [options]
-        -S <file>   plain BundleSolver BlockSolverConfig (mandatory)
-        -L <file>   BundleSolverML BlockSolverConfig (mandatory)
-        -e <n>      pseudo-random generator seed [0]
-        -N <n>      number of variables [10]
-        -d <x>      rows / variables [4]
-        -E <n>      training epochs [5]
+       ./BundleSolverML_test [seed nvar dens epochs]
+       seed:   pseudo-random generator seed [0]
+       nvar:   number of variables [10]
+       dens:   rows / variables [4]
+       epochs: training epochs [5]
 
 A batch file is provided that runs a small set of tests with different sizes
 and seeds of the random generator; all these passing is a good sign that no

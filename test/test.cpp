@@ -56,8 +56,6 @@
 #include <sstream>
 #include <typeinfo>
 
-#include <getopt.h>
-
 #include "AbstractBlock.h"
 
 #include "BlockSolverConfig.h"
@@ -102,13 +100,10 @@ AbstractBlock * NDOBlock;  // the problem expressed via PolyhedralFunction
 std::mt19937 rg;           // base random generator
 std::uniform_real_distribution<> dis( 0.0 , 1.0 );
 
-// command-line knobs
-long int seed = 0;
-Index nvar = 10;
-double dens = 4;
-Index n_epochs = 5;
-std::string plain_bsc_fn;   // plain BundleSolver BlockSolverConfig (-S)
-std::string ml_bsc_fn;      // ML BundleSolverML BlockSolverConfig (-L)
+// the two BlockSolverConfig read from the current directory: the reference
+// (plain BundleSolver) and the ML one (BundleSolverML)
+const char * const plain_bsc_fn = "BSPar.txt";
+const char * const ml_bsc_fn = "BSPar-ML.txt";
 
 /*--------------------------------------------------------------------------*/
 /*------------------------------ FUNCTIONS ---------------------------------*/
@@ -191,19 +186,6 @@ static void detach_bsc( Block * block , BlockSolverConfig * bsc )
 
 /*--------------------------------------------------------------------------*/
 
-static void usage( const char * prog )
-{
- cerr << "Usage: " << prog << " -S <plain-BSC> -L <ML-BSC> [options]\n"
-      << "  -S <file>   plain BundleSolver BlockSolverConfig (mandatory)\n"
-      << "  -L <file>   ML BundleSolverML BlockSolverConfig (mandatory)\n"
-      << "  -e <n>      pseudo-random generator seed [0]\n"
-      << "  -N <n>      number of variables [10]\n"
-      << "  -d <x>      rows / variables [4]\n"
-      << "  -E <n>      training epochs [5]\n";
- }
-
-/*--------------------------------------------------------------------------*/
-
 /// custom terminate handler to print the exception message
 static void smspp_terminate( void )
 {
@@ -231,24 +213,24 @@ int main( int argc , char ** argv )
  // reading command line parameters - - - - - - - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- int opt;
- while( ( opt = getopt( argc , argv , "S:L:e:N:d:E:h" ) ) != -1 ) {
-  switch( opt ) {
-   case( 'S' ): plain_bsc_fn = optarg;        break;
-   case( 'L' ): ml_bsc_fn = optarg;           break;
-   case( 'e' ): Str2Sthg( optarg , seed );    break;
-   case( 'N' ): Str2Sthg( optarg , nvar );    break;
-   case( 'd' ): Str2Sthg( optarg , dens );    break;
-   case( 'E' ): Str2Sthg( optarg , n_epochs ); break;
-   default:     usage( argv[ 0 ] );           exit( 1 );
-   }
-  }
+ long int seed = 0;     // pseudo-random generator seed
+ Index nvar = 10;       // number of variables
+ double dens = 4;       // rows / variables
+ Index n_epochs = 5;    // training epochs
 
- // both BlockSolverConfigs must be provided explicitly: the plain one via -S
- // and the ML one via -L; the test never falls back to a hardcoded default
- if( plain_bsc_fn.empty() || ml_bsc_fn.empty() ) {
-  usage( argv[ 0 ] );
-  exit( 1 );
+ switch( argc ) {
+  case( 5 ): Str2Sthg( argv[ 4 ] , n_epochs );
+  case( 4 ): Str2Sthg( argv[ 3 ] , dens );
+  case( 3 ): Str2Sthg( argv[ 2 ] , nvar );
+  case( 2 ): Str2Sthg( argv[ 1 ] , seed );
+  case( 1 ): break;
+  default: cerr << "Usage: " << argv[ 0 ] << " [seed nvar dens epochs]"
+		<< endl
+		<< "       seed:   pseudo-random generator seed [0]" << endl
+		<< "       nvar:   number of variables [10]" << endl
+		<< "       dens:   rows / variables [4]" << endl
+		<< "       epochs: training epochs [5]" << endl;
+	   return( 1 );
   }
 
  if( nvar < 1 ) {
