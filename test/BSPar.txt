@@ -5,7 +5,7 @@
 # BundleSolver, used as the reference, to the Block solved by the tester
 # for BundleSolverML
 #
-#   Francesco Demelas, Donato Meoli
+#   Francesca Demelas, Donato Meoli
 #
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -

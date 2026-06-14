@@ -10,7 +10,7 @@
 # so that the network is trained online at the end of each compute(), with
 # no need for the driver to call Backward() explicitly.
 #
-#   Francesco Demelas, Donato Meoli
+#   Francesca Demelas, Donato Meoli
 #
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
