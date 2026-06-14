@@ -18,7 +18,7 @@
  * not use the shared tests/ harness, so it can live inside the BundleSolver
  * module as an internal test.
  *
- * \author Francesco Demelas \n
+ * \author Francesca Demelas \n
  *         Laboratoire d'Informatique de Paris Nord \n
  *         Universite' Sorbonne Paris Nord \n
  *
@@ -26,7 +26,7 @@
  *         Dipartimento di Informatica \n
  *         Universita' di Pisa \n
  *
- * \copyright &copy; by Francesco Demelas, Donato Meoli
+ * \copyright &copy; by Francesca Demelas, Donato Meoli
  */
 /*--------------------------------------------------------------------------*/
 /*-------------------------------- MACROS ----------------------------------*/

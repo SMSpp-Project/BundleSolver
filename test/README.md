@@ -37,8 +37,9 @@ and seeds of the random generator; all these passing is a good sign that no
 regressions have been introduced in `BundleSolverML`.
 
 A makefile is also provided that builds the executable including the
-`BundleSolver` module and all its dependencies, in particular `MILPSolver`
-and the core SMS++ library. Note that `BundleSolverML` is only compiled into
+`BundleSolver` module and all its dependencies, i.e., only the core SMS++
+library (which is why it can be in the `BundleSolver` repo as opposed to the
+`tests` one). Note that `BundleSolverML` is only compiled into
 `BundleSolver` if Torch is available, see the BundleSolver README, hence this
 test requires Torch to be installed at `$(Torch_ROOT)` (makefile builds) or
 findable by `find_package(Torch)` (CMake builds).
@@ -46,7 +47,7 @@ findable by `find_package(Torch)` (CMake builds).
 
 ## Authors
 
-- **Francesco Demelas**  
+- **Francesca Demelas**  
   Laboratoire d'Informatique de Paris Nord  
   Université Sorbonne Paris Nord
 
