@@ -8,6 +8,25 @@
  * predicts the proximal regularization parameter t out of a set of features
  * describing the current state of the algorithm.
  *
+ * The approach is described in
+ *
+ *  F. Demelas, A. Frangioni, M. Lacroix, J. Le Roux, E. Traversi,
+ *  R. Wolfler Calvo "Bundle Network: a Machine Learning-Based Bundle Method"
+ *  arXiv:2509.24736, 2025
+ *
+ * available at
+ *
+ * \link
+ *  https://arxiv.org/abs/2509.24736
+ * \endlink
+ *
+ * BundleSolverML implements the step-size (proximal parameter) prediction
+ * part of that approach: it learns t with an objective-based, time-discounted
+ * loss differentiated through the search direction by automatic
+ * differentiation. The convex multipliers that form the direction are still
+ * computed by the classical Master problem of the base BundleSolver, rather
+ * than by the attention-based recurrent network of the paper.
+ *
  * The network can be trained online: after each compute() the caller can
  * invoke Backward(), which computes a loss out of the recorded iterations,
  * back-propagates it through the network and applies an Adam update to its
