@@ -661,8 +661,20 @@ int BundleSolver::compute( bool changedvars )
 
   if( RifeqFi && ( Sigma < - max_error( UpRifFi.back() , RelAcc ) ) &&
       ( Sigma <= - m3 * DST ) ) {
-   if( t >= tMaior ) {
-    BLOG( 1 , " ~ stop: NR required but t maximum" << std::endl );
+   // Noise Reduction raises t to make an "unfaithful" oracle's negative Sigma
+   // non-negative. When that negative Sigma instead comes from a component
+   // that *explicitly* returned kLowPrecision (e.g. a nested Lagrangian dual
+   // stalled on an infeasible primal recovery), no growth of t can ever make
+   // it faithful: NR is futile. Give up now at the achievable accuracy --
+   // returning the best incumbent, exactly as the t >= tMaior path would --
+   // instead of grinding t up to tMaior (which can take all of MaxIter).
+   bool inexact = false;
+   for( Index k = 0 ; k < NrFi ; ++k )
+    if( FiStatus[ k ] == kLowPrecision ) { inexact = true; break; }
+   if( inexact || ( t >= tMaior ) ) {
+    BLOG( 1 , ( inexact ? " ~ stop (inexact oracle: achievable accuracy)"
+                        : " ~ stop: NR required but t maximum" )
+             << std::endl );
     Result = kLowPrecision;
     break;
     }
@@ -3361,8 +3373,16 @@ BundleSolver::Index BundleSolver::InnerLoop( bool extrastep )
   if( FiAndGi( f_wFi , ! extrastep ) )
    insrtd = true;
 
-  // return if an unrecoverable error happens
-  if( ( FiStatus[ f_wFi ] <= kUnEval ) || ( FiStatus[ f_wFi ] >= kError ) ) {
+  // return if an unrecoverable error happens. kLowPrecision is NOT one: it
+  // means the component oracle did find a solution but could not prove it
+  // optimal (e.g. a nested LagBFunction whose inner Lagrangian dual stalls on
+  // an infeasible primal recovery and stops with "NR required but t maximum").
+  // It is an *inexact* result, to be handled by the inexact-oracle machinery
+  // (its lower estimate is still a valid bound), not a fatal error -- even
+  // though kLowPrecision sorts after kError in the sol_type enum.
+  if( ( FiStatus[ f_wFi ] <= kUnEval ) ||
+      ( ( FiStatus[ f_wFi ] >= kError ) &&
+        ( FiStatus[ f_wFi ] != kLowPrecision ) ) ) {
    Result = kError;
    break;
    }
@@ -3448,11 +3468,18 @@ bool BundleSolver::FiAndGi( Index wFi , bool getgi )
  auto end = std::chrono::system_clock::now();
  std::chrono::duration< double > elapsed = end - start;
 
- if( ( FiStatus[ wFi ] <= kUnEval ) || ( FiStatus[ wFi ] >= kError ) ) {
+ // kLowPrecision is an *inexact* result (a solution was found but not proved
+ // optimal), not a fatal error: let it through to be used by the inexact-
+ // oracle machinery (see the companion check in the Fi-cycle), even though it
+ // sorts after kError in the sol_type enum.
+ if( ( FiStatus[ wFi ] <= kUnEval ) ||
+     ( ( FiStatus[ wFi ] >= kError ) && ( FiStatus[ wFi ] != kLowPrecision ) ) ) {
   if( f_log && ( LogVerb > 3 ) )
    *f_log << " ] = Error #" <<  FiStatus[ wFi ] << ", stop";
   return( false );
   }
+ if( f_log && ( LogVerb > 3 ) && ( FiStatus[ wFi ] == kLowPrecision ) )
+  *f_log << " ~ low precision";
 
  auto ue = fwFi->get_upper_estimate();
  auto le = fwFi->get_lower_estimate();
