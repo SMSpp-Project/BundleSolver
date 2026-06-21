@@ -5588,6 +5588,12 @@ bool BundleSolver::IsOptimal( double eps ) const
  if( err >= INFshift )
   return( false );
 
+ // A significantly negative aggregate linearization error is inconsistent
+ // with a valid cutting-plane model and must not trigger optimality. Let the
+ // noise-reduction logic in compute() increase t and re-solve the master.
+ if( Sigma < - err )
+  return( false );
+
  if( ( tStar > 0 ) && ( DSTS + Sigma <= err ) )
   return( true );
 
