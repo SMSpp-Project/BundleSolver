@@ -1,0 +1,81 @@
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - - BSPar-ML.txt - - - - - - - - - - - - - - - - -
+#
+# A txt description of the BlockSolverConfig attaching the BundleSolverML
+# to the Block solved by the tester for BundleSolverML. Note that the
+# parameters governing the use of the network-driven step-size heuristic
+# (inttSPar1, intMnSSC, intMnNSC, dblmnIncr, dblmnDecr) are left to their
+# BundleSolverML defaults, which are already set so that the network
+# actually drives the step-size at every iteration. intMLTrainOnline is set
+# so that the network is trained online at the end of each compute(), with
+# no need for the driver to call Backward() explicitly.
+#
+#   Francesca Demelas, Donato Meoli
+#
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+BlockSolverConfig     # exact type of the Configuration object
+
+1  # the BlockSolverConfig is not a "differential" one: values are being set
+
+1  # number of (the names of) Solver in this BlockSolverConfig
+# now all the names of the Solver - - - - - - - - - - - - - - - - - - - - - -
+BundleSolverML # name of Solver
+
+1  # number of ComputeConfig in this BlockSolverConfig
+
+# now all the ComputeConfig
+# 1st ComputeConfig - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+ComputeConfig # exact type of the ComputeConfig object
+
+1  # f_diff == 0 ==> all non-provided parameters are set to the default value
+   # f_diff == 1 ==> all non-provided parameters are not changed
+
+5 # number of integer parameters
+
+# now all the integer parameters
+intMaxIter       1000 # MaxIter, max number of iterations for each call
+intLogVerb          0 # LogVerb, log verbosity of main Bundle algorithm
+intBPar2          100 # max bundle size per component
+intMPName           0 # MP solver: 0 = QPPenaltyMP
+intMLTrainOnline    1 # train the network online at the end of each compute()
+
+3 # number of double parameters
+
+# now all the double parameters
+dblRelAcc    1e-6 # relative accuracy required to solution
+dbltStar     1e+2 # stopping parameter: multiplied to || residual || to estimate gap
+dbltInit        1 # initial value for t
+
+0 # number of string parameters
+
+# now all the string parameters
+# [none]
+
+0 # number of vector-of-int parameters
+
+# now all the vector-of-int parameters
+# [none]
+
+0 # number of vector-of-double parameters
+
+# now all the vector-of-double parameters
+# [none]
+
+0 # number of vector-of-string parameters
+
+# now all the vector-of-string parameters
+# [none]
+
+# pointer to the "extra" Configuration
+* # [none]
+
+# end of 1st ComputeConfig - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+# end of BlockSolverConfig - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - END BSPar-ML.txt - - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -

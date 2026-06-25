@@ -1653,23 +1653,26 @@ void BundleSolver::set_Block( Block * block )
    continue;
   }
 
-  auto LagB = dynamic_cast< LagBFunction * >( v_c05f[ k ] );
-  if( LagB ) {
-   auto MILPs = new MILPSolver();
-   try {  // check if the inner Block of the LagBFunction is all-linear
-    // do this by trying to register the MILPSolver to the inner Block; if
-    // the operation succeeds than the component may be easy (provided that
-    // also all variables are continuous), otherwise it surely is not,
-    // which is captured by the fact that an exception is thrown.
-    // Note that the MILPSolver constructed here is used just for performing
-    // the check, and is destroyed at the end of this scope regardless of
-    // the outcome -- the inner Block will be registered to the MPB later,
-    // and will use its own solver in the following stages.
-    MILPs->set_Block( LagB->get_inner_block() );
-    // the component is "easy" only if every variable is continuous
-    if( ! MILPs->get_num_integer_vars() ) {
-     IsEasy[ k ] = 1;
-     ++NrEasy;
+   auto LagB = dynamic_cast< LagBFunction * >( v_c05f[ k ] );
+   if( LagB ) {
+    auto MILPs = new MILPSolver();
+    try {  // check if the inner Block of the LagBFunction is all-linear
+     // do this by trying to register the MILPSolver to the inner Block; if
+     // the operation succeeds than the component may be easy (provided that
+     // also all variables are continuous), otherwise it surely is not,
+     // which is captured by the fact that exception is thrown; note that
+     // [MILP]Solver::set_Block() does *not* call Block::register_Solver(),
+     // which therefore may have to be done later
+     MILPs->set_Block( LagB->get_inner_block() );
+     // the component is easy only if it is a real LP: all variables are
+     // continuous and there is no quadratic constraint (the master problem
+     // cannot absorb quadratic rows; also, with them the coefficient matrix
+     // is stored row-wise, while GetBDesc() hands the master the column-wise
+     // description, see GetBNC())
+     if( ( ! MILPs->get_num_integer_vars() ) &&
+	 ( ! MILPs->get_numquadrows() ) ) {
+      IsEasy[ k ] = MILPs;
+      ++NrEasy;
 
      // the master MP cannot carry the constant term of an easy
      // component on its own, so it is folded into constant_value and

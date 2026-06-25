@@ -57,6 +57,9 @@ if (NOT Clp_FOUND)
     set(NDOFiOracle_USE_CLP OFF)
 endif ()
 
+# Torch needed for BundleSolverML
+find_package(Torch HINTS ${Torch_ROOT})
+
 # Set the WHICH_OSI_QP macro according to these following priorities:
 # - use the given WHICH_OSI_QP in input as CMake option, if any
 # - use Cplex, i.e., 1, if available
@@ -177,6 +180,14 @@ target_link_libraries(${modName} PUBLIC
         ${modNamespace}::MILPSolver
         NDOFiOracle::NDOFiOracle)
 
+if (Torch_FOUND)
+    message(STATUS "${modName}: Torch found, configuring BundleSolverML")
+    target_sources(${modName} PRIVATE src/BundleSolverML.cpp)
+    separate_arguments(TORCH_CXX_FLAGS_LIST UNIX_COMMAND "${TORCH_CXX_FLAGS}")
+    target_compile_options(${modName} PRIVATE ${TORCH_CXX_FLAGS_LIST})
+    target_link_libraries(${modName} PUBLIC ${TORCH_LIBRARIES})
+endif ()
+
 # if NDOFiOracle library is *not* given as subdirectory since it is
 # in the system-installed libraries, we need to link the Coin::Osi* targets here
 if (NOT hasParent)
@@ -200,7 +211,7 @@ add_library(${modNamespace}::${modName} ALIAS ${modName})
 
 # ----- Subdirectories ------------------------------------------------------ #
 if (BUILD_TESTING)
-    # Just consuming BUILD_TESTING to avoid warnings
+    add_subdirectory(test)
 endif ()
 
 # ----- Install instructions ------------------------------------------------ #
@@ -223,6 +234,12 @@ install(FILES
         ${CMAKE_CURRENT_SOURCE_DIR}/include/MasterProblemBlock.h
         ${CMAKE_CURRENT_SOURCE_DIR}/include/BundleSolver.h
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/${modNamespace})
+
+if (Torch_FOUND)
+    install(DIRECTORY include/
+            DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/${modNamespace}
+            FILES_MATCHING PATTERN "BundleSolverML*")
+endif ()
 
 # Install the auto-generated configuration header (see above).
 install(FILES ${PROJECT_BINARY_DIR}/${modName}Config.h

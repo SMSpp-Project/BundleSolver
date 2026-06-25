@@ -570,6 +570,7 @@ public:
   NZEps = get_dflt_dbl_par( dblNZEps );
   tStar = get_dflt_dbl_par( dbltStar );
   MinNrEvls = get_dflt_dbl_par( dblMinNrEvls );
+  BPar5 = get_dflt_dbl_par( dblBPar5 );
   m1 = get_dflt_dbl_par( dblm1 );
   m2 = get_dflt_dbl_par( dblm2 );
   m3 = get_dflt_dbl_par( dblm3 );

@@ -9,9 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- BundleSolverML, a BundleSolver variant whose step-size t is predicted by
+  a neural network (Torch) trainable online across solves, with shared
+  weights among multiple instances and TorchScript model save / load; it is
+  only built if Torch is available.
+
 ### Changed
 
 ### Fixed
+
+- BPar5 and RstAlgPrm were never initialized in the BundleSolver
+  constructor, leading to nondeterministic behavior (up to complete stalls
+  of the algorithm) whenever dblBPar5 / intRstAlg were not explicitly set
+  by the ComputeConfig.
 
 
 ## [0.4.5] - 2025-12-12

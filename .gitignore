@@ -4,6 +4,7 @@
 
 # --- Project-specific ---------------------------------------
 Main/test
+test/BundleSolverML_test
 
 # --- C/C++ build artifacts ----------------------------------
 *.o
