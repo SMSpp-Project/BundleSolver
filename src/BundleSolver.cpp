@@ -69,7 +69,7 @@
  * OsiXXXSolverInterface are in general not be available to all users. */
 
 #ifndef WHICH_OSI_QP
- #define WHICH_OSI_QP 1
+ #define WHICH_OSI_QP 2
 #endif
 
 #if WHICH_OSI_QP == 1
@@ -1029,9 +1029,14 @@ int BundleSolver::compute( bool changedvars )
     //!! the beginning, it should be done only near the end
     }
   else             // regular update mechanism
-   if( tm != tp )  // if t can change, select it in [ tm , tp ]
+   if( tm != tp )  {  // if t can change, select it in [ tm , tp ]
+    /*!!
     tt = std::min( std::min( tMaior , tp ) ,
 		   std::max( std::max( tMinor , tm ) , tt ) );
+      !!*/
+    tt = std::max( std::min( tp , tt ) , tm );
+    tt = std::max( std::min( tMaior , tt ) , tMinor );
+    }
    else            // else
     tt = t;        // keep it as it is
 
@@ -1090,37 +1095,6 @@ int BundleSolver::compute( bool changedvars )
   // not being able to compute all non-easy components is an error
   if( ( ! CmptdinL ) && ( Result != kStopTime ) )
    Result = kError;
-  }
-
- // final consistency check: the master's lower bound on the (internal min)
- // Fi must not exceed the upper estimate at the stability center. If it
- // does (LB > UB on the user-facing side), the cutting-plane model has
- // gone inconsistent — typically a numerical artefact of the easy-
- // components inlining or a sign/index mismatch in GetADesc. We only
- // log the violation; we don't override Result since the algorithm may
- // still be returning a usable approximate solution.
- if( ( Result == kOK || Result == kLowPrecision || Result == kStopIter ) &&
-     ( f_global_LB > - INFshift ) && ( UpFiLmb.back() < INFshift ) ) {
-  const auto gap = f_global_LB - UpFiLmb.back();
-  if( gap > 0 ) {
-   const auto rel = gap /
-                    std::max( std::abs( UpFiLmb.back() ) , double( 1 ) );
-   // 1e-6 ≈ default dblRelAcc: anything beyond that is real inconsistency,
-   // not floating-point noise
-   if( rel > 1e-6 ) {
-    if( f_log && ( LogVerb >= 0 ) )
-     *f_log << std::endl
-            << "WARNING: cutting-plane model inconsistent at stop: "
-            << "internal LB = " << def << f_global_LB
-            << " > internal UB (= UpFiLmb.back()) = " << UpFiLmb.back()
-            << " (gap = " << gap << " ~ rel = " << rel
-            << "); user-facing get_lb() and get_ub() will not satisfy "
-            << "get_lb() <= get_ub() — usually caused by numerical noise "
-            << "in the easy-components master inlining or by a sign/"
-            << "index mismatch in FakeFiOracle::GetADesc on this instance."
-            << std::endl;
-    }
-   }
   }
 
  // final printouts - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -3064,9 +3038,10 @@ void BundleSolver::FormD( void )
   // NOTE: THIS CODE IS BOTH HORRIBLY INEFFICIENT DUE TO A CRAP IMPLEMENTATION
   // OF OsiMPSolver::ReadZ AND INCORRECT WHEN THERE ARE CONSTRAINTS, AS THE
   // z* COMPUTED BY ReadZ() IS THAT OF THE OBJECTIVE BUT NOT OF THE ESSENTIAL
-  // OBJECTIVE. the right vector should be easy to compute since it's basically
-  // the slack s that is explicit in the dual formulation of the master problem,
-  // adjusted with the slacks, but this is no time to dawdle with this
+  // OBJECTIVE. the right vector should be easy to compute since it's
+  // basically the slack s that is explicit in the dual formulation of the
+  // master problem, adjusted with the slacks, but this is no time to dawdle
+  // with this
   Index dim;
   const Index * nms;
   std::vector< double > tZ( NumVar );
@@ -3081,11 +3056,20 @@ void BundleSolver::FormD( void )
 
  // if the scaling factor could be computed one can check if z* == 0
  // has happened and declare a globally valid LB
+ // note: the update of f_global_LB used to be under guard
+ // if( f_global_LB < UpFiLmb.back() + vStar.back() )
+ // i.e., one would always report the largest f_global_LB ever found.
+ // however, declaring a global LB is slippery, as it requires to set NZEps
+ // "small enough" and no-one really knows how to do that. as a consequence,
+ // one may end up with the final LB being higher than the final UB, which
+ // is not something any Solver should ever report. we rather take the
+ // conservative stance where the final reported LB is the one of the
+ // stopping iteration: since the UB is "that one + v^*" and v^* is negative,
+ // this ensures that UB >= LB
  if( ( UpFiLmb.back() < INFshift ) && ( vStar.back() < INFshift ) &&
-     ( NrmZFctr < INFshift ) && ( NrmZ <= NrmZFctr * NZEps ) ) {
-  if( f_global_LB < UpFiLmb.back() + vStar.back() )
-   f_global_LB = UpFiLmb.back() + vStar.back();
-  }
+     ( NrmZFctr < INFshift ) && ( NrmZ <= NrmZFctr * NZEps ) )
+  f_global_LB = UpFiLmb.back() + vStar.back();
+
  }  // end( BundleSolver::FormD )
 
 /*--------------------------------------------------------------------------*/
