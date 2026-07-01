@@ -1233,6 +1233,13 @@ class MasterProblemBlock : public Block {
  int solve_master( void );
 
 /*--------------------------------------------------------------------------*/
+ /// manage the one-shot proximal objective used to seed pure level
+
+ [[nodiscard]] bool has_initial_level_objective( void ) const;
+
+ void remove_initial_level_objective( void );
+
+/*--------------------------------------------------------------------------*/
  /// returns the current optimal value of the global multiplier lambda
  /** lambda is the master-side non-negative dual multiplier paired with the
   * model-value equation of the lower model (
@@ -1456,7 +1463,7 @@ class MasterProblemBlock : public Block {
                                 ///< (rhs = +INF by default)
 
  FRowConstraint LevelCns;                ///< primal level constraint
-                                         ///< sum_k v^k <= f_lev
+                                         ///< b*d + sum_k v^k <= f_lev
                                          ///< (kLevel / kDoublyStabilized only)
 
  // - - - - - - - - - - - -  static MP entities (dual form)  - - - - - - - - -
@@ -1637,6 +1644,9 @@ class MasterProblemBlock : public Block {
                     ///< index of the first displacement-form easy objective
                     ///< correction in the root DQuadFunction, or -1
 
+ int level_model_obj_idx = -1;
+                    ///< first v^k term in the one-shot level probe objective
+
  std::vector< ColVariable * > EasyObjVars;
                     ///< unique easy inner variables receiving x_bar * g(u)
 
@@ -1657,6 +1667,10 @@ class MasterProblemBlock : public Block {
  void refresh_primal_objective();
                     ///< emit one batched objective Modification from the
                     ///< current t, x_bar and linear-part state
+
+ void refresh_primal_level_linear_part();
+                    ///< refresh the b coefficients in the primal level row
+                    ///< without changing its v^k terms
 
  static PolyhedralFunctionBlock *
  pfb_at( const std::vector< Block * > & HardCmps , int k , const char * fn );

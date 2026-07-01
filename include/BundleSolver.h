@@ -437,6 +437,12 @@ public:
 
   dbltSPar3 ,  ///< numerical parameter for "small" heuristic-based t changes
 
+  dblLStabM ,  ///< m_l factor for level stabilization updates
+
+  dblLStabDlt ,   ///< exogenous Delta fraction when no reliable LB is known
+
+  dblLStabIncr ,  ///< exogenous Delta increase factor after consecutive SS
+
   dblLastBndSlvPar ///< first allowed new double parameter for derived classes
                    /**< Convenience value for easily allow derived classes
                     * to extend the set of double algorithmic parameters. */
@@ -583,6 +589,9 @@ public:
   tInit = get_dflt_dbl_par( dbltInit );
   tSPar2 = get_dflt_dbl_par( dbltSPar2 );
   tSPar3 = get_dflt_dbl_par( dbltSPar3 );
+  LStabM = get_dflt_dbl_par( dblLStabM );
+  LStabDlt = get_dflt_dbl_par( dblLStabDlt );
+  LStabIncr = get_dflt_dbl_par( dblLStabIncr );
 
   v_events.resize( max_event_number() );
   }
@@ -1287,6 +1296,32 @@ public:
   *
   *   Any value of dbltSPar3 such that abs( dbltSPar3 ) <= 1 is equivalent
   *   to 0, which means "t cannot be changed by the heuristics only".
+  *
+  * - dblLStabM [0.5]: m_l parameter in (0,1) for level stabilization.
+  *   When a reliable lower bound LB is available, the expected decrease is
+  *
+  *        Delta = (1 - m_l) * ( Fi( Lambda ) - LB )
+  *
+  *   and the level is L = Fi( Lambda ) - Delta. Under a Null Step, after
+  *   the usual consecutive-NS gate allows a significant stabilization
+  *   update, Delta is shortened to m_l * Delta. Under a Serious Step, after
+  *   the usual consecutive-SS gate allows a significant stabilization
+  *   update, Delta is capped by the reliable-bound formula at the new centre.
+  *
+  * - dblLStabDlt [0.1]: fallback exogenous Delta fraction used by level
+  *   stabilization while no reliable lower bound is known. The initial
+  *   heuristic decrease is
+  *
+  *        Delta = dblLStabDlt * max( | Fi( Lambda ) | , 1 )
+  *
+  *   and is abandoned as soon as the solver discovers a reliable lower bound.
+  *
+  * - dblLStabIncr [2.0]: multiplicative factor used only by pure level
+  *   stabilization while no reliable lower bound is known. After the usual
+  *   consecutive-SS gate allows a significant stabilization update, the
+  *   exogenous expected decrease is enlarged as
+  *
+  *        Delta = dblLStabIncr * Delta
   */
 
  void set_par( idx_type par , double value ) override;
@@ -1953,7 +1988,7 @@ public:
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
  [[nodiscard]] double get_dflt_dbl_par( idx_type par ) const override {
-  static const std::array< double , 16 > dflt_dbl_par = {
+  static const std::array< double , 19 > dflt_dbl_par = {
    0 ,      // dblNZEps
    1e+2 ,   // dbltStar
    0 ,      // dblMinNrEvls
@@ -1969,7 +2004,10 @@ public:
    1e-6,    // dbltMinor
    1 ,      // dbltInit
    1e-3 ,   // dbltSPar2
-   0        // dbltSPar3
+   0 ,      // dbltSPar3
+   0.5 ,    // dblLStabM
+   0.1 ,    // dblLStabDlt
+   2.0      // dblLStabIncr
    };
 
   if( ( par >= dblLastParCDAS ) && ( par < dblLastBndSlvPar ) )
@@ -2092,7 +2130,10 @@ public:
    { "dbltMinor" , BundleSolver::dbltMinor } ,
    { "dbltInit" , BundleSolver::dbltInit } ,
    { "dbltSPar2" , BundleSolver::dbltSPar2 } ,
-   { "dbltSPar3" , BundleSolver::dbltSPar3 }
+   { "dbltSPar3" , BundleSolver::dbltSPar3 } ,
+   { "dblLStabM" , BundleSolver::dblLStabM } ,
+   { "dblLStabDlt" , BundleSolver::dblLStabDlt } ,
+   { "dblLStabIncr" , BundleSolver::dblLStabIncr }
    };
 
   const auto it = dbl_pars_map.find( name );
@@ -2167,11 +2208,11 @@ public:
 
  [[nodiscard]] const std::string & dbl_par_idx2str( idx_type idx )
   const override {
-  static const std::array< std::string , 16 > dbl_pars_str = {
+  static const std::array< std::string , 19 > dbl_pars_str = {
    "dblNZEps" , "dbltStar" , "dblMinNrEvls" , "dblBPar5" , "dblm1" ,
    "dblm2" , "dblm3" , "dblmxIncr" , "dblmnIncr" , "dblmxDecr" ,
    "dblmnDecr" , "dbltMaior" , "dbltMinor" , "dbltInit" , "dbltSPar2" ,
-   "dbltSPar3" };
+   "dbltSPar3" , "dblLStabM" , "dblLStabDlt" , "dblLStabIncr" };
 
  if( ( idx >= dblLastParCDAS ) && ( idx < dblLastBndSlvPar ) )
    return( dbl_pars_str[ idx - dblLastParCDAS ] );
@@ -2408,6 +2449,49 @@ public:
     the latter cases, the whole algorithm must abort. */
 
  void FormD( void );
+
+ /*--------------------------------------------------------------------------*/
+
+ bool UsesLevelStabilization( void ) const {
+  return( MPStbl == MasterProblemBlock::kLevel ||
+          MPStbl == MasterProblemBlock::kDoublyStabilized );
+  }
+
+ /*--------------------------------------------------------------------------*/
+
+ bool UsesPureLevelStabilization( void ) const {
+  return( MPStbl == MasterProblemBlock::kLevel );
+  }
+
+ /*--------------------------------------------------------------------------*/
+
+ bool UsesPrimalMaster( void ) const {
+  return( IsMPPrimal && ! ( DoEasy && ( NrEasy > 0 ) ) );
+  }
+
+ /*--------------------------------------------------------------------------*/
+
+ VarValue reliable_level_LB( void ) const;
+
+ /*--------------------------------------------------------------------------*/
+
+ void reset_level_stabilization( void );
+
+ /*--------------------------------------------------------------------------*/
+
+ void install_level_stabilization( void );
+
+ /*--------------------------------------------------------------------------*/
+
+ void refresh_level_after_master( void );
+
+ /*--------------------------------------------------------------------------*/
+
+ void update_level_after_step( bool serious_step , bool gated_update );
+
+ /*--------------------------------------------------------------------------*/
+
+ void record_level_lower_bound( VarValue lb );
 
 /*--------------------------------------------------------------------------*/
  // Updates the out-of-base counters for all items in the Bundle.
@@ -2940,6 +3024,27 @@ public:
 
  Vec_VarValue LowerBound;  ///< Lower Bound over (each component of) Fi
  VarValue f_global_LB;     ///< an algorithmically discovered global LB
+
+ VarValue f_level_Delta = 0;
+ ///< expected decrease used by level stabilization
+
+ VarValue f_level_value = INFshift;
+ ///< current level target
+
+ VarValue f_level_LB = -INFshift;
+ ///< reliable lower bound that last drove f_level_Delta
+
+ bool f_level_reliable_LB = false;
+ ///< true once f_level_Delta is driven by a reliable global LB
+
+ bool f_level_initialized = false;
+ ///< true after the first level target has been installed
+
+ VarValue LStabM;      ///< m_l parameter for level stabilization
+
+ VarValue LStabDlt;    ///< initial exogenous Delta fraction for level stabilization
+
+ VarValue LStabIncr;   ///< exogenous Delta increase factor for level stabilization
 
  VarValue t;           ///< the (tremendous) t parameter
  VarValue Prevt;       ///< what t were before being changed for funny reasons

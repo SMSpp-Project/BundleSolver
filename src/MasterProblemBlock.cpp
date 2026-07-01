@@ -105,6 +105,7 @@ void MasterProblemBlock::clear()
  r_obj_idx     = -1;
  omega_obj_idx = -1;
  easy_obj_idx  = -1;
+ level_model_obj_idx = -1;
 
  // drop the dynamically-sized variable / constraint groups (primal d /
  // v^k / Bounds_v_hard, dual z / CouplingCns); the scalar members
@@ -552,8 +553,14 @@ void MasterProblemBlock::CreatePrimalMP( stabilization_type Stbl )
  // no scaling / local / global / both map to 1 / 5 / 9 / 13.
  const int scaling_cfg = ( ( HardCmpScaling & 1 ) ? 4 : 0 ) |
                          ( ( HardCmpScaling & 2 ) ? 8 : 0 );
- const SimpleConfiguration< int > rep_lin_primal( 1 | scaling_cfg );
 
+ // PFB stvv bit 4 disables the objective function. This is needed in the
+ // pure level case because the model terms are managed by the root
+ // objective during the one-shot proximal probe.
+ const int built_obj_cfg = ( Stbl == kLevel ) ? 0x10 : 0;
+
+ const SimpleConfiguration< int > rep_lin_primal( 1 | scaling_cfg |
+                                   built_obj_cfg );
  for( int k = 0 ; k < NoHardCmps ; ++k ) {
   auto * pfb = new PolyhedralFunctionBlock( this );
 
@@ -582,14 +589,22 @@ void MasterProblemBlock::CreatePrimalMP( stabilization_type Stbl )
   add_nested_Block( pfb );
   }
 
- // ---- level constraint sum_k v^k <= f_lev (kLevel / kDoublyStabilized) ---
+ // ---- level constraint b*d + sum_k v^k <= f_lev -------------------------
  //
- // The terms reference each PFB's f_v directly via get_v(); LevelCns is a
- // master-side static FRowConstraint so the inner Solver picks it up
+ // The first NumVars coefficients are reserved for the linear component b;
+ // set_linear_part() refreshes them after construction. The remaining terms
+ // reference each PFB's f_v directly via get_v(). LevelCns is a master-side
+ // static FRowConstraint so the inner Solver picks it up.
 
  if( ( Stbl == kLevel || Stbl == kDoublyStabilized ) && NoHardCmps > 0 ) {
   LinearFunction::v_coeff_pair lvl_terms;
-  lvl_terms.reserve( NoHardCmps );
+  lvl_terms.reserve( NumVars + NoHardCmps );
+  for( int j = 0 ; j < NumVars ; ++j ) {
+   const double coeff = ( j < int( f_linear_part.size() ) )
+                        ? f_linear_part[ j ] : 0.0;
+   lvl_terms.emplace_back( & Var_d[ j ] , coeff );
+   }
+
   for( int k = 0 ; k < NoHardCmps ; ++k ) {
    auto * pfb = dynamic_cast< PolyhedralFunctionBlock * >( HardCmps[ k ] );
    if( pfb )
@@ -605,36 +620,54 @@ void MasterProblemBlock::CreatePrimalMP( stabilization_type Stbl )
 
  // ---- Objective ---------------------------------------------------------
  //
- // translated: min b*d + sum_k f_v[k] + (1/(2t)) ||d||^2
- // raw:        min b*x + sum_k f_v[k] + (1/(2t)) ||x-x_bar||^2
+ // kProximal / kDoublyStabilized:
+ //   translated: min b*d + sum_k f_v[k] + (1/(2t)) ||d||^2
+ //   raw:        min b*x + sum_k f_v[k] + (1/(2t)) ||x-x_bar||^2
  //
- // The proximal quadratic term (1/(2t))||d||^2_2 is present only under
- // kProximal / kDoublyStabilized; under pure kLevel the master is an LP
- // and the d_i contribute only through the linear b*d part.
+ // kLevel:
+ //   first non-empty solve:
+ //     translated: min b*d + sum_k f_v[k] + (1/(2t)) ||d||^2
+ //     raw:        min b*x + sum_k f_v[k] + (1/(2t)) ||x-x_bar||^2
+ //   later solves:
+ //     translated: min (1/2) ||d||^2
+ //     raw:        min (1/2) ||x-x_bar||^2
+ //   subject to the level row b*d + sum_k f_v[k] <= f_lev
  //
- // The linear coefficient on d (the "b" of the paper, i.e. the constant
- // gradient of the linear part of the original sum-function) is left at 0
- // here; the driver is expected to install it through the dedicated
- // set_b() API.
- //
- // Each v^k contributes its f_v with linear coefficient +1 (the
- // PolyhedralFunctionBlock's own Objective also references f_v with
- // coefficient +1 in linearized-primal rep, but that lives in the sub-Block
- // and is summed in by the SMS++ scan of v_BFS, so we must NOT include
- // f_v[k] in the master's own Objective to avoid double-counting). We
- // therefore only build the d-side quadratic / linear terms here
+ // Each hard PolyhedralFunctionBlock contributes +f_v[k] through its own
+ // Objective in the SMS++ objective scan, except in pure kLevel where that
+ // nested Objective is suppressed. The one-shot proximal probe therefore
+ // places the f_v[k] terms in the root Objective, then removes them.
 
+ const bool pure_level = ( Stbl == kLevel );
+ const bool level_probe = pure_level;
  const bool has_quad =
-  ( Stbl == kProximal ) || ( Stbl == kDoublyStabilized );
+  pure_level || ( Stbl == kProximal ) || ( Stbl == kDoublyStabilized );
 
  DQuadFunction::v_coeff_triple triples;
- triples.reserve( NumVars );
+ triples.reserve( NumVars + ( level_probe ? NoHardCmps : 0 ) );
 
- const double quad_coeff = has_quad ? 1.0 / ( 2.0 * t_stab ) : 0.0;
+ const double quad_coeff = level_probe ? 1.0 / ( 2.0 * t_stab )
+                                      : pure_level ? 0.5
+                                      : ( has_quad ? 1.0 / ( 2.0 * t_stab )
+                                                   : 0.0 );
  for( int i = 0 ; i < NumVars ; ++i ) {
-  const double lin_coeff = ( f_v2_form && has_quad )
-                           ? - f_x_bar[ i ] / t_stab : 0.0;
+  const double lin_coeff = level_probe
+                           ? ( f_linear_part[ i ] +
+                               ( f_v2_form ? - f_x_bar[ i ] / t_stab : 0.0 ) )
+                           : pure_level ? ( f_v2_form ? - f_x_bar[ i ] : 0.0 )
+                           : ( ( f_v2_form && has_quad )
+                               ? - f_x_bar[ i ] / t_stab : 0.0 );
   triples.emplace_back( & Var_d[ i ] , lin_coeff , quad_coeff );
+  }
+
+ level_model_obj_idx = -1;
+ if( level_probe ) {
+  level_model_obj_idx = int( triples.size() );
+  for( int k = 0 ; k < NoHardCmps ; ++k ) {
+   auto * pfb = dynamic_cast< PolyhedralFunctionBlock * >( HardCmps[ k ] );
+   if( pfb )
+    triples.emplace_back( pfb->get_v() , 1.0 , 0.0 );
+   }
   }
 
  FRealObjective * obj;
@@ -937,16 +970,16 @@ void MasterProblemBlock::CreateDualMP( stabilization_type Stbl )
   add_nested_Block( pfb );
   }
 
- // ---- master-side FRealObjective: -(t/2) || z ||^2_2 + omega * f_lev -----
+ // ---- master-side FRealObjective: quadratic z term + omega * f_lev --------
  //
  // The bundle-summing terms theta^k_i b^k_i + gamma^k LB^k of every hard
  // component already live in the sub-PFB Objectives and are accumulated by
  // the SMS++ engine when the master is solved. Here we only need to add
  // the master-side stabilization terms:
  //
- //  - the quadratic stabilization  -(t/2) || z ||^2_2  is present under
- //    #kProximal and #kDoublyStabilized; it is *absent* under pure
- //    #kLevel, where the master is an LP (no proximal term);
+ //  - the quadratic stabilization is -(t/2) || z ||^2_2 under #kProximal and
+ //    #kDoublyStabilized, and -1/2 || z ||^2_2 under pure #kLevel because
+ //    the primal level master minimizes 1/2 || d ||^2;
  //
  //  - the level/X linear coefficient on omega (i.e. + omega * f_lev) is
  //    present under #kLevel / #kDoublyStabilized; under #kProximal omega
@@ -961,16 +994,18 @@ void MasterProblemBlock::CreateDualMP( stabilization_type Stbl )
  // their target coefficient by a fixed offset):
  //
  //   triples[ 0 .. NumVars - 1 ]   :  z_j with (linear = 0, quad = -t/2
- //                                   if has_quad else 0); set_x_bar moves
- //                                   the linear coefficient to x_bar[j]
+ //                                   for proximal/doubly, -1/2 for level,
+ //                                   else 0); set_x_bar moves the linear
+ //                                   coefficient to x_bar[j]
  //   triples[ NumVars ]            :  r with (linear = 0, quad = 0);
  //                                   set_global_LB moves the linear
  //                                   coefficient to LB
  //   triples[ NumVars + 1 ]        :  omega with (linear = f_lev, quad = 0)
  //                                   IF has_omega_lin; set_f_lev refreshes
  //                                   the linear coefficient
+ const bool pure_level = ( Stbl == kLevel );
  const bool has_quad =
-  ( Stbl == kProximal ) || ( Stbl == kDoublyStabilized );
+  pure_level || ( Stbl == kProximal ) || ( Stbl == kDoublyStabilized );
  const bool has_omega_lin =
   ( Stbl == kLevel ) || ( Stbl == kDoublyStabilized );
 
@@ -989,7 +1024,9 @@ void MasterProblemBlock::CreateDualMP( stabilization_type Stbl )
  triples.reserve( NumVars + 1 + ( has_omega_lin ? 1 : 0 ) );
 
  z_obj_idx = NumVars > 0 ? 0 : -1;
- const double quad_coeff = has_quad ? - sgn * t_stab / 2.0 : 0.0;
+ const double quad_coeff = has_quad ? - sgn * ( pure_level ? 0.5
+                                                               : t_stab / 2.0 )
+                                      : 0.0;
  for( int j = 0 ; j < NumVars ; ++j )
   triples.emplace_back( & Var_z[ j ] , 0.0 , quad_coeff );
 
@@ -1355,16 +1392,10 @@ Block * MasterProblemBlock::get_easy_component( int k ) const
 double MasterProblemBlock::get_dual_norm_squared( void ) const
 {
  if( IsPrimal ) {
-  if( t_stab <= 0.0 ||
-      ( StblType != kProximal && StblType != kDoublyStabilized ) )
-   return( 0.0 );
-
-  const auto d = get_d_vector();
-  const double inv_t = 1.0 / t_stab;
+  const auto z = get_z_vector();
   return( std::transform_reduce(
-             d.cbegin() , d.cend() , 0.0 , std::plus<>() ,
-             [ inv_t ]( double dj ) {
-              const double zj = - inv_t * dj;
+             z.cbegin() , z.cend() , 0.0 , std::plus<>() ,
+             []( double zj ) {
               return( zj * zj );
               } ) );
   }
@@ -1990,14 +2021,18 @@ std::vector< double > MasterProblemBlock::get_z_vector( void ) const
 {
  std::vector< double > out;
  if( IsPrimal ) {
-  // Under proximal stabilization, stationarity of the primal master gives
+  // In primal form, stationarity of the stabilized master gives
   // z* + d*/t = 0. This recovers the complete essential subgradient,
   // including the linear part and active-domain/box multipliers.
+  // Pure level stabilization uses the same readout with t fixed to 1,
+  // consistently with the objective 1/2 ||d||^2.
   out = get_d_vector();
-  if( t_stab > 0.0 &&
-      ( StblType == kProximal || StblType == kDoublyStabilized ) )
+  const double effective_t = ( StblType == kLevel ) ? 1.0 : t_stab;
+  if( effective_t > 0.0 &&
+      ( StblType == kProximal || StblType == kDoublyStabilized ||
+        StblType == kLevel ) )
    for( auto & zj : out )
-    zj = - zj / t_stab;
+    zj = - zj / effective_t;
   else
    std::fill( out.begin() , out.end() , 0.0 );
   return( out );
@@ -3035,6 +3070,49 @@ void MasterProblemBlock::set_max_time( double t )
 
 /*--------------------------------------------------------------------------*/
 
+bool MasterProblemBlock::has_initial_level_objective( void ) const
+{
+ return( IsPrimal && StblType == kLevel && level_model_obj_idx >= 0 );
+}
+
+/*--------------------------------------------------------------------------*/
+
+void MasterProblemBlock::remove_initial_level_objective( void )
+{
+ if( ! has_initial_level_objective() )
+  return;
+
+ auto * obj = dynamic_cast< FRealObjective * >( get_objective() );
+ auto * dqf = obj ? dynamic_cast< DQuadFunction * >( obj->get_function() )
+                  : nullptr;
+ if( ! dqf )
+  return;
+
+ const auto n_terms = dqf->get_num_active_var();
+ if( DQuadFunction::Index( level_model_obj_idx ) < n_terms ) {
+  const auto n_v_terms = n_terms - DQuadFunction::Index( level_model_obj_idx );
+  std::vector< double > linear( n_v_terms , 0.0 );
+  std::vector< double > quadratic( n_v_terms , 0.0 );
+  dqf->modify_terms( quadratic.cbegin() , linear.cbegin() ,
+                     Range( DQuadFunction::Index( level_model_obj_idx ) ,
+                            n_terms ) );
+  }
+
+ std::vector< double > linear( NumVars );
+ std::vector< double > quadratic( NumVars , 0.5 );
+ for( int j = 0 ; j < NumVars ; ++j )
+  linear[ j ] = f_v2_form ? - f_x_bar[ j ] : 0.0;
+
+ if( NumVars > 0 )
+  dqf->modify_terms( quadratic.cbegin() , linear.cbegin() ,
+                     Range( 0 , DQuadFunction::Index( NumVars ) ) );
+
+ f_primal_objective_dirty = false;
+ level_model_obj_idx = -1;
+}
+
+/*--------------------------------------------------------------------------*/
+
 void MasterProblemBlock::refresh_primal_objective( void )
 {
  if( ! IsPrimal || ! f_primal_objective_dirty )
@@ -3053,18 +3131,27 @@ void MasterProblemBlock::refresh_primal_objective( void )
        "MasterProblemBlock::refresh_primal_objective: expected "
        "DQuadFunction" ) );
 
- const bool has_quad = ( StblType == kProximal ||
-                         StblType == kDoublyStabilized );
- const double quad = has_quad ? 1.0 / ( 2.0 * t_stab ) : 0.0;
+ const bool pure_level = ( StblType == kLevel );
+ const bool level_probe = has_initial_level_objective();
+ const bool has_quad = pure_level || ( StblType == kProximal ||
+                                      StblType == kDoublyStabilized );
+ const double quad = level_probe ? 1.0 / ( 2.0 * t_stab )
+                                 : pure_level ? 0.5
+                                : ( has_quad ? 1.0 / ( 2.0 * t_stab )
+                                             : 0.0 );
 
  std::vector< double > linear( NumVars );
  std::vector< double > quadratic( NumVars , quad );
  bool changed = false;
 
  for( int j = 0 ; j < NumVars ; ++j ) {
-  linear[ j ] = f_linear_part[ j ];
-  if( f_v2_form && has_quad )
-   linear[ j ] -= f_x_bar[ j ] / t_stab;
+  linear[ j ] = ( pure_level && ! level_probe ) ? 0.0 : f_linear_part[ j ];
+  if( f_v2_form && has_quad ) {
+   if( pure_level && ! level_probe )
+    linear[ j ] -= f_x_bar[ j ];
+   else
+    linear[ j ] -= f_x_bar[ j ] / t_stab;
+   }
 
   changed = changed ||
    ( linear[ j ] !=
@@ -3078,6 +3165,28 @@ void MasterProblemBlock::refresh_primal_objective( void )
                      Range( 0 , DQuadFunction::Index( NumVars ) ) );
 
  f_primal_objective_dirty = false;
+}
+
+/*--------------------------------------------------------------------------*/
+
+void MasterProblemBlock::refresh_primal_level_linear_part( void )
+{
+ if( ! IsPrimal || ( StblType != kLevel && StblType != kDoublyStabilized ) )
+  return;
+ if( NumVars <= 0 )
+  return;
+
+ auto * lf = dynamic_cast< LinearFunction * >( LevelCns.get_function() );
+ if( ! lf )
+  return;
+
+ LinearFunction::Vec_FunctionValue coeff( NumVars , 0.0 );
+ const auto n = std::min( std::size_t( NumVars ) , f_linear_part.size() );
+ for( std::size_t j = 0 ; j < n ; ++j )
+  coeff[ j ] = f_linear_part[ j ];
+
+ lf->modify_coefficients( std::move( coeff ) ,
+                          Range( 0 , Index( NumVars ) ) , eModBlck );
 }
 
 /*--------------------------------------------------------------------------*/
@@ -3260,6 +3369,7 @@ void MasterProblemBlock::set_b( const std::vector< double > & b )
   return;
 
  f_primal_objective_dirty = true;
+ refresh_primal_level_linear_part();
 
  }  // end( MasterProblemBlock::set_b )
 

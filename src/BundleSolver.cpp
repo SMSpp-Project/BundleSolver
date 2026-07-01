@@ -696,11 +696,31 @@ int BundleSolver::compute( bool changedvars )
    continue;                 // return at the start and stop
 
   if( Result == kInfeasible ) {  // the Master Problem is infeasible
+   const bool level_empty = UsesPrimalMaster();
+   if( UsesLevelStabilization() && f_level_initialized &&
+       ( f_level_value < INFshift ) && ( UpFiLmb.back() < INFshift ) &&
+       ( ! get_bc_size() ) && level_empty ) {
+    BLOG( 1 , " ~ level empty: LB = " << def << f_level_value
+              << std::endl );
+    record_level_lower_bound( f_level_value );
+    refresh_level_after_master();
+    continue;
+    }
    BLOG( 1 , " ~ stop (infeasible)" << std::endl );
    break;
    }
 
   if( Result == kUnbounded ) {  // the Master Problem is unbounded
+   const bool level_empty = ! UsesPrimalMaster();
+   if( UsesLevelStabilization() && f_level_initialized &&
+       ( f_level_value < INFshift ) && ( UpFiLmb.back() < INFshift ) &&
+       level_empty ) {
+    BLOG( 1 , " ~ level empty: LB = " << def << f_level_value
+              << std::endl );
+    record_level_lower_bound( f_level_value );
+    refresh_level_after_master();
+    continue;
+    }
    BLOG( 1 , " ~ stop (MP unbounded)" << std::endl );
    break;
    }
@@ -763,7 +783,8 @@ int BundleSolver::compute( bool changedvars )
   // reference value, since then the fact that linearization errors are
   // negative is not meaningful
 
-  if( RifeqFi && ( vStar.back() < INFshift ) &&
+  if( ( ! UsesPureLevelStabilization() ) &&
+      RifeqFi && ( vStar.back() < INFshift ) &&
       ( Sigma < - max_error( UpRifFi.back() , RelAcc ) ) &&
       ( Sigma <= - m3 * DST ) ) {
    if( t >= tMaior ) {
@@ -793,7 +814,8 @@ int BundleSolver::compute( bool changedvars )
   // a quadratically stabilized MasterProblemBlock, so the test is
   // unconditional)
 
-  if( ( tStar > 0 ) && ( ( tSPar1 & tSP1Msk ) == kHLTTS ) && RifeqFi ) {
+  if( ( ! UsesPureLevelStabilization() ) &&
+      ( tStar > 0 ) && ( ( tSPar1 & tSP1Msk ) == kHLTTS ) && RifeqFi ) {
 
    double AFL = std::abs( UpFiLmb.back() );
    if( AFL < 1 )
@@ -995,7 +1017,7 @@ int BundleSolver::compute( bool changedvars )
   // check if noise reduction has to be done- - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-  if( ! MPchgs ) {
+  if( ( ! MPchgs ) && ( ! UsesPureLevelStabilization() ) ) {
    if( t >= tMaior ) {
     BLOG( 1 , "            stop: NR required but t maximum" << std::endl );
     Result = kLowPrecision;
@@ -1028,18 +1050,20 @@ int BundleSolver::compute( bool changedvars )
     BLOG( 1 , - DeltaFi << def << " ~ Lw1(" << - UpFiLmb1.back()
               << ") >= LwTrgt(" << - UpTrgt << ")" );
 
-   if( tSPar1 & 1 ) {
+   if( ( ! UsesPureLevelStabilization() ) && ( tSPar1 & 1 ) ) {
     tt = Heuristic( tSPar1 >> 6 );
     BLOG( 1 , " ~ Ht = " << shrt << tt );
     }
 
-   if( tSPar3 ) {
+   if( ( ! UsesPureLevelStabilization() ) && tSPar3 ) {
     tp *= std::abs( tSPar3 );
     if( tSPar3 > 0 )
      tm /= tSPar3;
     }
 
-   if( ++CSSCntr > MnSSC ) {  // increasing t is possible: note the ">"
+   const bool gated_level_update = CSSCntr + 1 > MnSSC;
+   if( ( ++CSSCntr > MnSSC ) &&
+       ( ! UsesPureLevelStabilization() ) ) {
     // due to the fact that the counter has just been increased
     if( ( ( tSPar1 & tSP1Msk ) == kBLTTS )  &&
         ( DSTS <= tSPar2 * Sigma ) && ( CSSCntr < 10 ) ) {  //!! 10!
@@ -1059,6 +1083,7 @@ int BundleSolver::compute( bool changedvars )
    BLOG( 1 , std::endl );
 
    GotoLambda1();
+   update_level_after_step( true , gated_level_update );
    CNSCntr = 0;
    CmptdinL = ( cnt == NrFi - NrEasy );
    }
@@ -1074,18 +1099,20 @@ int BundleSolver::compute( bool changedvars )
     BLOG( 1 , "Up1(" << - LwFiLmb1.back() << ") <= UpTrgt(" << - LwTrgt
               << ")" );
 
-   if( tSPar1 & 2 ) {
+   if( ( ! UsesPureLevelStabilization() ) && ( tSPar1 & 2 ) ) {
     tt = Heuristic( tSPar1 >> 8 );
     BLOG( 1 , " ~ Ht = " << shrt << tt );
     }
 
-   if( tSPar3 ) {
+   if( ( ! UsesPureLevelStabilization() ) && tSPar3 ) {
     tm /= std::abs( tSPar3 );
     if( tSPar3 > 0 )
      tp *= tSPar3;
     }
 
-   if( ++CNSCntr > MnNSC ) {  // decreasing t is possible: note the ">"
+   const bool gated_level_update = CNSCntr + 1 > MnNSC;
+   if( ( ++CNSCntr > MnNSC ) &&
+       ( ! UsesPureLevelStabilization() ) ) {
     // due to the fact that the counter has just been increased
     if( ( ( ( tSPar1 & tSP1Msk ) == kSLTTS ) ||
           ( ( tSPar1 & tSP1Msk ) == kHLTTS ) ) &&
@@ -1120,6 +1147,7 @@ int BundleSolver::compute( bool changedvars )
 
 
    BLOG( 1 , std::endl );
+   update_level_after_step( false , gated_level_update );
    CSSCntr = 0;
 
    }   // end else( NS )- - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1129,7 +1157,9 @@ int BundleSolver::compute( bool changedvars )
 
   // if the endgame t-strategy fires (note the "/ 10"!!), the regular
   // t-updating mechanism is superseeded
-  if( ( tSPar1 & kEGTTS ) && ( UpFiLmb.back() < INFshift ) &&
+  if( ( ! UsesPureLevelStabilization() ) &&
+      ( tSPar1 & kEGTTS ) &&
+      ( UpFiLmb.back() < INFshift ) &&
       ( DSTS < max_error() / 10 ) ) {
     tt = std::max( t * ( mxDecr + mnDecr ) / 2 , tMinor );
     BLOG( 1 , " ~ endgame, t = " << shrt << tt );
@@ -1916,6 +1946,7 @@ void BundleSolver::set_Block( Block * block )
  // - - - -  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
  InitMPB();
+ reset_level_stabilization();
 
  // install the per-coordinate box  L <= Lambda <= U  on the dual master, so
  // that the proximal direction d* = Lambda1 - Lambda is projected onto the
@@ -2233,6 +2264,24 @@ void BundleSolver::set_par( idx_type par , double value )
   case( dbltSPar3 ):
    tSPar3 = std::abs( value ) > 1 ? value : 0;
    break;
+  case( dblLStabM ):
+   if( ( value <= 0 ) || ( value >= 1 ) )
+    throw( std::invalid_argument(
+               "BundleSolver::set_par: LStabM must be in (0, 1)" ) );
+   LStabM = value;
+   break;
+  case( dblLStabDlt ):
+   if( value <= 0 )
+    throw( std::invalid_argument(
+               "BundleSolver::set_par: LStabDlt must be > 0" ) );
+   LStabDlt = value;
+   break;
+  case( dblLStabIncr ):
+   if( value <= 1 )
+    throw( std::invalid_argument(
+               "BundleSolver::set_par: LStabIncr must be > 1" ) );
+   LStabIncr = value;
+   break;
   default:
    CDASolver::set_par( par , value );
   }
@@ -2546,6 +2595,9 @@ double BundleSolver::get_dbl_par( idx_type par ) const
   case( dbltInit ):     return( tInit );
   case( dbltSPar2 ):    return( tSPar2 );
   case( dbltSPar3 ):    return( tSPar3 );
+  case( dblLStabM ):    return( LStabM );
+  case( dblLStabDlt ):  return( LStabDlt );
+  case( dblLStabIncr ): return( LStabIncr );
   default:              return( CDASolver::get_dbl_par( par ) );
   }
  }  // end( BundleSolver::get_dbl_par )
@@ -2769,6 +2821,136 @@ void BundleSolver::guts_of_put_State( const BundleSolverState & state )
 
 /*--------------------------------------------------------------------------*/
 
+BundleSolver::VarValue BundleSolver::reliable_level_LB( void ) const
+{
+ VarValue lb = -INFshift;
+ if( f_global_LB > lb )
+  lb = f_global_LB;
+ if( TrueLB && ( LowerBound.back() > lb ) )
+  lb = LowerBound.back();
+ return( lb );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::reset_level_stabilization( void )
+{
+ f_level_Delta = 0;
+ f_level_value = INFshift;
+ f_level_LB = -INFshift;
+ f_level_reliable_LB = false;
+ f_level_initialized = false;
+ if( MasterPB && UsesLevelStabilization() )
+  MasterPB->set_f_lev( INFshift );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::install_level_stabilization( void )
+{
+ if( ! ( MasterPB && UsesLevelStabilization() ) )
+  return;
+ if( ( UpFiLmb.back() >= INFshift ) || ( f_level_value >= INFshift ) ) {
+  MasterPB->set_f_lev( INFshift );
+  return;
+  }
+
+ auto lev = f_level_value;
+ if( ! ( UsesPrimalMaster() && MPV2Form ) ) {
+  auto rf = UpRifFi.back();
+  if( NrEasy )
+   for( Index k = 0 ; k < NrFi ; ++k )
+    if( IsEasy[ k ] )
+     rf -= UpRifFi[ k ];
+  lev -= rf;
+  }
+ MasterPB->set_f_lev( lev );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::refresh_level_after_master( void )
+{
+ if( ! UsesLevelStabilization() )
+  return;
+ if( UpFiLmb.back() >= INFshift ) {
+  if( MasterPB )
+   MasterPB->set_f_lev( INFshift );
+  return;
+  }
+
+ const auto lb = reliable_level_LB();
+ if( lb > -INFshift ) {
+  if( ( ! f_level_initialized ) || ( ! f_level_reliable_LB ) ||
+      ( lb > f_level_LB ) ) {
+   const auto gap = UpFiLmb.back() - lb;
+   f_level_Delta = gap > 0 ? ( 1.0 - LStabM ) * gap : 0.0;
+   f_level_LB = lb;
+   }
+  f_level_reliable_LB = true;
+  }
+ else if( ( ! f_level_initialized ) || f_level_reliable_LB ||
+          ( f_level_Delta <= 0 ) ||
+          ( UpFiLmb.back() - f_level_Delta >= UpFiLmb.back() ) ) {
+  f_level_Delta = LStabDlt * std::max( std::abs( UpFiLmb.back() ) , 1.0 );
+  f_level_reliable_LB = false;
+  }
+
+ f_level_value = UpFiLmb.back() - f_level_Delta;
+ f_level_initialized = true;
+ install_level_stabilization();
+ }
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::update_level_after_step( bool serious_step ,
+                                           bool gated_update )
+{
+ if( ! ( UsesLevelStabilization() && f_level_initialized ) )
+  return;
+
+ const auto lb = reliable_level_LB();
+ if( lb > -INFshift ) {
+  const auto gap = UpFiLmb.back() - lb;
+  const auto from_lb = gap > 0 ? ( 1.0 - LStabM ) * gap : 0.0;
+  if( ( ! f_level_reliable_LB ) || f_level_Delta <= 0 )
+   f_level_Delta = from_lb;
+  else if( serious_step ) {
+   if( gated_update )
+    f_level_Delta = std::min( f_level_Delta , from_lb );
+   }
+
+  f_level_LB = lb;
+  f_level_reliable_LB = true;
+  }
+
+ if( serious_step && gated_update && UsesPureLevelStabilization() &&
+     ( lb <= -INFshift ) && ( ! f_level_reliable_LB ) )
+  f_level_Delta *= LStabIncr;
+
+ if( ( ! serious_step ) && gated_update )
+  f_level_Delta *= LStabM;
+
+ if( f_level_Delta <= 0 &&
+     ( ! f_level_reliable_LB || reliable_level_LB() <= -INFshift ) )
+  f_level_Delta = LStabDlt * std::max( std::abs( UpFiLmb.back() ) , 1.0 );
+
+ f_level_value = UpFiLmb.back() - f_level_Delta;
+ install_level_stabilization();
+ }
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::record_level_lower_bound( VarValue lb )
+{
+ if( lb <= -INFshift )
+  return;
+ if( f_global_LB < lb )
+  f_global_LB = lb;
+ }
+
+/*--------------------------------------------------------------------------*/
+
 void BundleSolver::FormD( void )
 {
  // initialize the Master Problem Solver- - - - - - - - - - - - - - - - - - -
@@ -2948,6 +3130,24 @@ void BundleSolver::FormD( void )
                       ?   f_Block->get_valid_lower_bound( true )
                       : - f_Block->get_valid_upper_bound( true );
 
+ if( MasterPB && MasterPB->has_initial_level_objective() &&
+     f_level_initialized ) {
+  MasterPB->remove_initial_level_objective();
+  install_level_stabilization();
+  }
+
+ const bool initial_level_probe =
+  MasterPB && UsesLevelStabilization() &&
+  MasterPB->has_initial_level_objective() &&
+  ( ParIter > 0 ) &&
+  RifeqFi &&
+  ( UpFiLmb.back() < INFshift );
+
+ if( initial_level_probe )
+  MasterPB->set_f_lev( INFshift );
+ else
+  refresh_level_after_master();
+
  for( ; ; )  // error-handling loop - - - - - - - - - - - - - - - - - - - - - -
  {           // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -2968,6 +3168,18 @@ void BundleSolver::FormD( void )
 
   if( mps == Solver::kOK )           // everything's alright
    break;
+
+  const bool level_empty =
+   UsesPrimalMaster()
+   ? ( ( mps == Solver::kInfeasible ) && ( ! get_bc_size() ) )
+   : ( mps == Solver::kUnbounded );
+
+  if( UsesLevelStabilization() && f_level_initialized &&
+      ( f_level_value < INFshift ) && level_empty ) {
+   record_level_lower_bound( f_level_value );
+   refresh_level_after_master();
+   continue;
+   }
 
   /* If it's not OK, three things can happen: unfeasible, unbounded, or a
    * numerical error.
@@ -3068,6 +3280,7 @@ void BundleSolver::FormD( void )
  // read the total v* (predicted decrease at Lambda1)
  if( MasterPB )
   vStar.back() = MasterPB->get_FiBLambda();
+
  // v* is the predicted decrease in  Lambda1 w.r.t. the value in Lambda;
  // however, if any (non-easy) component does not have any subgradient
  // in the bundle this value is not well-defined (the master problem is
@@ -3175,9 +3388,27 @@ void BundleSolver::FormD( void )
  // has happened and declare a globally valid LB
  if( ( UpFiLmb.back() < INFshift ) && ( vStar.back() < INFshift ) &&
      ( NrmZFctr < INFshift ) && ( NrmZ <= NrmZFctr * NZEps ) ) {
-  if( f_global_LB < UpFiLmb.back() + vStar.back() )
+  if( f_global_LB < UpFiLmb.back() + vStar.back() ) {
    f_global_LB = UpFiLmb.back() + vStar.back();
+   refresh_level_after_master();
+   }
   }
+
+ if( initial_level_probe && MasterPB ) {
+  if( ( UpFiLmb.back() < INFshift ) && ( vStar.back() < INFshift ) ) {
+   f_level_Delta = std::max( - vStar.back() , VarValue( 0 ) );
+   if( f_level_Delta <= 0 )
+    f_level_Delta = LStabDlt * std::max( std::abs( UpFiLmb.back() ) ,
+                                         VarValue( 1 ) );
+   f_level_LB = -INFshift;
+   f_level_reliable_LB = false;
+   f_level_value = UpFiLmb.back() - f_level_Delta;
+   f_level_initialized = true;
+   }
+  else
+   refresh_level_after_master();
+  }
+
  }  // end( BundleSolver::FormD )
 
 /*--------------------------------------------------------------------------*/
@@ -4475,8 +4706,12 @@ void BundleSolver::Log1( void )
   return;
 
  *f_log << std::endl << "{" << SCalls << "-" << ParIter << "-"
-        << NrItems.back() << "-" << fixd << get_elapsed_time() << "} t = "
-        << shrt << t;
+        << NrItems.back() << "-" << fixd << get_elapsed_time() << "} ";
+
+ if( UsesPureLevelStabilization() )
+  *f_log << "Lvl = " << shrt << f_level_value;
+ else
+  *f_log << "t = " << shrt << t;
 
  if( ( tStar > 0 ) || ( NrmZFctr == INFshift ) )
   *f_log << " ~ D*_1( z* ) = " << read_DStart( 1 );
@@ -5586,6 +5821,14 @@ bool BundleSolver::IsOptimal( double eps ) const
 
  if( vStar.back() >= INFshift )  // some components have no subgradients
   return( false );               // no way one can detect optimality
+
+ // In pure level mode, a vanishing projection gap is an optimality
+ // certificate only after the level is anchored to a reliable lower bound.
+ // With an exogenous level, the level may simply drift back to the current
+ // value and make d = 0 feasible, which does not prove optimality.
+ if( UsesPureLevelStabilization() &&
+     ( ! f_level_reliable_LB ) && ( reliable_level_LB() <= -INFshift ) )
+  return( false );
 
  c_VarValue err = max_error( eps );
  if( err >= INFshift )
