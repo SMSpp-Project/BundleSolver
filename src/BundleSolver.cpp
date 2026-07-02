@@ -2282,6 +2282,12 @@ void BundleSolver::set_par( idx_type par , double value )
                "BundleSolver::set_par: LStabIncr must be > 1" ) );
    LStabIncr = value;
    break;
+  case( dblLStabSmall ):
+   if( value <= 0 )
+    throw( std::invalid_argument(
+               "BundleSolver::set_par: LStabSmall must be > 0" ) );
+   LStabSmall = value;
+   break;
   default:
    CDASolver::set_par( par , value );
   }
@@ -2595,10 +2601,11 @@ double BundleSolver::get_dbl_par( idx_type par ) const
   case( dbltInit ):     return( tInit );
   case( dbltSPar2 ):    return( tSPar2 );
   case( dbltSPar3 ):    return( tSPar3 );
-  case( dblLStabM ):    return( LStabM );
-  case( dblLStabDlt ):  return( LStabDlt );
-  case( dblLStabIncr ): return( LStabIncr );
-  default:              return( CDASolver::get_dbl_par( par ) );
+  case( dblLStabM ):     return( LStabM );
+  case( dblLStabDlt ):   return( LStabDlt );
+  case( dblLStabIncr ):  return( LStabIncr );
+  case( dblLStabSmall ): return( LStabSmall );
+  default:               return( CDASolver::get_dbl_par( par ) );
   }
  }  // end( BundleSolver::get_dbl_par )
 
@@ -2925,8 +2932,20 @@ void BundleSolver::update_level_after_step( bool serious_step ,
   }
 
  if( serious_step && gated_update && UsesPureLevelStabilization() &&
-     ( lb <= -INFshift ) && ( ! f_level_reliable_LB ) )
-  f_level_Delta *= LStabIncr;
+     ( lb <= -INFshift ) && ( ! f_level_reliable_LB ) &&
+     ( UpFiLmb.back() < INFshift ) && ( UpRifFi.back() < INFshift ) &&
+     ( vStar.back() < INFshift ) ) {
+  const auto level_model_value = UpRifFi.back() + vStar.back();
+  const auto level_model_gap =
+   std::max( UpFiLmb.back() - level_model_value , VarValue( 0 ) );
+  const auto level_model_ratio =
+   level_model_gap / std::max( std::abs( level_model_value ) , VarValue( 1 ) );
+
+  if( level_model_ratio <= LStabSmall ) {
+   f_level_Delta *= LStabIncr;
+   CSSCntr = 0;
+   }
+  }
 
  if( ( ! serious_step ) && gated_update )
   f_level_Delta *= LStabM;

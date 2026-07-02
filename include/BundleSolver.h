@@ -443,6 +443,8 @@ public:
 
   dblLStabIncr ,  ///< exogenous Delta increase factor after consecutive SS
 
+  dblLStabSmall , ///< small model-error threshold for level Delta increases
+
   dblLastBndSlvPar ///< first allowed new double parameter for derived classes
                    /**< Convenience value for easily allow derived classes
                     * to extend the set of double algorithmic parameters. */
@@ -592,6 +594,7 @@ public:
   LStabM = get_dflt_dbl_par( dblLStabM );
   LStabDlt = get_dflt_dbl_par( dblLStabDlt );
   LStabIncr = get_dflt_dbl_par( dblLStabIncr );
+  LStabSmall = get_dflt_dbl_par( dblLStabSmall );
 
   v_events.resize( max_event_number() );
   }
@@ -1318,10 +1321,20 @@ public:
   *
   * - dblLStabIncr [2.0]: multiplicative factor used only by pure level
   *   stabilization while no reliable lower bound is known. After the usual
-  *   consecutive-SS gate allows a significant stabilization update, the
-  *   exogenous expected decrease is enlarged as
+  *   consecutive-SS gate allows a significant stabilization update and the
+  *   model error is small enough, the exogenous expected decrease is enlarged
+  *   as
   *
   *        Delta = dblLStabIncr * Delta
+  *
+  * - dblLStabSmall [1e-2]: threshold used with dblLStabIncr while no
+  *   reliable lower bound is known. The Delta increase is performed only if
+  *
+  *        ( Fi( Lambda1 ) - v* ) / max( | v* | , 1 ) <= dblLStabSmall
+  *
+  *   where v* is the lower-model value at the candidate point. Internally,
+  *   BundleSolver stores vStar as a predicted improvement, hence the model
+  *   value is reconstructed as Fi( Lambda ) + vStar.
   */
 
  void set_par( idx_type par , double value ) override;
@@ -1988,7 +2001,7 @@ public:
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
  [[nodiscard]] double get_dflt_dbl_par( idx_type par ) const override {
-  static const std::array< double , 19 > dflt_dbl_par = {
+  static const std::array< double , 20 > dflt_dbl_par = {
    0 ,      // dblNZEps
    1e+2 ,   // dbltStar
    0 ,      // dblMinNrEvls
@@ -2007,7 +2020,8 @@ public:
    0 ,      // dbltSPar3
    0.5 ,    // dblLStabM
    0.1 ,    // dblLStabDlt
-   2.0      // dblLStabIncr
+   2.0 ,    // dblLStabIncr
+   1e-2     // dblLStabSmall
    };
 
   if( ( par >= dblLastParCDAS ) && ( par < dblLastBndSlvPar ) )
@@ -2133,7 +2147,8 @@ public:
    { "dbltSPar3" , BundleSolver::dbltSPar3 } ,
    { "dblLStabM" , BundleSolver::dblLStabM } ,
    { "dblLStabDlt" , BundleSolver::dblLStabDlt } ,
-   { "dblLStabIncr" , BundleSolver::dblLStabIncr }
+   { "dblLStabIncr" , BundleSolver::dblLStabIncr } ,
+   { "dblLStabSmall" , BundleSolver::dblLStabSmall }
    };
 
   const auto it = dbl_pars_map.find( name );
@@ -2208,11 +2223,12 @@ public:
 
  [[nodiscard]] const std::string & dbl_par_idx2str( idx_type idx )
   const override {
-  static const std::array< std::string , 19 > dbl_pars_str = {
+  static const std::array< std::string , 20 > dbl_pars_str = {
    "dblNZEps" , "dbltStar" , "dblMinNrEvls" , "dblBPar5" , "dblm1" ,
    "dblm2" , "dblm3" , "dblmxIncr" , "dblmnIncr" , "dblmxDecr" ,
    "dblmnDecr" , "dbltMaior" , "dbltMinor" , "dbltInit" , "dbltSPar2" ,
-   "dbltSPar3" , "dblLStabM" , "dblLStabDlt" , "dblLStabIncr" };
+   "dbltSPar3" , "dblLStabM" , "dblLStabDlt" , "dblLStabIncr" ,
+   "dblLStabSmall" };
 
  if( ( idx >= dblLastParCDAS ) && ( idx < dblLastBndSlvPar ) )
    return( dbl_pars_str[ idx - dblLastParCDAS ] );
@@ -3045,6 +3061,8 @@ public:
  VarValue LStabDlt;    ///< initial exogenous Delta fraction for level stabilization
 
  VarValue LStabIncr;   ///< exogenous Delta increase factor for level stabilization
+
+ VarValue LStabSmall;  ///< threshold for small model error in level stabilization
 
  VarValue t;           ///< the (tremendous) t parameter
  VarValue Prevt;       ///< what t were before being changed for funny reasons
