@@ -1168,9 +1168,12 @@ int BundleSolver::compute( bool changedvars )
     //!! the beginning, it should be done only near the end
     }
   else             // regular update mechanism
-   if( tm != tp )  // if t can change, select it in [ tm , tp ]
+   if( tm != tp ){ // if t can change, select it in [ tm , tp ]
     tt = std::min( std::min( tMaior , tp ) ,
                    std::max( std::max( tMinor , tm ) , tt ) );
+    tt = std::max( std::min( tp , tt ) , tm );
+    tt = std::max( std::min( tMaior , tt ) , tMinor );
+    }
    else            // else
     tt = t;        // keep it as it is
 
@@ -3405,13 +3408,21 @@ void BundleSolver::FormD( void )
 
  // if the scaling factor could be computed one can check if z* == 0
  // has happened and declare a globally valid LB
+ // note: the update of f_global_LB used to be under guard
+ // if( f_global_LB < UpFiLmb.back() + vStar.back() )
+ // i.e., one would always report the largest f_global_LB ever found.
+ // however, declaring a global LB is slippery, as it requires to set NZEps
+ // "small enough" and no-one really knows how to do that. As a consequence,
+ // one may end up with the final LB being higher than the final UB, which
+ // is not something any Solver should ever report. We rather take the
+ // conservative stance where the final reported LB is the one of the
+ // stopping iteration: since the UB is "that one + v^*" and v^* is negative,
+ // this ensures that UB >= LB
  if( ( UpFiLmb.back() < INFshift ) && ( vStar.back() < INFshift ) &&
      ( NrmZFctr < INFshift ) && ( NrmZ <= NrmZFctr * NZEps ) ) {
-  if( f_global_LB < UpFiLmb.back() + vStar.back() ) {
-   f_global_LB = UpFiLmb.back() + vStar.back();
-   refresh_level_after_master();
-   }
-  }
+  f_global_LB = UpFiLmb.back() + vStar.back();
+  refresh_level_after_master();
+ }
 
  if( initial_level_probe && MasterPB ) {
   if( ( UpFiLmb.back() < INFshift ) && ( vStar.back() < INFshift ) ) {
