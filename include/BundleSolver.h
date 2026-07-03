@@ -1300,41 +1300,77 @@ public:
   *   Any value of dbltSPar3 such that abs( dbltSPar3 ) <= 1 is equivalent
   *   to 0, which means "t cannot be changed by the heuristics only".
   *
+  * Level stabilization keeps an expected decrease Delta and installs the
+  * level
+  *
+  *        L = Fi( Lambda ) - Delta .
+  *
+  * There are two regimes. If a reliable lower bound LB is known, Delta is
+  * driven by the certified gap Fi( Lambda ) - LB. If no reliable LB is known,
+  * Delta is exogenous: it is initialized heuristically and adjusted until the
+  * level master either produces useful steps or proves a first valid LB. Pure
+  * level stabilization does not use the usual t-strategy machinery; the
+  * consecutive SS/NS counters are reused to decide when a level update is
+  * significant enough to be performed.
+  *
+  * If the level master is empty, the current L is a valid lower bound. The
+  * solver records it, switches to the reliable-LB regime if necessary, and
+  * recomputes Delta from the certified-gap formula below.
+  *
   * - dblLStabM [0.5]: m_l parameter in (0,1) for level stabilization.
   *   When a reliable lower bound LB is available, the expected decrease is
   *
   *        Delta = (1 - m_l) * ( Fi( Lambda ) - LB )
   *
   *   and the level is L = Fi( Lambda ) - Delta. Under a Null Step, after
-  *   the usual consecutive-NS gate allows a significant stabilization
-  *   update, Delta is shortened to m_l * Delta. Under a Serious Step, after
-  *   the usual consecutive-SS gate allows a significant stabilization
-  *   update, Delta is capped by the reliable-bound formula at the new centre.
+  *   the usual consecutive-NS gate controlled by intMnNSC allows a significant
+  *   stabilization update, Delta is shortened as
   *
-  * - dblLStabDlt [0.1]: fallback exogenous Delta fraction used by level
-  *   stabilization while no reliable lower bound is known. The initial
-  *   heuristic decrease is
+  *        Delta <- m_l * Delta .
   *
-  *        Delta = dblLStabDlt * max( | Fi( Lambda ) | , 1 )
+  *   Under a Serious Step, if LB is reliable and the usual consecutive-SS gate
+  *   controlled by intMnSSC allows a significant update, Delta is capped at
+  *   the new centre:
   *
-  *   and is abandoned as soon as the solver discovers a reliable lower bound.
+  *        Delta <- min( Delta ,
+  *                      (1 - m_l) * ( Fi( Lambda+ ) - LB ) ) .
+  *
+  * - dblLStabDlt [0.1]: fallback exogenous Delta fraction used while no
+  *   reliable lower bound is known. If the one-shot initial level probe cannot
+  *   provide a positive predicted decrease, the heuristic value is
+  *
+  *        Delta = dblLStabDlt * max( | Fi( Lambda ) | , 1 ) .
+  *
+  *   This exogenous initialization is abandoned as soon as the solver
+  *   discovers a reliable lower bound, either from a global certificate or
+  *   because the current level master is empty.
   *
   * - dblLStabIncr [2.0]: multiplicative factor used only by pure level
-  *   stabilization while no reliable lower bound is known. After the usual
-  *   consecutive-SS gate allows a significant stabilization update and the
-  *   model error is small enough, the exogenous expected decrease is enlarged
-  *   as
+  *   stabilization while no reliable lower bound is known. If too many
+  *   consecutive Serious Steps have been performed, i.e., the intMnSSC gate is
+  *   open, and the model is accurate enough according to dblLStabSmall, the
+  *   exogenous expected decrease is enlarged as
   *
-  *        Delta = dblLStabIncr * Delta
+  *        Delta <- dblLStabIncr * Delta .
   *
-  * - dblLStabSmall [1e-2]: threshold used with dblLStabIncr while no
-  *   reliable lower bound is known. The Delta increase is performed only if
+  *   The consecutive-SS counter is reset when this significant level update is
+  *   performed.
   *
-  *        ( Fi( Lambda1 ) - v* ) / max( | v* | , 1 ) <= dblLStabSmall
+  * - dblLStabSmall [1e-2]: threshold used with dblLStabIncr while no reliable
+  *   lower bound is known. The Delta increase above is performed only if the
+  *   relative model-error ratio
   *
-  *   where v* is the lower-model value at the candidate point. Internally,
-  *   BundleSolver stores vStar as a predicted improvement, hence the model
-  *   value is reconstructed as Fi( Lambda ) + vStar.
+  *        ( Fi( Lambda1 ) - Fi_{B,Lambda}( d* ) )
+  *        ------------------------------------------- <= dblLStabSmall
+  *             max( | Fi_{B,Lambda}( d* ) | , 1 )
+  *
+  *   is small enough. Here Fi_{B,Lambda} is the cutting-plane lower model
+  *   built from the current bundle B at the stability centre Lambda, and d*
+  *   is the master displacement to Lambda1. Negative numerator values are
+  *   clipped to zero in the implementation. Internally BundleSolver stores
+  *   vStar as a predicted improvement, hence
+  *
+  *        Fi_{B,Lambda}( d* ) = Fi( Lambda ) + vStar .
   */
 
  void set_par( idx_type par , double value ) override;
