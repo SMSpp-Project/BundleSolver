@@ -5174,14 +5174,11 @@ double BundleSolver::Heuristic4( void )
 
 void BundleSolver::CreateMPB( void )
 {
- // allocate (or re-cycle) the MasterProblemBlock and attach the configured
- // [MILP]Solver to it through the BlockSolverConfig at MPBSolverCfg
+ // allocate (or re-cycle) the MasterProblemBlock 
  if( MasterPB )
   MasterPB->clear();
  else
   MasterPB = new MasterProblemBlock();
-
- MasterPB->register_Solver( std::string( MPBSolverCfg ) );
 
  }  // end( BundleSolver::CreateMPB )
 
@@ -5269,6 +5266,11 @@ void BundleSolver::InitMPB( void )
  if( const char * env = std::getenv( "BUNDLE_MPB_XREFTOL" ) ;
      env && env[ 0 ] )
   MasterPB->set_xref_tol( std::atof( env ) );
+
+ // After the physical representation have been cretaed into the MPB, register
+ // the solver. This will allow also solver using abstract representation to
+ // correctly generate it.
+ MasterPB->register_Solver( std::string( MPBSolverCfg ) );
 
  tHasChgd = true;
 

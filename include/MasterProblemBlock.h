@@ -70,6 +70,14 @@
  * - **Doubly-Stabilized**: combines both, see [Astorino, Frangioni,
  *   Fuduli, Gorgone, MP 2017].
  *
+ * Following the SMS++ distinction between physical and abstract representations,
+ * the physical representation of a MasterProblemBlock is the compact state that
+ * characterizes the current master problem: the registered sub-Blocks, the
+ * current stability center, and the stabilization parameters (the proximal
+ * parameter t, the level value Lvl and the selected stabilization type). The
+ * Variable, Constraint and Objective objects forming the primal or dual MP are
+ * the corresponding abstract representation generated from that physical state.
+ *
  * MasterProblemBlock is meant to be driven by a bundle driver
  * which is responsible for keeping the bundles B^k updated as the algorithm
  * proceeds; the driver does *not* directly call any MILP backend, it only
@@ -436,10 +444,11 @@ class MasterProblemBlock : public Block {
 
 /*--------------------------------------------------------------------------*/
  /// initialize an *empty* Master Problem with the given stabilization
- /** Populates the abstract representation of MasterProblemBlock with the
-  * coupling part of the Master Problem (the static Variable / Constraint and
-  * the Objective), in either the primal or the dual formulation depending on
-  * the chosen stabilization scheme and on the presence of "easy" components.
+ /** Populates the physical representation of MasterProblemBlock with the
+  * compact ingredients of the Master Problem, in either the primal or the dual
+  * formulation depending on the chosen stabilization scheme and on the presence
+  * of "easy" components. The Variable, Constraint and Objective objects are
+  * left to the generate_abstract_*() methods.
   *
   * At call time the per-component bundles are *empty*: the dynamic cuts of each
   * "hard" component are added on the fly by the surrounding Bundle algorithm
@@ -464,30 +473,58 @@ class MasterProblemBlock : public Block {
                      int NoEasy , std::vector< bool > IsEasy );
 
 /*--------------------------------------------------------------------------*/
- /// initialize the primal version of the Master Problem
- /** Builds the static Variable, the static Constraint and the Objective of
-  * the primal MP (cf. eq. (P) in the file documentation). This method is called
-  * internally by CreateEmptyMP() when the dual form is not strictly required,
-  * and is exposed publicly so that derived classes can override the
-  * construction (e.g. for problem-specific stabilizing terms).
+ /// initialize the primal physical representation of the Master Problem
+ /** Builds only the physical representation of the primal MP: the registered
+  * PolyhedralFunctionBlock sub-Blocks, the current stability-center data and
+  * the stabilization parameters. The corresponding Variable, Constraint and
+  * Objective objects are generated later by generate_abstract_variables(),
+  * generate_abstract_constraints() and generate_objective().
   *
-  * The current implementation is a work-in-progress placeholder; calling it on
-  * a non-empty Block has unspecified effects. */
+  * This method is called internally by CreateEmptyMP() when the dual form is not
+  * strictly required, and is exposed publicly so that derived classes can
+  * override the physical construction. */
 
  void CreatePrimalMP( stabilization_type Stbl );
 
 /*--------------------------------------------------------------------------*/
- /// initialize the dual version of the Master Problem
- /** Builds the static Variable, the static Constraint and the Objective of
-  * the dual MP (cf. eq. (D) in the file documentation). This method is called
-  * internally by CreateEmptyMP() whenever "easy" components are present, since
-  * their compact description is naturally expressed in the dual form; it is
-  * exposed publicly so that derived classes can override the construction.
+ /// initialize the dual physical representation of the Master Problem
+ /** Builds only the physical representation of the dual MP: the registered
+  * PolyhedralFunctionBlock sub-Blocks, the current stability-center data and
+  * the stabilization parameters. The corresponding Variable, Constraint and
+  * Objective objects are generated later by generate_abstract_variables(),
+  * generate_abstract_constraints() and generate_objective().
   *
-  * The current implementation is a work-in-progress placeholder; calling it on
-  * a non-empty Block has unspecified effects. */
+  * This method is called internally by CreateEmptyMP() whenever "easy"
+  * components are present, since their compact description is naturally
+  * expressed in the dual form; it is exposed publicly so that derived classes
+  * can override the physical construction. */
 
  void CreateDualMP( stabilization_type Stbl );
+
+/*--------------------------------------------------------------------------*/
+ /// generate the Variable groups in the abstract representation
+ /** Dispatches to the primal or dual generator according to the currently
+  * selected MP form. The optional Configuration is interpreted as in
+  * PolyhedralFunctionBlock: a SimpleConfiguration<int> may carry already-built
+  * abstract-representation bits, so repeated calls can be harmless no-ops. */
+
+ void generate_abstract_variables( Configuration * stvv = nullptr ) override;
+
+/*--------------------------------------------------------------------------*/
+ /// generate the Constraint groups in the abstract representation
+ /** Dispatches to the primal or dual constraint generator. It requires that
+  * generate_abstract_variables() has already materialized the Variable side and
+  * records the generated-constraint stage to make repeated calls idempotent. */
+
+ void generate_abstract_constraints( Configuration * stcc = nullptr ) override;
+
+/*--------------------------------------------------------------------------*/
+ /// generate the Objective in the abstract representation
+ /** Dispatches to the primal or dual objective generator. It requires the
+  * abstract Variable side to exist and records the generated-objective stage
+  * to make repeated calls idempotent. */
+
+ void generate_objective( Configuration * objc = nullptr ) override;
 
 /*--------------------------------------------------------------------------*/
  /// absorb the row-mapping of a BendersBFunction into the primal MP
@@ -1647,6 +1684,9 @@ class MasterProblemBlock : public Block {
  int level_model_obj_idx = -1;
                     ///< first v^k term in the one-shot level probe objective
 
+ char f_abs_rep = 0;
+                    ///< built-stage bits for MPB's abstract representation
+
  std::vector< ColVariable * > EasyObjVars;
                     ///< unique easy inner variables receiving x_bar * g(u)
 
@@ -1663,6 +1703,29 @@ class MasterProblemBlock : public Block {
 /*--------------------------------------------------------------------------*/
 /*---------------------------- PRIVATE METHODS -----------------------------*/
 /*--------------------------------------------------------------------------*/
+
+ void generate_primal_abstract_variables();
+                    ///< materialize the primal master variables and wire the
+                    ///< hard-component PolyhedralFunctionBlock active variables
+
+ void generate_primal_abstract_constraints();
+                    ///< materialize the primal box, level row and PFB rows
+
+ void generate_primal_objective();
+                    ///< materialize the primal master objective and PFB
+                    ///< objective pieces
+
+ void generate_dual_abstract_variables();
+                    ///< materialize the dual master variables and wire the
+                    ///< hard-component PolyhedralFunctionBlock active variables
+
+ void generate_dual_abstract_constraints();
+                    ///< materialize the dual normalization/coupling rows and
+                    ///< the hard-component PFB rows
+
+ void generate_dual_objective();
+                    ///< materialize the dual master objective and PFB
+                    ///< objective pieces
 
  void refresh_primal_objective();
                     ///< emit one batched objective Modification from the
