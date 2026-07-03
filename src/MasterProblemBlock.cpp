@@ -66,6 +66,25 @@ using namespace SMSpp_di_unipi_it;
 SMSpp_insert_in_factory_cpp_1( MasterProblemBlock );
 
 /*--------------------------------------------------------------------------*/
+/*-------------------- ABSTRACT REPRESENTATION FLAGS -----------------------*/
+/*--------------------------------------------------------------------------*/
+
+// Same convention used by PolyhedralFunctionBlock: the low bits are left free
+// for representation choices, while these bits track which generated slices
+// are already available.
+static constexpr char k_mpb_built_var  = 0x04;
+static constexpr char k_mpb_built_cnst = 0x08;
+static constexpr char k_mpb_built_obj  = 0x10;
+static constexpr char k_mpb_built_mask =
+ k_mpb_built_var | k_mpb_built_cnst | k_mpb_built_obj;
+
+static char mpb_built_stage( Configuration * cfg )
+{
+ auto * scfg = dynamic_cast< SimpleConfiguration< int > * >( cfg );
+ return( scfg ? char( scfg->f_value & k_mpb_built_mask ) : 0 );
+}
+
+/*--------------------------------------------------------------------------*/
 /*----------------------- CLEAR / REINITIALIZE -----------------------------*/
 /*--------------------------------------------------------------------------*/
 
@@ -106,6 +125,7 @@ void MasterProblemBlock::clear()
  omega_obj_idx = -1;
  easy_obj_idx  = -1;
  level_model_obj_idx = -1;
+ f_abs_rep = 0;
 
  // drop the dynamically-sized variable / constraint groups (primal d /
  // v^k / Bounds_v_hard, dual z / CouplingCns); the scalar members
@@ -483,7 +503,79 @@ void MasterProblemBlock::CreateEmptyMP( stabilization_type Stbl , int NoCmps ,
  }  // end( MasterProblemBlock::CreateEmptyMP )
 
 /*--------------------------------------------------------------------------*/
-/*------------------------- PRIMAL / DUAL MP -------------------------------*/
+/*------------------ Abstract representation methods------------------------*/
+/*--------------------------------------------------------------------------*/
+
+void MasterProblemBlock::generate_abstract_variables( Configuration * stvv )
+{
+ Configuration * cfg = stvv;
+ if( ( ! cfg ) && f_BlockConfig )
+  cfg = f_BlockConfig->f_static_variables_Configuration;
+ f_abs_rep |= mpb_built_stage( cfg );
+
+ if( f_abs_rep & k_mpb_built_var )
+  return;
+
+ if( IsPrimal )
+  generate_primal_abstract_variables();
+ else
+  generate_dual_abstract_variables();
+
+ f_abs_rep |= k_mpb_built_var;
+}
+
+/*--------------------------------------------------------------------------*/
+
+void MasterProblemBlock::generate_abstract_constraints( Configuration * stcc )
+{
+ Configuration * cfg = stcc;
+ if( ( ! cfg ) && f_BlockConfig )
+  cfg = f_BlockConfig->f_static_constraints_Configuration;
+ f_abs_rep |= mpb_built_stage( cfg );
+
+ if( f_abs_rep & k_mpb_built_cnst )
+  return;
+
+ if( ! ( f_abs_rep & k_mpb_built_var ) )
+  throw( std::logic_error(
+       "MasterProblemBlock::generate_abstract_constraints: variables "
+       "must be generated first" ) );
+
+ if( IsPrimal )
+  generate_primal_abstract_constraints();
+ else
+  generate_dual_abstract_constraints();
+
+ f_abs_rep |= k_mpb_built_cnst;
+}
+
+/*--------------------------------------------------------------------------*/
+
+void MasterProblemBlock::generate_objective( Configuration * objc )
+{
+ Configuration * cfg = objc;
+ if( ( ! cfg ) && f_BlockConfig )
+  cfg = f_BlockConfig->f_objective_Configuration;
+ f_abs_rep |= mpb_built_stage( cfg );
+
+ if( f_abs_rep & k_mpb_built_obj )
+  return;
+
+ if( ! ( f_abs_rep & k_mpb_built_var ) )
+  throw( std::logic_error(
+       "MasterProblemBlock::generate_objective: variables must be "
+       "generated first" ) );
+
+ if( IsPrimal )
+  generate_primal_objective();
+ else
+  generate_dual_objective();
+
+ f_abs_rep |= k_mpb_built_obj;
+}
+
+/*--------------------------------------------------------------------------*/
+/*------------------------------ PRIMAL MP ---------------------------------*/
 /*--------------------------------------------------------------------------*/
 
 void MasterProblemBlock::CreatePrimalMP( stabilization_type Stbl )
@@ -500,37 +592,6 @@ void MasterProblemBlock::CreatePrimalMP( stabilization_type Stbl )
 
  StblType = Stbl;
  IsPrimal = true;
-
- // ---- static Variable: the step d ---------------------------------------
- //
- // The epigraph variable v^k of each hard component is NOT a static
- // master-side ColVariable here: it is the f_v of the per-component
- // PolyhedralFunctionBlock allocated below in the linearized-primal
- // representation (is_linearized() == true). The PFB also owns:
- //  - its f_bcv box constraint on f_v (loaded with the PolyhedralFunction
- //    global LB / UB)
- //  - its f_const dynamic FRowConstraint group, holding the
- //    v_k >= a_i^k . d + b_i^k cuts as they are pushed by
- //    PolyhedralFunction::add_row (i.e. by MasterProblemBlock::add_cut
- //    on this side); the cuts share the master-side Var_d as the
- //    "x" variables of the PolyhedralFunction.
- // The master-side Objective below then references the PFB f_v pointers
- // directly via get_v(), so no v_k coupling row is needed
-
- Var_d.clear();
- Var_d.resize( NumVars );          // x (raw form) or d (translated form)
- if( NumVars > 0 )
-  add_static_variable( Var_d , f_v2_form ? "MPB_x" : "MPB_d" );
-
- Bounds_d.clear();
- Bounds_d.resize( NumVars );
- for( int j = 0 ; j < NumVars ; ++j ) {
-  Bounds_d[ j ].set_variable( & Var_d[ j ] , eNoMod );
-  Bounds_d[ j ].set_lhs( - Inf< double >() , eNoMod );
-  Bounds_d[ j ].set_rhs( Inf< double >() , eNoMod );
-  }
- if( NumVars > 0 )
-  add_static_constraint( Bounds_d , "MPB_box" );
 
  // ---- one PolyhedralFunctionBlock sub-Block per "hard" component ---------
  //
@@ -564,6 +625,54 @@ void MasterProblemBlock::CreatePrimalMP( stabilization_type Stbl )
  for( int k = 0 ; k < NoHardCmps ; ++k ) {
   auto * pfb = new PolyhedralFunctionBlock( this );
 
+  /* Even tough in this phase we are creating the physical representation 
+   * of the MP, we already call the method for generating the abstract variables 
+   * of each PFB. This is needed because currently SMS++ writes solution 
+   * vectors inside the Block variables, which therefore should be initialized.
+   * Hopefully, this will go away someday. */
+  pfb->generate_abstract_variables(
+               const_cast< SimpleConfiguration< int > * >( & rep_lin_primal ) );
+
+  HardCmps.push_back( pfb );
+  add_nested_Block( pfb );
+  }
+
+ // bookkeeping fields: Bounds_v_hard / Var_v_hard are *unused* in this
+ // refactor; we keep them clean so the dual MP code path (which still
+ // owns them) stays unaffected
+ Bounds_v_hard.clear();
+ Var_v_hard.clear();
+
+ }  // end( MasterProblemBlock::CreatePrimalMP )
+
+/*--------------------------------------------------------------------------*/
+
+void MasterProblemBlock::generate_primal_abstract_variables( void )
+{
+ // ---- static Variable: the step d ---------------------------------------
+ //
+ // NOTE: The epigraph variable v^k of each hard component is NOT a static
+ // master-side ColVariable here: it is the f_v of the per-component
+ // PolyhedralFunctionBlock allocated below in the linearized-primal
+ // representation (is_linearized() == true). The PFB also owns:
+ //  - its f_bcv box constraint on f_v (loaded with the PolyhedralFunction
+ //    global LB / UB)
+ //  - its f_const dynamic FRowConstraint group, holding the
+ //    v_k >= a_i^k . d + b_i^k cuts as they are pushed by
+ //    PolyhedralFunction::add_row (i.e. by MasterProblemBlock::add_cut
+ //    on this side); the cuts share the master-side Var_d as the
+ //    "x" variables of the PolyhedralFunction.
+
+ Var_d.clear();
+ Var_d.resize( NumVars );          // x (raw form) or d (translated form)
+ if( NumVars > 0 )
+  add_static_variable( Var_d , f_v2_form ? "MPB_x" : "MPB_d" );
+
+
+ // Now handle each hard component
+ for( int k = 0 ; k < NoHardCmps ; ++k ) {
+  auto * pfb = dynamic_cast< PolyhedralFunctionBlock * >( HardCmps[ k ] );
+
   // wire the "x" variables of f_polyf to the master-side Var_d, so every
   // cut v_k >= a . d + b pushed via add_row lands on the right columns
   PolyhedralFunction::VarVector vv;
@@ -572,6 +681,30 @@ void MasterProblemBlock::CreatePrimalMP( stabilization_type Stbl )
    vv.push_back( & di );
   pfb->get_PolyhedralFunction().set_variables( std::move( vv ) );
 
+  // abstract variables have already been generated in the CreatePrimal method
+ }
+
+}
+
+/*--------------------------------------------------------------------------*/
+
+void MasterProblemBlock::generate_primal_abstract_constraints( void )
+{
+ // Initialize the possible bounds on the step d
+ Bounds_d.clear();
+ Bounds_d.resize( NumVars );
+ for( int j = 0 ; j < NumVars ; ++j ) {
+  Bounds_d[ j ].set_variable( & Var_d[ j ] , eNoMod );
+  Bounds_d[ j ].set_lhs( - Inf< double >() , eNoMod );
+  Bounds_d[ j ].set_rhs( Inf< double >() , eNoMod );
+  }
+ if( NumVars > 0 )
+  add_static_constraint( Bounds_d , "MPB_box" );
+
+ // Now handle each hard component
+ for( int k = 0 ; k < NoHardCmps ; ++k ) {
+  auto * pfb = dynamic_cast< PolyhedralFunctionBlock * >( HardCmps[ k ] );
+  
   // ensure f_polyf has NO global lower bound (for the default convex
   // case, f_bound defaults to +INF which would translate the linearized
   // primal box-constraint f_bcv to "+INF <= f_v <= +INF" -> infeasible
@@ -580,14 +713,9 @@ void MasterProblemBlock::CreatePrimalMP( stabilization_type Stbl )
   pfb->get_PolyhedralFunction().modify_bound(
                   - Inf< Function::FunctionValue >() , eNoMod );
 
-  pfb->generate_abstract_variables(
-                       const_cast< SimpleConfiguration< int > * >( & rep_lin_primal ) );
+  // Now generate the abstract constraints of each PFB
   pfb->generate_abstract_constraints();
-  pfb->generate_objective();
-
-  HardCmps.push_back( pfb );
-  add_nested_Block( pfb );
-  }
+ }
 
  // ---- level constraint b*d + sum_k v^k <= f_lev -------------------------
  //
@@ -596,7 +724,8 @@ void MasterProblemBlock::CreatePrimalMP( stabilization_type Stbl )
  // reference each PFB's f_v directly via get_v(). LevelCns is a master-side
  // static FRowConstraint so the inner Solver picks it up.
 
- if( ( Stbl == kLevel || Stbl == kDoublyStabilized ) && NoHardCmps > 0 ) {
+ if( ( StblType == kLevel || StblType == kDoublyStabilized ) 
+          && NoHardCmps > 0 ) {
   LinearFunction::v_coeff_pair lvl_terms;
   lvl_terms.reserve( NumVars + NoHardCmps );
   for( int j = 0 ; j < NumVars ; ++j ) {
@@ -618,6 +747,19 @@ void MasterProblemBlock::CreatePrimalMP( stabilization_type Stbl )
   add_static_constraint( LevelCns , "MPB_level" );
   }
 
+ }
+
+/*--------------------------------------------------------------------------*/
+
+void MasterProblemBlock::generate_primal_objective( void )
+{
+ // Generate the objective of each hard component
+ for( int k = 0 ; k < NoHardCmps ; ++k ) {
+  auto * pfb = dynamic_cast< PolyhedralFunctionBlock * >( HardCmps[ k ] );
+
+  pfb->generate_objective();
+ }
+
  // ---- Objective ---------------------------------------------------------
  //
  // kProximal / kDoublyStabilized:
@@ -638,10 +780,10 @@ void MasterProblemBlock::CreatePrimalMP( stabilization_type Stbl )
  // nested Objective is suppressed. The one-shot proximal probe therefore
  // places the f_v[k] terms in the root Objective, then removes them.
 
- const bool pure_level = ( Stbl == kLevel );
+ const bool pure_level = ( StblType == kLevel );
  const bool level_probe = pure_level;
  const bool has_quad =
-  pure_level || ( Stbl == kProximal ) || ( Stbl == kDoublyStabilized );
+  pure_level || ( StblType == kProximal ) || ( StblType == kDoublyStabilized );
 
  DQuadFunction::v_coeff_triple triples;
  triples.reserve( NumVars + ( level_probe ? NoHardCmps : 0 ) );
@@ -680,15 +822,10 @@ void MasterProblemBlock::CreatePrimalMP( stabilization_type Stbl )
  obj->set_sense( Objective::eMin , eNoMod );
  set_objective( obj , eNoMod );
  f_primal_objective_dirty = false;
+}
 
- // bookkeeping fields: Bounds_v_hard / Var_v_hard are *unused* in this
- // refactor; we keep them clean so the dual MP code path (which still
- // owns them) stays unaffected
- Bounds_v_hard.clear();
- Var_v_hard.clear();
-
- }  // end( MasterProblemBlock::CreatePrimalMP )
-
+/*--------------------------------------------------------------------------*/
+/*------------------------------ DUAL MP -----------------------------------*/
 /*--------------------------------------------------------------------------*/
 
 void MasterProblemBlock::CreateDualMP( stabilization_type Stbl )
@@ -705,6 +842,70 @@ void MasterProblemBlock::CreateDualMP( stabilization_type Stbl )
  StblType = Stbl;
  IsPrimal = false;
 
+ // ---- one PolyhedralFunctionBlock sub-Block per "hard" component ---------
+ //
+ // The PFB is wired in its *linearised dual* representation (rep == 3):
+ //
+ //  - f_gamma >= 0 is the per-component LB^k multiplier;
+ //  - f_theta (dynamic) is the list of theta^k_i bundle multipliers;
+ //  - the per-PFB normalization row sum_i theta^k_i + gamma^k = 1 is
+ //    later augmented with the master-side lambda via set_lambda(), so
+ //    that it becomes sum_i theta^k_i + gamma^k + lambda = 1, which is
+ //    just the paper's normalization sum_i theta^k_i + gamma^k = lambda
+ //    re-grouped (the constant 1 on the right-hand side stays, lambda
+ //    appears on the LHS with sign +1);
+ //  - the per-PFB Objective contributes sum_i theta^k_i * b^k_i +
+ //    gamma^k * LB^k (the latter is 0 unless f_polyf carries an explicit
+ //    lower bound), which is precisely the per-component piece of the
+ //    dual objective in (D);
+ //  - the per-PFB contribution to the master-side z coupling rows is
+ //    installed via set_conjugate_constraint(CouplingCns), which augments
+ //    every CouplingCns[j] with the terms +theta^k_i * a^k_{i,j}.
+ //
+ // The PolyhedralFunction interior bundle is empty here: the
+ // the driver feeds rows (g, alpha) into each f_polyf via
+ // the Modification interface as new linearizations are produced.
+
+ HardCmps.clear();
+ HardCmps.reserve( NoHardCmps );
+ // Keep bits 0 and 1 set so this remains the linearized-dual
+ // representation: no scaling / local / global / both map to 3 / 7 / 11 / 15.
+ const int scaling_cfg = ( ( HardCmpScaling & 1 ) ? 4 : 0 ) |
+                         ( ( HardCmpScaling & 2 ) ? 8 : 0 );
+ const SimpleConfiguration< int > rep_dual( 3 | scaling_cfg );
+
+ for( int k = 0 ; k < NoHardCmps ; ++k ) {
+  auto * pfb = new PolyhedralFunctionBlock( this );
+
+  // Align the PFB's PolyhedralFunction sense to IsConvex so that
+  // generate_objective() emits the same eMin/eMax of the surrounding
+  // master MP and of any easy sub-Block grafted under *this* by the
+  // configure() dispatch. Specifically (cf. PolyhedralFunctionBlock.cpp:215
+  // — `dual_min = !convex`):
+  //  - C05Function convex  ⇒ master MP is min ⇒ PFB needs eMin
+  //                          ⇒ PolyhedralFunction must be "concave"
+  //  - C05Function concave ⇒ master MP is max ⇒ PFB needs eMax
+  //                          ⇒ PolyhedralFunction stays "convex" (default)
+  pfb->get_PolyhedralFunction().set_is_convex( ! IsConvex , eNoMod );
+
+  /* Even tough in this phase we are creating the physical representation 
+   * of the MP, we already call the method for generating the abstract variables 
+   * of each PFB. This is needed because currently SMS++ writes solution 
+   * vectors inside the Block variables, which therefore should be initialized.
+   * Hopefully, this will go away someday. */
+  pfb->generate_abstract_variables(
+               const_cast< SimpleConfiguration< int > * >( & rep_dual ) );
+
+  HardCmps.push_back( pfb );
+  add_nested_Block( pfb );
+  }
+
+ }  // end( MasterProblemBlock::CreateDualMP )
+
+/*--------------------------------------------------------------------------*/
+
+void MasterProblemBlock::generate_dual_abstract_variables( void )
+{
  // ---- static dual multipliers: lambda (global), r, omega -----------------
  //
  // lambda is the *single* global non-negative multiplier paired with the
@@ -817,6 +1018,27 @@ void MasterProblemBlock::CreateDualMP( stabilization_type Stbl )
   add_static_variable( Var_s_minus , "MPB_s_minus" );
   }
 
+ // Now handle each hard component
+ for( int k = 0 ; k < NoHardCmps ; ++k ) {
+  auto * pfb = dynamic_cast< PolyhedralFunctionBlock * >( HardCmps[ k ] );
+
+  // wire the "x" variables of f_polyf to the master-side Var_d, so every
+  // cut v_k >= a . d + b pushed via add_row lands on the right columns
+  PolyhedralFunction::VarVector vv;
+  vv.reserve( NumVars );
+  for( auto & zj : Var_z )
+   vv.push_back( & zj );
+  pfb->get_PolyhedralFunction().set_variables( std::move( vv ) );
+
+  // abstract variables have already been generated in the CreatePrimal method
+ }
+
+}
+
+/*--------------------------------------------------------------------------*/
+
+void MasterProblemBlock::generate_dual_abstract_constraints( void )
+{
  // ---- global normalization row: lambda + r - omega = 1 -----------------
  // The disaggregated proximal dual stationarity in v_k (the per-component
  // model decrease) reads
@@ -901,75 +1123,33 @@ void MasterProblemBlock::CreateDualMP( stabilization_type Stbl )
  if( NumVars > 0 )
   add_dynamic_constraint( CouplingCns , "MPB_coupling" );
 
- // ---- one PolyhedralFunctionBlock sub-Block per "hard" component ---------
- //
- // The PFB is wired in its *linearised dual* representation (rep == 3):
- //
- //  - f_gamma >= 0 is the per-component LB^k multiplier;
- //  - f_theta (dynamic) is the list of theta^k_i bundle multipliers;
- //  - the per-PFB normalization row sum_i theta^k_i + gamma^k = 1 is
- //    later augmented with the master-side lambda via set_lambda(), so
- //    that it becomes sum_i theta^k_i + gamma^k + lambda = 1, which is
- //    just the paper's normalization sum_i theta^k_i + gamma^k = lambda
- //    re-grouped (the constant 1 on the right-hand side stays, lambda
- //    appears on the LHS with sign +1);
- //  - the per-PFB Objective contributes sum_i theta^k_i * b^k_i +
- //    gamma^k * LB^k (the latter is 0 unless f_polyf carries an explicit
- //    lower bound), which is precisely the per-component piece of the
- //    dual objective in (D);
- //  - the per-PFB contribution to the master-side z coupling rows is
- //    installed via set_conjugate_constraint(CouplingCns), which augments
- //    every CouplingCns[j] with the terms +theta^k_i * a^k_{i,j}.
- //
- // The PolyhedralFunction interior bundle is empty here: the
- // the driver feeds rows (g, alpha) into each f_polyf via
- // the Modification interface as new linearizations are produced.
-
- HardCmps.clear();
- HardCmps.reserve( NoHardCmps );
- // Keep bits 0 and 1 set so this remains the linearized-dual
- // representation: no scaling / local / global / both map to 3 / 7 / 11 / 15.
- const int scaling_cfg = ( ( HardCmpScaling & 1 ) ? 4 : 0 ) |
-                         ( ( HardCmpScaling & 2 ) ? 8 : 0 );
- const SimpleConfiguration< int > rep_dual( 3 | scaling_cfg );
-
+ // Now handle each hard component
  for( int k = 0 ; k < NoHardCmps ; ++k ) {
-  auto * pfb = new PolyhedralFunctionBlock( this );
+  auto * pfb = dynamic_cast< PolyhedralFunctionBlock * >( HardCmps[ k ] );
 
-  // f_polyf needs an "active variables" vector of size NumVars; in the
-  // dual representation these only serve as keys for the bookkeeping of
-  // set_conjugate_constraint (they are not the lambda of the original
-  // PolyhedralFunction; the bundle is fed in dual space). Var_z fits the
-  // role: one ColVariable* per coordinate, with NumVars in total.
-  PolyhedralFunction::VarVector vv;
-  vv.reserve( NumVars );
-  for( auto & zj : Var_z )
-   vv.push_back( & zj );
-  pfb->get_PolyhedralFunction().set_variables( std::move( vv ) );
-
-  // Align the PFB's PolyhedralFunction sense to IsConvex so that
-  // generate_objective() emits the same eMin/eMax of the surrounding
-  // master MP and of any easy sub-Block grafted under *this* by the
-  // configure() dispatch. Specifically (cf. PolyhedralFunctionBlock.cpp:215
-  // — `dual_min = !convex`):
-  //  - C05Function convex  ⇒ master MP is min ⇒ PFB needs eMin
-  //                          ⇒ PolyhedralFunction must be "concave"
-  //  - C05Function concave ⇒ master MP is max ⇒ PFB needs eMax
-  //                          ⇒ PolyhedralFunction stays "convex" (default)
-  pfb->get_PolyhedralFunction().set_is_convex( ! IsConvex , eNoMod );
-
-  pfb->generate_abstract_variables(
-                              const_cast< SimpleConfiguration< int > * >( & rep_dual ) );
+  // Now generate the abstract constraints of each PFB
   pfb->generate_abstract_constraints();
-  pfb->generate_objective();
 
+  // inject the lambda multiplier into the normalization constraint
   pfb->set_lambda( & Var_lambda );
+
+  // add the PFB coupling terms to the MPB coupling rows
   pfb->set_conjugate_constraint( CouplingCns );
+ }
 
-  HardCmps.push_back( pfb );
-  add_nested_Block( pfb );
-  }
+ }
 
+/*--------------------------------------------------------------------------*/
+
+void MasterProblemBlock::generate_dual_objective( void )
+{
+ // Generate the objective of each hard component
+ for( int k = 0 ; k < NoHardCmps ; ++k ) {
+  auto * pfb = dynamic_cast< PolyhedralFunctionBlock * >( HardCmps[ k ] );
+
+  pfb->generate_objective();
+ }
+ 
  // ---- master-side FRealObjective: quadratic z term + omega * f_lev --------
  //
  // The bundle-summing terms theta^k_i b^k_i + gamma^k LB^k of every hard
@@ -1003,11 +1183,11 @@ void MasterProblemBlock::CreateDualMP( stabilization_type Stbl )
  //   triples[ NumVars + 1 ]        :  omega with (linear = f_lev, quad = 0)
  //                                   IF has_omega_lin; set_f_lev refreshes
  //                                   the linear coefficient
- const bool pure_level = ( Stbl == kLevel );
+ const bool pure_level = ( StblType == kLevel );
  const bool has_quad =
-  pure_level || ( Stbl == kProximal ) || ( Stbl == kDoublyStabilized );
+  pure_level || ( StblType == kProximal ) || ( StblType == kDoublyStabilized );
  const bool has_omega_lin =
-  ( Stbl == kLevel ) || ( Stbl == kDoublyStabilized );
+  ( StblType == kLevel ) || ( StblType == kDoublyStabilized );
 
  // The dual MP is written in the same sense as the C05Function (= eMax
  // for concave/max, eMin for convex/min) so it composes with the easy
@@ -1118,15 +1298,14 @@ void MasterProblemBlock::CreateDualMP( stabilization_type Stbl )
  // which adds the easy-cmp sub-Block and augments every CouplingCns[j]
  // with the +A^k_{i,j} u^k_i terms produced by that component.
 
- // Two coefficients are intentionally left unset by CreateDualMP and must
- // be filled in by the surrounding driver as soon as
+ // Two coefficients are intentionally left unset by generate_duaò_objective 
+ // and must be filled in by the surrounding driver as soon as
  // the corresponding pieces of the sum-function become known:
  //  - the omega * h coefficient on the level row, whenever X is a
  //    polyhedron with explicit right-hand side h;
  //  - the constant term b_j on every CouplingCns[j] rhs, coming from the
  //    linear part of the original sum-function.
-
- }  // end( MasterProblemBlock::CreateDualMP )
+}
 
 /*--------------------------------------------------------------------------*/
 
