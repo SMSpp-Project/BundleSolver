@@ -1971,6 +1971,11 @@ void BundleSolver::set_Block( Block * block )
   MasterPB->set_box( Lbox , Ubox );
   }
 
+ // After the physical representation have been cretaed into the MPB, register
+ // the solver. This will allow also solver using abstract representation to
+ // correctly generate it.
+ MasterPB->register_Solver( std::string( MPBSolverCfg ) );
+
  // cleanup easy-component caches - - - - - - - - - - - - - - - - - - - - - -
  // - - - -  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // now that the MPSolver has read all the information it needs out of the
@@ -5266,11 +5271,6 @@ void BundleSolver::InitMPB( void )
  if( const char * env = std::getenv( "BUNDLE_MPB_XREFTOL" ) ;
      env && env[ 0 ] )
   MasterPB->set_xref_tol( std::atof( env ) );
-
- // After the physical representation have been cretaed into the MPB, register
- // the solver. This will allow also solver using abstract representation to
- // correctly generate it.
- MasterPB->register_Solver( std::string( MPBSolverCfg ) );
 
  tHasChgd = true;
 

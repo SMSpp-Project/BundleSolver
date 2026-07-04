@@ -999,19 +999,23 @@ void MasterProblemBlock::generate_dual_abstract_variables( void )
  // ---- s^+ / s^- non-negative slack multipliers (box) ---------------------
  // One per coordinate; the slack is meaningful only when the matching
  // box side is finite (L_t - (x_bar)_t for s^+, U_t - (x_bar)_t for s^-).
- // Until the box is wired in we keep both fixed to 0 so the slack does
- // not contribute to the dual problem.
+ // The box belongs to the physical representation and may already have been
+ // stored in f_L / f_U before abstract variables are generated, so initialize
+ // the fixed status from that state. Missing sides stay fixed to 0.
  Var_s_plus.clear();
  Var_s_minus.clear();
  Var_s_plus.resize( NumVars );
  Var_s_minus.resize( NumVars );
  for( int j = 0 ; j < NumVars ; ++j ) {
+  const bool has_L = ! f_L.empty() && std::isfinite( f_L[ j ] );
+  const bool has_U = ! f_U.empty() && std::isfinite( f_U[ j ] );
+
   Var_s_plus[ j ].is_positive( true , eNoMod );
   Var_s_plus[ j ].set_value( 0.0 );
-  Var_s_plus[ j ].is_fixed( true , eNoMod );
+  Var_s_plus[ j ].is_fixed( ! has_L , eNoMod );
   Var_s_minus[ j ].is_positive( true , eNoMod );
   Var_s_minus[ j ].set_value( 0.0 );
-  Var_s_minus[ j ].is_fixed( true , eNoMod );
+  Var_s_minus[ j ].is_fixed( ! has_U , eNoMod );
   }
  if( NumVars > 0 ) {
   add_static_variable( Var_s_plus  , "MPB_s_plus"  );
@@ -1226,19 +1230,30 @@ void MasterProblemBlock::generate_dual_objective( void )
 
  // : the box slacks s^+ / s^- contribute
  //     + s^+ ( L - x_bar ) - s^- ( U - x_bar )
- // in the textbook eMax form. Coefficients start at 0 (= no box wired
- // yet, slacks fixed); set_box() / set_x_bar() update them later. The
- // s^+ / s^- triples are laid out contiguously after omega so that the
- // refresh logic can address them by a fixed base offset
+ // in the textbook eMax form. Coefficients are initialized from the physical
+ // box state f_L / f_U if already available, and set_box() / set_x_bar()
+ // refresh them later. The s^+ / s^- triples are laid out contiguously after
+ // omega so that the refresh logic can address them by a fixed base offset.
  s_plus_obj_idx  = -1;
  s_minus_obj_idx = -1;
  if( NumVars > 0 ) {
+  const bool iterate = ( f_v2_form != 0 );
   s_plus_obj_idx = int( triples.size() );
-  for( int j = 0 ; j < NumVars ; ++j )
-   triples.emplace_back( & Var_s_plus[ j ] , 0.0 , 0.0 );
+  for( int j = 0 ; j < NumVars ; ++j ) {
+   const double xj = ( ( ! iterate ) && j < int( f_x_bar.size() ) )
+                     ? f_x_bar[ j ] : 0.0;
+   const bool has_L = ! f_L.empty() && std::isfinite( f_L[ j ] );
+   triples.emplace_back( & Var_s_plus[ j ] ,
+                         has_L ? sgn * ( f_L[ j ] - xj ) : 0.0 , 0.0 );
+   }
   s_minus_obj_idx = int( triples.size() );
-  for( int j = 0 ; j < NumVars ; ++j )
-   triples.emplace_back( & Var_s_minus[ j ] , 0.0 , 0.0 );
+  for( int j = 0 ; j < NumVars ; ++j ) {
+   const double xj = ( ( ! iterate ) && j < int( f_x_bar.size() ) )
+                     ? f_x_bar[ j ] : 0.0;
+   const bool has_U = ! f_U.empty() && std::isfinite( f_U[ j ] );
+   triples.emplace_back( & Var_s_minus[ j ] ,
+                         has_U ? - sgn * ( f_U[ j ] - xj ) : 0.0 , 0.0 );
+   }
   }
 
  // In iterate form, x_bar * z already contains x_bar * g^k(u^k) for every
