@@ -30,6 +30,7 @@
 
 #include "MasterProblemBlock.h"
 
+#include <cstdlib>
 #include <cstdio>
 #include <iostream>
 
@@ -1869,7 +1870,13 @@ double MasterProblemBlock::get_gamma( int k ) const
    if( ! poly.is_row_vertical( i ) )
     diagonal_mass += pfb->get_row_multiplier( i );
 
-  const double gamma = 1.0 - diagonal_mass;
+  double rhs_mass = 1.0;
+  if( StblType == kLevel )
+   rhs_mass = has_initial_level_objective() ? 1.0 : 0.0;
+  if( StblType == kLevel || StblType == kDoublyStabilized )
+   rhs_mass += get_level_multiplier();
+
+  const double gamma = rhs_mass - diagonal_mass;
   return( gamma > 0.0 ? gamma : 0.0 );
   }
 
@@ -2218,15 +2225,25 @@ std::vector< double > MasterProblemBlock::get_z_vector( void ) const
   // In primal form, stationarity of the stabilized master gives
   // z* + d*/t = 0. This recovers the complete essential subgradient,
   // including the linear part and active-domain/box multipliers.
-  // Pure level stabilization uses the same readout with t fixed to 1,
-  // consistently with the objective 1/2 ||d||^2.
   out = get_d_vector();
-  const double effective_t = ( StblType == kLevel ) ? 1.0 : t_stab;
-  if( effective_t > 0.0 &&
+
+  if( StblType == kLevel && ! has_initial_level_objective() ) {
+   // For the pure level MP, min 1/2 ||d||^2 s.t. m(d) <= L, stationarity is
+   // d* + eta z* = 0, where eta is the multiplier of the level row.
+   const double eta = get_level_multiplier();
+   if( eta > 0.0 )
+    for( auto & zj : out )
+     zj = - zj / eta;
+   else
+    std::fill( out.begin() , out.end() , 0.0 );
+   return( out );
+   }
+
+  if( t_stab > 0.0 &&
       ( StblType == kProximal || StblType == kDoublyStabilized ||
         StblType == kLevel ) )
    for( auto & zj : out )
-    zj = - zj / effective_t;
+    zj = - zj / t_stab;
   else
    std::fill( out.begin() , out.end() , 0.0 );
   return( out );
@@ -2264,9 +2281,18 @@ MasterProblemBlock::get_aggregated_subgradient( int k ) const
     ->get_PolyhedralFunction().get_A();
  const double row_sign = IsPrimal ? 1.0 : -1.0;
 
+ const bool normalize_level_theta =
+  IsPrimal && StblType == kLevel && ! has_initial_level_objective();
+ const double level_eta = normalize_level_theta ? get_level_multiplier() : 1.0;
+ if( normalize_level_theta && level_eta <= 0.0 )
+  return( out );
+
  for( std::size_t i = 0 ; i < A.size() ; ++i ) {
-  const double theta =
+  double theta =
    pfb->get_row_multiplier( PolyhedralFunctionBlock::Index( i ) );
+
+  if( normalize_level_theta )
+   theta /= level_eta;
 
   if( theta == 0.0 )
    continue;
@@ -2301,6 +2327,22 @@ std::vector< double > MasterProblemBlock::get_d_vector( void ) const
   out.push_back( - t_stab * zj.get_value() );
  return( out );
  }
+
+/*--------------------------------------------------------------------------*/
+
+double MasterProblemBlock::get_level_multiplier( void ) const
+{
+ if( ! IsPrimal )
+  return( 0.0 );
+
+ if( StblType != kLevel && StblType != kDoublyStabilized )
+  return( 0.0 );
+
+ if( ! ( f_abs_rep & k_mpb_built_cnst ) )
+  return( 0.0 );
+
+ return( std::max( 0.0 , LevelCns.get_dual() ) );
+}
 
 /*--------------------------------------------------------------------------*/
 
@@ -3441,6 +3483,35 @@ int MasterProblemBlock::solve_master( void )
   if( IsPrimal )
    if( auto * cda = dynamic_cast< CDASolver * >( slv ) )
     cda->get_dual_solution( nullptr );
+
+  if( std::getenv( "BS_PRINT_MULTIPLIERS" ) ) {
+   std::cerr << "MPB_MULT lambda=" << get_lambda()
+             << " r=" << get_r()
+             << " omega=" << get_omega()
+             << " eta=" << get_level_multiplier();
+
+   for( int k = 0 ; k < int( HardCmps.size() ) ; ++k ) {
+    const auto * pfb =
+     dynamic_cast< const PolyhedralFunctionBlock * >( HardCmps[ k ] );
+    if( ! pfb )
+     continue;
+
+    auto & poly = const_cast< PolyhedralFunctionBlock * >( pfb )
+                   ->get_PolyhedralFunction();
+    double theta_sum = 0.0;
+    for( PolyhedralFunction::Index i = 0 ; i < poly.get_nrows() ; ++i )
+     theta_sum += pfb->get_row_multiplier( i );
+
+    const double gamma = get_gamma( k );
+    std::cerr << " c" << k
+              << "_theta=" << theta_sum
+              << " c" << k
+              << "_gamma=" << gamma
+              << " c" << k
+              << "_mass=" << theta_sum + gamma;
+    }
+   std::cerr << std::endl;
+   }
   }
 
  return( rc );

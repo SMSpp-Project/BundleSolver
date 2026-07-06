@@ -927,6 +927,12 @@ class MasterProblemBlock : public Block {
  [[nodiscard]] std::vector< double > get_d_vector( void ) const;
 
 /*--------------------------------------------------------------------------*/
+ /// returns the multiplier of the primal level constraint, if available
+ /** Meaningful after solve_master() in primal level stabilization. */
+
+ [[nodiscard]] double get_level_multiplier( void ) const;
+
+/*--------------------------------------------------------------------------*/
  /// returns z* . d, the scalar product of the aggregated subgradient and d
  /** NDOFi counterpart of Master->ReadGid() (the global, no-name variant).
   * Under proximal stabilization in the dual MP this is -t * || z* ||^2; the
@@ -1275,6 +1281,9 @@ class MasterProblemBlock : public Block {
  [[nodiscard]] bool has_initial_level_objective( void ) const;
 
  void remove_initial_level_objective( void );
+
+ [[nodiscard]] bool uses_pure_level_aggregation( void ) const
+  { return( IsPrimal && StblType == kLevel && ! has_initial_level_objective() ); }
 
 /*--------------------------------------------------------------------------*/
  /// returns the current optimal value of the global multiplier lambda
