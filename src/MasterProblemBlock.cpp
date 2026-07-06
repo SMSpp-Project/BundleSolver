@@ -2804,12 +2804,15 @@ void MasterProblemBlock::set_box( const std::vector< double > & L ,
  if( ! dqf || s_plus_obj_idx < 0 || s_minus_obj_idx < 0 )
   return;
 
- // : s^+_j gets coefficient +sgn*(L_j - x_bar_j), s^-_j
- // gets -sgn*(U_j - x_bar_j); the slack stays fixed to 0 (and the
- // coefficient stays 0) whenever the corresponding bound is non-finite.
+ // Displacement form uses bounds on d = x - x_bar, so s^+_j gets
+ // +sgn*(L_j - x_bar_j) and s^-_j gets -sgn*(U_j - x_bar_j). Iterate form
+ // keeps absolute x bounds, because the centre translation already rides in
+ // the explicit z-linear term. Non-finite sides keep fixed zero slacks.
  const double sgn = IsConvex ? -1.0 : 1.0;
+ const bool iterate = ( f_v2_form != 0 );
  for( int j = 0 ; j < NumVars ; ++j ) {
-  const double xj = ( j < int( f_x_bar.size() ) ) ? f_x_bar[ j ] : 0.0;
+  const double xj = ( ( ! iterate ) && j < int( f_x_bar.size() ) )
+                    ? f_x_bar[ j ] : 0.0;
 
   const bool has_L = ! f_L.empty() && std::isfinite( f_L[ j ] );
   Var_s_plus[ j ].is_fixed( ! has_L , eNoMod );
