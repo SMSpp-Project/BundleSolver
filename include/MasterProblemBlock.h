@@ -1771,6 +1771,91 @@ class MasterProblemBlock : public Block {
 
  };  // end( class MasterProblemBlock )
 
+/*--------------------------------------------------------------------------*/
+/*---------------------- CLASS MasterProblemMod ----------------------------*/
+/*--------------------------------------------------------------------------*/
+/*--------------------------- GENERAL NOTES --------------------------------*/
+/*--------------------------------------------------------------------------*/
+/// class to describe physical modifications specific to MasterProblemBlock
+/** MasterProblemMod describes changes in the physical representation of a
+ * MasterProblemBlock. In the SMS++ terminology this is a physical
+ * Modification: it is issued after the MasterProblemBlock state has already
+ * changed, and therefore it does not concern the Block again
+ * (concerns_Block() remains false, as in the base Modification class).
+ *
+ * The affected physical data are the MPB-level ingredients of the master
+ * problem, such as the stability centre, the stabilization parameters and the
+ * MPB-owned coefficients / bounds. Modifications of the registered
+ * PolyhedralFunctionBlock sub-Blocks are not duplicated here: those sub-Blocks
+ * issue their own PolyhedralFunctionMod objects. */
+
+class MasterProblemMod : public Modification
+{
+
+/*----------------------- PUBLIC PART OF THE CLASS -------------------------*/
+
+ public:
+
+/*---------------------------- PUBLIC TYPES --------------------------------*/
+
+ /// type of physical change in the MasterProblemBlock
+ /** This enum follows the convention of C05FunctionMod,
+  * PolyhedralFunctionMod and LagBFunctionMod: the actual field is stored as
+  * an int so that derived classes may extend the set of supported
+  * modifications if more detailed payloads are needed later. */
+
+ enum master_problem_mod_type {
+  CenterChanged ,          ///< the stability centre x_bar has changed
+  ReferenceChanged ,       ///< x_bar and the cached F_k(x_bar) have changed
+  TChanged ,               ///< the proximal stabilization parameter t changed
+  LevelChanged ,           ///< the level stabilization value changed
+  BoxChanged ,             ///< the MPB-owned variable box changed
+  LinearPartChanged ,      ///< the MPB-owned linear part b changed
+  LowerBoundChanged ,      ///< a MPB-owned lower bound changed
+  MasterProblemModLastParam
+  ///< first value available to derived classes
+  };
+
+/*---------------------------- CONSTRUCTOR ---------------------------------*/
+ /// constructor: takes the affected MasterProblemBlock and the change type
+
+ explicit MasterProblemMod( MasterProblemBlock * block , int type )
+  : Modification() , f_Block( block ) , f_type( type ) {}
+
+/*------------------------------ DESTRUCTOR --------------------------------*/
+
+ ~MasterProblemMod() override = default;  ///< destructor: does nothing
+
+/*---------------------------- ACCESSORS -----------------------------------*/
+ /// returns the Block this Modification was originated from
+
+ [[nodiscard]] Block * get_Block( void ) const override { return( f_Block ); }
+
+ /// accessor to the type of physical change
+
+ [[nodiscard]] int type( void ) const { return( f_type ); }
+
+/*-------------------- PROTECTED PART OF THE CLASS -------------------------*/
+
+ protected:
+
+/*-------------------------- PROTECTED METHODS -----------------------------*/
+
+ void print( std::ostream & output ) const override {
+  output << "MasterProblemMod on MasterProblemBlock [" << f_Block
+         << "]: type = " << f_type << std::endl;
+  }
+
+/*-------------------------- PROTECTED FIELDS ------------------------------*/
+
+ MasterProblemBlock * f_Block;  ///< affected MasterProblemBlock
+
+ int f_type;                    ///< type of physical change
+
+/*--------------------------------------------------------------------------*/
+
+ };  // end( class MasterProblemMod )
+
 /** @} end( group( MasterProblemBlock_CLASSES ) ) ----------------------------*/
 
 }  // end( namespace SMSpp_di_unipi_it )

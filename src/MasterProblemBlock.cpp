@@ -3458,28 +3458,52 @@ void MasterProblemBlock::set_t( double t )
 
  t_stab = t;
 
+ auto issue_t_mod = [ this ]( void ) {
+  if( anyone_there() )
+   add_Modification( std::make_shared< MasterProblemMod >(
+                                  this , MasterProblemMod::TChanged ) );
+  };
+
+ if( ! ( f_abs_rep & k_mpb_built_obj ) ) {
+  if( IsPrimal )
+   f_primal_objective_dirty = true;
+  issue_t_mod();
+  return;
+  }
+
  if( IsPrimal ) {
   f_primal_objective_dirty = true;
+  issue_t_mod();
   return;
   }
 
  // From here on only the dual MP is handled. Pure #kNone has no
  // stabilization and pure #kLevel only uses the level row.
- if( StblType == kNone )
+ if( StblType == kNone ) {
+  issue_t_mod();
   return;
- if( StblType == kLevel )
+  }
+ if( StblType == kLevel ) {
+  issue_t_mod();
   return;
+  }
 
  // The z_j quadratic terms occupy the first NumVars entries.
- if( Var_z.empty() )
+ if( Var_z.empty() ) {
+  issue_t_mod();
   return;
+  }
 
  auto obj = dynamic_cast< FRealObjective * >( get_objective() );
- if( ! obj )
+ if( ! obj ) {
+  issue_t_mod();
   return;
+  }
  auto dqf = dynamic_cast< DQuadFunction * >( obj->get_function() );
- if( ! dqf )
+ if( ! dqf ) {
+  issue_t_mod();
   return;
+  }
 
  // Refresh only the quadratic coefficient; the linear coefficient carries
  // the centre-dependent z term installed by set_x_bar().
@@ -3488,8 +3512,11 @@ void MasterProblemBlock::set_t( double t )
  for( int i = 0 ; i < NumVars ; ++i ) {
   const double lin_coeff = dqf->get_linear_coefficient(
                                        DQuadFunction::Index( i ) );
-  dqf->modify_term( DQuadFunction::Index( i ) , lin_coeff , quad_coeff );
+  dqf->modify_term( DQuadFunction::Index( i ) , lin_coeff , quad_coeff ,
+                    eNoBlck );
   }
+
+ issue_t_mod();
 
  }  // end( MasterProblemBlock::set_t )
 
@@ -3499,50 +3526,58 @@ void MasterProblemBlock::set_f_lev( double f )
 {
  f_lev = f;
 
+ const bool uses_level =
+  ( StblType == kLevel || StblType == kDoublyStabilized );
+
  if( IsPrimal ) {
   // primal MP: f_lev is the RHS of the level constraint sum_k v^k <= f_lev,
-  // present only under #kLevel / #kDoublyStabilized.
-  if( StblType == kLevel || StblType == kDoublyStabilized )
-   LevelCns.set_rhs( f_lev );
-  return;
+  // present only under #kLevel / #kDoublyStabilized and only after the
+  // abstract constraints have been generated.
+  if( ( f_abs_rep & k_mpb_built_cnst ) && uses_level )
+   LevelCns.set_rhs( f_lev , eNoBlck );
+  }
+ else if( uses_level ) {
+  // dual MP: f_lev controls the omega side. The variable state belongs to
+  // the abstract variables stage, while the omega coefficient belongs to the
+  // abstract objective stage.
+  const bool finite = std::isfinite( f_lev );
+
+  if( f_abs_rep & k_mpb_built_var ) {
+   // mirror set_global_LB(): Var_omega is meaningful only when f_lev is
+   // finite. Unfix it now or re-pin it to 0 otherwise, so the master
+   // normalization K * lambda + r - omega = 1 stays bounded.
+   if( finite ) {
+    if( Var_omega.is_fixed() )
+     Var_omega.is_fixed( false , eNoBlck );
+    }
+   else {
+    Var_omega.set_value( 0 );
+    if( ! Var_omega.is_fixed() )
+     Var_omega.is_fixed( true , eNoBlck );
+    }
+   }
+
+  if( ( f_abs_rep & k_mpb_built_obj ) && omega_obj_idx >= 0 ) {
+   auto obj = dynamic_cast< FRealObjective * >( get_objective() );
+   auto dqf = obj ? dynamic_cast< DQuadFunction * >( obj->get_function() )
+                  : nullptr;
+   if( dqf ) {
+    // The omega-side contribution to the dual objective is
+    //     -omega * Lvl_xbar  ,    Lvl_xbar = Lvl + f_C
+    // in the textbook eMax form; the convex case flips the whole row sign.
+    // A non-finite f_lev (= no level set yet) collapses the term to zero
+    // rather than leaking Inf into the Objective.
+    const double sgn = IsConvex ? -1.0 : 1.0;
+    const double coeff = finite ? - sgn * ( f_lev + f_C ) : 0.0;
+    dqf->modify_term( DQuadFunction::Index( omega_obj_idx ) , coeff , 0.0 ,
+                      eNoBlck );
+    }
+   }
   }
 
- // dual MP: f_lev is the linear coefficient on omega in the master Objective;
- // nothing to update under #kProximal (omega is fixed to 0 and is not part
- // of the Objective triples).
- if( omega_obj_idx < 0 )
-  return;
-
- auto obj = dynamic_cast< FRealObjective * >( get_objective() );
- if( ! obj )
-  return;
- auto dqf = dynamic_cast< DQuadFunction * >( obj->get_function() );
- if( ! dqf )
-  return;
-
- // : the omega-side contribution to the dual objective is
- //     -omega * Lvl_xbar  ,    Lvl_xbar = Lvl + f_C
- // in the textbook eMax form ; the convex
- // case flips the whole row sign. A non-finite f_lev (= no level set
- // yet) collapses the term to zero rather than leaking Inf into the
- // Objective.
- const bool finite = std::isfinite( f_lev );
- const double sgn = IsConvex ? -1.0 : 1.0;
- const double coeff = finite ? - sgn * ( f_lev + f_C ) : 0.0;
- dqf->modify_term( DQuadFunction::Index( omega_obj_idx ) , coeff , 0.0 );
-
- // mirror set_global_LB(): Var_omega is meaningful only when f_lev is
- // finite. Unfix it now or re-pin it to 0 otherwise, so the master
- // normalization K * lambda + r - omega = 1 stays bounded
- if( finite ) {
-  if( Var_omega.is_fixed() )
-   Var_omega.is_fixed( false , eNoMod );
-  }
- else {
-  Var_omega.set_value( 0 );
-  if( ! Var_omega.is_fixed() )
-   Var_omega.is_fixed( true , eNoMod );
-  }
+ if( anyone_there() )
+  add_Modification( std::make_shared< MasterProblemMod >(
+                              this , MasterProblemMod::LevelChanged ) );
 
  }  // end( MasterProblemBlock::set_f_lev )
 
