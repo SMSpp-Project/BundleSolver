@@ -2976,8 +2976,40 @@ void MasterProblemBlock::set_reference(
  // reference-independent and are left alone). The math is the dual of the
  // legacy "shift after a current-point change" loop, but here the bundle is
  // walked once and the update is invisible to the surrounding driver
- if( IsPrimal )
-  return;  // primal MP carries the raw lin-error elsewhere; nothing to shift
+ if( IsPrimal ) {
+  for( int k = 0 ; k < int( HardCmps.size() ) ; ++k ) {
+   auto * pfb = dynamic_cast< PolyhedralFunctionBlock * >( HardCmps[ k ] );
+   if( ! pfb )
+    continue;
+   auto & poly = pfb->get_PolyhedralFunction();
+
+   if( ! f_v2_form && old_x_bar.size() == f_x_bar.size() ) {
+    const double dF = ( k < int( old_F.size() ) )
+                      ? ( F_at_x_bar[ k ] - old_F[ k ] )
+                      : F_at_x_bar[ k ];
+    const auto & A = poly.get_A();
+    const auto b = poly.get_b();
+    for( PolyhedralFunction::Index i = 0 ; i < b.size() ; ++i ) {
+     if( poly.is_row_vertical( i ) )
+      continue;
+     double dot = 0.0;
+     if( i < A.size() ) {
+      const auto & Ai = A[ i ];
+      const std::size_t n = std::min( Ai.size() , f_x_bar.size() );
+      for( std::size_t j = 0 ; j < n ; ++j )
+       dot += Ai[ j ] * ( f_x_bar[ j ] - old_x_bar[ j ] );
+      }
+     poly.modify_constant( i , b[ i ] + dot - dF );
+     }
+    }
+
+   // Refresh finite native lower bounds from their cached physical value.
+   // Absent bounds may be temporary fictitious bounds managed by BundleSolver.
+   if( k < int( f_LB_raw.size() ) && std::isfinite( f_LB_raw[ k ] ) )
+    poly.modify_bound( get_stored_constant( k , {} , f_LB_raw[ k ] , false ) );
+   }
+  return;
+  }
 
  for( int k = 0 ; k < int( HardCmps.size() ) ; ++k ) {
   if( old_x_bar.size() != f_x_bar.size() )
@@ -3695,11 +3727,15 @@ void MasterProblemBlock::set_LB( int k , double LB )
                          ? - Inf< Function::FunctionValue >()
                          :   Inf< Function::FunctionValue >();
 
- // Primal raw MP: the PFB epigraph variable is the physical value v^k, so its
- // native global bound is exactly the row v^k >= LB^k. The PFB dispatcher
- // propagates modify_bound() to its f_bcv BoxConstraint.
+ // Primal MP: route the native lower bound through the same storage-frame
+ // conversion used by diagonal cuts. In iterate form v^k is the physical value
+ // and the bound stays LB^k; in displacement form v^k is relative to
+ // F_k(x_bar), hence the bound is LB^k - F_k(x_bar).
  if( IsPrimal ) {
-  poly.modify_bound( std::isfinite( LB ) ? LB : no_bound );
+  const double primal_bound = std::isfinite( LB )
+                              ? get_stored_constant( k , {} , LB , false )
+                              : no_bound;
+  poly.modify_bound( primal_bound );
   return;
   }
 
