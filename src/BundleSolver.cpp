@@ -1030,7 +1030,7 @@ int BundleSolver::compute( bool changedvars )
    }
 
   // Check if we exceeded the maximum noise reduction steps for the level
-  if( LevelNRCntr >= MaxLevelNR ) {
+  if( UsesPureLevelStabilization() && LevelNRCntr >= MaxLevelNR ) {
    BLOG( 1 , "            stop: NR required but maximum nummber of "
               "level NR has been reached" << std::endl );
    Result = kLowPrecision;
@@ -3236,6 +3236,14 @@ void BundleSolver::FormD( void )
 
   int mps = Solver::kOK;
   if( MasterPB ) {
+   std::vector< double > Lbox( NumVar ) , Ubox( NumVar );
+   for( Index i = 0 ; i < NumVar ; ++i ) {
+    const auto bounds = effective_bounds( LamVcblr[ i ] );
+    Lbox[ i ] = bounds.first;
+    Ubox[ i ] = bounds.second;
+    }
+   MasterPB->set_box( Lbox , Ubox );
+
    const auto rc = MasterPB->solve_master();
    // an OK or a low-precision OK from the inner Solver counts as kOK;
    // anything else is forwarded so the surrounding error-handling kicks in
