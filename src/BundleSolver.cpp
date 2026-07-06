@@ -5854,14 +5854,6 @@ bool BundleSolver::IsOptimal( double eps ) const
  if( vStar.back() >= INFshift )  // some components have no subgradients
   return( false );               // no way one can detect optimality
 
- // In pure level mode, a vanishing projection gap is an optimality
- // certificate only after the level is anchored to a reliable lower bound.
- // With an exogenous level, the level may simply drift back to the current
- // value and make d = 0 feasible, which does not prove optimality.
- if( UsesPureLevelStabilization() &&
-     ( ! f_level_reliable_LB ) && ( reliable_level_LB() <= -INFshift ) )
-  return( false );
-
  c_VarValue err = max_error( eps );
  if( err >= INFshift )
   return( false );
