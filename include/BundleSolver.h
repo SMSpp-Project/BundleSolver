@@ -390,6 +390,8 @@ public:
 
  intMPHScaling ,  ///< bit-wise scaling of hard-component PFBs
 
+ intMaxLevelNR ,  ///< maximum number of NR steps allowed
+
  intLastBndSlvPar  ///< first allowed new int parameter for derived classes
                    /**< Convenience value for easily allow derived classes
                     * to extend the set of int algorithmic parameters. */
@@ -544,7 +546,7 @@ public:
   CmptdinL( false ) , UpFiBest( INFshift ) , UpFiLmb1def( 0 ) ,
   LwFiLmb1def( 0 ) , UpFiLmbdef( 0 ) , LwFiLmbdef( 0 ) , Fi0Lmb( 0 ) ,
   Fi0Lmb1( 0 ) , DST( 0 ) , NrmD( 0 ) , NrmZ( 0 ) , NrmZFctr( 1 ) ,
-  c_start() , aBP3( 0 )
+  c_start() , aBP3( 0 ) , LevelNRCntr( 0 )
  {
   // ensure all parameters are properly given their default value
   MaxIter = CDASolver::get_dflt_int_par( intMaxIter );
@@ -595,6 +597,7 @@ public:
   LStabDlt = get_dflt_dbl_par( dblLStabDlt );
   LStabIncr = get_dflt_dbl_par( dblLStabIncr );
   LStabSmall = get_dflt_dbl_par( dblLStabSmall );
+  MaxLevelNR = get_dflt_int_par( intMaxLevelNR );
 
   v_events.resize( max_event_number() );
   }
@@ -1036,6 +1039,8 @@ public:
   *                     bit 0 enables local row scaling, bit 1 enables global
   *                     epigraph scaling. Hence 0 = none, 1 = local only,
   *                     2 = global only, 3 = both.
+  * 
+  * - intMaxLevelNR [5]: TBD (max steps of NR for level method allowed)
   */
 
  void set_par( idx_type par , int value ) override;
@@ -2004,7 +2009,7 @@ public:
 /*--------------------------------------------------------------------------*/
 
  [[nodiscard]] int get_dflt_int_par( idx_type par ) const override {
-  static const std::array< int , 19 > dflt_int_par = {
+  static const std::array< int , 20 > dflt_int_par = {
     10 ,  // intBPar1
    100 ,  // intBPar2
      1 ,  // intBPar3
@@ -2025,7 +2030,8 @@ public:
           // RstAlg = 0  -  reset algorithmic parameters
           // RstCrr = 1  -  set current point to using values of the Variable
      0 ,  // intMPV2Form (default value is displacement form)
-     0    // intMPHScaling (default value is no hard-component scaling)
+     0 ,  // intMPHScaling (default value is no hard-component scaling)
+     5    // intMaxLevelNR
      };
 
   if( ( par >= intLastParCDAS ) && ( par < intLastBndSlvPar ) )
@@ -2151,6 +2157,7 @@ public:
    { "intRstAlg" , BundleSolver::intRstAlg } ,
    { "intMPV2Form" , BundleSolver::intMPV2Form } ,
    { "intMPHScaling" , BundleSolver::intMPHScaling } ,
+   { "intMaxLevelNR" , BundleSolver::intMaxLevelNR }
    };
 
   const auto it = int_pars_map.find( name );
@@ -2242,12 +2249,12 @@ public:
 
  [[nodiscard]] const std::string & int_par_idx2str( idx_type idx )
   const override {
-  static const std::array< std::string , 19 > int_pars_str = {
+  static const std::array< std::string , 20 > int_pars_str = {
    "intBPar1" , "intBPar2" , "intBPar3" , "intBPar4" , "intBPar6" ,
    "intBPar7" , "intMnSSC" , "intMnNSC" , "inttSPar1" , "intMaxNrEvls" ,
    "intDoEasy" , "intWZNorm" , "intFrcLstSS" , "intTrgtMng" ,
    "intMPStbl" , "intMPPrimal" , "intRstAlg" , "intMPV2Form" ,
-   "intMPHScaling" };
+   "intMPHScaling" , "intMaxLevelNR" };
 
   if( ( idx >= intLastParCDAS ) && ( idx < intLastBndSlvPar ) )
    return( int_pars_str[ idx - intBPar1 ] );
@@ -2965,6 +2972,8 @@ public:
 
  int MPHScaling;    ///< bit-wise hard-component PFB scaling: local / global
 
+ int MaxLevelNR;    ///< maximum number of consecutive NoiseReduction step allowed
+
  std::string EasyCfg;
  ///< filename for the Block[Solver]Config of easy components
 
@@ -3114,6 +3123,8 @@ public:
  Index CSSCntr;        ///< counter of consecutive SS
 
  Index CNSCntr;        ///< counter of consecutive NS
+
+ Index LevelNRCntr;    ///< counter of consecutive level NR steps
 
  Subset vBPar2;        ///< size of the global pools of each component
 

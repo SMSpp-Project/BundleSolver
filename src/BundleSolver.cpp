@@ -1029,6 +1029,14 @@ int BundleSolver::compute( bool changedvars )
    continue;
    }
 
+  // Check if we exceeded the maximum noise reduction steps for the level
+  if( LevelNRCntr >= MaxLevelNR ) {
+   BLOG( 1 , "            stop: NR required but maximum nummber of "
+              "level NR has been reached" << std::endl );
+   Result = kLowPrecision;
+   break;
+  }
+
   // the NS / SS decision - - - - - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
   // note again the "<" in the SS condition below (which means this is ever
@@ -2147,6 +2155,7 @@ void BundleSolver::set_par( idx_type par , int value )
                "BundleSolver::set_par: MPHScaling must be between 0 and 3" ) );
    MPHScaling = value;
    break;
+  case( intMaxLevelNR ): MaxLevelNR = value; break;
   default: CDASolver::set_par( par , value );
   }
  }  // end( BundleSolver::set_par( int ) )
@@ -2580,6 +2589,7 @@ int BundleSolver::get_int_par( idx_type par ) const
   case( intRstAlg ):    return( RstAlgPrm  );
   case( intMPV2Form ):  return( MPV2Form );
   case( intMPHScaling ): return( MPHScaling );
+  case( intMaxLevelNR ): return( MaxLevelNR );
   default:              return( CDASolver::get_int_par( par ) );
   }
  }  // end( BundleSolver::get_int_par )
@@ -2939,6 +2949,42 @@ void BundleSolver::update_level_after_step( bool serious_step ,
   f_level_reliable_LB = true;
   }
 
+ // Pure-level safeguard:
+ // If this is a null step but the master problem has not actually changed,
+ // do not apply the ordinary NS rule Delta <- m_l Delta.
+ // Instead, override it and enlarge Delta.
+ //
+ // Rationale: shrinking Delta raises the level and relaxes the target. This
+ // is meaningful after an informative NS, but not after a non-informative
+ // one, where no useful model information was generated.
+ if( ( ! serious_step ) && UsesPureLevelStabilization() && 
+        ( ! MPchgs ) ) {
+  f_level_Delta *= LStabIncr;
+
+  if( f_level_reliable_LB ) {
+   const auto rlb = reliable_level_LB();
+   if( rlb > -INFshift ) {
+    const auto gap = UpFiLmb.back() - rlb;
+    if( gap > 0 )
+     f_level_Delta = std::min( f_level_Delta , gap );
+    }
+  }
+
+  // Count this as a special level-noise / non-informative NS event.
+  ++LevelNRCntr;
+
+  BLOG( 1 , " ~ level NR: MP unchanged, Delta increased to "
+          << shrt << f_level_Delta << std::endl );
+
+  if( f_level_Delta <= 0 &&
+      ( ! f_level_reliable_LB || reliable_level_LB() <= -INFshift ) )
+   f_level_Delta = LStabDlt * std::max( std::abs( UpFiLmb.back() ) , 1.0 );
+
+  f_level_value = UpFiLmb.back() - f_level_Delta;
+  install_level_stabilization();
+  return;
+  }
+
  if( serious_step && gated_update && UsesPureLevelStabilization() &&
      ( lb <= -INFshift ) && ( ! f_level_reliable_LB ) &&
      ( UpFiLmb.back() < INFshift ) && ( UpRifFi.back() < INFshift ) &&
@@ -2954,6 +3000,10 @@ void BundleSolver::update_level_after_step( bool serious_step ,
    CSSCntr = 0;
    }
   }
+  
+ // reset the NR counter if needed
+ if( serious_step || MPchgs )
+  LevelNRCntr = 0;
 
  if( ( ! serious_step ) && gated_update )
   f_level_Delta *= LStabM;
@@ -5390,10 +5440,13 @@ Index BundleSolver::BStrategy( Index wFi )
  if( ! MasterPB )
   return( wh );  // no master to query: fall back to the slot picked above
 
- const double lambda = MasterPB->get_lambda();
- const double lambda_eps =
-  1e-12 * std::max( { std::abs( lambda ) , double( 1 ) } );
- if( lambda <= lambda_eps )
+ const bool pure_level_aggregate = MasterPB->uses_pure_level_aggregation();
+ const double aggregate_mass = pure_level_aggregate
+                               ? MasterPB->get_level_multiplier()
+                               : MasterPB->get_lambda();
+ const double aggregate_mass_eps =
+  1e-12 * std::max( { std::abs( aggregate_mass ) , double( 1 ) } );
+ if( aggregate_mass <= aggregate_mass_eps )
   return( InINF );
 
  LinearCombination coeff;
@@ -5405,7 +5458,7 @@ Index BundleSolver::BStrategy( Index wFi )
   const auto th = MasterPB->get_theta( int( wFi ) , int( slot ) );
   if( th == 0 )
    continue;
-  coeff.emplace_back( slot , th / lambda );
+  coeff.emplace_back( slot , th / aggregate_mass );
   }
 
  Index whZ = InINF;  // the position where Z[ wFi ] has to go
@@ -5436,17 +5489,19 @@ Index BundleSolver::BStrategy( Index wFi )
  remove_cut_global( whZ );  // remove the old item in position whZ
 
  // materialise the V2 aggregate cut:
- //   g* = (1/lambda) sum_i theta_i g_i
- //   a* = (1/lambda) (sum_i theta_i a_i + gamma LB)
+ //   g* = (1/mass) sum_i theta_i g_i
+ //   a* = (1/mass) (sum_i theta_i a_i + gamma LB)
+ // In pure level, get_aggregated_subgradient() already returns g*.
  std::vector< double > tZ_buf =
                               MasterPB->get_aggregated_subgradient( wFi );
  if( tZ_buf.empty() )
   tZ_buf.assign( NumVar , 0.0 );
- for( auto & v : tZ_buf )
-  v /= lambda;
+ if( ! pure_level_aggregate )
+  for( auto & v : tZ_buf )
+   v /= aggregate_mass;
 
  const double Ai =
-  MasterPB->get_raw_aggregated_alpha_with_LB( wFi ) / lambda;
+  MasterPB->get_raw_aggregated_alpha_with_LB( wFi ) / aggregate_mass;
 
  // First remove any pre-existing cut at slot whZ, then re-add the
  // aggregated one
