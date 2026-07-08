@@ -930,10 +930,11 @@ void MasterProblemBlock::generate_dual_abstract_variables( void )
  // live only under #kLevel / #kDoublyStabilized. The master-side
  // stationarity at v then reads
  //
- //     lambda + r - omega = 1
+ //     lambda + r - omega = 1      (proximal / doubly stabilized)
+ //     lambda + r - omega = 0      (pure level)
  //
- // which becomes the single static "normalization" constraint installed
- // below; the per-PFB rows are owned by the PFB sub-Blocks themselves.
+ // The corresponding row becomes the single static "normalization" constraint
+ // installed below; the per-PFB rows are owned by the PFB sub-Blocks themselves.
  //
  // NOTE: when easy components are considered, \lambda is fixed to 1 (see 
  // MasterProblemBlock.353 for further details). This means that the above
@@ -956,13 +957,12 @@ void MasterProblemBlock::generate_dual_abstract_variables( void )
  // Var_r is the dual multiplier of the global LB row. It is structurally
  // present in every stabilization type, but only carries an objective
  // contribution when set_global_LB() is called with a finite LB; until
- // then we pin it to 0 so the master normalization
- //     K * lambda + r - omega = 1
- // collapses to  K * lambda = 1 ,  lambda = 1 / K , and the per-PFB
+ // then we pin it to 0 so the proximal/doubly stabilized master normalization
+ //     lambda + r - omega = 1
+ // collapses to  lambda = 1 , and the per-PFB
  //     sum_i theta^k_i + gamma^k = lambda
- // sum across the K hard components to  K * lambda = 1  - i.e. the
- // classic simplex  total mass = 1  of the bundle dual. Leaving r free
- // with a 0 objective coefficient would allow r to pick any value in
+ // gives every hard component its full convexity mass. Leaving r free
+ // with a 0 objective coefficient would allow it to pick any value in
  // [ 0 , 1 ], pushing lambda below 1 / K and shrinking the simplex to
  // mass < 1 ; the master would still be bounded but Sigma would be a
  // scaled version of the classical aggregated linearization error, and
@@ -979,10 +979,9 @@ void MasterProblemBlock::generate_dual_abstract_variables( void )
  // a finite level target, so it starts pinned to 0 as well and gets
  // unfixed by set_f_lev() the moment a finite f_lev is provided
  // (symmetrically to how set_global_LB() handles Var_r). Without this
- // pin, the K * lambda + r - omega = 1 normalization would let omega
- // drift to +infinity, pulling lambda along the direction
- // omega -> +infinity, lambda -> +infinity / K, with the same gamma^k
- // unboundedness consequence described above for Var_r
+ // pin, the lambda + r - omega normalization would let omega drift to
+ // +infinity, pulling lambda along the same direction, with the same
+ // gamma^k unboundedness consequence described above for Var_r
  Var_omega.is_positive( true , eNoMod );
  Var_omega.set_value( 0 );
  Var_omega.is_fixed( true , eNoMod );
@@ -1044,13 +1043,18 @@ void MasterProblemBlock::generate_dual_abstract_variables( void )
 
 void MasterProblemBlock::generate_dual_abstract_constraints( void )
 {
- // ---- global normalization row: lambda + r - omega = 1 -----------------
+ // ---- global normalization row: lambda + r - omega = rhs ---------------
  // The disaggregated proximal dual stationarity in v_k (the per-component
  // model decrease) reads
  //     dL/dv_k = 1 - sum_i theta^k_i - gamma^k - r + omega = 0
  // hence per component sum_i theta^k_i + gamma^k = 1 - r + omega =: lambda.
+ // In pure level there is no +v_k term in the primal objective: the level
+ // multiplier omega is the only multiplier of the model-value row, so the
+ // same stationarity loses the constant 1 and gives
+ //     sum_i theta^k_i + gamma^k = omega - r =: lambda.
  // The per-PFB simplex row enforces sum_i theta^k_i + gamma^k = lambda for
- // every hard k, so this global row only has to pin lambda + r - omega = 1
+ // every hard k, so this global row only has to pin lambda + r - omega = rhs
+ // with rhs = 1 outside pure level and rhs = 0 in pure level
  // (coefficient 1 on lambda, NOT NoHardCmps): the dual aggregates the
  // *sum* of the K components f = sum_k f_k, and each one carries unit
  // convexity mass independently. A K factor here would instead force
@@ -1058,14 +1062,15 @@ void MasterProblemBlock::generate_dual_abstract_constraints( void )
  // rather than sum them, shrinking the aggregate subgradient z = sum theta g
  // by 1 / K and the proximal step d = - t z with it.
  {
+  const double norm_rhs = ( StblType == kLevel ) ? 0.0 : 1.0;
   LinearFunction::v_coeff_pair norm_terms;
   norm_terms.reserve( 3 );
   norm_terms.emplace_back( & Var_lambda , 1.0 );
   norm_terms.emplace_back( & Var_r      ,  1.0 );
   norm_terms.emplace_back( & Var_omega  , -1.0 );
 
-  NormalizationCns.set_lhs( 1.0 , eNoMod );
-  NormalizationCns.set_rhs( 1.0 , eNoMod );
+  NormalizationCns.set_lhs( norm_rhs , eNoMod );
+  NormalizationCns.set_rhs( norm_rhs , eNoMod );
   NormalizationCns.set_function(
      new LinearFunction( std::move( norm_terms ) ) , eNoMod );
   add_static_constraint( NormalizationCns , "MPB_norm" );
