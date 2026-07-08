@@ -1689,7 +1689,12 @@ class MasterProblemBlock : public Block {
                     ///< correction in the root DQuadFunction, or -1
 
  int level_model_obj_idx = -1;
-                    ///< first v^k term in the one-shot level probe objective
+                    ///< first v^k term in the primal one-shot level probe
+                    ///< objective
+
+ bool f_dual_level_probe_active = false;
+                    ///< true while pure-level dual form is temporarily solved
+                    ///< as a proximal seed before switching to eta/omega level
 
  char f_abs_rep = 0;
                     ///< built-stage bits for MPB's abstract representation

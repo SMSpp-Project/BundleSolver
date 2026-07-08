@@ -126,6 +126,7 @@ void MasterProblemBlock::clear()
  omega_obj_idx = -1;
  easy_obj_idx  = -1;
  level_model_obj_idx = -1;
+ f_dual_level_probe_active = false;
  f_abs_rep = 0;
 
  // drop the dynamically-sized variable / constraint groups (primal d /
@@ -593,6 +594,7 @@ void MasterProblemBlock::CreatePrimalMP( stabilization_type Stbl )
 
  StblType = Stbl;
  IsPrimal = true;
+ f_dual_level_probe_active = false;
 
  // ---- one PolyhedralFunctionBlock sub-Block per "hard" component ---------
  //
@@ -842,6 +844,9 @@ void MasterProblemBlock::CreateDualMP( stabilization_type Stbl )
 
  StblType = Stbl;
  IsPrimal = false;
+ // Pure level starts with the same proximal seed used by the primal form. The
+ // flag is cleared by remove_initial_level_objective() once a level is known.
+ f_dual_level_probe_active = ( Stbl == kLevel );
 
  // ---- one PolyhedralFunctionBlock sub-Block per "hard" component ---------
  //
@@ -1053,8 +1058,9 @@ void MasterProblemBlock::generate_dual_abstract_constraints( void )
  // same stationarity loses the constant 1 and gives
  //     sum_i theta^k_i + gamma^k = omega - r =: lambda.
  // The per-PFB simplex row enforces sum_i theta^k_i + gamma^k = lambda for
- // every hard k, so this global row only has to pin lambda + r - omega = rhs
- // with rhs = 1 outside pure level and rhs = 0 in pure level
+ // every hard k, so this global row only has to pin lambda + r - omega = rhs.
+ // The one-shot level probe is proximal and keeps rhs = 1; true pure level
+ // switches to rhs = 0 when remove_initial_level_objective() is called
  // (coefficient 1 on lambda, NOT NoHardCmps): the dual aggregates the
  // *sum* of the K components f = sum_k f_k, and each one carries unit
  // convexity mass independently. A K factor here would instead force
@@ -1062,7 +1068,9 @@ void MasterProblemBlock::generate_dual_abstract_constraints( void )
  // rather than sum them, shrinking the aggregate subgradient z = sum theta g
  // by 1 / K and the proximal step d = - t z with it.
  {
-  const double norm_rhs = ( StblType == kLevel ) ? 0.0 : 1.0;
+  const bool pure_level =
+   ( StblType == kLevel ) && ( ! has_initial_level_objective() );
+  const double norm_rhs = pure_level ? 0.0 : 1.0;
   LinearFunction::v_coeff_pair norm_terms;
   norm_terms.reserve( 3 );
   norm_terms.emplace_back( & Var_lambda , 1.0 );
@@ -1184,9 +1192,10 @@ void MasterProblemBlock::generate_dual_objective( void )
  // their target coefficient by a fixed offset):
  //
  //   triples[ 0 .. NumVars - 1 ]   :  z_j with (linear = 0, quad = -t/2
- //                                   for proximal/doubly, -1/2 for level,
- //                                   else 0); set_x_bar moves the linear
- //                                   coefficient to x_bar[j]
+ //                                   for proximal/doubly and for the one-shot
+ //                                   level probe, -1/2 for true level, else 0);
+ //                                   set_x_bar moves the linear coefficient to
+ //                                   x_bar[j]
  //   triples[ NumVars ]            :  r with (linear = 0, quad = 0);
  //                                   set_global_LB moves the linear
  //                                   coefficient to LB
@@ -1194,6 +1203,8 @@ void MasterProblemBlock::generate_dual_objective( void )
  //                                   IF has_omega_lin; set_f_lev refreshes
  //                                   the linear coefficient
  const bool pure_level = ( StblType == kLevel );
+ const bool level_probe = has_initial_level_objective();
+ const bool true_level = pure_level && ( ! level_probe );
  const bool has_quad =
   pure_level || ( StblType == kProximal ) || ( StblType == kDoublyStabilized );
  const bool has_omega_lin =
@@ -1214,7 +1225,7 @@ void MasterProblemBlock::generate_dual_objective( void )
  triples.reserve( NumVars + 1 + ( has_omega_lin ? 1 : 0 ) );
 
  z_obj_idx = NumVars > 0 ? 0 : -1;
- const double quad_coeff = has_quad ? - sgn * ( pure_level ? 0.5
+ const double quad_coeff = has_quad ? - sgn * ( true_level ? 0.5
                                                                : t_stab / 2.0 )
                                       : 0.0;
  for( int j = 0 ; j < NumVars ; ++j )
@@ -1226,11 +1237,11 @@ void MasterProblemBlock::generate_dual_objective( void )
  omega_obj_idx = -1;
  if( has_omega_lin ) {
   omega_obj_idx = int( triples.size() );
-  // : the omega-side contribution to the dual objective is
-  //     - omega * Lvl_xbar  ,   Lvl_xbar = f_lev + f_C
-  // in the textbook eMax form; the convex case flips the whole row sign
-  const double omega_lin = std::isfinite( f_lev )
-                            ? - sgn * ( f_lev + f_C ) : 0.0;
+  // The one-shot level probe is proximal and has no active level multiplier;
+  // omega becomes meaningful only after remove_initial_level_objective().
+  const double omega_lin =
+   ( ( ! level_probe ) && std::isfinite( f_lev ) )
+   ? - sgn * ( f_lev + f_C ) : 0.0;
   triples.emplace_back( & Var_omega , omega_lin , 0.0 );
   }
 
@@ -3137,7 +3148,11 @@ void MasterProblemBlock::set_x_bar( const std::vector< double > & x_bar )
  if( ! dqf )
   return;
 
- // refresh the quadratic coefficient ±t/2 (or 0 under kLevel) of every z_j.
+ // Refresh the z quadratic consistently with generate_dual_objective().
+ // The level probe is a proximal master and must keep the t-dependent
+ // curvature; true pure level switches to the fixed 1/2 ||z||^2 curvature.
+ // Dropping this term during set_x_bar() leaves the dual level master nearly
+ // linear and can make the first non-empty QP numerically pathological.
  // The cuts are stored in the linearization-error frame b = F(x_bar) - alpha
  // - g . x_bar, which has already absorbed the stability centre into sigma:
  // the disaggregated proximal dual then reads max_theta [ - Sigma -
@@ -3154,9 +3169,14 @@ void MasterProblemBlock::set_x_bar( const std::vector< double > & x_bar )
  // plain displacement frame bit-for-bit at the optimum ). The sign convention
  // ±t/2 follows the Objective sense (negated under IsConvex).
  const double sgn = IsConvex ? -1.0 : 1.0;
- const double quad_coeff = ( StblType == kProximal ||
-                             StblType == kDoublyStabilized )
-                           ? - sgn * t_stab / 2.0 : 0.0;
+ const bool level_probe = has_initial_level_objective();
+ const bool true_level = ( StblType == kLevel ) && ( ! level_probe );
+ const bool has_quad = ( StblType == kProximal ) ||
+                       ( StblType == kDoublyStabilized ) ||
+                       ( StblType == kLevel );
+ const double quad_coeff = has_quad ? - sgn * ( true_level ? 0.5
+                                                            : t_stab / 2.0 )
+                                    : 0.0;
  const bool iterate = ( f_v2_form != 0 );
  const bool lazy = ( ! iterate ) && ( f_xref_tol > 0.0 ) &&
                    ( int( f_x_ref.size() ) == NumVars );
@@ -3349,7 +3369,10 @@ void MasterProblemBlock::set_max_time( double t )
 
 bool MasterProblemBlock::has_initial_level_objective( void ) const
 {
- return( IsPrimal && StblType == kLevel && level_model_obj_idx >= 0 );
+ if( StblType != kLevel )
+  return( false );
+
+ return( IsPrimal ? level_model_obj_idx >= 0 : f_dual_level_probe_active );
 }
 
 /*--------------------------------------------------------------------------*/
@@ -3362,6 +3385,51 @@ void MasterProblemBlock::remove_initial_level_objective( void )
  auto * obj = dynamic_cast< FRealObjective * >( get_objective() );
  auto * dqf = obj ? dynamic_cast< DQuadFunction * >( obj->get_function() )
                   : nullptr;
+
+ if( ! IsPrimal ) {
+  // The dual probe was a proximal master: lambda + r - omega = 1, omega fixed,
+  // and z quadratic -t/2 ||z||^2. Switch it to true level: lambda + r - omega
+  // = 0, omega active when the level is finite, and z quadratic -1/2 ||z||^2.
+  f_dual_level_probe_active = false;
+
+  if( f_abs_rep & k_mpb_built_cnst ) {
+   NormalizationCns.set_lhs( 0.0 , eNoBlck );
+   NormalizationCns.set_rhs( 0.0 , eNoBlck );
+   }
+
+  if( f_abs_rep & k_mpb_built_var ) {
+   const bool finite = std::isfinite( f_lev );
+   if( finite ) {
+    if( Var_omega.is_fixed() )
+     Var_omega.is_fixed( false , eNoBlck );
+    }
+   else {
+    Var_omega.set_value( 0 );
+    if( ! Var_omega.is_fixed() )
+     Var_omega.is_fixed( true , eNoBlck );
+    }
+   }
+
+  if( dqf ) {
+   const double sgn = IsConvex ? -1.0 : 1.0;
+   for( int j = 0 ; j < NumVars ; ++j ) {
+    const double lin_coeff = dqf->get_linear_coefficient(
+                                      DQuadFunction::Index( z_obj_idx + j ) );
+    dqf->modify_term( DQuadFunction::Index( z_obj_idx + j ) ,
+                      lin_coeff , - sgn * 0.5 , eNoBlck );
+    }
+
+   if( omega_obj_idx >= 0 ) {
+    const double coeff = std::isfinite( f_lev )
+                         ? - sgn * ( f_lev + f_C ) : 0.0;
+    dqf->modify_term( DQuadFunction::Index( omega_obj_idx ) ,
+                      coeff , 0.0 , eNoBlck );
+    }
+   }
+
+  return;
+  }
+
  if( ! dqf )
   return;
 
@@ -3590,12 +3658,13 @@ void MasterProblemBlock::set_t( double t )
   }
 
  // From here on only the dual MP is handled. Pure #kNone has no
- // stabilization and pure #kLevel only uses the level row.
+ // stabilization; true pure #kLevel uses no t, but the one-shot level probe is
+ // proximal and must keep the z quadratic synchronized with t_stab.
  if( StblType == kNone ) {
   issue_t_mod();
   return;
   }
- if( StblType == kLevel ) {
+ if( StblType == kLevel && ! has_initial_level_objective() ) {
   issue_t_mod();
   return;
   }
@@ -3655,10 +3724,15 @@ void MasterProblemBlock::set_f_lev( double f )
   const bool finite = std::isfinite( f_lev );
 
   if( f_abs_rep & k_mpb_built_var ) {
-   // mirror set_global_LB(): Var_omega is meaningful only when f_lev is
-   // finite. Unfix it now or re-pin it to 0 otherwise, so the master
-   // normalization K * lambda + r - omega = 1 stays bounded.
-   if( finite ) {
+   // During the one-shot level probe the dual master is proximal, so omega is
+   // not part of the active normalization even if BundleSolver installs a
+   // temporary level value before the probe is removed.
+   if( has_initial_level_objective() ) {
+    Var_omega.set_value( 0 );
+    if( ! Var_omega.is_fixed() )
+     Var_omega.is_fixed( true , eNoBlck );
+    }
+   else if( finite ) {
     if( Var_omega.is_fixed() )
      Var_omega.is_fixed( false , eNoBlck );
     }
@@ -3680,7 +3754,8 @@ void MasterProblemBlock::set_f_lev( double f )
     // A non-finite f_lev (= no level set yet) collapses the term to zero
     // rather than leaking Inf into the Objective.
     const double sgn = IsConvex ? -1.0 : 1.0;
-    const double coeff = finite ? - sgn * ( f_lev + f_C ) : 0.0;
+    const double coeff = ( finite && ( ! has_initial_level_objective() ) )
+                         ? - sgn * ( f_lev + f_C ) : 0.0;
     dqf->modify_term( DQuadFunction::Index( omega_obj_idx ) , coeff , 0.0 ,
                       eNoBlck );
     }
