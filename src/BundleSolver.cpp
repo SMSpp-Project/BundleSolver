@@ -28,6 +28,8 @@
 
 #include "LagBFunction.h"
 
+#include "OneVarConstraint.h"
+
 #include <iomanip>
 #include <unordered_set>
 
@@ -154,16 +156,14 @@ BundleSolver::effective_bounds( const ColVariable * var )
 
  for( Index i = 0 ; i < var->get_num_active() ; ++i ) {
   const auto c = var->get_active( i );
-  if( dynamic_cast< const NNConstraint * >( c ) )
-   lb = std::max( lb , 0.0 );
-  else if( const auto b = dynamic_cast< const LB0Constraint * >( c ) ) {
-   lb = std::max( lb , 0.0 );
-   ub = std::min( ub , double( b->get_rhs() ) );
-   }
-  else if( const auto b = dynamic_cast< const BoxConstraint * >( c ) ) {
-   lb = std::max( lb , double( b->get_lhs() ) );
-   ub = std::min( ub , double( b->get_rhs() ) );
-   }
+  const auto b = dynamic_cast< const OneVarConstraint * >( c );
+  if( ! b )
+   continue;
+
+  // Only one-variable rows can tighten a column bound. Read their generic
+  // interval once instead of trying each concrete bound subclass in turn.
+  lb = std::max( lb , double( b->get_lhs() ) );
+  ub = std::min( ub , double( b->get_rhs() ) );
   }
 
  return( std::pair< double , double >( lb , ub ) );
