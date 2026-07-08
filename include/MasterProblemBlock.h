@@ -927,8 +927,10 @@ class MasterProblemBlock : public Block {
  [[nodiscard]] std::vector< double > get_d_vector( void ) const;
 
 /*--------------------------------------------------------------------------*/
- /// returns the multiplier of the primal level constraint, if available
- /** Meaningful after solve_master() in primal level stabilization. */
+ /// returns the multiplier of the level constraint, if available
+ /** In primal form this is the dual value of the explicit level row; in
+  *  dual form this is the value of the explicit omega variable. Meaningful
+  *  after solve_master() in level / doubly-stabilized modes. */
 
  [[nodiscard]] double get_level_multiplier( void ) const;
 

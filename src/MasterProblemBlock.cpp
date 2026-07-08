@@ -2337,11 +2337,14 @@ std::vector< double > MasterProblemBlock::get_d_vector( void ) const
 
 double MasterProblemBlock::get_level_multiplier( void ) const
 {
- if( ! IsPrimal )
-  return( 0.0 );
-
  if( StblType != kLevel && StblType != kDoublyStabilized )
   return( 0.0 );
+
+ if( ! IsPrimal ) {
+  // In the dual master the level-row multiplier is represented explicitly by
+  // omega, while in the primal master it is the dual value of LevelCns below.
+  return( std::max( 0.0 , Var_omega.get_value() ) );
+  }
 
  if( ! ( f_abs_rep & k_mpb_built_cnst ) )
   return( 0.0 );
