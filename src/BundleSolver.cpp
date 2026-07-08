@@ -2957,8 +2957,14 @@ void BundleSolver::update_level_after_step( bool serious_step ,
  // Rationale: shrinking Delta raises the level and relaxes the target. This
  // is meaningful after an informative NS, but not after a non-informative
  // one, where no useful model information was generated.
+ // The safeguard is only needed when the level multiplier is small: this is
+ // the ill-conditioned regime where pure-level aggregation divides by eta.
+ // With eta already sizeable, increasing Delta can over-tighten the level and
+ // cause an increase/shrink cycle; let the ordinary NS rule relax it instead.
+ const auto level_eta = MasterPB ? MasterPB->get_level_multiplier() : 0.0;
+ const bool small_level_eta = level_eta <= 1.0;
  if( ( ! serious_step ) && UsesPureLevelStabilization() && 
-        ( ! MPchgs ) ) {
+        ( ! MPchgs ) && small_level_eta ) {
   f_level_Delta *= LStabIncr;
 
   if( f_level_reliable_LB ) {
