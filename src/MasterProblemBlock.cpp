@@ -1591,21 +1591,12 @@ Block * MasterProblemBlock::get_easy_component( int k ) const
 
 double MasterProblemBlock::get_dual_norm_squared( void ) const
 {
- if( IsPrimal ) {
-  const auto z = get_z_vector();
-  return( std::transform_reduce(
-             z.cbegin() , z.cend() , 0.0 , std::plus<>() ,
-             []( double zj ) {
-              return( zj * zj );
-              } ) );
-  }
-
+ const auto z = get_z_vector();
  return( std::transform_reduce(
-              Var_z.cbegin() , Var_z.cend() , 0.0 , std::plus<>() ,
-              []( const ColVariable & v ) {
-               const double x = v.get_value();
-               return( x * x );
-               } ) );
+            z.cbegin() , z.cend() , 0.0 , std::plus<>() ,
+            []( double zj ) {
+             return( zj * zj );
+             } ) );
  }
 
 /*--------------------------------------------------------------------------*/
@@ -2152,30 +2143,13 @@ double MasterProblemBlock::get_FiBLambda( int k ) const
   return( sum );
   }
 
- // dual MP: v*[k] is the cutting-plane model's *predicted decrease* of
- // component k at the proximal step d* = -t z*, NOT the aggregated
- // linearization error Sigma_k (a frequent confusion: Sigma_k >= 0 is
- // the model gap at the stability centre, while v*[k] <= 0 is the gain
- // the model promises by moving to Lambda1). With g^k = sum_i theta^k_i
- // g^k_i the per-cmp aggregated (textbook) subgradient and z* the total
- // aggregated subgradient (linear part included),
- //   v*[k] = F^k_model( Lambda1 ) - F^k( Lambda )
- //         = < g^k , d* > - Sigma_k  =  -t < g^k , z* > - Sigma_k
- // and, summing the linear-part contribution < b , d* > too,
- //   v* (total) = -t || z* ||^2 - Sigma   ( = -( Sigma + 2 D*_t(z*) ) ).
- //
- // get_aggregated_subgradient(k) returns the physical aggregate g^k even
- // when the dual PFB stores the sign-flipped row -g^k_i internally, so the
- // per-component expression keeps the textbook sign:
- //   v*[k] = -Sigma_k - t < get_aggregated_subgradient(k) , z* >
- //
- // The previous implementation returned + Sigma_k, i.e. the
- // linearization error with the wrong sign and the wrong meaning: it
- // turned vStar positive, inflated the SS target
- //   UpTrgt = UpRifFi + (1 - m2) vStar ,
- // made the bundle accept spurious serious steps, and corrupted the
- // trajectory (the master appeared to "ascend" on a minimisation)
- const double t = t_stab;
+ // dual MP: v*[k] is the cutting-plane model's *predicted decrease*,
+ // not the aggregated linearization error Sigma_k. In the proximal case
+ // d* = -t z*, while in the pure-level case Var_z stores eta z* and hence
+ // d* = -eta z*. The scalar below is therefore the displacement mass that
+ // converts the normalized aggregate z* into the actual step.
+ const double step_scale = uses_pure_level_aggregation()
+                           ? get_level_multiplier() : t_stab;
  auto has_model_row = [ this ]( int kk ) -> bool {
   if( kk < 0 || kk >= int( HardCmps.size() ) )
    return( false );
@@ -2209,16 +2183,17 @@ double MasterProblemBlock::get_FiBLambda( int k ) const
   const std::size_t n = std::min( zk.size() , zt.size() );
   for( std::size_t j = 0 ; j < n ; ++j )
    dot += zk[ j ] * zt[ j ];
-  return( - sigma_k - t * dot );
+  return( - sigma_k - step_scale * dot );
   }
 
  for( int kk = 0 ; kk < int( HardCmps.size() ) ; ++kk )
   if( ! has_model_row( kk ) )
    return( Inf< double >() );
 
- // total v* = -( Sigma + t || z* ||^2 ), with || z* ||^2 the squared
- // norm of the *total* aggregated subgradient (linear part included)
- return( - ( get_aggregated_alpha( -1 ) + t * get_dual_norm_squared() ) );
+ // total v* = -( Sigma + step_scale ||z*||^2 ), with step_scale equal to
+ // t in proximal mode and eta in pure-level mode.
+ return( - ( get_aggregated_alpha( -1 ) +
+             step_scale * get_dual_norm_squared() ) );
  }
 
 /*--------------------------------------------------------------------------*/
@@ -2253,9 +2228,19 @@ std::vector< double > MasterProblemBlock::get_z_vector( void ) const
    std::fill( out.begin() , out.end() , 0.0 );
   return( out );
   }
+ const bool normalize_level_z = uses_pure_level_aggregation();
+ const double eta = normalize_level_z ? get_level_multiplier() : 1.0;
  out.reserve( Var_z.size() );
+
+ if( normalize_level_z && eta <= 0.0 ) {
+  out.assign( Var_z.size() , 0.0 );
+  return( out );
+  }
+
  for( const auto & zj : Var_z )
-  out.push_back( zj.get_value() );
+  // In pure level the dual stationarity vector is eta z*, so expose the
+  // normalized aggregate expected by BundleSolver stopping and cut logic.
+  out.push_back( normalize_level_z ? zj.get_value() / eta : zj.get_value() );
  return( out );
  }
 
@@ -2328,8 +2313,17 @@ std::vector< double > MasterProblemBlock::get_d_vector( void ) const
   return( out );
   }
 
- // dual MP, proximal stabilization: d* = -t * z*
  out.reserve( Var_z.size() );
+
+ if( uses_pure_level_aggregation() ) {
+  // In pure level Var_z already stores eta z*, so the physical step is
+  // d* = -eta z* = -Var_z rather than the proximal -t z* identity.
+  for( const auto & zj : Var_z )
+   out.push_back( - zj.get_value() );
+  return( out );
+  }
+
+ // dual MP, proximal stabilization: d* = -t * z*
  for( const auto & zj : Var_z )
   out.push_back( - t_stab * zj.get_value() );
  return( out );
@@ -2358,24 +2352,19 @@ double MasterProblemBlock::get_level_multiplier( void ) const
 
 double MasterProblemBlock::get_Gid_aggregate( void ) const
 {
- if( IsPrimal ) {
-  // primal MP: <z*, d*> = sum_k <z^k, d>, with z^k aggregated through
-  // the per-PFB get_aggregated_subgradient and d directly read from
-  // the master-side Var_d
-  const auto z = get_z_vector();
-  const auto d = get_d_vector();
-  if( z.empty() || d.empty() )
-   return( 0.0 );
-  const std::size_t n = std::min( z.size() , d.size() );
-  double s = 0.0;
-  for( std::size_t j = 0 ; j < n ; ++j )
-   s += z[ j ] * d[ j ];
-  return( s );
-  }
+ // Once get_z_vector() and get_d_vector() have translated the concrete master
+ // representation into physical BundleSolver quantities, Gid is the same
+ // scalar product in primal, dual, proximal, and level forms.
+ const auto z = get_z_vector();
+ const auto d = get_d_vector();
+ if( z.empty() || d.empty() )
+  return( 0.0 );
 
- // dual MP under proximal stabilization:
- //   d* = -t * z*, so z* . d* = -t * || z* ||^2
- return( - t_stab * get_dual_norm_squared() );
+ const std::size_t n = std::min( z.size() , d.size() );
+ double s = 0.0;
+ for( std::size_t j = 0 ; j < n ; ++j )
+  s += z[ j ] * d[ j ];
+ return( s );
  }
 
 /*--------------------------------------------------------------------------*/
@@ -2512,6 +2501,13 @@ double MasterProblemBlock::get_aggregated_alpha( int k ) const
       std::isfinite( f_LB_raw[ kk ] ) )
    s += get_gamma( kk ) * ( f_F_at_x_bar[ kk ] - f_LB_raw[ kk ] );
 
+  if( uses_pure_level_aggregation() ) {
+   // Pure-level theta/gamma masses are scaled by eta in the dual rows; divide
+   // here so Sigma remains the normalized bundle-method linearization error.
+   const double eta = get_level_multiplier();
+   s = ( eta > 0.0 ) ? s / eta : 0.0;
+   }
+
   return( s );
   };
 
@@ -2519,7 +2515,7 @@ double MasterProblemBlock::get_aggregated_alpha( int k ) const
   return( contrib( k ) );
 
  const double mp_obj = get_master_objective_value();
- if( std::isfinite( mp_obj ) ) {
+ if( ( ! uses_pure_level_aggregation() ) && std::isfinite( mp_obj ) ) {
   // The full dual master objective contains the model gap and the quadratic
   // stabilization term. In the convex/min representation it is Sigma + D;
   // in the concave/max representation the objective sense stores the negated

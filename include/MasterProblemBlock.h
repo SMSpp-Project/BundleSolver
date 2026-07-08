@@ -635,16 +635,10 @@ class MasterProblemBlock : public Block {
  [[nodiscard]] Block * get_easy_component( int k ) const;
 
 /*--------------------------------------------------------------------------*/
- /// returns ||z*||^2, the squared 2-norm of the aggregated dual subgradient
- /** In the dual MP the auxiliary variables z encode the aggregated
-  * subgradient z* = b - sum_k A^k ( sum_i theta^k_i u^k_i ); this method
-  * returns the current squared 2-norm sum_j z_j^2 read off the ColVariable
-  * values, which is meaningful only after the master Solver has solved the MP
-  * at least once.
-  *
-  * In the primal MP the same quantity has to be reconstructed from the per-PFB
-  * optimal multipliers and is not available here; the method returns 0 in that
-  * case. */
+ /// returns ||z*||^2, the squared 2-norm of the aggregate subgradient
+ /** Reads the normalized aggregate returned by get_z_vector() and squares it.
+  * This matters in pure-level dual form because Var_z stores eta z*, not z*
+  * itself; callers of this method always get the BundleSolver z* norm. */
 
  [[nodiscard]] double get_dual_norm_squared( void ) const;
 
@@ -857,8 +851,9 @@ class MasterProblemBlock : public Block {
   *
   * \p k == -1 (default) sums over every hard component (the global aggregated
   * linearization error); \p k in [0, NoHardCmps) restricts the sum to component
-  * k. Meaningful only after solve_master() and only in the dual MP form;
-  * returns 0 otherwise. */
+  * k. In pure-level dual form the row masses carry eta, so the returned Sigma
+  * is divided by eta to stay in the normalized bundle-method units. Meaningful
+  * only after solve_master() and only in the dual MP form; returns 0 otherwise. */
 
  [[nodiscard]] double get_aggregated_alpha( int k = -1 ) const;
 
@@ -887,21 +882,20 @@ class MasterProblemBlock : public Block {
  /** NDOFi counterpart of Master->ReadFiBLambda() / ReadFiBLambda(k+1).
   * In the primal MP this is just Var_v_hard[k].get_value() (per-cmp, \p k >= 0)
   * or the sum over every k (\p k == -1). In the dual MP the same quantity is
-  * read off the per-PFB Objective contribution, which by LP duality equals
-  * sum_i theta^k_i alpha^k_i (modulo the gamma^k * LB^k term when a global LB
-  * is active), hence the call collapses onto get_aggregated_alpha(k).
-  * Meaningful only after solve_master(). */
+  * read from the dual optimality identities: proximal uses d* = -t z*, while
+  * pure level uses d* = -eta z* because the level row multiplier carries the
+  * aggregate mass. Meaningful only after solve_master(). */
 
  [[nodiscard]] double get_FiBLambda( int k = -1 ) const;
 
 /*--------------------------------------------------------------------------*/
  /// returns the aggregated subgradient z* in a fresh std::vector
  /** NDOFi counterpart of Master->ReadZ() (the dense, global, no-bse
-  * variant). In the dual MP each z_j is a ColVariable and the call is just a
-  * `for j: out[j] = Var_z[j].get_value()` materialisation; in the primal MP the
-  * aggregated subgradient has to be reconstructed from the per-PFB theta
-  * multipliers (currently not implemented: returns an empty vector). Meaningful
-  * only after solve_master(). */
+  * variant). In the dual MP Var_z is returned directly for proximal/doubly
+  * stabilization, but in pure level it is divided by eta because the dual
+  * stationarity vector stores eta z*. In the primal MP z* is reconstructed from
+  * the solved displacement and the active stabilization. Meaningful only after
+  * solve_master(). */
 
  [[nodiscard]] std::vector< double > get_z_vector( void ) const;
 
@@ -920,9 +914,9 @@ class MasterProblemBlock : public Block {
  /// returns the primal direction d in a fresh std::vector
  /** NDOFi counterpart of Master->Readd(). In the translated primal MP the step
   * d is stored directly in Var_d. In the raw primal MP Var_d stores absolute x
-  * and the call returns x - x_bar. In the dual MP under proximal stabilization the primal
-  * direction is d* = -t * z*, hence the result is -t_stab times get_z_vector().
-  * Meaningful only after solve_master(). */
+  * and the call returns x - x_bar. In the dual MP the proximal identity is
+  * d* = -t z*; in pure level Var_z stores eta z*, so d* = -Var_z. Meaningful
+  * only after solve_master(). */
 
  [[nodiscard]] std::vector< double > get_d_vector( void ) const;
 
@@ -937,9 +931,10 @@ class MasterProblemBlock : public Block {
 /*--------------------------------------------------------------------------*/
  /// returns z* . d, the scalar product of the aggregated subgradient and d
  /** NDOFi counterpart of Master->ReadGid() (the global, no-name variant).
-  * Under proximal stabilization in the dual MP this is -t * || z* ||^2; the
-  * implementation computes it directly via get_dual_norm_squared() and t_stab.
-  * Meaningful only after solve_master(). */
+  * get_z_vector() and get_d_vector() first map the solved primal/dual master
+  * representation to the common physical quantities; this method then computes
+  * the same scalar product for every stabilization. Meaningful only after
+  * solve_master(). */
 
  [[nodiscard]] double get_Gid_aggregate( void ) const;
 
