@@ -1284,8 +1284,9 @@ class MasterProblemBlock : public Block {
 
  void remove_initial_level_objective( void );
 
- [[nodiscard]] bool uses_pure_level_aggregation( void ) const
-  { return( IsPrimal && StblType == kLevel && ! has_initial_level_objective() ); }
+ [[nodiscard]] bool uses_pure_level_aggregation( void ) const {
+  return( StblType == kLevel && ! has_initial_level_objective() );
+  }
 
 /*--------------------------------------------------------------------------*/
  /// returns the current optimal value of the global multiplier lambda

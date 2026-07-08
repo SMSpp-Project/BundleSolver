@@ -2286,8 +2286,7 @@ MasterProblemBlock::get_aggregated_subgradient( int k ) const
     ->get_PolyhedralFunction().get_A();
  const double row_sign = IsPrimal ? 1.0 : -1.0;
 
- const bool normalize_level_theta =
-  IsPrimal && StblType == kLevel && ! has_initial_level_objective();
+ const bool normalize_level_theta = uses_pure_level_aggregation();
  const double level_eta = normalize_level_theta ? get_level_multiplier() : 1.0;
  if( normalize_level_theta && level_eta <= 0.0 )
   return( out );
@@ -2296,8 +2295,11 @@ MasterProblemBlock::get_aggregated_subgradient( int k ) const
   double theta =
    pfb->get_row_multiplier( PolyhedralFunctionBlock::Index( i ) );
 
-  if( normalize_level_theta )
+  if( normalize_level_theta ) {
+   // Pure-level theta values are level-multiplier masses, so divide by eta
+   // before forming the aggregate cut in both primal and dual master forms.
    theta /= level_eta;
+   }
 
   if( theta == 0.0 )
    continue;
