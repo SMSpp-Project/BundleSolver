@@ -2882,11 +2882,23 @@ void BundleSolver::install_level_stabilization( void )
 
  auto lev = f_level_value;
  if( ! ( UsesPrimalMaster() && MPV2Form ) ) {
-  auto rf = UpRifFi.back();
-  if( NrEasy )
+  VarValue rf = 0;
+  if( ( ! UsesPrimalMaster() ) && MPV2Form ) {
+   // In the dual iterate frame the explicit x_bar . z objective term already
+   // translates the linear component (and every exact easy component). The
+   // PFB constants still carry F_k(x_bar), so only hard component references
+   // must be removed from the absolute level.
    for( Index k = 0 ; k < NrFi ; ++k )
-    if( IsEasy[ k ] )
-     rf -= UpRifFi[ k ];
+    if( ( ! NrEasy ) || ( ! IsEasy[ k ] ) )
+     rf += UpRifFi[ k ];
+   }
+  else {
+   rf = UpRifFi.back();
+   if( NrEasy )
+    for( Index k = 0 ; k < NrFi ; ++k )
+     if( IsEasy[ k ] )
+      rf -= UpRifFi[ k ];
+   }
   lev -= rf;
   }
  MasterPB->set_f_lev( lev );
@@ -3182,20 +3194,26 @@ void BundleSolver::FormD( void )
 
   LowerBound.back() = LwrBnd;        // in all cases, record it
   if( TrueLB ) {   // if the bound value is finite
-   // translate it using the reference value of the hard components. the
-   // "easy" components are not translated, but the non-easy ones are,
-   // hence the global lower bound has to be translated by the contribution
-   // of the non-easy components (and the linear one, that somewhat
-   // un-intuitively is treated in the same way). this *would* be the sum of
-   // their reference value *if* the (previous) global lower bound had not
-   // impacted the total reference value. to avoid checking it (and because
-   // it likely is faster) we compute the correction term by subtracting the
-   // value of the "easy" components by the total reference value
-   auto rf = UpRifFi.back();
-   if( NrEasy )
+   // Translate it using the active storage frame. The displacement frame
+   // removes the linear and hard-component reference values (but not exact
+   // easy components). In the dual iterate frame x_bar . z already translates
+   // the linear and exact-easy terms, so only hard-component references are
+   // removed here.
+   VarValue rf = 0;
+   if( ( ! UsesPrimalMaster() ) && MPV2Form ) {
+    // As for the level row, x_bar . z already accounts for the linear and
+    // exact-easy reference terms in the dual iterate frame.
     for( Index k = 0 ; k < NrFi ; ++k )
-     if( IsEasy[ k ] )
-      rf -= UpRifFi[ k ];
+     if( ( ! NrEasy ) || ( ! IsEasy[ k ] ) )
+      rf += UpRifFi[ k ];
+    }
+   else {
+    rf = UpRifFi.back();
+    if( NrEasy )
+     for( Index k = 0 ; k < NrFi ; ++k )
+      if( IsEasy[ k ] )
+       rf -= UpRifFi[ k ];
+    }
 
    LwrBnd -= rf;
    }
