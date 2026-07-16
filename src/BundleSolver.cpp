@@ -703,7 +703,12 @@ int BundleSolver::compute( bool changedvars )
     BLOG( 1 , " ~ level empty: LB = " << def << f_level_value
               << std::endl );
     record_level_lower_bound( f_level_value );
-    refresh_level_after_master();
+    if( ! refresh_level_after_master( true ) ) {
+     BLOG( 1 , " ~ stop (empty level refresh made no progress)"
+               << std::endl );
+     Result = kLowPrecision;
+     break;
+     }
     continue;
     }
    BLOG( 1 , " ~ stop (infeasible)" << std::endl );
@@ -718,7 +723,12 @@ int BundleSolver::compute( bool changedvars )
     BLOG( 1 , " ~ level empty: LB = " << def << f_level_value
               << std::endl );
     record_level_lower_bound( f_level_value );
-    refresh_level_after_master();
+    if( ! refresh_level_after_master( true ) ) {
+     BLOG( 1 , " ~ stop (empty level refresh made no progress)"
+               << std::endl );
+     Result = kLowPrecision;
+     break;
+     }
     continue;
     }
    BLOG( 1 , " ~ stop (MP unbounded)" << std::endl );
@@ -2906,19 +2916,21 @@ void BundleSolver::install_level_stabilization( void )
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::refresh_level_after_master( void )
+bool BundleSolver::refresh_level_after_master( bool force )
 {
+ const auto old_level = f_level_value;
+
  if( ! UsesLevelStabilization() )
-  return;
+  return( false );
  if( UpFiLmb.back() >= INFshift ) {
   if( MasterPB )
    MasterPB->set_f_lev( INFshift );
-  return;
+  return( false );
   }
 
  const auto lb = reliable_level_LB();
  if( lb > -INFshift ) {
-  if( ( ! f_level_initialized ) || ( ! f_level_reliable_LB ) ||
+  if( force || ( ! f_level_initialized ) || ( ! f_level_reliable_LB ) ||
       ( lb > f_level_LB ) ) {
    const auto gap = UpFiLmb.back() - lb;
    f_level_Delta = gap > 0 ? ( 1.0 - LStabM ) * gap : 0.0;
@@ -2936,6 +2948,18 @@ void BundleSolver::refresh_level_after_master( void )
  f_level_value = UpFiLmb.back() - f_level_Delta;
  f_level_initialized = true;
  install_level_stabilization();
+
+ if( old_level == f_level_value )
+  return( false );
+
+ if( ( ! std::isfinite( old_level ) ) ||
+     ( ! std::isfinite( f_level_value ) ) )
+  return( true );
+
+ const auto scale = std::max( { std::abs( old_level ) ,
+                                std::abs( f_level_value ) , VarValue( 1 ) } );
+ const auto tol = 16 * std::numeric_limits< VarValue >::epsilon() * scale;
+ return( std::abs( f_level_value - old_level ) > tol );
  }
 
 /*--------------------------------------------------------------------------*/
@@ -3286,7 +3310,12 @@ void BundleSolver::FormD( void )
   if( UsesLevelStabilization() && f_level_initialized &&
       ( f_level_value < INFshift ) && level_empty ) {
    record_level_lower_bound( f_level_value );
-   refresh_level_after_master();
+   if( ! refresh_level_after_master( true ) ) {
+    BLOG( 1 , std::endl
+              << "Bundle::FormD: empty level refresh made no progress" );
+    Result = kError;
+    return;
+    }
    continue;
    }
 
