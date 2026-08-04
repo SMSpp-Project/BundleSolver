@@ -3165,36 +3165,20 @@ void BundleSolver::FormLambda1( HpNum Tau )
   // precision required by the FiOracle, the (upper and lower) bounds are
   // strictly enforced here
   //
-  //!! this part either to be updated with the bounds from the
-  //   OneVarConstraint or, more likely, to be completely removed
+  // the bounds are those the FiOracle declares, so that a bound coming from
+  // a OneVarConstraint on the Lambda is enforced as such
 
   std::vector< VarValue > tL1 = Lambda1;
 
-  if( Master->NumNNVars() )             // there are NN vars and UB vars
-   if( Master->NumNNVars() == NumVar )  // actually, all variables are NN
-    for( Index i = 0 ; i < NumVar ; ++i ) {
-     if( tL1[ i ] < 0 )
-      tL1[ i ] = 0;
+  for( Index i = 0 ; i < NumVar ; ++i ) {
+   const double LBh = FakeFi.GetLB( i );
+   if( tL1[ i ] < LBh )
+    tL1[ i ] = LBh;
 
-     const double UBh = LamVcblr[ i ]->get_ub();
-     if( tL1[ i ] > UBh )
-      tL1[ i ] = UBh;
-     }
-   else                                 // not all variables are NN
-    for( Index i = 0 ; i < NumVar ; ++i ) {
-     if( Master->IsNN( i ) && ( tL1[ i ] < 0 ) )
-      tL1[ i ] = 0;
-
-     const double UBh = LamVcblr[ i ]->get_ub();
-     if( tL1[ i ] > UBh )
-      tL1[ i ] = UBh;
-     }
-  else  // there are only UB vars
-   for( Index i = 0 ; i < NumVar ; ++i ) {
-    const double UBh = LamVcblr[ i ]->get_ub();
-    if( tL1[ i ] > UBh )
-     tL1[ i ] = UBh;
-    }
+   const double UBh = FakeFi.GetUB( i );
+   if( tL1[ i ] > UBh )
+    tL1[ i ] = UBh;
+   }
 
   Lambda1 = tL1;
 
@@ -7904,29 +7888,27 @@ Index BundleSolver::FakeFiOracle::GetMaxName( void ) const
 
 bool BundleSolver::FakeFiOracle::GetUC( cIndex i )
 {
+ return( GetLB( i ) == -Inf< LMNum >() );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+LMNum BundleSolver::FakeFiOracle::GetLB( cIndex i )
+{
  const auto var = bslv->LamVcblr[ i ];
  const auto lb = var->get_lb();
- if( lb > -Inf< ColVariable::VarValue >() ) {
-  if( lb != ColVariable::VarValue( 0 ) )
-   throw( std::logic_error( "finite lhs different from zero not allowed" ) );
-  return( false );
-  }
+ if( lb > -Inf< ColVariable::VarValue >() )
+  return( LMNum( lb ) );
 
  for( Index j = 0 ; j < var->get_num_active() ; ++j ) {
   const auto cj = var->get_active( j );
   if( dynamic_cast< NNConstraint * >( cj ) )
-   return( false );
-  if( const auto bx = dynamic_cast< BoxConstraint * >( cj ) ) {
-   const auto lhs = bx->get_lhs();
-   if( lhs == -Inf< BoxConstraint::RHSValue >() )
-    return( true );
-   if( lhs == BoxConstraint::RHSValue( 0 ) )
-    return( false );
-   throw( std::logic_error( "finite lhs different from zero not allowed" ) );
-   }
+   return( LMNum( 0 ) );
+  if( const auto bx = dynamic_cast< BoxConstraint * >( cj ) )
+   return( LMNum( bx->get_lhs() ) );
   }
 
- return( true );
+ return( -Inf< LMNum >() );
  }
 
 /*--------------------------------------------------------------------------*/
