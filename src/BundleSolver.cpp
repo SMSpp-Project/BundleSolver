@@ -3165,8 +3165,9 @@ void BundleSolver::FormLambda1( HpNum Tau )
   // precision required by the FiOracle, the (upper and lower) bounds are
   // strictly enforced here
   //
-  //!! this part either to be updated with the bounds from the
-  //   OneVarConstraint or, more likely, to be completely removed
+  // the upper bound is the one the FiOracle declares, which is where a
+  // OneVarConstraint on the Lambda ends up: reading it off the ColVariable
+  // alone would silently ignore it
 
   std::vector< VarValue > tL1 = Lambda1;
 
@@ -3176,7 +3177,7 @@ void BundleSolver::FormLambda1( HpNum Tau )
      if( tL1[ i ] < 0 )
       tL1[ i ] = 0;
 
-     const double UBh = LamVcblr[ i ]->get_ub();
+     const double UBh = FakeFi.GetUB( i );
      if( tL1[ i ] > UBh )
       tL1[ i ] = UBh;
      }
@@ -3185,13 +3186,13 @@ void BundleSolver::FormLambda1( HpNum Tau )
      if( Master->IsNN( i ) && ( tL1[ i ] < 0 ) )
       tL1[ i ] = 0;
 
-     const double UBh = LamVcblr[ i ]->get_ub();
+     const double UBh = FakeFi.GetUB( i );
      if( tL1[ i ] > UBh )
       tL1[ i ] = UBh;
      }
   else  // there are only UB vars
    for( Index i = 0 ; i < NumVar ; ++i ) {
-    const double UBh = LamVcblr[ i ]->get_ub();
+    const double UBh = FakeFi.GetUB( i );
     if( tL1[ i ] > UBh )
      tL1[ i ] = UBh;
     }
