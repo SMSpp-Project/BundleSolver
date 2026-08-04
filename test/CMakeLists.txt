@@ -41,14 +41,17 @@ if (Torch_FOUND)
     target_link_libraries(${modName}ML_test PRIVATE
                           SMS++::BundleSolver
                           ${TORCH_LIBRARIES})
+
     add_executable(LSTMBlock_test LSTMBlock_test.cpp)
     target_link_libraries(LSTMBlock_test PRIVATE
                           SMS++::BundleSolver
                           ${TORCH_LIBRARIES})
+
     add_executable(BundleSolverMLCheckpoint_test BundleSolverMLCheckpoint_test.cpp)
     target_link_libraries(BundleSolverMLCheckpoint_test PRIVATE
                           SMS++::BundleSolver
                           ${TORCH_LIBRARIES})
+
     if (WIN32 AND BUILD_SHARED_LIBS AND NOT DEFINED ENV{CONDA_BUILD})
         # On Windows with shared libraries enabled copies all runtime DLL
         # dependencies next to the executable in the build directory
