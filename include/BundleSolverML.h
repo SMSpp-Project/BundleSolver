@@ -70,7 +70,7 @@
 #include <torch/optim.h>
 
 #include "BundleSolver.h"
-
+#include "BundleSolverMLNet.h"
 /*--------------------------------------------------------------------------*/
 /*------------------------------- MACROS -----------------------------------*/
 /*--------------------------------------------------------------------------*/
@@ -125,43 +125,6 @@ namespace SMSpp_di_unipi_it
  * BundleSolverML::LoadModel() in the TorchScript .pt format, which is
  * cross-compatible with Python's torch.load(). */
 
-struct Net : torch::nn::Module
-{
- /// first fully-connected layer: 20 inputs --> 16 hidden units
- torch::nn::Linear fc1{ nullptr };
-
- /// second fully-connected layer: 16 hidden units --> 1 output (step-size)
- torch::nn::Linear fc2{ nullptr };
-
- /// constructor: registers the two layers with the Torch module system
- /** Constructor. The output layer is initialized with small weights and a
-  * bias such that softplus( bias ) is about 1, so that the first
-  * predictions of the untrained network are close to the classical
-  * default initial step-size t = 1 (instead of some arbitrary value
-  * dictated by the random initialization, which can be pathological
-  * enough to stall the bundle algorithm) and the training only has to
-  * refine them. */
- Net( void ) {
-  fc1 = register_module( "fc1" , torch::nn::Linear( 20 , 16 ) );
-  fc2 = register_module( "fc2" , torch::nn::Linear( 16 , 1 ) );
-
-  torch::NoGradGuard no_grad;
-  fc2->weight *= 0.1;
-  fc2->bias.fill_( 0.5413 );  // softplus( 0.5413 ) ~= 1
-  }
-
- /// forward pass: maps a feature vector into a positive step-size
- /** Forward pass of the network: maps the input feature tensor \p x, of
-  * shape { 20 } (or { batch , 20 }), into a scalar tensor representing the
-  * predicted step-size t > 0. */
- torch::Tensor forward( torch::Tensor x ) {
-  x = torch::softplus( fc1->forward( x ) );
-  x = fc2->forward( x );
-  return( torch::softplus( x ) + 1.0e-8 );  // ensure strictly positive output
-  }
-
- };  // end( struct( Net ) )
-
 /*--------------------------------------------------------------------------*/
 /*------------------------ CLASS BundleSolverML ----------------------------*/
 /*--------------------------------------------------------------------------*/
@@ -178,7 +141,7 @@ struct Net : torch::nn::Module
  * construction time. For training across multiple instances the caller
  * should rather create a single shared Net and inject it into every solver:
  *
- *     auto shared_net = std::make_shared< Net >();
+ *     auto shared_net = std::make_shared< Net >( NetOptions() );
  *
  *     // ... for each instance:
  *     auto bml = dynamic_cast< BundleSolverML * >( get_solver_for( i ) );
@@ -227,7 +190,7 @@ class BundleSolverML : public BundleSolver
   * it; the feature vector is sized to the input dimension of Net. */
 
  BundleSolverML( void ) : BundleSolver() {
-  f_owned_net = std::make_shared< Net >();
+  f_owned_net = std::make_shared< Net >( NetOptions() );
   nn = f_owned_net.get();         // point to the private network by default
   size_features = 20;
   features.resize( size_features );
@@ -692,7 +655,7 @@ class BundleSolverML : public BundleSolver
  void reset_net( void ) {
   if( f_shared_net )  // shared net is externally managed: do not touch it
    return;
-  f_owned_net = std::make_shared< Net >();
+  f_owned_net = std::make_shared< Net >( NetOptions() );
   nn = f_owned_net.get();
   f_optimizer.reset();
   }
