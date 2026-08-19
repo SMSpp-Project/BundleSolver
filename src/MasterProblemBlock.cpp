@@ -2793,9 +2793,17 @@ void MasterProblemBlock::set_box( const std::vector< double > & L ,
  f_L = L;
  f_U = U;
 
+ auto issue_box_mod = [ this ]( void ) {
+  if( anyone_there() )
+   add_Modification( std::make_shared< MasterProblemMod >(
+                     this , MasterProblemMod::BoxChanged ) );
+  };
+
  if( IsPrimal ) {
-  if( int( Bounds_d.size() ) != NumVars )
+  if( int( Bounds_d.size() ) != NumVars ) {
+   issue_box_mod();
    return;
+   }
 
   for( int j = 0 ; j < NumVars ; ++j ) {
    double lhs = ( ! f_L.empty() && std::isfinite( f_L[ j ] ) )
@@ -2812,14 +2820,17 @@ void MasterProblemBlock::set_box( const std::vector< double > & L ,
    Bounds_d[ j ].set_lhs( lhs );
    Bounds_d[ j ].set_rhs( rhs );
    }
+  issue_box_mod();
   return;
   }
 
  auto obj = dynamic_cast< FRealObjective * >( get_objective() );
  auto dqf = obj ? dynamic_cast< DQuadFunction * >( obj->get_function() )
                 : nullptr;
- if( ! dqf || s_plus_obj_idx < 0 || s_minus_obj_idx < 0 )
+ if( ! dqf || s_plus_obj_idx < 0 || s_minus_obj_idx < 0 ) {
+  issue_box_mod();
   return;
+  }
 
  // Displacement form uses bounds on d = x - x_bar, so s^+_j gets
  // +sgn*(L_j - x_bar_j) and s^-_j gets -sgn*(U_j - x_bar_j). Iterate form
@@ -2843,6 +2854,8 @@ void MasterProblemBlock::set_box( const std::vector< double > & L ,
   dqf->modify_term( DQuadFunction::Index( s_minus_obj_idx + j ) ,
                     has_U ? - sgn * ( f_U[ j ] - xj ) : 0.0 , 0.0 );
   }
+
+ issue_box_mod();
  }
 
 /*--------------------------------------------------------------------------*/

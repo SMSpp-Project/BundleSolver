@@ -1169,6 +1169,16 @@ class MasterProblemBlock : public Block {
  void set_box( const std::vector< double > & L ,
                const std::vector< double > & U );
 
+ /// read back the lower-bound vector of the current box
+
+ [[nodiscard]] const std::vector< double > & get_box_lower( void ) const
+  { return( f_L ); }
+
+ /// read back the upper-bound vector of the current box
+
+ [[nodiscard]] const std::vector< double > & get_box_upper( void ) const
+  { return( f_U ); }
+
 /*--------------------------------------------------------------------------*/
  /// set the upper bundle u_bar of an #kUpperLower stabilization
  /** Companion of #set_x_bar to be used under #kUpperLower stabilization
