@@ -3640,8 +3640,8 @@ void MasterProblemBlock::set_t( double t )
 
  auto issue_t_mod = [ this ]( void ) {
   if( anyone_there() )
-   add_Modification( std::make_shared< MasterProblemMod >(
-                                  this , MasterProblemMod::TChanged ) );
+   add_Modification( std::make_shared< MasterProblemParamMod >(
+                    this , MasterProblemMod::TChanged , t_stab ) );
   };
 
  if( ! ( f_abs_rep & k_mpb_built_obj ) ) {
@@ -3763,8 +3763,8 @@ void MasterProblemBlock::set_f_lev( double f )
   }
 
  if( anyone_there() )
-  add_Modification( std::make_shared< MasterProblemMod >(
-                              this , MasterProblemMod::LevelChanged ) );
+  add_Modification( std::make_shared< MasterProblemParamMod >(
+                    this , MasterProblemMod::LevelChanged , f_lev ) );
 
  }  // end( MasterProblemBlock::set_f_lev )
 

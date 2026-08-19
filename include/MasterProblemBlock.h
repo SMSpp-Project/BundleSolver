@@ -136,6 +136,7 @@
 
 #include <iosfwd>
 #include <list>
+#include <stdexcept>
 #include <string>
 #include <unordered_set>
 #include <vector>
@@ -1867,6 +1868,51 @@ class MasterProblemMod : public Modification
 /*--------------------------------------------------------------------------*/
 
  };  // end( class MasterProblemMod )
+
+/*--------------------------------------------------------------------------*/
+/*-------------------- CLASS MasterProblemParamMod -------------------------*/
+/*--------------------------------------------------------------------------*/
+/// physical Modification carrying a new scalar master parameter value
+/** MasterProblemParamMod specializes MasterProblemMod for the inexpensive
+ * scalar payloads associated with #MasterProblemMod::TChanged and
+ * #MasterProblemMod::LevelChanged. Storing the value that was current when
+ * the Modification was issued preserves that information even if the same
+ * parameter changes again before an asynchronous Solver processes it. */
+
+class MasterProblemParamMod : public MasterProblemMod
+{
+
+ public:
+
+ /// constructor: takes the affected Block, parameter type and new value
+
+ MasterProblemParamMod( MasterProblemBlock * block , int type ,
+                        double new_value )
+  : MasterProblemMod( block , type ) , f_new_value( new_value ) {
+  if( type != TChanged && type != LevelChanged )
+   throw( std::invalid_argument(
+    "MasterProblemParamMod: only TChanged and LevelChanged are supported" ) );
+  }
+
+ ~MasterProblemParamMod() override = default;  ///< destructor: does nothing
+
+ /// returns the parameter value installed when the Modification was issued
+
+ [[nodiscard]] double new_value( void ) const { return( f_new_value ); }
+
+ protected:
+
+ /// print the MasterProblemParamMod
+
+ void print( std::ostream & output ) const override {
+  output << "MasterProblemParamMod on MasterProblemBlock [" << f_Block
+         << "]: type = " << f_type << ", new value = " << f_new_value
+         << std::endl;
+  }
+
+ double f_new_value;  ///< value installed by the corresponding setter
+
+ };  // end( class MasterProblemParamMod )
 
 /** @} end( group( MasterProblemBlock_CLASSES ) ) ----------------------------*/
 
