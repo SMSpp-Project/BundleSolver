@@ -2933,6 +2933,12 @@ void MasterProblemBlock::set_reference(
  const std::vector< double > old_x_bar = f_x_bar;
  const std::vector< double > old_F     = f_F_at_x_bar;
 
+ auto issue_reference_mod = [ this ]( void ) {
+  if( anyone_there() )
+   add_Modification( std::make_shared< MasterProblemMod >(
+                     this , MasterProblemMod::ReferenceChanged ) );
+  };
+
  // the iterate form ( f_v2_form == 1 ) stores no g . x_bar in the cuts, so
  // their refresh is the uniform per-component dF alone ( no g-shift ); only
  // the displacement form carries a per-cut g-shift dxbar
@@ -3028,6 +3034,7 @@ void MasterProblemBlock::set_reference(
    if( k < int( f_LB_raw.size() ) && std::isfinite( f_LB_raw[ k ] ) )
     poly.modify_bound( get_stored_constant( k , {} , f_LB_raw[ k ] , false ) );
    }
+  issue_reference_mod();
   return;
   }
 
@@ -3075,6 +3082,8 @@ void MasterProblemBlock::set_reference(
                        ( F_at_x_bar[ k ] - LB_raw ) );
    }
   }
+
+ issue_reference_mod();
  }
 
 /*--------------------------------------------------------------------------*/

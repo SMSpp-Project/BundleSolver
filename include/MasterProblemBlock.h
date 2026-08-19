@@ -1074,6 +1074,11 @@ class MasterProblemBlock : public Block {
 
  void set_x_bar( const std::vector< double > & x_bar );
 
+ /// read back the current stability centre
+
+ [[nodiscard]] const std::vector< double > & get_x_bar( void ) const
+  { return( f_x_bar ); }
+
 /*--------------------------------------------------------------------------*/
  /// atomically refresh the master reference (x_bar + per-component F_k)
  /** Single-call companion of set_x_bar that, in one shot, installs the new
@@ -1133,6 +1138,11 @@ class MasterProblemBlock : public Block {
   * 0 if never set or if \p k is out of range. */
 
  [[nodiscard]] double get_F_at_x_bar( int k ) const;
+
+ /// read back all cached component values of the current reference
+
+ [[nodiscard]] const std::vector< double > & get_F_at_x_bar( void ) const
+  { return( f_F_at_x_bar ); }
 
 /*--------------------------------------------------------------------------*/
  /// set the per-coordinate box  L <= x <= U  on the optimization variables
@@ -1818,8 +1828,7 @@ class MasterProblemMod : public Modification
   * modifications if more detailed payloads are needed later. */
 
  enum master_problem_mod_type {
-  CenterChanged ,          ///< the stability centre x_bar has changed
-  ReferenceChanged ,       ///< x_bar and the cached F_k(x_bar) have changed
+  ReferenceChanged ,       ///< the complete cached reference has changed
   TChanged ,               ///< the proximal stabilization parameter t changed
   LevelChanged ,           ///< the level stabilization value changed
   BoxChanged ,             ///< the MPB-owned variable box changed
