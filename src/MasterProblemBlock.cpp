@@ -2780,6 +2780,55 @@ void MasterProblemBlock::set_C( double C )
 
 /*--------------------------------------------------------------------------*/
 
+void MasterProblemBlock::refresh_box_coordinate( Index j ,
+                                                 DQuadFunction * dqf )
+{
+ if( IsPrimal ) {
+  if( int( Bounds_d.size() ) != NumVars )
+   return;
+  const double lower = f_L.empty() ? - Inf< double >() : f_L[ j ];
+  const double upper = f_U.empty() ? Inf< double >() : f_U[ j ];
+  double lhs = std::isfinite( lower ) ? lower : - Inf< double >();
+  double rhs = std::isfinite( upper ) ? upper : Inf< double >();
+  if( ! f_v2_form ) {
+   const double xj = j < f_x_bar.size() ? f_x_bar[ j ] : 0.0;
+   if( std::isfinite( lhs ) )
+    lhs -= xj;
+   if( std::isfinite( rhs ) )
+    rhs -= xj;
+   }
+  Bounds_d[ j ].set_lhs( lhs );
+  Bounds_d[ j ].set_rhs( rhs );
+  return;
+  }
+
+ if( ! dqf || s_plus_obj_idx < 0 || s_minus_obj_idx < 0 )
+  return;
+
+ const double sgn = IsConvex ? -1.0 : 1.0;
+ const bool iterate = ( f_v2_form != 0 );
+ const double xj = ( ( ! iterate ) && j < f_x_bar.size() )
+                   ? f_x_bar[ j ] : 0.0;
+
+ const double lower = f_L.empty() ? - Inf< double >() : f_L[ j ];
+ const bool has_L = std::isfinite( lower );
+ Var_s_plus[ j ].is_fixed( ! has_L , eNoMod );
+ if( ! has_L )
+  Var_s_plus[ j ].set_value( 0.0 );
+ dqf->modify_term( DQuadFunction::Index( s_plus_obj_idx + int( j ) ) ,
+                   has_L ? sgn * ( lower - xj ) : 0.0 , 0.0 );
+
+ const double upper = f_U.empty() ? Inf< double >() : f_U[ j ];
+ const bool has_U = std::isfinite( upper );
+ Var_s_minus[ j ].is_fixed( ! has_U , eNoMod );
+ if( ! has_U )
+  Var_s_minus[ j ].set_value( 0.0 );
+ dqf->modify_term( DQuadFunction::Index( s_minus_obj_idx + int( j ) ) ,
+                   has_U ? - sgn * ( upper - xj ) : 0.0 , 0.0 );
+ }
+
+/*--------------------------------------------------------------------------*/
+
 void MasterProblemBlock::set_box( const std::vector< double > & L ,
                                   const std::vector< double > & U )
 {
@@ -2790,78 +2839,218 @@ void MasterProblemBlock::set_box( const std::vector< double > & L ,
   throw( std::invalid_argument(
        "MasterProblemBlock::set_box: U must be empty or of size NumVars" ) );
 
+ const std::vector< double > lower = L.empty()
+  ? std::vector< double >( NumVars , - Inf< double >() ) : L;
+ const std::vector< double > upper = U.empty()
+  ? std::vector< double >( NumVars , Inf< double >() ) : U;
+
  // BundleSolver may resubmit the complete box before every master solve.
- // Avoid touching the abstract representation or issuing a physical
- // Modification when both cached sides are already identical.
- if( f_L == L && f_U == U )
+ // Compare semantically so that an empty side and an explicit vector of
+ // infinities are treated alike after a preceding partial update.
+ bool lower_changed = false;
+ bool upper_changed = false;
+ for( Index j = 0 ; j < Index( NumVars ) ; ++j ) {
+  const double old_L = f_L.empty() ? - Inf< double >() : f_L[ j ];
+  const double old_U = f_U.empty() ? Inf< double >() : f_U[ j ];
+  lower_changed = lower_changed || ( old_L != lower[ j ] );
+  upper_changed = upper_changed || ( old_U != upper[ j ] );
+  if( lower_changed && upper_changed )
+   break;
+  }
+ if( ! lower_changed && ! upper_changed )
   return;
 
  f_L = L;
  f_U = U;
 
- auto issue_box_mod = [ this ]( void ) {
-  if( anyone_there() )
-   add_Modification( std::make_shared< MasterProblemMod >(
-                     this , MasterProblemMod::BoxChanged ) );
+ auto issue_box_modifications = [ this , & lower , & upper ,
+                                  lower_changed , upper_changed ]( void ) {
+  if( ! anyone_there() )
+   return;
+  const Range range( 0 , Index( NumVars ) );
+  if( lower_changed )
+   add_Modification( std::make_shared< MasterProblemRngdMod >(
+                     this , MasterProblemMod::BoxLowerChanged , range ,
+                     MasterProblemRngdMod::Values( lower ) ) );
+  if( upper_changed )
+   add_Modification( std::make_shared< MasterProblemRngdMod >(
+                     this , MasterProblemMod::BoxUpperChanged , range ,
+                     MasterProblemRngdMod::Values( upper ) ) );
   };
 
  if( IsPrimal ) {
-  if( int( Bounds_d.size() ) != NumVars ) {
-   issue_box_mod();
-   return;
-   }
-
-  for( int j = 0 ; j < NumVars ; ++j ) {
-   double lhs = ( ! f_L.empty() && std::isfinite( f_L[ j ] ) )
-                ? f_L[ j ] : - Inf< double >();
-   double rhs = ( ! f_U.empty() && std::isfinite( f_U[ j ] ) )
-                ? f_U[ j ] : Inf< double >();
-   if( ! f_v2_form ) {
-    const double xj = j < int( f_x_bar.size() ) ? f_x_bar[ j ] : 0.0;
-    if( std::isfinite( lhs ) )
-     lhs -= xj;
-    if( std::isfinite( rhs ) )
-     rhs -= xj;
-    }
-   Bounds_d[ j ].set_lhs( lhs );
-   Bounds_d[ j ].set_rhs( rhs );
-   }
-  issue_box_mod();
+  for( Index j = 0 ; j < Index( NumVars ) ; ++j )
+   refresh_box_coordinate( j , nullptr );
+  issue_box_modifications();
   return;
   }
 
  auto obj = dynamic_cast< FRealObjective * >( get_objective() );
  auto dqf = obj ? dynamic_cast< DQuadFunction * >( obj->get_function() )
                 : nullptr;
- if( ! dqf || s_plus_obj_idx < 0 || s_minus_obj_idx < 0 ) {
-  issue_box_mod();
+ for( Index j = 0 ; j < Index( NumVars ) ; ++j )
+  refresh_box_coordinate( j , dqf );
+
+ issue_box_modifications();
+ }
+
+/*--------------------------------------------------------------------------*/
+
+void MasterProblemBlock::set_box( std::vector< double > L ,
+                                  std::vector< double > U , Range range )
+{
+ if( range.second < range.first || range.second > Index( NumVars ) )
+  throw( std::invalid_argument(
+       "MasterProblemBlock::set_box: invalid range" ) );
+ const auto size = range.second - range.first;
+ if( ! L.empty() && L.size() != size )
+  throw( std::invalid_argument(
+       "MasterProblemBlock::set_box: L size does not match range" ) );
+ if( ! U.empty() && U.size() != size )
+  throw( std::invalid_argument(
+       "MasterProblemBlock::set_box: U size does not match range" ) );
+ if( size == 0 )
   return;
+
+ if( L.empty() )
+  L.assign( size , - Inf< double >() );
+ if( U.empty() )
+  U.assign( size , Inf< double >() );
+
+ bool lower_changed = false;
+ bool upper_changed = false;
+ for( Index i = 0 ; i < size ; ++i ) {
+  const Index j = range.first + i;
+  const double old_L = f_L.empty() ? - Inf< double >() : f_L[ j ];
+  const double old_U = f_U.empty() ? Inf< double >() : f_U[ j ];
+  lower_changed = lower_changed || ( old_L != L[ i ] );
+  upper_changed = upper_changed || ( old_U != U[ i ] );
+  if( lower_changed && upper_changed )
+   break;
+  }
+ if( ! lower_changed && ! upper_changed )
+  return;
+
+ if( f_L.empty() )
+  f_L.assign( NumVars , - Inf< double >() );
+ if( f_U.empty() )
+  f_U.assign( NumVars , Inf< double >() );
+ std::copy( L.begin() , L.end() , f_L.begin() + range.first );
+ std::copy( U.begin() , U.end() , f_U.begin() + range.first );
+
+ DQuadFunction * dqf = nullptr;
+ if( ! IsPrimal ) {
+  auto obj = dynamic_cast< FRealObjective * >( get_objective() );
+  dqf = obj ? dynamic_cast< DQuadFunction * >( obj->get_function() )
+            : nullptr;
+  }
+ for( Index j = range.first ; j < range.second ; ++j )
+  refresh_box_coordinate( j , dqf );
+
+ if( anyone_there() ) {
+  if( lower_changed )
+   add_Modification( std::make_shared< MasterProblemRngdMod >(
+                     this , MasterProblemMod::BoxLowerChanged , range ,
+                     std::move( L ) ) );
+  if( upper_changed )
+   add_Modification( std::make_shared< MasterProblemRngdMod >(
+                     this , MasterProblemMod::BoxUpperChanged , range ,
+                     std::move( U ) ) );
+  }
+ }
+
+/*--------------------------------------------------------------------------*/
+
+void MasterProblemBlock::set_box( std::vector< double > L ,
+                                  std::vector< double > U , Subset subset ,
+                                  bool ordered )
+{
+ const auto size = subset.size();
+ if( ! L.empty() && L.size() != size )
+  throw( std::invalid_argument(
+       "MasterProblemBlock::set_box: L size does not match subset" ) );
+ if( ! U.empty() && U.size() != size )
+  throw( std::invalid_argument(
+       "MasterProblemBlock::set_box: U size does not match subset" ) );
+ if( size == 0 )
+  return;
+
+ if( L.empty() )
+  L.assign( size , - Inf< double >() );
+ if( U.empty() )
+  U.assign( size , Inf< double >() );
+
+ if( ( ! ordered ) && size > 1 ) {
+  std::vector< std::size_t > order( size );
+  std::iota( order.begin() , order.end() , std::size_t( 0 ) );
+  std::sort( order.begin() , order.end() ,
+             [ & subset ]( auto i , auto j )
+             { return( subset[ i ] < subset[ j ] ); } );
+  Subset sorted_subset( size );
+  std::vector< double > sorted_L( size );
+  std::vector< double > sorted_U( size );
+  for( std::size_t i = 0 ; i < size ; ++i ) {
+   sorted_subset[ i ] = subset[ order[ i ] ];
+   sorted_L[ i ] = L[ order[ i ] ];
+   sorted_U[ i ] = U[ order[ i ] ];
+   }
+  subset = std::move( sorted_subset );
+  L = std::move( sorted_L );
+  U = std::move( sorted_U );
   }
 
- // Displacement form uses bounds on d = x - x_bar, so s^+_j gets
- // +sgn*(L_j - x_bar_j) and s^-_j gets -sgn*(U_j - x_bar_j). Iterate form
- // keeps absolute x bounds, because the centre translation already rides in
- // the explicit z-linear term. Non-finite sides keep fixed zero slacks.
- const double sgn = IsConvex ? -1.0 : 1.0;
- const bool iterate = ( f_v2_form != 0 );
- for( int j = 0 ; j < NumVars ; ++j ) {
-  const double xj = ( ( ! iterate ) && j < int( f_x_bar.size() ) )
-                    ? f_x_bar[ j ] : 0.0;
+ if( subset.back() >= Index( NumVars ) )
+  throw( std::invalid_argument(
+       "MasterProblemBlock::set_box: subset index out of range" ) );
+ for( std::size_t i = 1 ; i < size ; ++i )
+  if( subset[ i - 1 ] >= subset[ i ] )
+   throw( std::invalid_argument(
+        "MasterProblemBlock::set_box: unordered or repeated subset" ) );
 
-  const bool has_L = ! f_L.empty() && std::isfinite( f_L[ j ] );
-  Var_s_plus[ j ].is_fixed( ! has_L , eNoMod );
-  if( ! has_L ) Var_s_plus[ j ].set_value( 0.0 );
-  dqf->modify_term( DQuadFunction::Index( s_plus_obj_idx + j ) ,
-                    has_L ? sgn * ( f_L[ j ] - xj ) : 0.0 , 0.0 );
+ bool lower_changed = false;
+ bool upper_changed = false;
+ for( std::size_t i = 0 ; i < size ; ++i ) {
+  const auto j = subset[ i ];
+  const double old_L = f_L.empty() ? - Inf< double >() : f_L[ j ];
+  const double old_U = f_U.empty() ? Inf< double >() : f_U[ j ];
+  lower_changed = lower_changed || ( old_L != L[ i ] );
+  upper_changed = upper_changed || ( old_U != U[ i ] );
+  if( lower_changed && upper_changed )
+   break;
+  }
+ if( ! lower_changed && ! upper_changed )
+  return;
 
-  const bool has_U = ! f_U.empty() && std::isfinite( f_U[ j ] );
-  Var_s_minus[ j ].is_fixed( ! has_U , eNoMod );
-  if( ! has_U ) Var_s_minus[ j ].set_value( 0.0 );
-  dqf->modify_term( DQuadFunction::Index( s_minus_obj_idx + j ) ,
-                    has_U ? - sgn * ( f_U[ j ] - xj ) : 0.0 , 0.0 );
+ if( f_L.empty() )
+  f_L.assign( NumVars , - Inf< double >() );
+ if( f_U.empty() )
+  f_U.assign( NumVars , Inf< double >() );
+ for( std::size_t i = 0 ; i < size ; ++i ) {
+  f_L[ subset[ i ] ] = L[ i ];
+  f_U[ subset[ i ] ] = U[ i ];
   }
 
- issue_box_mod();
+ DQuadFunction * dqf = nullptr;
+ if( ! IsPrimal ) {
+  auto obj = dynamic_cast< FRealObjective * >( get_objective() );
+  dqf = obj ? dynamic_cast< DQuadFunction * >( obj->get_function() )
+            : nullptr;
+  }
+ for( auto j : subset )
+  refresh_box_coordinate( j , dqf );
+
+ if( anyone_there() ) {
+  if( lower_changed ) {
+   auto lower_subset = subset;
+   add_Modification( std::make_shared< MasterProblemSbstMod >(
+                     this , MasterProblemMod::BoxLowerChanged ,
+                     std::move( lower_subset ) , std::move( L ) , true ) );
+   }
+  if( upper_changed )
+   add_Modification( std::make_shared< MasterProblemSbstMod >(
+                     this , MasterProblemMod::BoxUpperChanged ,
+                     std::move( subset ) , std::move( U ) , true ) );
+  }
  }
 
 /*--------------------------------------------------------------------------*/

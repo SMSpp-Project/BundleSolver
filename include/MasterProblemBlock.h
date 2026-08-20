@@ -134,6 +134,8 @@
 #include "LinearFunction.h"
 #include "OneVarConstraint.h"
 
+#include <algorithm>
+#include <numeric>
 #include <iosfwd>
 #include <list>
 #include <stdexcept>
@@ -155,6 +157,7 @@ namespace SMSpp_di_unipi_it
 
 class BendersBFunction;
 class LagBFunction;
+class DQuadFunction;
 class PolyhedralFunctionBlock;
 
 /*--------------------------------------------------------------------------*/
@@ -1169,6 +1172,37 @@ class MasterProblemBlock : public Block {
  void set_box( const std::vector< double > & L ,
                const std::vector< double > & U );
 
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ /// modify the box on a contiguous range of coordinates
+ /** Installs the values in \p L and \p U on the left-closed, right-open
+  * interval [ range.first , range.second ). Each nonempty vector must have
+  * range.second - range.first entries. An empty \p L (respectively \p U)
+  * removes that side of the box throughout the range.
+  *
+  * A changed lower side issues a MasterProblemRngdMod of type
+  * #MasterProblemMod::BoxLowerChanged carrying the new lower values; a
+  * changed upper side analogously issues #MasterProblemMod::BoxUpperChanged.
+  * Each Modification therefore carries one direct vector of new values. */
+
+ void set_box( std::vector< double > L , std::vector< double > U ,
+               Range range );
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ /// modify the box on an arbitrary subset of coordinates
+ /** Installs L[ i ] and U[ i ] on coordinate subset[ i ]. Each nonempty
+  * value vector must have subset.size() entries. An empty \p L
+  * (respectively \p U) removes that side of the box on the entire subset.
+  * Repeated or out-of-range indices are rejected.
+  *
+  * If \p ordered is false, the subset is sorted and both value vectors are
+  * reordered with it before the change is applied. Each changed side issues
+  * its own MasterProblemSbstMod of type BoxLowerChanged or BoxUpperChanged;
+  * each Modification exposes a strictly increasing subset and one aligned
+  * vector of new values. */
+
+ void set_box( std::vector< double > L , std::vector< double > U ,
+               Subset subset , bool ordered = false );
+
  /// read back the lower-bound vector of the current box
 
  [[nodiscard]] const std::vector< double > & get_box_lower( void ) const
@@ -1774,6 +1808,10 @@ class MasterProblemBlock : public Block {
                     ///< refresh the b coefficients in the primal level row
                     ///< without changing its v^k terms
 
+ void refresh_box_coordinate( Index j , DQuadFunction * dqf );
+                    ///< synchronize one cached box coordinate with the
+                    ///< generated primal/dual abstract representation
+
  static PolyhedralFunctionBlock *
  pfb_at( const std::vector< Block * > & HardCmps , int k , const char * fn );
 
@@ -1847,7 +1885,8 @@ class MasterProblemMod : public Modification
   ReferenceChanged ,       ///< the complete cached reference has changed
   TChanged ,               ///< the proximal stabilization parameter t changed
   LevelChanged ,           ///< the level stabilization value changed
-  BoxChanged ,             ///< the MPB-owned variable box changed
+  BoxLowerChanged ,        ///< the lower side of the variable box changed
+  BoxUpperChanged ,        ///< the upper side of the variable box changed
   LinearPartChanged ,      ///< the MPB-owned linear part b changed
   LowerBoundChanged ,      ///< a component or global lower bound changed
   MasterProblemModLastParam
@@ -1938,6 +1977,144 @@ class MasterProblemParamMod : public MasterProblemMod
  double f_new_value;  ///< value installed by the corresponding setter
 
  };  // end( class MasterProblemParamMod )
+
+/*--------------------------------------------------------------------------*/
+/*-------------------- CLASS MasterProblemRngdMod --------------------------*/
+/*--------------------------------------------------------------------------*/
+/// physical master Modification localized to a contiguous range
+/** Besides the affected range, MasterProblemRngdMod owns the new values that
+ * were installed when the Modification was issued. Its type identifies the
+ * affected master datum: lower bounds, upper bounds, or (when partial linear
+ * updates are added) linear-part coefficients. Values are snapshots, not
+ * deltas. */
+
+class MasterProblemRngdMod : public MasterProblemMod
+{
+
+ public:
+
+ using Range = Block::Range;
+ using Values = std::vector< double >;
+
+ /// constructor: takes ownership of the new values
+
+ MasterProblemRngdMod( MasterProblemBlock * block , int type , Range range ,
+                       Values && new_values )
+  : MasterProblemMod( block , type ) , f_range( range ) ,
+    f_new_values( std::move( new_values ) ) {
+  if( f_range.second < f_range.first )
+   throw( std::invalid_argument(
+    "MasterProblemRngdMod: invalid range" ) );
+  const auto size = f_range.second - f_range.first;
+  if( f_new_values.size() != size )
+   throw( std::invalid_argument(
+    "MasterProblemRngdMod: values and range sizes do not match" ) );
+  }
+
+ ~MasterProblemRngdMod() override = default;
+
+ /// returns the affected left-closed, right-open range
+
+ [[nodiscard]] const Range & range( void ) const { return( f_range ); }
+
+ /// returns the new values aligned with range()
+
+ [[nodiscard]] const Values & new_values( void ) const
+  { return( f_new_values ); }
+
+ protected:
+
+ void print( std::ostream & output ) const override {
+  output << "MasterProblemRngdMod on MasterProblemBlock [" << f_Block
+         << "]: type = " << f_type << ", range = [ " << f_range.first
+         << " , " << f_range.second << " ), values = "
+         << f_new_values.size() << std::endl;
+  }
+
+ Range f_range;       ///< affected coordinates at issue time
+
+ Values f_new_values; ///< new values aligned with f_range
+
+ };  // end( class MasterProblemRngdMod )
+
+/*--------------------------------------------------------------------------*/
+/*-------------------- CLASS MasterProblemSbstMod --------------------------*/
+/*--------------------------------------------------------------------------*/
+/// physical master Modification localized to an arbitrary subset
+/** MasterProblemSbstMod is the subset counterpart of
+ * MasterProblemRngdMod. It owns a strictly increasing subset and one vector
+ * of new values positionally aligned with that subset. If the incoming subset
+ * is not ordered, the constructor sorts it and reorders the values in exactly
+ * the same way. */
+
+class MasterProblemSbstMod : public MasterProblemMod
+{
+
+ public:
+
+ using Index = Block::Index;
+ using Subset = Block::Subset;
+ using Values = std::vector< double >;
+
+ /// constructor: takes ownership of the subset and new values
+
+ MasterProblemSbstMod( MasterProblemBlock * block , int type ,
+                       Subset && subset , Values && new_values ,
+                       bool ordered = false )
+  : MasterProblemMod( block , type ) , f_subset( std::move( subset ) ) ,
+    f_new_values( std::move( new_values ) ) {
+  if( f_new_values.size() != f_subset.size() )
+   throw( std::invalid_argument(
+    "MasterProblemSbstMod: values and subset sizes do not match" ) );
+
+  if( ( ! ordered ) && f_subset.size() > 1 ) {
+   std::vector< std::size_t > order( f_subset.size() );
+   std::iota( order.begin() , order.end() , std::size_t( 0 ) );
+   std::sort( order.begin() , order.end() ,
+              [ this ]( auto i , auto j )
+              { return( f_subset[ i ] < f_subset[ j ] ); } );
+
+   Subset sorted_subset( f_subset.size() );
+   Values sorted_values( f_new_values.size() );
+   for( std::size_t i = 0 ; i < order.size() ; ++i ) {
+    sorted_subset[ i ] = f_subset[ order[ i ] ];
+    sorted_values[ i ] = f_new_values[ order[ i ] ];
+    }
+   f_subset = std::move( sorted_subset );
+   f_new_values = std::move( sorted_values );
+   }
+
+  for( std::size_t i = 1 ; i < f_subset.size() ; ++i )
+   if( f_subset[ i - 1 ] >= f_subset[ i ] )
+    throw( std::invalid_argument(
+     "MasterProblemSbstMod: unordered or repeated subset" ) );
+  }
+
+ ~MasterProblemSbstMod() override = default;
+
+ /// returns the strictly increasing affected subset
+
+ [[nodiscard]] const Subset & subset( void ) const { return( f_subset ); }
+
+ /// returns the new values aligned with subset()
+
+ [[nodiscard]] const Values & new_values( void ) const
+  { return( f_new_values ); }
+
+
+ protected:
+ void print( std::ostream & output ) const override {
+  output << "MasterProblemSbstMod on MasterProblemBlock [" << f_Block
+         << "]: type = " << f_type << ", subset size = "
+         << f_subset.size() << ", values = "
+         << f_new_values.size() << std::endl;
+  }
+
+ Subset f_subset;     ///< affected coordinates at issue time
+
+ Values f_new_values; ///< new values aligned with f_subset
+
+ };  // end( class MasterProblemSbstMod )
 
 /*--------------------------------------------------------------------------*/
 /*--------------- CLASS MasterProblemLowerBoundMod ------------------------*/
