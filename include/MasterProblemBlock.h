@@ -1270,9 +1270,32 @@ class MasterProblemBlock : public Block {
   * \p b must have size NumVars. Under the primal MP the linear term is
   * absorbed directly in the master Objective via the lower-level set_b()
   * helper; this method still owns the physical-state update and issues the
-  * corresponding Modification. */
+  * corresponding MasterProblemRngdMod over [ 0 , NumVars ), carrying the
+  * complete new coefficient vector. */
 
  void set_linear_part( const std::vector< double > & b );
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ /// modify the linear part on a contiguous range of coordinates
+ /** Installs b[ i ] on coordinate range.first + i for the left-closed,
+  * right-open interval [ range.first , range.second ). The size of \p b must
+  * equal range.second - range.first. A real change issues a
+  * MasterProblemRngdMod of type #MasterProblemMod::LinearPartChanged,
+  * carrying the new values. */
+
+ void set_linear_part( std::vector< double > b , Range range );
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ /// modify the linear part on an arbitrary subset of coordinates
+ /** Installs b[ i ] on coordinate subset[ i ]. The size of \p b must equal
+  * subset.size(), and all indices must be valid and distinct. If \p ordered
+  * is false, the subset is sorted and \p b is reordered with it before the
+  * change is applied. A real change issues a MasterProblemSbstMod of type
+  * #MasterProblemMod::LinearPartChanged carrying the sorted subset and its
+  * aligned new values. */
+
+ void set_linear_part( std::vector< double > b , Subset subset ,
+                       bool ordered = false );
 
  /// read back the current linear part b
 
@@ -1807,6 +1830,14 @@ class MasterProblemBlock : public Block {
  void refresh_primal_level_linear_part();
                     ///< refresh the b coefficients in the primal level row
                     ///< without changing its v^k terms
+
+ void refresh_primal_level_linear_part( Range range );
+                    ///< refresh a range of b coefficients in the primal
+                    ///< level row
+
+ void refresh_primal_level_linear_part( const Subset & subset );
+                    ///< refresh a subset of b coefficients in the primal
+                    ///< level row
 
  void refresh_box_coordinate( Index j , DQuadFunction * dqf );
                     ///< synchronize one cached box coordinate with the

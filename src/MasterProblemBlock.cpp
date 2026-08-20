@@ -3476,22 +3476,17 @@ void MasterProblemBlock::set_linear_part( const std::vector< double > & b )
   throw( std::invalid_argument(
        "MasterProblemBlock::set_linear_part: b must have NumVars entries" ) );
 
- f_linear_part = b;
+ if( f_linear_part == b )
+  return;
 
- auto issue_linear_part_mod = [ this ]( void ) {
-  if( anyone_there() )
-   add_Modification( std::make_shared< MasterProblemMod >(
-                     this , MasterProblemMod::LinearPartChanged ) );
-  };
+ f_linear_part = b;
 
  // Under the primal MP the linear part belongs directly to the Objective.
  if( IsPrimal ) {
   set_b( b );
-  issue_linear_part_mod();
-  return;
   }
-
- // Dual MP: the linear part b of the original sum-function enters the
+ else {
+  // Dual MP: the linear part b of the original sum-function enters the
  // j-th coupling row *scaled by the master multiplier lambda*
  //     z_j - lambda * b_j + s^+_j - s^-_j - sum_{k, i} theta^k_i a^k_{i,j} = 0
  // and is therefore NOT a constant RHS offset. The reason is the master
@@ -3506,14 +3501,145 @@ void MasterProblemBlock::set_linear_part( const std::vector< double > & b )
  // bundle uphill. The lambda * b_j term lives as the coefficient -b_j on
  // Var_lambda, kept at position 1 of every coupling LinearFunction by
  // CreateDualMP; the RHS stays 0
- int j = 0;
- for( auto & cns : CouplingCns ) {
-  auto * lf = static_cast< LinearFunction * >( cns.get_function() );
-  lf->modify_coefficient( 1 , - b[ j ] , eModBlck );
-  ++j;
+  int j = 0;
+  for( auto & cns : CouplingCns ) {
+   auto * lf = static_cast< LinearFunction * >( cns.get_function() );
+   lf->modify_coefficient( 1 , - b[ j ] , eModBlck );
+   ++j;
+   }
   }
 
- issue_linear_part_mod();
+ if( anyone_there() )
+  add_Modification( std::make_shared< MasterProblemRngdMod >(
+                    this , MasterProblemMod::LinearPartChanged ,
+                    Range( 0 , Index( NumVars ) ) ,
+                    MasterProblemRngdMod::Values( b ) ) );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+void MasterProblemBlock::set_linear_part( std::vector< double > b ,
+                                          Range range )
+{
+ if( range.second < range.first || range.second > Index( NumVars ) )
+  throw( std::invalid_argument(
+       "MasterProblemBlock::set_linear_part: invalid range" ) );
+ const auto size = range.second - range.first;
+ if( b.size() != size )
+  throw( std::invalid_argument(
+       "MasterProblemBlock::set_linear_part: b size does not match range" ) );
+ if( size == 0 )
+  return;
+
+ bool changed = false;
+ for( Index i = 0 ; i < size ; ++i )
+  if( f_linear_part[ range.first + i ] != b[ i ] ) {
+   changed = true;
+   break;
+   }
+ if( ! changed )
+  return;
+
+ std::copy( b.begin() , b.end() , f_linear_part.begin() + range.first );
+
+ if( IsPrimal ) {
+  if( ! Var_d.empty() ) {
+   f_primal_objective_dirty = true;
+   refresh_primal_level_linear_part( range );
+   }
+  }
+ else {
+  Index j = 0;
+  for( auto & cns : CouplingCns ) {
+   if( j >= range.second )
+    break;
+   if( j >= range.first ) {
+    auto * lf = static_cast< LinearFunction * >( cns.get_function() );
+    lf->modify_coefficient( 1 , - b[ j - range.first ] , eModBlck );
+    }
+   ++j;
+   }
+  }
+
+ if( anyone_there() )
+  add_Modification( std::make_shared< MasterProblemRngdMod >(
+                    this , MasterProblemMod::LinearPartChanged , range ,
+                    std::move( b ) ) );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+void MasterProblemBlock::set_linear_part( std::vector< double > b ,
+                                          Subset subset , bool ordered )
+{
+ const auto size = subset.size();
+ if( b.size() != size )
+  throw( std::invalid_argument(
+       "MasterProblemBlock::set_linear_part: b size does not match subset" ) );
+ if( size == 0 )
+  return;
+
+ if( ( ! ordered ) && size > 1 ) {
+  std::vector< std::size_t > order( size );
+  std::iota( order.begin() , order.end() , std::size_t( 0 ) );
+  std::sort( order.begin() , order.end() ,
+             [ & subset ]( auto i , auto j )
+             { return( subset[ i ] < subset[ j ] ); } );
+  Subset sorted_subset( size );
+  std::vector< double > sorted_b( size );
+  for( std::size_t i = 0 ; i < size ; ++i ) {
+   sorted_subset[ i ] = subset[ order[ i ] ];
+   sorted_b[ i ] = b[ order[ i ] ];
+   }
+  subset = std::move( sorted_subset );
+  b = std::move( sorted_b );
+  }
+
+ if( subset.back() >= Index( NumVars ) )
+  throw( std::invalid_argument(
+       "MasterProblemBlock::set_linear_part: subset index out of range" ) );
+ for( std::size_t i = 1 ; i < size ; ++i )
+  if( subset[ i - 1 ] >= subset[ i ] )
+   throw( std::invalid_argument(
+        "MasterProblemBlock::set_linear_part: unordered or repeated subset" ) );
+
+ bool changed = false;
+ for( std::size_t i = 0 ; i < size ; ++i )
+  if( f_linear_part[ subset[ i ] ] != b[ i ] ) {
+   changed = true;
+   break;
+   }
+ if( ! changed )
+  return;
+
+ for( std::size_t i = 0 ; i < size ; ++i )
+  f_linear_part[ subset[ i ] ] = b[ i ];
+
+ if( IsPrimal ) {
+  if( ! Var_d.empty() ) {
+   f_primal_objective_dirty = true;
+   refresh_primal_level_linear_part( subset );
+   }
+  }
+ else {
+  std::size_t i = 0;
+  Index j = 0;
+  for( auto & cns : CouplingCns ) {
+   if( i == size )
+    break;
+   if( j == subset[ i ] ) {
+    auto * lf = static_cast< LinearFunction * >( cns.get_function() );
+    lf->modify_coefficient( 1 , - b[ i ] , eModBlck );
+    ++i;
+    }
+   ++j;
+   }
+  }
+
+ if( anyone_there() )
+  add_Modification( std::make_shared< MasterProblemSbstMod >(
+                    this , MasterProblemMod::LinearPartChanged ,
+                    std::move( subset ) , std::move( b ) , true ) );
  }
 
 /*--------------------------------------------------------------------------*/
@@ -3747,23 +3873,52 @@ void MasterProblemBlock::refresh_primal_objective( void )
 
 void MasterProblemBlock::refresh_primal_level_linear_part( void )
 {
+ refresh_primal_level_linear_part( Range( 0 , Index( NumVars ) ) );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+void MasterProblemBlock::refresh_primal_level_linear_part( Range range )
+{
  if( ! IsPrimal || ( StblType != kLevel && StblType != kDoublyStabilized ) )
   return;
- if( NumVars <= 0 )
+ if( range.second <= range.first )
   return;
 
  auto * lf = dynamic_cast< LinearFunction * >( LevelCns.get_function() );
  if( ! lf )
   return;
 
- LinearFunction::Vec_FunctionValue coeff( NumVars , 0.0 );
- const auto n = std::min( std::size_t( NumVars ) , f_linear_part.size() );
- for( std::size_t j = 0 ; j < n ; ++j )
-  coeff[ j ] = f_linear_part[ j ];
+ LinearFunction::Vec_FunctionValue coeff;
+ coeff.reserve( range.second - range.first );
+ for( Index j = range.first ; j < range.second ; ++j )
+  coeff.push_back( f_linear_part[ j ] );
 
- lf->modify_coefficients( std::move( coeff ) ,
-                          Range( 0 , Index( NumVars ) ) , eModBlck );
-}
+ lf->modify_coefficients( std::move( coeff ) , range , eModBlck );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+void MasterProblemBlock::refresh_primal_level_linear_part(
+                                               const Subset & subset )
+{
+ if( ! IsPrimal || ( StblType != kLevel && StblType != kDoublyStabilized ) )
+  return;
+ if( subset.empty() )
+  return;
+
+ auto * lf = dynamic_cast< LinearFunction * >( LevelCns.get_function() );
+ if( ! lf )
+  return;
+
+ LinearFunction::Vec_FunctionValue coeff;
+ coeff.reserve( subset.size() );
+ for( auto j : subset )
+  coeff.push_back( f_linear_part[ j ] );
+ auto indices = subset;
+ lf->modify_coefficients( std::move( coeff ) , std::move( indices ) , true ,
+                          eModBlck );
+ }
 
 /*--------------------------------------------------------------------------*/
 
