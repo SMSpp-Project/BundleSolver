@@ -3278,9 +3278,16 @@ void MasterProblemBlock::set_linear_part( const std::vector< double > & b )
 
  f_linear_part = b;
 
+ auto issue_linear_part_mod = [ this ]( void ) {
+  if( anyone_there() )
+   add_Modification( std::make_shared< MasterProblemMod >(
+                     this , MasterProblemMod::LinearPartChanged ) );
+  };
+
  // Under the primal MP the linear part belongs directly to the Objective.
  if( IsPrimal ) {
   set_b( b );
+  issue_linear_part_mod();
   return;
   }
 
@@ -3305,6 +3312,8 @@ void MasterProblemBlock::set_linear_part( const std::vector< double > & b )
   lf->modify_coefficient( 1 , - b[ j ] , eModBlck );
   ++j;
   }
+
+ issue_linear_part_mod();
  }
 
 /*--------------------------------------------------------------------------*/

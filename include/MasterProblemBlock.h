@@ -1234,10 +1234,16 @@ class MasterProblemBlock : public Block {
   * direction of steepest ascent of the linear component.
   *
   * \p b must have size NumVars. Under the primal MP the linear term is
-  * absorbed directly in the master Objective via set_b and this method is
-  * a no-op. */
+  * absorbed directly in the master Objective via the lower-level set_b()
+  * helper; this method still owns the physical-state update and issues the
+  * corresponding Modification. */
 
  void set_linear_part( const std::vector< double > & b );
+
+ /// read back the current linear part b
+
+ [[nodiscard]] const std::vector< double > & get_linear_part( void ) const
+  { return( f_linear_part ); }
 
 /*--------------------------------------------------------------------------*/
  /// append \p n new optimization variables to the Master Problem
