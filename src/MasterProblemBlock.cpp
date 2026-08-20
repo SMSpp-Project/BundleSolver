@@ -2790,6 +2790,12 @@ void MasterProblemBlock::set_box( const std::vector< double > & L ,
   throw( std::invalid_argument(
        "MasterProblemBlock::set_box: U must be empty or of size NumVars" ) );
 
+ // BundleSolver may resubmit the complete box before every master solve.
+ // Avoid touching the abstract representation or issuing a physical
+ // Modification when both cached sides are already identical.
+ if( f_L == L && f_U == U )
+  return;
+
  f_L = L;
  f_U = U;
 
