@@ -623,58 +623,6 @@ int BundleSolver::compute( bool changedvars )
    break;
    }
 
-  // fictitious-LB sync for empty components - - - - - - - - - - - - - - - - -
-  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-  // A hard component whose bundle is empty models its F_k as the max over
-  // an empty set of affine pieces, i.e. the improper constant -infinity:
-  // the dual master is then infeasible (the per-component simplex row
-  // sum_i theta^k_i + gamma^k = lambda collapses to gamma^k = lambda with
-  // gamma^k structurally fixed to 0). Following the historical QP-bundle /
-  // OSIMPSolver device, install a *fictitious* model lower bound on every
-  // such component, which makes it "disappear" (gamma^k becomes a free
-  // multiplier absorbing the simplex mass) and restores master
-  // feasibility. The fictitious bound value is handled inside
-  // MasterProblemBlock::set_fictitious_LB: 0 when no global LB exists, or
-  // strictly below the genuine global LB otherwise, so it never tightens
-  // the master beyond the aggregate bound (the subtle point OSIMPSolver
-  // makes via "gamma_i cost = global_LB - 1"). The subsequent Fi(.)
-  // evaluation then either refills the bundle (proper function -> cut
-  // added, fictitious removed next time) or returns F_k = -INF (improper
-  // function -> the UpFiLmb1.back() == -INFshift path right after
-  // InnerLoop propagates kUnbounded, *not* masked by the fictitious
-  // bound). Components owning a genuine individual LB never need this.
-  // With no easy components, the all-empty case is left to the
-  // MasterProblemBlock::solve_master short-circuit. With exact easy
-  // components, however, that master must be solved immediately; therefore
-  // every empty hard component also needs its fictitious bound from the first
-  // iteration, otherwise gamma^k = 0 forces lambda = 0 in its normalization
-  // row while the easy master fixes lambda = 1.
-  if( MasterPB && ( NrEasy || ( ! MasterPB->is_bundle_empty() ) ) )
-   for( Index k = 0 ; k < NrFi ; ++k ) {
-    if( NrEasy && IsEasy[ k ] )
-     continue;
-    const bool want = ( NrItems[ k ] == 0 ) &&
-                      ( LowerBound[ k ] <= - INFshift );
-    // Refresh an active fictitious bound after every possible reference-point
-    // change. set_reference() rebuilds the PFB bound from the physical lower
-    // bound and can therefore overwrite the fictitious value even though the
-    // BundleSolver-side FictLB flag is still true.
-    if( want ) {
-     MasterPB->set_fictitious_LB( int( k ) , want );
-     FictLB[ k ] = true;
-     }
-    else
-     if( FictLB[ k ] ) {
-      // A finite physical bound collected by FormD() has already replaced
-      // the fictitious one through set_LB(). In that case only clear our
-      // bookkeeping flag: calling set_fictitious_LB(false) would erase the
-      // genuine bound that has just been installed.
-      if( LowerBound[ k ] <= - INFshift )
-       MasterPB->set_fictitious_LB( int( k ) , false );
-      FictLB[ k ] = false;
-      }
-    }
-
   // construct the direction d- - - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
   //!! PrintBundle();
@@ -3272,6 +3220,58 @@ void BundleSolver::FormD( void )
   MasterPB->set_f_lev( INFshift );
  else
   refresh_level_after_master();
+
+ // fictitious-LB sync for empty components - - - - - - - - - - - - - - - - -
+ //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // A hard component whose bundle is empty models its F_k as the max over
+ // an empty set of affine pieces, i.e. the improper constant -infinity:
+ // the dual master is then infeasible (the per-component simplex row
+ // sum_i theta^k_i + gamma^k = lambda collapses to gamma^k = lambda with
+ // gamma^k structurally fixed to 0). Following the historical QP-bundle /
+ // OSIMPSolver device, install a *fictitious* model lower bound on every
+ // such component, which makes it "disappear" (gamma^k becomes a free
+ // multiplier absorbing the simplex mass) and restores master
+ // feasibility. The fictitious bound value is handled inside
+ // MasterProblemBlock::set_fictitious_LB: 0 when no global LB exists, or
+ // strictly below the genuine global LB otherwise, so it never tightens
+ // the master beyond the aggregate bound (the subtle point OSIMPSolver
+ // makes via "gamma_i cost = global_LB - 1"). The subsequent Fi(.)
+ // evaluation then either refills the bundle (proper function -> cut
+ // added, fictitious removed next time) or returns F_k = -INF (improper
+ // function -> the UpFiLmb1.back() == -INFshift path right after
+ // InnerLoop propagates kUnbounded, *not* masked by the fictitious
+ // bound). Components owning a genuine individual LB never need this.
+ // With no easy components, the all-empty case is left to the
+ // MasterProblemBlock::solve_master short-circuit. With exact easy
+ // components, however, that master must be solved immediately; therefore
+ // every empty hard component also needs its fictitious bound from the first
+ // iteration, otherwise gamma^k = 0 forces lambda = 0 in its normalization
+ // row while the easy master fixes lambda = 1.
+ if( MasterPB && ( NrEasy || ( ! MasterPB->is_bundle_empty() ) ) )
+  for( Index k = 0 ; k < NrFi ; ++k ) {
+   if( NrEasy && IsEasy[ k ] )
+    continue;
+   const bool want = ( NrItems[ k ] == 0 ) &&
+                      ( LowerBound[ k ] <= - INFshift );
+   // Refresh an active fictitious bound after every possible reference-point
+   // change. set_reference() rebuilds the PFB bound from the physical lower
+   // bound and can therefore overwrite the fictitious value even though the
+   // BundleSolver-side FictLB flag is still true.
+   if( want ) {
+    MasterPB->set_fictitious_LB( int( k ) , want );
+    FictLB[ k ] = true;
+   }
+   else
+    if( FictLB[ k ] ) {
+     // A finite physical bound collected by FormD() has already replaced
+     // the fictitious one through set_LB(). In that case only clear our
+     // bookkeeping flag: calling set_fictitious_LB(false) would erase the
+     // genuine bound that has just been installed.
+     if( LowerBound[ k ] <= - INFshift )
+      MasterPB->set_fictitious_LB( int( k ) , false );
+     FictLB[ k ] = false;
+    }
+  }
 
  for( ; ; )  // error-handling loop - - - - - - - - - - - - - - - - - - - - - -
  {           // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
