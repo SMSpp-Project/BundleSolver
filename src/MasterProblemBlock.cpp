@@ -2902,6 +2902,11 @@ void MasterProblemBlock::set_global_LB( double LB )
   if( ! Var_r.is_fixed() )
    Var_r.is_fixed( true , eNoMod );
   }
+
+ if( anyone_there() )
+  add_Modification( std::make_shared< MasterProblemLowerBoundMod >(
+                    this , MasterProblemLowerBoundMod::GlobalLowerBound ,
+                    LB ) );
  }
 
 /*--------------------------------------------------------------------------*/
@@ -3837,6 +3842,12 @@ void MasterProblemBlock::set_LB( int k , double LB )
  if( k < int( f_LB_raw.size() ) )
   f_LB_raw[ k ] = LB;
 
+ auto issue_lower_bound_mod = [ this , k , LB ]( void ) {
+  if( anyone_there() )
+   add_Modification( std::make_shared< MasterProblemLowerBoundMod >(
+                     this , k , LB ) );
+  };
+
  auto & poly = pfb->get_PolyhedralFunction();
  const double no_bound = poly.is_convex()
                          ? - Inf< Function::FunctionValue >()
@@ -3851,6 +3862,7 @@ void MasterProblemBlock::set_LB( int k , double LB )
                               ? get_stored_constant( k , {} , LB , false )
                               : no_bound;
   poly.modify_bound( primal_bound );
+  issue_lower_bound_mod();
   return;
   }
 
@@ -3886,6 +3898,8 @@ void MasterProblemBlock::set_LB( int k , double LB )
  else {
   poly.modify_bound( no_bound );
   }
+
+ issue_lower_bound_mod();
 
  }  // end( MasterProblemBlock::set_LB )
 

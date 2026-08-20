@@ -1849,7 +1849,7 @@ class MasterProblemMod : public Modification
   LevelChanged ,           ///< the level stabilization value changed
   BoxChanged ,             ///< the MPB-owned variable box changed
   LinearPartChanged ,      ///< the MPB-owned linear part b changed
-  LowerBoundChanged ,      ///< a MPB-owned lower bound changed
+  LowerBoundChanged ,      ///< a component or global lower bound changed
   MasterProblemModLastParam
   ///< first value available to derived classes
   };
@@ -1938,6 +1938,63 @@ class MasterProblemParamMod : public MasterProblemMod
  double f_new_value;  ///< value installed by the corresponding setter
 
  };  // end( class MasterProblemParamMod )
+
+/*--------------------------------------------------------------------------*/
+/*--------------- CLASS MasterProblemLowerBoundMod ------------------------*/
+/*--------------------------------------------------------------------------*/
+/// physical Modification carrying a new master lower-bound value
+/** The target is either one hard component or the aggregate global lower
+ * bound. Both identifiers and values are small enough to preserve each
+ * individual change for an asynchronously processing Solver. */
+
+class MasterProblemLowerBoundMod : public MasterProblemMod
+{
+
+ public:
+
+ /// sentinel identifying the aggregate global lower bound
+
+ static constexpr int GlobalLowerBound = -1;
+
+ /// constructor: component index (or GlobalLowerBound) and new value
+
+ MasterProblemLowerBoundMod( MasterProblemBlock * block , int component ,
+                             double new_value )
+  : MasterProblemMod( block , LowerBoundChanged ) ,
+    f_component( component ) , f_new_value( new_value ) {
+  if( component < GlobalLowerBound )
+   throw( std::invalid_argument(
+    "MasterProblemLowerBoundMod: invalid lower-bound target" ) );
+  }
+
+ ~MasterProblemLowerBoundMod() override = default;
+
+ /// returns the hard-component index, or GlobalLowerBound
+
+ [[nodiscard]] int component( void ) const { return( f_component ); }
+
+ /// returns true when this Modification concerns the global lower bound
+
+ [[nodiscard]] bool is_global( void ) const
+  { return( f_component == GlobalLowerBound ); }
+
+ /// returns the lower-bound value installed by the setter
+
+ [[nodiscard]] double new_value( void ) const { return( f_new_value ); }
+
+ protected:
+
+ void print( std::ostream & output ) const override {
+  output << "MasterProblemLowerBoundMod on MasterProblemBlock [" << f_Block
+         << "]: target = " << f_component
+         << " (-1 = global), new value = " << f_new_value << std::endl;
+  }
+
+ int f_component;       ///< hard-component index, or GlobalLowerBound
+
+ double f_new_value;    ///< value installed by the corresponding setter
+
+ };  // end( class MasterProblemLowerBoundMod )
 
 /** @} end( group( MasterProblemBlock_CLASSES ) ) ----------------------------*/
 
