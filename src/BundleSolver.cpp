@@ -6157,6 +6157,15 @@ void BundleSolver::add_to_global_pool( Index k , Index i , Index wh )
 
 /*--------------------------------------------------------------------------*/
 
+void BundleSolver::reload_component_bundle( Index k )
+{
+ for( Index i = 0 ; i < MaxItem[ k ] ; ++i )
+  if( InvItemVcblr[ k ][ i ] < vBPar2.back() )
+   add_to_bundle( k , i );
+}
+
+/*--------------------------------------------------------------------------*/
+
 void BundleSolver::add_to_bundle( Index k , Index i )
 {
  // add to the bundle (master problem) the item corresponding to the
@@ -8099,10 +8108,8 @@ void BundleSolver::process_outstanding_Modification( void )
  else {
   if( cntreset )                 // some (non-easy) components have been reset
    for( Index k = 0 ; k < NrFi ; ++k )
-    if( reset[ k ] ) {           // reset[ k ] ==> ! IsEasy[ k ]
-     if( MasterPB )
-      MasterPB->invalidate_subgradients( int( k ) );
-     }
+    if( reset[ k ] )           // reset[ k ] ==> ! IsEasy[ k ]
+     reload_component_bundle( k );
 
   // the 0-th component is the linear part owned by the master Objective
   // directly; no PolyhedralFunctionBlock invalidation is needed when it

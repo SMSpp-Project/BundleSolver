@@ -3422,6 +3422,8 @@ public:
 
  void add_to_global_pool( Index k , Index i , Index wh = Inf< Index >() );
 
+ void reload_component_bundle( Index k );
+
  void add_to_bundle( Index k , Index i );
 
  void reset_bundle( void );
