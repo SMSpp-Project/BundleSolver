@@ -812,6 +812,21 @@ class MasterProblemBlock : public Block {
                          double alpha , bool is_vert = false ) const;
 
 /*--------------------------------------------------------------------------*/
+ /// returns whether a new stored constant makes an identical cut stronger
+ /** Compares the constants of two cuts that have the same coefficient vector
+  * in the representation stored by the PolyhedralFunctionBlock of component
+  * \p k. For a convex PolyhedralFunction (a maximum of affine functions), a
+  * larger constant is stronger; for a concave one (a minimum), a smaller
+  * constant is stronger. Differences not exceeding \p tolerance are ignored.
+  *
+  * This deliberately uses the sense of the actual PolyhedralFunction rather
+  * than #IsConvex, since construction of a dual master reverses that sense. */
+
+ [[nodiscard]] bool is_stronger_constant(
+                         int k , double old_constant , double new_constant ,
+                         double tolerance = 0.0 ) const;
+
+/*--------------------------------------------------------------------------*/
  /// returns the subgradient at slot \p slot of B^k
  /** Returns a const reference to the row vector of the
   * PolyhedralFunction of HardCmps[k] that currently lives in slot \p slot.

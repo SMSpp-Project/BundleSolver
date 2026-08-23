@@ -4481,13 +4481,14 @@ bool BundleSolver::GetGi( Index wFi )
            ( ItemVcblr[ cp ].second < vBPar2[ wFi ] ) &&
            ( InvItemVcblr[ wFi ][ ItemVcblr[ cp ].second ] == cp ) );
 
-   if( OldA1k >= NewA1k + std::max( std::abs( NewA1k ) , double( 1 ) )
-                          * RelAcc / 10 ) {
-    // if the copy has a *substantially* smaller Alfa than the original,
-    // replace the original with the copy; in principle relative differences
-    // smaller than RelAcc could be ignored, but we use RelAcc / 10 for safety
+   const auto AlfaTol = std::max( std::abs( NewA1k ) , double( 1 ) )
+                        * RelAcc / 10;
+   if( MasterPB->is_stronger_constant( int( wFi ) , OldA1k , NewA1k ,
+                                       AlfaTol ) ) {
+    // replace the original when the copy is substantially stronger; the
+    // direction of the comparison depends on the PolyhedralFunction sense
 
-    BLOG( 2 , " with smaller Alfa" );
+    BLOG( 2 , " with stronger Alfa" );
 
     gpp = ItemVcblr[ cp ].second;
     if( ( BPar7 & 3 ) < 3 ) {

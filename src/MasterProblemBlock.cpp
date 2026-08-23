@@ -2000,6 +2000,21 @@ double MasterProblemBlock::get_stored_constant(
 
 /*--------------------------------------------------------------------------*/
 
+bool MasterProblemBlock::is_stronger_constant(
+                         int k , double old_constant , double new_constant ,
+                         double tolerance ) const
+{
+ auto pfb = pfb_at( HardCmps , k , "is_stronger_constant" );
+ auto & poly = pfb->get_PolyhedralFunction();
+
+ if( poly.is_convex() )
+  return( new_constant > old_constant + tolerance );
+
+ return( new_constant < old_constant - tolerance );
+}
+
+/*--------------------------------------------------------------------------*/
+
 const std::vector< double > &
                           MasterProblemBlock::get_subgradient( int k , int slot ) const
 {
