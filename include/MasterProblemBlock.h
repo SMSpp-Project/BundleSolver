@@ -274,10 +274,9 @@ class MasterProblemBlock : public Block {
 /*--------------------------------------------------------------------------*/
  /// release the abstract representation and any per-component state
  /** clear() resets MasterProblemBlock to an "empty" state: all per-component
-  * sub-Blocks pointers are forgotten (the sub-Blocks themselves are dismissed
-  * via the Block destructor of the base class), every size field goes back to 0
-  * and the MP type information is reset. A subsequent SetDim() +
-  * CreateEmptyMP() is then needed to rebuild the MP. */
+  * bookkeeping is forgotten, every size field goes back to 0 and the MP type
+  * information is reset. Non-owning LagBFunction inner-Block registrations are
+  * detached first. A subsequent SetDim() + CreateEmptyMP() rebuilds the MP. */
 
  void clear();
 
@@ -305,16 +304,15 @@ class MasterProblemBlock : public Block {
   * stay inside MasterProblemBlock, so callers only need to know which
   * components are easy.
   *
-  * The Block containing the model variables and constraints is
-  * *stolen* (i.e. its ownership is transferred via
-  * Block::transfer_ownership_to(this)) into the master tree, so that
-  * the inner :MILPSolver naturally sees those variables/constraints
-  * when it loads the MP. The optional \p ignored_blocks list is then
-  * forwarded to the inner Solver via Solver::set_excluded_blocks(),
-  * telling it which sub-Block subtrees of the stolen Block (and of the
-  * easy components) have to be skipped — for instance the original
-  * sub-Block that carried the C05Function whose linearizations are
-  * now represented by a PolyhedralFunctionBlock attached here.
+  * For a LagBFunction in the dual MP, its inner Block is registered in the
+  * MasterProblemBlock sub-Block list and has this MasterProblemBlock as father,
+  * but it is deliberately not removed from the LagBFunction sub-Block list.
+  * The LagBFunction therefore retains ownership and direct access, while
+  * modifications from the inner Block propagate through MasterProblemBlock.
+  *
+  * The optional \p ignored_blocks list is forwarded to the inner Solver
+  * via Solver::set_excluded_blocks(), telling it which registered
+  * sub-Block subtrees have to be skipped.
   *
   * @param primal            if true the MP is built in its primal form,
   *                          else in its dual form. The primal form
@@ -340,10 +338,6 @@ class MasterProblemBlock : public Block {
   *                          a supported type (LagBFunction in the dual
   *                          MP, BendersBFunction in the primal MP);
   *                          its size is stored in #NoEasyCmps.
-  * @param original_block    the Block holding the model variables and
-  *                          constraints to be plugged into the master.
-  *                          If not nullptr, it is stolen via
-  *                          Block::transfer_ownership_to(this).
   * @param ignored_blocks    set of sub-Blocks the inner Solver must
   *                          ignore (forwarded to BlockSolverConfig::apply
   *                          when register_Solver() is called, which in
@@ -375,7 +369,6 @@ class MasterProblemBlock : public Block {
                  int num_vars ,
                  int num_hard_cmps ,
                  const std::vector< C05Function * > & easy_components ,
-                 Block * original_block ,
                  std::unordered_set< Block * > ignored_blocks = {} ,
                  stabilization_type reg = kDoublyStabilized ,
                  bool convex = true ,
@@ -1554,7 +1547,9 @@ class MasterProblemBlock : public Block {
 
  // - - - - - - - - -  pointers to the per-component sub-Blocks - - - - - - - -
 
- std::vector< Block * > EasyCmps_SB;  ///< sub-Blocks of the "easy" components
+ std::vector< Block * > EasyCmps_SB;
+ ///< sub-Blocks of the "easy" components; LagBFunction entries are
+ ///< non-owning registrations and remain owned by their LagBFunction
 
  std::vector< Block * > HardCmps;  ///< sub-Blocks of the "hard" components
 
@@ -1873,9 +1868,6 @@ class MasterProblemBlock : public Block {
   * the driver can keep its NDOFi-style persistent name (ItemVcblr) intact
   * across remove_cut() calls. */
  std::vector< std::vector< int > > slot_to_local;
-
- /// model Block stolen by configure() (or nullptr)
- Block * f_original_block = nullptr;
 
  /// set of sub-Blocks the inner Solver must ignore; populated by
  /// configure() (and/or by the two-argument register_Solver() overload)

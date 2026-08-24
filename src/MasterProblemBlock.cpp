@@ -91,8 +91,36 @@ static char mpb_built_stage( Configuration * cfg )
 
 void MasterProblemBlock::clear()
 {
- // forget any per-component sub-Block (the sub-Block objects themselves
- // are owned by the base Block, which will dispose of them in due time)
+ // A LagBFunction inner Block is only registered, not owned, by MPB. Remove
+ // that registration and restore the LagBFunction as father before dropping
+ // the bookkeeping. The pointer deliberately remains in the LagBFunction's
+ // own v_Block throughout the period in which MPB is its father.
+ const auto num_lbf = std::min( EasyCmps.size() , EasyCmps_SB.size() );
+ for( Index i = 0 ; i < num_lbf ; ++i ) {
+  auto * lbf = EasyCmps[ i ];
+  auto * inner = EasyCmps_SB[ i ];
+  if( ! lbf || ! inner )
+   continue;
+
+  auto it = std::find( v_Block.begin() , v_Block.end() , inner );
+  if( it != v_Block.end() )
+   v_Block.erase( it );
+
+  if( inner->get_f_Block() != this )
+   continue;
+
+  // Drop the listener inherited from MPB, then establish the one inherited
+  // from LagBFunction (if any). A Solver registered directly on inner keeps
+  // anyone_there() true independently of these inherited flags.
+  if( anyone_there() )
+   inner->anyone_there( false );
+  inner->set_f_Block( lbf );
+  if( lbf->anyone_there() )
+   inner->anyone_there( true );
+  }
+
+ // Forget all per-component lookup tables. LagBFunction inner Blocks remain
+ // owned by their LagBFunction.
  EasyCmps.clear();
  EasyCmps_SB.clear();
  EasyObjVars.clear();
@@ -270,7 +298,6 @@ void MasterProblemBlock::configure(
                           int num_vars ,
                           int num_hard_cmps ,
                           const std::vector< C05Function * > & easy_components ,
-                          Block * original_block ,
                           std::unordered_set< Block * > ignored_blocks ,
                           stabilization_type reg ,
                           bool convex ,
@@ -310,17 +337,6 @@ void MasterProblemBlock::configure(
  IsConvex = convex;
  StblType = reg;
  HardCmpScaling = hard_cmp_scaling;
-
- // - - - steal original_block into the master - - - - - - - - - - - - - -
- // detach the model Block from its previous parent and reattach it under
- // *this*. The Variables / Constraints living there will be seen by the
- // inner Solver as part of the master, except for sub-Block subtrees
- // listed in ignored_blocks (which the inner Solver will skip via
- // Solver::set_excluded_blocks(), installed by BlockSolverConfig::apply
- // inside register_Solver) TODO
- f_original_block = original_block;
- if( f_original_block )
-  f_original_block->transfer_ownership_to( this );
 
  // - - - dispatch each easy component into the master - - - - - - - - - - -
  // The MP-side embedding of an easy component is asymmetric on two axes:
@@ -400,7 +416,14 @@ void MasterProblemBlock::configure(
     * equivalent. Hopefully, this will be addressed in the future with some
     * copy or scaling mechanism. */
 
-   inner->transfer_ownership_to( this );
+   // Register inner in the MPB tree and make MPB its father, but deliberately
+   // keep the pointer in LagBFunction::v_Block. This lets the master Solver see
+   // the inner model and makes inner Modification propagate through MPB while
+   // LagBFunction retains ownership and direct access to its inner Block.
+   if( inner->get_f_Block() == lbf && lbf->anyone_there() )
+    inner->anyone_there( false );
+   add_nested_Block( inner );
+
    EasyCmps.push_back( lbf );
    EasyCmps_SB.push_back( inner );
    continue;

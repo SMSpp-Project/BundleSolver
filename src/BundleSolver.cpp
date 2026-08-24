@@ -5302,9 +5302,8 @@ void BundleSolver::InitMPB( void )
  // C05Function and grafts the resulting sub-Block under MasterPB, so no
  // separate per-component wiring is needed.
  //
- // No model Block (original_block) is stolen here; any exclusion list
- // installed on *this* via Solver::set_excluded_blocks() is propagated
- // verbatim to MasterPB so its inner Solver skips the same subtrees.
+ // Any exclusion list installed on *this* via Solver::set_excluded_blocks()
+ // is propagated to MasterPB so its inner Solver skips the same subtrees.
  //
  // build the easy_components vector by walking v_c05f and keeping only
  // the components flagged as easy (IsEasy is sized only when DoEasy != 0,
@@ -5347,7 +5346,6 @@ void BundleSolver::InitMPB( void )
                       int( NumVar ) ,
                       n_hard ,
                       easy_cmps ,
-                      nullptr ,
                       get_excluded_blocks() ,
                       MPStbl ,
                       ! f_convex ,
@@ -5696,8 +5694,8 @@ void BundleSolver::guts_of_destructor( void )
  f_max_name = 0;
 
  if( NrEasy ) {
-  // the easy-component sub-Blocks are owned by MasterPB (which disposes
-  // of them in its own destructor); we just clear the local bookkeeping
+  // the easy-component sub-Blocks remain owned by their LagBFunction;
+  // MasterPB only keeps a non-owning registration while it is configured
   IsEasy.clear();
   NrEasy = 0;
   }
