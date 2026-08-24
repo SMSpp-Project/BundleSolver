@@ -522,12 +522,6 @@ int BundleSolver::compute( bool changedvars )
    goto BundleSolver_error_return;
    }
 
-  // if there are "easy" components and changing them is supported (i.e.
-  // any DoEasy bit beyond bit 0 is set), process the corresponding
-  // Modification, which have been buffered in v_FakeSolver
-  if( NrEasy && ( DoEasy & ~1 ) )
-   process_outstanding_easy_Modification();
-
   // process any other Modification
   process_outstanding_Modification();
 
@@ -1727,19 +1721,6 @@ void BundleSolver::set_Block( Block * block )
     v_c05f[ k ]->set_ComputeConfig( cfg );
   }
 
- // if easy components can be dynamically changed, attach a FakeSolver to
- // the inner Block of each LagBFunction to record the changes
- // THIS SHOULD NOT BE NEEDED I THINK
- /*if( DoEasy & ~1 ) {
-    v_FakeSolver.resize( NrEasy );
-    auto FSit = v_FakeSolver.begin();
-    for( Index k = 0 ; k < NrFi ; ++k )
-     if( IsEasy[ k ] ) {
-      auto LagB = static_cast< LagBFunction * >( v_c05f[ k ] );
-      *FSit = new FakeSolver();
-      LagB->get_inner_block()->register_Solver( *(FSit++) );
-      }
-    }*/
  }
 
  delete eCC;  // no-op when ownership has been transferred above
@@ -5717,8 +5698,6 @@ void BundleSolver::guts_of_destructor( void )
  if( NrEasy ) {
   // the easy-component sub-Blocks are owned by MasterPB (which disposes
   // of them in its own destructor); we just clear the local bookkeeping
-  // and the FakeSolver group
-  v_FakeSolver.clear();
   IsEasy.clear();
   NrEasy = 0;
   }
@@ -6267,16 +6246,7 @@ void BundleSolver::reset_bundle( void )
 
 Lst_sp_Mod::size_type BundleSolver::num_outstanding_Modification( void )
 {
- auto res = v_mod.size();
-
- if( NrEasy && ( DoEasy & ~1 ) ) {
-  auto FSit = v_FakeSolver.begin();
-  for( Index k = 0 ; k < NrFi ; )
-   if( IsEasy[ k++ ] )
-    res += (*FSit)->get_Modification_list().size();
-  }
-
- return( res );
+ return( v_mod.size() );
  }
 
 /*--------------------------------------------------------------------------*/
@@ -6358,180 +6328,6 @@ void BundleSolver::flatten_Modification_list( Lst_sp_Mod & vmt , sp_Mod mod )
  else
   vmt.push_back( mod );
  }
-
-/*--------------------------------------------------------------------------*/
-
-void BundleSolver::flatten_easy_Modification_list( Lst_sp_Mod & vmt ,
-                                                   sp_Mod mod )
-{
- if( const auto tmod = std::dynamic_pointer_cast< GroupModification >( mod ) )
-  for( auto submod : tmod->sub_Modifications() )
-   flatten_Modification_list( vmt , submod );
- else
-  vmt.push_back( mod );
- }
-
-/*--------------------------------------------------------------------------*/
-
-void BundleSolver::process_outstanding_easy_Modification( void )
-{
- // look at all easy components; for each of these scan the Modification in
- // the corresponding FakeSolver and divine which changes need be done to
- // the Master Problem
-
- auto FSit = v_FakeSolver.begin();
- for( Index k = 0 ; k < NrFi ; ++k ) {
-  if( ! IsEasy[ k ] )
-   continue;
-
-  // ensure that the MILPSolver has "digested" the Modification - - - - - - -
-  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-  // since some Modification in the inner Block cause LagBFunction to react
-  // by doing other changes to it, ensure that this is done before the list
-  // of Modification is scanned; however, note that if the list is empty
-  // already (in which case this method may not even be called, and therefore
-  // neither apply_obj_Modification() is) then no new Modification can be
-  // added by LagBFunction: LagBFunction does not "create Modification out
-  // of thin air", only reacts to those issued from outside
-
-  static_cast< LagBFunction * >( v_c05f[ k ] )->apply_obj_Modification();
-
-  // The easy sub-Block is a child of MasterPB and is solved as part of
-  // the master MP itself: the Modification produced just above by
-  // apply_obj_Modification() are therefore picked up by the master
-  // Solver on its next compute(). Should any user have attached an
-  // auxiliary Solver directly to the easy sub-Block (e.g. for
-  // diagnostics), let it digest those changes here as well.
-
-  if( auto easy_blk = MasterPB->get_easy_component( int( k ) ) ) {
-   const auto & easy_solvers = easy_blk->get_registered_solvers();
-   for( auto slv : easy_solvers )
-    slv->compute( false );
-   }
-
-  // construct the flattened list of Modification in the FakeSolver - - - - -
-  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
-  Lst_sp_Mod v_mod_tmp;
-
-  (*FSit)->lock_Modification_list();
-
-  for( auto mod : (*FSit)->get_Modification_list() )
-   flatten_easy_Modification_list( v_mod_tmp , mod );
-
-  (*FSit)->get_Modification_list().clear();
-
-  (*(FSit++))->unlock_Modification_list();
-
-  if( v_mod_tmp.empty() )  // nothing here to see
-   continue;               // move over
-
-  // scan all the Modification in the FakeSolver- - - - - - - - - - - - - - -
-  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-  // The structural changes detected here used to be forwarded to a
-  // per-easy-component Solver via ChgCosts / ChgRLHS / ChgLUBD; with
-  // the master now driven by MasterPB the easy sub-Blocks already
-  // receive these Modification through standard SMS++ propagation, so
-  // the loop body only validates the types and lets the Modification
-  // reach its destination unchanged.
-
-  for( ; ! v_mod_tmp.empty() ; v_mod_tmp.pop_front() ) {
-   auto mod = v_mod_tmp.front().get();
-
-   // FunctionMod- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-   if( const auto tmod = dynamic_cast< const FunctionMod * >( mod ) ) {
-    auto obs = tmod->function()->get_Observer();
-    if( dynamic_cast< const Objective * >( obs ) ) {
-
-     // C05FunctionModLin - - - - - - - - - - - - - - - - - - - - - - - - - -
-     if( dynamic_cast< const C05FunctionModLin * >( tmod ) ) {
-
-      continue;
-      }
-
-     // C05FunctionMod- - - - - - - - - - - - - - - - - - - - - - - - - - - -
-     if( auto modl = dynamic_cast< const C05FunctionMod * >( tmod ) ) {
-
-      if( modl->type() == C05FunctionMod::NothingChanged ) {
-       const auto shift = modl->shift();
-
-       if( ( shift ==  INFshift ) || ( shift == -INFshift ) ||
-           ( std::isnan( shift ) ) )
-        throw( std::logic_error(
-                   "BundleSolver::process_outstanding_Modification: "
-                   "unexpected *C05FunctionMod* from Objective Function" ) );
-
-       constant_value += shift;
-       }
-      else
-       continue;
-      }
-     }
-
-    throw( std::logic_error(
-               "BundleSolver::process_outstanding_easy_Modification: "
-               "unsupported Modification in easy component" ) );
-    }
-
-   // FunctionModVars- - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-   if( const auto tmod = dynamic_cast< const FunctionModVars * >( mod ) ) {
-    auto obs = tmod->function()->get_Observer();
-    if( dynamic_cast< const Objective * >( obs ) )
-     continue;
-
-    throw( std::logic_error(
-               "BundleSolver::process_outstanding_easy_Modification: "
-               "unsupported Modification in easy component" ) );
-    }
-
-   // VariableMod- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-   if( const auto tmod = dynamic_cast< const VariableMod * >( mod ) ) {
-    const auto xj = dynamic_cast< const ColVariable * >( tmod->variable() );
-
-    if( ! xj )     // unknown variable type
-     throw( std::logic_error(
-               "BundleSolver::process_outstanding_easy_Modification: "
-               "unsupported Modification in easy component" ) );
-
-    // fixing variables or changing their type is not supported; all the rest
-    // boils down to a change of bounds, and therefore is
-
-    if( ( xj->is_fixed() != xj->is_fixed( tmod->old_state() ) ) ||
-        ( xj->is_integer() != xj->is_integer( tmod->old_state() ) ) )
-     throw( std::logic_error(
-               "BundleSolver::process_outstanding_easy_Modification: "
-               "unsupported Modification in easy component" ) );
-
-    continue;
-
-    }  // end( VariableMod )
-
-   // RowConstraintMod - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-   if( const auto tmod = dynamic_cast< const RowConstraintMod * >( mod ) ) {
-
-    if( ( tmod->type() != RowConstraintMod::eChgLHS ) &&
-        ( tmod->type() != RowConstraintMod::eChgRHS ) &&
-        ( tmod->type() != RowConstraintMod::eChgBTS ) )
-     throw( std::logic_error(
-               "BundleSolver::process_outstanding_easy_Modification: "
-               "unsupported Modification in easy component" ) );
-
-    continue;
-
-    }  // end( RowConstraintMod )
-
-   // any other Modification is ignored; we assume it is a "physical"
-   // Modification whose corresponding "abstract" one has already been dealt
-   // with, or it is still in the queue waiting to be dealt with
-
-   }  // end( for( all Modification ) )
-
-  // nothing else to do per component: the easy sub-Blocks held by
-  // MasterPB receive the structural Modification through the standard
-  // SMS++ propagation
-
-  }  // end( for( k ) )
- }  // end( process_outstanding_easy_Modification )
 
 /*--------------------------------------------------------------------------*/
 
@@ -6682,14 +6478,7 @@ void BundleSolver::process_outstanding_Modification( void )
     }
 
    if( NrEasy && IsEasy[ wFi ] ) {  // coming from an easy component
-    if( DoEasy & ~1 ) {
-     // some changes in easy components are separately supported: ignoring
-     // the Modification is entirely possible
-     to_delete = true;
-     continue;
-     }
-
-    // changes in easy components not separately supported
+    // changes in easy components are not supported yet
     throw( std::logic_error(
                "BundleSolver::process_outstanding_Modification: "
                "unsupported change in easy component" ) );

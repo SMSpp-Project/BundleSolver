@@ -148,7 +148,6 @@
 #include "FRealObjective.h"
 #include "FRowConstraint.h"
 
-#include "FakeSolver.h"
 #include "MILPSolver.h"
 
 #include "MasterProblemBlock.h"
@@ -3016,9 +3015,6 @@ public:
 
  Index NrEasy;      ///< number of "easy" component of Fi
 
- std::vector< FakeSolver * > v_FakeSolver;
- ///< FakeSolver used to handle Modification from the easy components
-
  Vec_VarValue Lambda;   ///< the current point
 
  Vec_VarValue Lambda1;  ///< the tentative point
@@ -3435,10 +3431,6 @@ public:
  bool is_special_GroupMod( GroupModification & gmod );
 
  void flatten_Modification_list( Lst_sp_Mod & vmt , sp_Mod mod );
-
- void flatten_easy_Modification_list( Lst_sp_Mod & vmt , sp_Mod mod );
-
- void process_outstanding_easy_Modification( void );
 
  void process_outstanding_Modification( void );
 
