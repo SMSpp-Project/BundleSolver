@@ -275,8 +275,9 @@ class MasterProblemBlock : public Block {
  /// release the abstract representation and any per-component state
  /** clear() resets MasterProblemBlock to an "empty" state: all per-component
   * bookkeeping is forgotten, every size field goes back to 0 and the MP type
-  * information is reset. Non-owning LagBFunction inner-Block registrations are
-  * detached first. A subsequent SetDim() + CreateEmptyMP() rebuilds the MP. */
+  * information is reset. Non-owning easy-component inner-Block registrations
+  * are detached first and restored to their owning Function Blocks. A
+  * subsequent SetDim() + CreateEmptyMP() rebuilds the MP. */
 
  void clear();
 
@@ -304,11 +305,12 @@ class MasterProblemBlock : public Block {
   * stay inside MasterProblemBlock, so callers only need to know which
   * components are easy.
   *
-  * For a LagBFunction in the dual MP, its inner Block is registered in the
-  * MasterProblemBlock sub-Block list and has this MasterProblemBlock as father,
-  * but it is deliberately not removed from the LagBFunction sub-Block list.
-  * The LagBFunction therefore retains ownership and direct access, while
-  * modifications from the inner Block propagate through MasterProblemBlock.
+  * For both a LagBFunction in the dual MP and a BendersBFunction in the primal
+  * MP, the inner Block is registered in the MasterProblemBlock sub-Block list
+  * and has this MasterProblemBlock as father, but it is deliberately not
+  * removed from the Function Block's own sub-Block list. The Function Block
+  * therefore retains ownership and direct access, while modifications from
+  * the inner Block propagate through MasterProblemBlock.
   *
   * The optional \p ignored_blocks list is forwarded to the inner Solver
   * via Solver::set_excluded_blocks(), telling it which registered
@@ -1547,9 +1549,13 @@ class MasterProblemBlock : public Block {
 
  // - - - - - - - - -  pointers to the per-component sub-Blocks - - - - - - - -
 
+ std::vector< Block * > EasyCmps_Owner;
+ ///< Function Blocks that own the corresponding entries of EasyCmps_SB;
+ ///< retained so clear() can restore each inner Block's original father
+
  std::vector< Block * > EasyCmps_SB;
- ///< sub-Blocks of the "easy" components; LagBFunction entries are
- ///< non-owning registrations and remain owned by their LagBFunction
+ ///< sub-Blocks of the "easy" components; these are non-owning registrations
+ ///< and remain owned by the corresponding Function Block in EasyCmps_Owner
 
  std::vector< Block * > HardCmps;  ///< sub-Blocks of the "hard" components
 

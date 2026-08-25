@@ -91,15 +91,16 @@ static char mpb_built_stage( Configuration * cfg )
 
 void MasterProblemBlock::clear()
 {
- // A LagBFunction inner Block is only registered, not owned, by MPB. Remove
- // that registration and restore the LagBFunction as father before dropping
- // the bookkeeping. The pointer deliberately remains in the LagBFunction's
- // own v_Block throughout the period in which MPB is its father.
- const auto num_lbf = std::min( EasyCmps.size() , EasyCmps_SB.size() );
- for( Index i = 0 ; i < num_lbf ; ++i ) {
-  auto * lbf = EasyCmps[ i ];
+ // Easy-component inner Blocks are only registered, not owned, by MPB. Remove
+ // each registration and restore its Function Block as father before dropping
+ // the bookkeeping. Each pointer deliberately remains in its owner's v_Block
+ // throughout the period in which MPB is its father.
+ const auto num_registered =
+  std::min( EasyCmps_Owner.size() , EasyCmps_SB.size() );
+ for( Index i = 0 ; i < num_registered ; ++i ) {
+  auto * owner = EasyCmps_Owner[ i ];
   auto * inner = EasyCmps_SB[ i ];
-  if( ! lbf || ! inner )
+  if( ! owner || ! inner )
    continue;
 
   auto it = std::find( v_Block.begin() , v_Block.end() , inner );
@@ -110,18 +111,19 @@ void MasterProblemBlock::clear()
    continue;
 
   // Drop the listener inherited from MPB, then establish the one inherited
-  // from LagBFunction (if any). A Solver registered directly on inner keeps
-  // anyone_there() true independently of these inherited flags.
+  // from the owning Function Block (if any). A Solver registered directly on
+  // inner keeps anyone_there() true independently of these inherited flags.
   if( anyone_there() )
    inner->anyone_there( false );
-  inner->set_f_Block( lbf );
-  if( lbf->anyone_there() )
+  inner->set_f_Block( owner );
+  if( owner->anyone_there() )
    inner->anyone_there( true );
   }
 
- // Forget all per-component lookup tables. LagBFunction inner Blocks remain
- // owned by their LagBFunction.
+ // Forget all per-component lookup tables. Easy inner Blocks remain owned by
+ // their LagBFunction or BendersBFunction.
  EasyCmps.clear();
+ EasyCmps_Owner.clear();
  EasyCmps_SB.clear();
  EasyObjVars.clear();
  EasyObjCoeffs.clear();
@@ -211,6 +213,7 @@ void MasterProblemBlock::SetDim( int MxBSz , int NVars ,
  // multipliers gamma^k live inside each PolyhedralFunctionBlock sub-Block
  // (its own f_gamma) and are therefore *not* materialized here.
  EasyCmps.reserve( NoEasyCmps );
+ EasyCmps_Owner.reserve( NoEasyCmps );
  EasyCmps_SB.reserve( NoEasyCmps );
  EasyLocal2Global.reserve( NoEasyCmps );
  HardCmps.reserve( NoHardCmps );
@@ -425,6 +428,7 @@ void MasterProblemBlock::configure(
    add_nested_Block( inner );
 
    EasyCmps.push_back( lbf );
+   EasyCmps_Owner.push_back( lbf );
    EasyCmps_SB.push_back( inner );
    continue;
    }
@@ -443,7 +447,15 @@ void MasterProblemBlock::configure(
          std::to_string( k ) +
          " is a BendersBFunction with no inner Block" ) );
    absorb_BBF_into_primal_MP( bbf );
-   inner->transfer_ownership_to( this );
+
+   // As for LagBFunction, register inner in the MPB tree without removing it
+   // from BendersBFunction::v_Block. BendersBFunction retains ownership and
+   // direct access while inner Modifications propagate through MPB.
+   if( inner->get_f_Block() == bbf && bbf->anyone_there() )
+    inner->anyone_there( false );
+   add_nested_Block( inner );
+
+   EasyCmps_Owner.push_back( bbf );
    EasyCmps_SB.push_back( inner );
    continue;
    }

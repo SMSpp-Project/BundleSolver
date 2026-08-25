@@ -5694,8 +5694,8 @@ void BundleSolver::guts_of_destructor( void )
  f_max_name = 0;
 
  if( NrEasy ) {
-  // the easy-component sub-Blocks remain owned by their LagBFunction;
-  // MasterPB only keeps a non-owning registration while it is configured
+  // the easy-component sub-Blocks remain owned by their Function Blocks;
+  // MasterPB only keeps non-owning registrations while it is configured
   IsEasy.clear();
   NrEasy = 0;
   }
