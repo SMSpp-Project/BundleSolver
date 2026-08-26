@@ -178,6 +178,101 @@ void MasterProblemBlock::clear()
  }  // end( MasterProblemBlock::clear )
 
 /*--------------------------------------------------------------------------*/
+/*---------------------- MODIFICATION ROUTING ------------------------------*/
+/*--------------------------------------------------------------------------*/
+
+void MasterProblemBlock::add_Modification( sp_Mod mod , ChnlName chnl )
+{
+ // Return the retained owner of the easy-component subtree containing origin.
+ // Walking the father chain identifies the direct MPB child even when the
+ // Modification originates in a deeper descendant of the easy inner Block.
+ const auto easy_owner = [ this ]( Block * origin ) -> Block * {
+  if( ! origin )
+   return( nullptr );
+
+  auto * root = origin;
+  while( root && root != this && root->get_f_Block() != this )
+   root = root->get_f_Block();
+
+  if( ! root || root == this )
+   return( nullptr );
+
+  const auto it = std::find( EasyCmps_SB.begin() , EasyCmps_SB.end() , root );
+  if( it == EasyCmps_SB.end() )
+   return( nullptr );
+
+  const auto i = std::distance( EasyCmps_SB.begin() , it );
+  return( i < std::distance( EasyCmps_Owner.begin() , EasyCmps_Owner.end() )
+          ? EasyCmps_Owner[ i ] : nullptr );
+  };
+
+ // A group can arrive here when a channel defined below MPB is closed. Keep
+ // such a group intact when all its atomic descendants belong to one owner.
+ // Empty subgroups do not affect the classification.
+ struct OwnerInfo {
+  Block * owner = nullptr;
+  bool has_origin = false;
+  bool homogeneous = true;
+  };
+
+ const auto classify = [ & easy_owner ]( auto && self ,
+                                         const sp_Mod & current ) -> OwnerInfo {
+  if( ! current )
+   return( OwnerInfo{} );
+
+  const auto group =
+   std::dynamic_pointer_cast< GroupModification >( current );
+  if( ! group )
+   return( OwnerInfo{ easy_owner( current->get_Block() ) ,
+                      current->get_Block() != nullptr , true } );
+
+  OwnerInfo result;
+  for( const auto & submod : group->sub_Modifications() ) {
+   const auto sub = self( self , submod );
+   if( ! sub.has_origin )
+    continue;
+   if( ! sub.homogeneous )
+    return( OwnerInfo{ nullptr , true , false } );
+   if( ! result.has_origin ) {
+    result.owner = sub.owner;
+    result.has_origin = true;
+    }
+   else if( result.owner != sub.owner )
+    return( OwnerInfo{ nullptr , true , false } );
+   }
+  return( result );
+  };
+
+ // Notify a homogeneous owner once, preserving GroupModification aggregation.
+ // For a mixed group recurse until homogeneous subgroups / atomic
+ // Modifications are reached. The original object is never changed.
+ const auto notify_owner = [ & classify ]( auto && self ,
+                                           const sp_Mod & current ) -> void {
+  const auto info = classify( classify , current );
+  if( info.homogeneous ) {
+   if( info.owner )
+    info.owner->add_Modification( current );
+   return;
+   }
+
+  const auto group =
+   std::dynamic_pointer_cast< GroupModification >( current );
+  if( ! group )
+   return;
+  for( const auto & submod : group->sub_Modifications() )
+   self( self , submod );
+  };
+
+ notify_owner( notify_owner , mod );
+
+ // Independently preserve the standard master-tree channel and Solver
+ // dispatch. In particular, the owner notification above must not consume the
+ // original Modification needed by the Solver attached to MPB.
+ Block::add_Modification( std::move( mod ) , chnl );
+
+ }  // end( MasterProblemBlock::add_Modification )
+
+/*--------------------------------------------------------------------------*/
 /*-------------------------- DIMENSION SETUP -------------------------------*/
 /*--------------------------------------------------------------------------*/
 
@@ -423,9 +518,13 @@ void MasterProblemBlock::configure(
    // keep the pointer in LagBFunction::v_Block. This lets the master Solver see
    // the inner model and makes inner Modification propagate through MPB while
    // LagBFunction retains ownership and direct access to its inner Block.
-   if( inner->get_f_Block() == lbf && lbf->anyone_there() )
+   const bool owner_was_listening =
+    inner->get_f_Block() == lbf && lbf->anyone_there();
+   if( owner_was_listening )
     inner->anyone_there( false );
    add_nested_Block( inner );
+   if( owner_was_listening )
+    inner->anyone_there( true );
 
    EasyCmps.push_back( lbf );
    EasyCmps_Owner.push_back( lbf );
@@ -451,9 +550,13 @@ void MasterProblemBlock::configure(
    // As for LagBFunction, register inner in the MPB tree without removing it
    // from BendersBFunction::v_Block. BendersBFunction retains ownership and
    // direct access while inner Modifications propagate through MPB.
-   if( inner->get_f_Block() == bbf && bbf->anyone_there() )
+   const bool owner_was_listening =
+    inner->get_f_Block() == bbf && bbf->anyone_there();
+   if( owner_was_listening )
     inner->anyone_there( false );
    add_nested_Block( inner );
+   if( owner_was_listening )
+    inner->anyone_there( true );
 
    EasyCmps_Owner.push_back( bbf );
    EasyCmps_SB.push_back( inner );

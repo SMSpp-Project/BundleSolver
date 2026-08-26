@@ -6369,8 +6369,6 @@ void BundleSolver::process_outstanding_Modification( void )
  //   a C05FunctionMod with type() == GlobalPoolRemoved and which().empty()
  //   or by any FunctionMod that does *not* imply strong quasi-additivity
  //   (i.e., that it is not a *C05*FunctionMod*)
- // - check the LagBFunctionMod coming out the easy components and store in
- //   reset[] the or of their what(), so that this can be acted upon later
  // - if a *FunctionMod* changing linearizations happens before a reset of the
  //   global pool (meaning it is found afterwards in the reverse order) it
  //   is deleted since it is useless (after having checked if it also impacts
@@ -6476,10 +6474,14 @@ void BundleSolver::process_outstanding_Modification( void )
     }
 
    if( NrEasy && IsEasy[ wFi ] ) {  // coming from an easy component
-    // changes in easy components are not supported yet
-    throw( std::logic_error(
-               "BundleSolver::process_outstanding_Modification: "
-               "unsupported change in easy component" ) );
+    // The easy component is represented exactly by its inner Block, registered
+    // below MPBlock. The original physical Modification therefore reaches the
+    // Solver attached to MPBlock independently and updates the master model.
+    // The FunctionMod produced by the retained owner only tells BundleSolver
+    // that its cached function values may be stale; FModChg() above has already
+    // handled that. Easy components have no bundle/global-pool bookkeeping.
+    to_delete = true;
+    continue;
     }
    else                             // coming from a non-easy component
     if( reset[ wFi ] ) {

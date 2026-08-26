@@ -310,7 +310,9 @@ class MasterProblemBlock : public Block {
   * and has this MasterProblemBlock as father, but it is deliberately not
   * removed from the Function Block's own sub-Block list. The Function Block
   * therefore retains ownership and direct access, while modifications from
-  * the inner Block propagate through MasterProblemBlock.
+  * the inner Block propagate through MasterProblemBlock. The latter intercepts
+  * them in add_Modification(), notifies the retained Function Block owner and
+  * then forwards them normally along the master Block tree.
   *
   * The optional \p ignored_blocks list is forwarded to the inner Solver
   * via Solver::set_excluded_blocks(), telling it which registered
@@ -431,10 +433,9 @@ class MasterProblemBlock : public Block {
  /** Same as register_Solver(filename) but, after the inner Solver is
   * attached, also forwards \p ignored_blocks to it via
   * Solver::set_excluded_blocks() (through BlockSolverConfig::apply()'s
-  * second argument). Use this overload when configure() has stolen
-  * sub-Block subtrees whose Variable / Constraint should be invisible to
-  * the inner Solver (e.g. the original sub-Block whose C05Function is now
-  * represented by an internally-managed PolyhedralFunctionBlock). The
+  * second argument). Use this overload when registered sub-Block subtrees
+  * contain Variable / Constraint that should be invisible to the inner Solver
+  * (e.g. a subtree represented by an internally-managed block). The
   * eager descendant expansion is performed Solver-side; the caller only
   * has to name the roots of the sub-trees to skip. */
 
@@ -1494,6 +1495,30 @@ class MasterProblemBlock : public Block {
   *       f_lev consistently with its level-management strategy. */
 
  void set_f_lev( double f );
+
+/*--------------------------------------------------------------------------*/
+ /// route easy-subtree Modification to both their owner and the master tree
+ /** A LagBFunction or BendersBFunction keeps ownership of its inner Block
+  * while MasterProblemBlock is temporarily registered as that inner Block's
+  * father. Consequently, Modification issued in the inner subtree reach this
+  * method instead of the owning Function Block's add_Modification().
+  *
+  * This override restores the logical two-way dispatch: each Modification from
+  * an easy-component subtree is first passed to the retained Function Block
+  * owner, allowing it to update its caches and issue the corresponding Function
+  * Modification; the original Modification is then passed to
+  * Block::add_Modification() with \p chnl so the master Solver and master
+  * ancestors receive it normally.
+  *
+  * The owner notification deliberately uses its default channel. The owner and
+  * MasterProblemBlock belong to different Block-tree branches while configured,
+  * so a nonzero channel valid on the master branch is not necessarily valid on
+  * the owner's original branch. An already-formed homogeneous GroupModification
+  * is preserved; a group spanning different easy owners or mixing easy and
+  * non-easy origins is recursively split only for owner notification. The
+  * original group remains unchanged on the master branch. */
+
+ void add_Modification( sp_Mod mod , ChnlName chnl = 0 ) override;
 
 /*--------------------------------------------------------------------------*/
  /// load a MasterProblemBlock out of an istream
