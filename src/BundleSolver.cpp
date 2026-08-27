@@ -7889,22 +7889,13 @@ void BundleSolver::process_outstanding_Modification( void )
  // if some component need be reset, reset the linearizations: since
  // reset[ k ] ==> AlphaC[ k ], later on also the constants will be reset
 
- if( cntreset == NrFi - NrEasy ) {  // all (non-easy) components have been reset
-  if( MasterPB )
-   for( Index k = 0 ; k < NrFi ; ++k )
-    if( ! ( NrEasy && IsEasy[ k ] ) )
-     MasterPB->invalidate_subgradients( int( k ) );
-  }
- else {
-  if( cntreset )                 // some (non-easy) components have been reset
-   for( Index k = 0 ; k < NrFi ; ++k )
-    if( reset[ k ] )           // reset[ k ] ==> ! IsEasy[ k ]
-     reload_component_bundle( k );
-
-  // the 0-th component is the linear part owned by the master Objective
-  // directly; no PolyhedralFunctionBlock invalidation is needed when it
-  // changes
-  }
+ // MasterPB owns copies of the bundle rows, so merely invalidating its Solver
+ // would reload the same stale rows. Always copy reset linearizations back
+ // from the component global pools, also when every hard component is reset.
+ if( cntreset )
+  for( Index k = 0 ; k < NrFi ; ++k )
+   if( reset[ k ] )  // reset[ k ] ==> ! IsEasy[ k ]
+    reload_component_bundle( k );
 
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // if there are constants to change entirely, do it now in one blow
