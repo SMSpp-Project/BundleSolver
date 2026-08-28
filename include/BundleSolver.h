@@ -632,7 +632,11 @@ public:
 /*--------------------------------------------------------------------------*/
  /// set the int parameters of BundleSolver
  /** Set the int parameters specific of BundleSolver, together with the
-  * parameters of CDASolver that BundleSolver actually "listens to":
+  * parameters of CDASolver that BundleSolver actually "listens to". Note
+  * that intMaxThread is not one of them, the implementation being entirely
+  * sequential: setting it has no effect, and reading it back gives the
+  * default, i.e., 0 [see ParallelBundleSolver for the one that listens to
+  * it]. The parameters are:
   *
   * - intMaxIter [Inf< int >]: maximum iterations for the next call to solve()
   *
