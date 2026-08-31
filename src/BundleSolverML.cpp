@@ -300,8 +300,13 @@ HpNum BundleSolverML::Heuristic( Index whch )
   t_pred = 1;
   }
 
- phi_vecs.push_back( input );
+ if( f_train_online )
+  phi_vecs.push_back( input );
  BML_LOG( "Heuristic: predicted t = " << t_pred << std::endl );
+
+ // nothing below is used unless the trajectory is replayed in Backward()
+ if( ! f_train_online )
+  return( HpNum( t_pred ) );
 
  // search direction w
  Index dim;
@@ -309,8 +314,9 @@ HpNum BundleSolverML::Heuristic( Index whch )
  std::vector< double > tZ( NumVar );
  Master->ReadZ( tZ.data() , nms , dim );
  tZ.resize( dim );
- w_vecs.push_back( torch::tensor( tZ ).requires_grad_( true ) );
-
+ if ( f_train_online ) {  
+  w_vecs.push_back( torch::tensor( tZ ).requires_grad_( true ) );
+}
  // subgradient matrix G
  int col_num = 0;
  for( Index i = 0 ; i < Master->MaxName() ; ++i )
@@ -332,8 +338,10 @@ HpNum BundleSolverML::Heuristic( Index whch )
  if( G_mat.empty() ) {
   // no linearization in the bundle yet: nothing to differentiate through,
   // drop the entries recorded so far for this iteration
-  phi_vecs.pop_back();
-  w_vecs.pop_back();
+  if( f_train_online ) {
+   phi_vecs.pop_back();
+   w_vecs.pop_back();
+   }
   return( HpNum( t_pred ) );
   }
 
@@ -346,7 +354,8 @@ HpNum BundleSolverML::Heuristic( Index whch )
 
  torch::Tensor G_tensor = torch::from_blob( flat.data() , { rows , cols } ,
 					    torch::kDouble ).clone();
- Gs.push_back( G_tensor );
+ if( f_train_online )
+  Gs.push_back( G_tensor );
 
  // aggregated subgradient (whisG1 indices)
  std::vector< int64_t > valid_indices;
@@ -364,24 +373,30 @@ HpNum BundleSolverML::Heuristic( Index whch )
   auto idx = torch::tensor( valid_indices , torch::kLong );
   grad_sum = G_tensor.index_select( 1 , idx ).sum( 1 );
   }
- Gs_aggreg.push_back( grad_sum );
+ if( f_train_online )
+  Gs_aggreg.push_back( grad_sum );
 
  /* Step-type coefficient: +1 SS, -1 NS. Note that SSDone already reflects
   * the type of the current step when Heuristic() is called, while the
   * SS / NS counters do not, as they are updated later. */
  cHpRow tA = Master->ReadLinErr();
- coeff_vecs.push_back( torch::tensor( SSDone ? 1.0f : -1.0f ) );
+ if( f_train_online )
+  coeff_vecs.push_back( torch::tensor( SSDone ? 1.0f : -1.0f ) );
 
  // Gram matrix Q and linearization errors alpha
  torch::Tensor Q = torch::matmul( G_tensor , G_tensor.transpose( 0 , 1 ) );
- Qs.push_back( Q );
+ if( f_train_online )
+  Qs.push_back( Q );
  std::vector< double > alpha( Q.sizes()[ 0 ] , 0 );
  for( Index i = 0 ; i < Q.sizes()[ 0 ] ; ++i )
   alpha[ i ] = tA[ i ];
- alphaS.push_back( torch::tensor( alpha , torch::kDouble ) );
+ if( f_train_online )
+  alphaS.push_back( torch::tensor( alpha , torch::kDouble ) );
 
- tS.push_back( t_pred );
- FiS.push_back( UpFiBest );
+ if( f_train_online )
+  tS.push_back( t_pred );
+ if( f_train_online )
+  FiS.push_back( UpFiBest );
 
  return( HpNum( t_pred ) );
 
@@ -473,6 +488,10 @@ void BundleSolverML::Backward( void )
     }
 
    try {
+    std::unique_ptr<torch::NoGradGuard> no_grad;
+    if ( !f_train_online ) {
+    no_grad = std::make_unique<torch::NoGradGuard>();
+    }
     auto nn_out = nn->forward( phi_vecs[ f ] ).sum();  // scalar, float32
 
     if( ! nn_out.requires_grad() ) {
