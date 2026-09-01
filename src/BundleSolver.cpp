@@ -1567,9 +1567,11 @@ void BundleSolver::set_Block( Block * block )
   un_any_dynamic( el , [ & ]( ColVariable & sv ) { LamBVcblr[ cnt++ ] = & sv;
                   } , un_any_type< ColVariable >() );
 
- std::sort( LamBVcblr.begin() , LamBVcblr.end() ); // These are the block variables
+ // these are the Block variables
+ std::sort( LamBVcblr.begin() , LamBVcblr.end() );
 
- std::vector< ColVariable * > LamVcblrO( LamVcblr ); // These are the Objective variables (only of the first subblock)
+ // these are the Objective variables, of the first sub-Block only
+ std::vector< ColVariable * > LamVcblrO( LamVcblr );
  std::sort( LamVcblrO.begin() , LamVcblrO.end() );
 
  if( ! std::includes( LamBVcblr.begin() , LamBVcblr.end() ,
@@ -1582,7 +1584,8 @@ void BundleSolver::set_Block( Block * block )
  LamBVcblr.clear();
 
  // if some Constraints are present, their can only be either BoxConstraints
- // (with LHS == 0), LB0Constraints or NNConstraints - - - - - - - - - - - - - -
+ // (with LHS == 0), LB0Constraints or NNConstraints - - - - - - - - - - - - -
+ // -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // one day general linear constraints will be allowed
  //
@@ -1900,16 +1903,16 @@ void BundleSolver::set_Block( Block * block )
  InitMPB();
  reset_level_stabilization();
 
- // install the per-coordinate box  L <= Lambda <= U  on the dual master, so
- // that the proximal direction d* = Lambda1 - Lambda is projected onto the
- // feasible Lambda region (exactly the box FormLambda1 clamps Lambda1
- // against). Without it the dual MasterProblemBlock returns the
- // *unconstrained* d* = -t z*, which inflates || z* || (and hence v*) and
- // stalls the bundle on finite optima: the legacy NDOFiOracle MPSolvers
- // receive the same box from the NDOSolver interface and project d*. A
- // effective bounds combine the ColVariable's own bounds with any supported
- // active bound constraint; set_box() treats any non-finite entry as "no bound"
- // (the matching slack stays fixed to 0)
+ // install the per-coordinate box L <= Lambda <= U on the dual master, so that
+ // the proximal direction d* = Lambda1 - Lambda is projected onto the feasible
+ // Lambda region (exactly the box FormLambda1 clamps Lambda1 against). Without
+ // it the dual MasterProblemBlock returns the *unconstrained* d* = -t z*,
+ // which inflates || z* || (and hence v*) and stalls the bundle on finite
+ // optima: the legacy NDOFiOracle MPSolvers receive the same box from the
+ // NDOSolver interface and project d*. A effective bounds combine the
+ // ColVariable's own bounds with any supported active bound constraint;
+ // set_box() treats any non-finite entry as "no bound" (the matching slack
+ // stays fixed to 0)
  if( MasterPB ) {
   std::vector< double > Lbox( NumVar ) , Ubox( NumVar );
   for( Index i = 0 ; i < NumVar ; ++i ) {
@@ -2930,7 +2933,7 @@ void BundleSolver::update_level_after_step( bool serious_step ,
  // cause an increase/shrink cycle; let the ordinary NS rule relax it instead.
  const auto level_eta = MasterPB ? MasterPB->get_level_multiplier() : 0.0;
  const bool small_level_eta = level_eta <= 1.0;
- if( ( ! serious_step ) && UsesPureLevelStabilization() && 
+ if( ( ! serious_step ) && UsesPureLevelStabilization() &&
         ( ! MPchgs ) && small_level_eta ) {
   f_level_Delta *= LStabIncr;
 
@@ -2973,7 +2976,7 @@ void BundleSolver::update_level_after_step( bool serious_step ,
    CSSCntr = 0;
    }
   }
-  
+
  // reset the NR counter if needed
  if( serious_step || MPchgs )
   LevelNRCntr = 0;
@@ -3544,8 +3547,8 @@ void BundleSolver::FormD( void )
 
 void BundleSolver::UpdtCntrs( void )
 {
- // increase all the OOBase[] counters but those == +/-Inf< SIndex >() - - - - -
- // items whose OOBase[] becomes 0 (e.g. the newly entered items, which have
+ // increase all the OOBase[] counters but those == +/-Inf< SIndex >() - - - -
+ // - items whose OOBase[] becomes 0 (e.g. the newly entered items, which have
  // OOBase[] == -1) are set to +1, in such a way that only the items in the
  // optimal base have OOBase[] == 0; note that the converse is not true, as
  // items in the optimal base may have OOBase[] < 0 instead
@@ -3959,7 +3962,8 @@ void BundleSolver::SetupFiStrPar( Index wFi )
  if( v_C05_EI_SPAR_Names.size() > v_C05_EI_SPAR_Vals.size() )
   throw( std::logic_error(
              "BundleSolver::SetupFiStrPar: "
-             "vstr_C05_SPAR_EI_Names.size() > vstr_C05_SPAR_EI_Vals.size()" ) );
+            "vstr_C05_SPAR_EI_Names.size() > vstr_C05_SPAR_EI_Vals.size()"
+            ) );
 
  ComputeConfig CwFi;
  CwFi.set_diff( true );
@@ -5274,7 +5278,7 @@ double BundleSolver::Heuristic4( void )
 
 void BundleSolver::CreateMPB( void )
 {
- // allocate (or re-cycle) the MasterProblemBlock 
+ // allocate (or re-cycle) the MasterProblemBlock
  if( MasterPB )
   MasterPB->clear();
  else
@@ -6480,8 +6484,9 @@ void BundleSolver::process_outstanding_Modification( void )
     // below MPBlock. The original physical Modification therefore reaches the
     // Solver attached to MPBlock independently and updates the master model.
     // The FunctionMod produced by the retained owner only tells BundleSolver
-    // that its cached function values may be stale; FModChg() above has already
-    // handled that. Easy components have no bundle/global-pool bookkeeping.
+    // that its cached function values may be stale; FModChg() above has
+    // already handled that. Easy components have no bundle/global-pool
+    // bookkeeping.
     to_delete = true;
     continue;
     }
@@ -8140,7 +8145,8 @@ void BundleSolver::CheckAlpha( void )
                            std::abs( UpRifFi[ ItemVcblr[ i ].first ] ) ) ,
                  double( 1 ) ) )
     *wlog << std::endl << "Alfa[ " << i << " ]: F = " << tAi << " ~ M = "
-          << read_alpha_global( i ) << " (F-M = " << shrt4 << ( tAi - read_alpha_global( i ) ) << def << ")"
+          << read_alpha_global( i ) << " (F-M = " << shrt4
+          << ( tAi - read_alpha_global( i ) ) << def << ")"
           << " | k=" << ItemVcblr[ i ].first
           << " UpRifFi=" << shrt4 << ref
           << " lin_const=" << lin_cst << " <L,G>=" << dotLG << def;

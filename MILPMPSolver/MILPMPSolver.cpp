@@ -322,7 +322,7 @@ void MILPMPSolver::SetSolverConfig(
   // pick the first registered Solver as our handle for convenience
   const auto & slvrs = master_block->get_registered_solvers();
   milp_solver = slvrs.empty() ? nullptr
-                              : dynamic_cast< SMSpp_di_unipi_it::MILPSolver * >(
+                            : dynamic_cast< SMSpp_di_unipi_it::MILPSolver * >(
                                                             slvrs.front() );
   }
  }
@@ -420,7 +420,8 @@ MPSolver::MPStatus MILPMPSolver::SolveMP( void )
 //   needs SolveMP + master state: ReadFiBLambda (master obj), Readd (y* - yc),
 //     ReadZ (d*/t), ReadMult (cut duals), ReadDt / ReadSigma / ReadDStart
 //     (proximal-term values, a follow-up once the QuadFunction is wired)
-//   easy-component readers: ReadDualEasy / ReadReducedCostsEasy stay a follow-up
+//   easy-component readers: ReadDualEasy / ReadReducedCostsEasy are a
+//   follow-up
 //
 
 cHpRow MILPMPSolver::refresh_lin_err_scratch()
@@ -993,7 +994,8 @@ void MILPMPSolver::RmvItems( void )
   // BlockModRmvSbst with subset().empty() (see Block.h:3994-4009).
   // SMSpp_di_unipi_it::Block::Subset is a std::vector< Index > alias.
   std::vector< Index > all;
-  master_block->remove_dynamic_constraints< SMSpp_di_unipi_it::FRowConstraint >(
+  master_block->remove_dynamic_constraints<
+                              SMSpp_di_unipi_it::FRowConstraint >(
                           *cuts_list , std::move( all ) );
   }
  for( auto & slot : items )
@@ -1070,7 +1072,7 @@ void MILPMPSolver::RmvActvSt( cIndex_Set Rmvd , cIndex RmDm , cIndex_Set )
 // ChgAlfa overloads
 //   (DeltaAlfa)              — shift every cut's alpha by DeltaAlfa[wFi+1]
 //                              (or DeltaAlfa[0] for the linear-part slot)
-//   (NewAlfa, wFi)           — assign NewAlfa[k] to every cut k of component wFi
+//   (NewAlfa, wFi)           — assign NewAlfa[k] to every cut k of wFi
 //   (i, Ai)                  — set alpha of cut at slot i to Ai
 // All variants must push the new value to the FRowConstraint's lhs so the
 // master MILPSolver re-syncs.

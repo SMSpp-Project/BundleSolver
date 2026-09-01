@@ -95,9 +95,9 @@
  *     Variable; IN THE LATTER CASE, THE SET OF "ACTIVE" Variable IN THE
  *     LinearFunction MUST NEVER CHANGE
  *
- * To ensure that the rule about the list of "ACTIVE" Variable in the (multiple)
- * Objective is respected, an analogous very strong assumption is made on the
- * Modification that change that:
+ * To ensure that the rule about the list of "ACTIVE" Variable in the
+ * (multiple) Objective is respected, an analogous very strong assumption is
+ * made on the Modification that change that:
  *
  *     ALL THE Modification THAT CHANGE THE "ACTIVE" Variable MUST BE
  *     BUNCHED TOGETHER IN A SINGLE GroupModification. THIS MUST CONTAIN
@@ -277,9 +277,9 @@ namespace SMSpp_di_unipi_it
  *     Variable; IN THE LATTER CASE, THE SET OF "ACTIVE" Variable IN THE
  *     LinearFunction MUST NEVER CHANGE
  *
- * To ensure that the rule about the list of "ACTIVE" Variable in the (multiple)
- * Objective is respected, an analogous very strong assumption is made on the
- * Modification that change that:
+ * To ensure that the rule about the list of "ACTIVE" Variable in the
+ * (multiple) Objective is respected, an analogous very strong assumption is
+ * made on the Modification that change that:
  *
  *     IF THE Block HAS MORE THAN ONE C05Function, THAT IS, IT HAS A
  *     NON-EMPTY SET OF sub-Block AND THE (LinearFunction IN THE)
@@ -621,9 +621,9 @@ public:
   * requirements of BundleSolver, and all the nontrivial internal
   * data structures of BundleSolver are set up.
   *
-  * If \p block == nullptr, the BundleSolver is completely cleaned up
-  * and prepared for either destruction or receiving an entirely unrelated Block
-  * to solve. */
+  * If \p block == nullptr, the BundleSolver is completely cleaned up and
+  * prepared for either destruction or receiving an entirely unrelated Block to
+  * solve. */
 
  void set_Block( Block * block ) override;
 
@@ -1041,7 +1041,7 @@ public:
   *                     bit 0 enables local row scaling, bit 1 enables global
   *                     epigraph scaling. Hence 0 = none, 1 = local only,
   *                     2 = global only, 3 = both.
-  * 
+  *
   * - intMaxLevelNR [5]: TBD (max steps of NR for level method allowed)
   */
 
@@ -1546,11 +1546,11 @@ public:
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// returns a pointer to the i-th C05Function in the objective
  /** Returns a pointer to the i-th C05Function, i.e., the i-th term of the
-  * sum of C05Function that (possibly together with one LinearFunction) makes up
-  * the objective of the Block that the BundleSolver is solving. It
-  * must ve 0 <= \p i <= n_components(). All returned pointers are not nullptr
-  * provided that set_Block() has last been called with not nullptr argument
-  * (otherwise this method should not be called). */
+  * sum of C05Function that (possibly together with one LinearFunction) makes
+  * up the objective of the Block that the BundleSolver is solving. It must ve
+  * 0 <= \p i <= n_components(). All returned pointers are not nullptr provided
+  * that set_Block() has last been called with not nullptr argument (otherwise
+  * this method should not be called). */
 
  C05Function * component( Index i ) const {
   #ifndef NDEBUG
@@ -1565,8 +1565,8 @@ public:
  /** Returns a pointer to the single LinearFunction that is summed with the
   * C05Function in the objective, if any. If the method returns nullptr, there
   * is no such LinearFunction (it is constantly 0, i.e., all its coefficients
-  * are 0). This method should not be called if set_Block() has not been called,
-  * or has last been called with nullptr argument. */
+  * are 0). This method should not be called if set_Block() has not been
+  * called, or has last been called with nullptr argument. */
 
  LinearFunction * l_component( void ) const { return( f_lf ); }
 
@@ -1621,8 +1621,9 @@ public:
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// returns the number of iterations in the current call to compute()
  /** Returns the number of iterations in the current call to compute(), the
-  * last one included. Note that this is the number of master problem solutions,
-  * as clearly the number of function evaluations may be rather different. */
+  * last one included. Note that this is the number of master problem
+  * solutions, as clearly the number of function evaluations may be rather
+  * different. */
 
  long get_elapsed_iterations( void ) const override { return( ParIter ); }
 
@@ -2592,23 +2593,23 @@ public:
   * would not be useful. This is potentially wasteful in that one does the
   * effort to compute() the functions but only collects "a small part" of the
   * ensuing information. However, producing linearizations may have a cost in
-  * itself, so on the other hand it saves some time. Besides, if the C05Function
-  * are re-compute()-d right after in Lambda, then if they are "complex and
-  * costly" they will likely have checks to understand if the bulk of the
-  * computation can be skipped because it has been done already.
+  * itself, so on the other hand it saves some time. Besides, if the
+  * C05Function are re-compute()-d right after in Lambda, then if they are
+  * "complex and costly" they will likely have checks to understand if the bulk
+  * of the computation can be skipped because it has been done already.
   *
-  * The method returns the number of different components evaluated. It may also
-  * internally set Result == kError if an irrecoverable error happens during a
-  * component compute()-tion or Result == kStopTime if the available running
-  * time runs up. */
+  * The method returns the number of different components evaluated. It may
+  * also internally set Result == kError if an irrecoverable error happens
+  * during a component compute()-tion or Result == kStopTime if the available
+  * running time runs up. */
 
  virtual Index InnerLoop( bool extrastep = false );
 
 /*--------------------------------------------------------------------------*/
  /* Computes Fi[ wFi ]( Lambda1 ). In the "default mode", where getgi == true,
-  * it also inserts the obtained linearizations in the bundle. If getgi == false
-  * instead this means that method is being called outside of the main loop,
-  * with Lambda1 == Lambda, and that no linearizations need be collected.
+  * it also inserts the obtained linearizations in the bundle. If getgi ==
+  * false instead this means that method is being called outside of the main
+  * loop, with Lambda1 == Lambda, and that no linearizations need be collected.
   *
   * Returns true <=> at least one item was inserted. It also "sneakily" sets
   * MPchgs if appropriate. None of this clearly happens if getgi == false. */
@@ -2863,8 +2864,8 @@ public:
 
 /*--------------------------------------------------------------------------*/
  /** Concave functions to be maximised are sneakily turned into convex
-  * functions to be minimized inside by changing the sign of function values and
-  * linearizations, but they have to be output with the right sign. */
+  * functions to be minimized inside by changing the sign of function values
+  * and linearizations, but they have to be output with the right sign. */
 
  VarValue rs( const VarValue fv ) {
   return( f_convex ? fv : - fv );
@@ -2974,7 +2975,7 @@ public:
 
  int MPHScaling;    ///< bit-wise hard-component PFB scaling: local / global
 
- int MaxLevelNR;    ///< maximum number of consecutive NoiseReduction step allowed
+ int MaxLevelNR;    ///< max number of consecutive NoiseReduction steps
 
  std::string EasyCfg;
  ///< filename for the Block[Solver]Config of easy components
@@ -3025,8 +3026,8 @@ public:
  Vec_VarValue LmbdBst;  ///< the best point found so far
 
  bool LHasChgd;       /**< true if Lambda has changed since the latest call
-                       * to FiAndGi(): allows repeated calls in the same Lambda,
-                       * e.g. with increasing precision */
+                       * to FiAndGi(): allows repeated calls in the same
+                       * Lambda, e.g. with increasing precision */
  bool tHasChgd;       ///< true if t has changed since the last MP
 
  char MPchgs;         ///< nonzero if we can prove no cycling will occur
@@ -3041,10 +3042,10 @@ public:
                     * Inf< Index >() == it is not in the bundle */
  std::vector< bool > Zvalid;  /**< Zvalid[ k ] == true if the item in position
                                * whisZ[ k ] is exactly Z[ k ] as computed by
- * the last master problem. Zvalid[ k ] == true ==> whisZ[ k ] < INF. if Zvalid[
- * k ] == false and whisZ[ k ] < INF, then Z[ k ] had been previously stored in
- * position whisZ[ k ], but the master problem has been re-solved since and
- * therefore Z[ k ] is no longer current. */
+ * the last master problem. Zvalid[ k ] == true ==> whisZ[ k ] < INF. if
+ * Zvalid[ k ] == false and whisZ[ k ] < INF, then Z[ k ] had been previously
+ * stored in position whisZ[ k ], but the master problem has been re-solved
+ * since and therefore Z[ k ] is no longer current. */
 
  Subset whisG1;    ///< "representative subgradient" for each component
                    /**< whisG1[ k ] is the first subgradient inserted in the
@@ -3102,11 +3103,11 @@ public:
 
  VarValue LStabM;      ///< m_l parameter for level stabilization
 
- VarValue LStabDlt;    ///< initial exogenous Delta fraction for level stabilization
+ VarValue LStabDlt;    ///< initial exogenous Delta fraction, level stab.
 
- VarValue LStabIncr;   ///< exogenous Delta increase factor for level stabilization
+ VarValue LStabIncr;   ///< exogenous Delta increase factor, level stab.
 
- VarValue LStabSmall;  ///< threshold for small model error in level stabilization
+ VarValue LStabSmall;  ///< threshold for a small model error, level stab.
 
  VarValue t;           ///< the (tremendous) t parameter
  VarValue Prevt;       ///< what t were before being changed for funny reasons
@@ -3131,14 +3132,14 @@ public:
                       std::greater< Index > > FreList;
  ///< list of free positions in the bundle
  /**< FreList is the priority queue of free positions in the bundle, where
-  * the position with higher priority is that with smaller name. This is why the
-  * comparison parameter has to be explicitly set to std::greater< Index >,
+  * the position with higher priority is that with smaller name. This is why
+  * the comparison parameter has to be explicitly set to std::greater< Index >,
   * since a priority queue with the default std::less< Index > spits out the
   * element with larger value. */
 
  /** NrItems[ k ] contains the number of items in the bundle (master problem)
-  * for component k. If ( BPar7 & 3 ) < 3, this number may be strictly less than
-  * the number of linearizations in the global pool of component k, since
+  * for component k. If ( BPar7 & 3 ) < 3, this number may be strictly less
+  * than the number of linearizations in the global pool of component k, since
   * removals from the bundle do not imply removals from the global pool
   */
 
@@ -3168,16 +3169,16 @@ public:
  /** MaxItem[ k ] contains 1 + the maximum index of a position in the
   * global pool of component k where a linearization is stored; if MaxItem[ k ]
   * == 0, then the global pool is empty. Note that this ignores the fact that a
-  * position in the global pool corresponds or not to an item in the bundle: all
-  * linearizations count. As a consequence it must always be MaxItem[ k ] >=
-  * FrFItem[ k ]. */
+  * position in the global pool corresponds or not to an item in the bundle:
+  * all linearizations count. As a consequence it must always be MaxItem[ k ]
+  * >= FrFItem[ k ]. */
 
  Subset MaxItem;  ///< the first unused item in each global pool
 
  /** Vocabulary of items: ItemVcblr[ i ].first is the component name
   * and ItemVcblr[ i ].second is the name in the global pool of that component
-  * for item in position i of the bundle (master problem). ItemVcblr[ i ].second
-  * == INF means that position i in the bundle is not used. */
+  * for item in position i of the bundle (master problem). ItemVcblr[ i
+  * ].second == INF means that position i in the bundle is not used. */
 
  std::vector< std::pair< Index , Index > > ItemVcblr;
 
@@ -3190,8 +3191,8 @@ public:
   * global pool of h, but it is not in the bundle.
   *
   * NOTE: THE GLOBAL POOL OF SOME C05Function CAN BE LARGER THAN vBPar2[ k ],
-  * BUT ALL ELEMENTS WITH NAME LARGER THAN vBPar2[ k ] ARE NEVER USED OR CHANGED
-  * BY BundleSolver. */
+  * BUT ALL ELEMENTS WITH NAME LARGER THAN vBPar2[ k ] ARE NEVER USED OR
+  * CHANGED BY BundleSolver. */
 
  std::vector< Subset > InvItemVcblr;
 
@@ -3203,8 +3204,8 @@ public:
  Index f_max_name{ 0 };
 
   /** Out-Of-Base counters: if OOBase[ i ]
-   * = Inf< SIndex >() then there is no item in position i of the bundle = k > 0
-   * means that the item in position i is out of base since k
+   * = Inf< SIndex >() then there is no item in position i of the bundle = k >
+   * 0 means that the item in position i is out of base since k
    *   iterations
    * = 0 means in the current base but potentially removable = a *finite*
    * negative value - k means not removable for the next k
@@ -3474,10 +3475,10 @@ public:
 /*--------------------------------------------------------------------------*/
 /// class to describe the "internal state" of a BundleSolver
 /** Derived class from State to describe the "internal state" of a
- * BundleSolver: the current stability centre, the proximal
- * parameters, and the global pool of all non-easy components. In a better world
- * the State should comprise the State of the Solver used to solve the Master
- * Problem; this will hopefully happen one day. */
+ * BundleSolver: the current stability centre, the proximal parameters, and the
+ * global pool of all non-easy components. In a better world the State should
+ * comprise the State of the Solver used to solve the Master Problem; this will
+ * hopefully happen one day. */
 
 class BundleSolverState : public State {
 

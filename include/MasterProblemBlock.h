@@ -15,9 +15,9 @@
  * component) or has a known compact convex description ("easy" component, cf.
  * [Frangioni, Gorgone, MP 2014]).
  *
- * Two complementary formulations of the MP are supported, both directly encoded
- * as a Block structure (and therefore solvable by any Solver registered to
- * MasterProblemBlock, typically a [MILP]Solver):
+ * Two complementary formulations of the MP are supported, both directly
+ * encoded as a Block structure (and therefore solvable by any Solver
+ * registered to MasterProblemBlock, typically a [MILP]Solver):
  *
  * - the **primal** form reads
  *
@@ -70,13 +70,14 @@
  * - **Doubly-Stabilized**: combines both, see [Astorino, Frangioni,
  *   Fuduli, Gorgone, MP 2017].
  *
- * Following the SMS++ distinction between physical and abstract representations,
- * the physical representation of a MasterProblemBlock is the compact state that
- * characterizes the current master problem: the registered sub-Blocks, the
- * current stability center, and the stabilization parameters (the proximal
- * parameter t, the level value Lvl and the selected stabilization type). The
- * Variable, Constraint and Objective objects forming the primal or dual MP are
- * the corresponding abstract representation generated from that physical state.
+ * Following the SMS++ distinction between physical and abstract
+ * representations, the physical representation of a MasterProblemBlock is the
+ * compact state that characterizes the current master problem: the registered
+ * sub-Blocks, the current stability center, and the stabilization parameters
+ * (the proximal parameter t, the level value Lvl and the selected
+ * stabilization type). The Variable, Constraint and Objective objects forming
+ * the primal or dual MP are the corresponding abstract representation
+ * generated from that physical state.
  *
  * MasterProblemBlock is meant to be driven by a bundle driver
  * which is responsible for keeping the bundles B^k updated as the algorithm
@@ -251,8 +252,8 @@ class MasterProblemBlock : public Block {
 
  /// constructor: initializes every algorithmic field to a safe default
  /** All "size" fields are set to 0; the default stabilization is
-  * #kDoublyStabilized and the default form is the dual one (IsPrimal == false).
-  * The actual size of the MP is then established by SetDim() and the
+  * #kDoublyStabilized and the default form is the dual one (IsPrimal ==
+  * false). The actual size of the MP is then established by SetDim() and the
   * formulation is selected by CreateEmptyMP(). */
 
  explicit MasterProblemBlock( Block * father = nullptr )
@@ -378,7 +379,8 @@ class MasterProblemBlock : public Block {
                  bool convex = true ,
                  const std::vector< bool > & is_easy = {} ,
                  int hard_cmp_scaling = 0 ,
-                 const std::vector< std::vector< Index > > & easy_local2global = {} );
+                 const std::vector< std::vector< Index > > & easy_local2global
+                                                                        = {} );
 
 /*--------------------------------------------------------------------------*/
  /// provide MasterProblemBlock with the basic dimensions of the MP
@@ -400,18 +402,18 @@ class MasterProblemBlock : public Block {
   *   number of "hard" components is derived as NoTotCmps - NoEasyCmps.
   *
   * Calling SetDim() resets any previous state: existing sub-Blocks are dropped
-  * and the abstract representation is destroyed; CreateEmptyMP() must be called
-  * afterwards to actually populate the new MP. */
+  * and the abstract representation is destroyed; CreateEmptyMP() must be
+  * called afterwards to actually populate the new MP. */
 
  void SetDim( int MxBSz , int NVars , int NrFi , int NrFiEasy );
 
 /*--------------------------------------------------------------------------*/
  /// register the inner Solver of MasterProblemBlock
  /** Attaches a Solver to MasterProblemBlock, used to (re-)solve the MP at
-  * every iteration of the surrounding Bundle algorithm. \p solv_cfg_filename is
-  * the path of a file containing a BlockSolverConfig (in either text or netCDF
-  * format): the file is deserialized via Configuration::deserialize() and
-  * apply()-ed to MasterProblemBlock.
+  * every iteration of the surrounding Bundle algorithm. \p solv_cfg_filename
+  * is the path of a file containing a BlockSolverConfig (in either text or
+  * netCDF format): the file is deserialized via Configuration::deserialize()
+  * and apply()-ed to MasterProblemBlock.
   *
   * Two kinds of error are reported via std::invalid_argument:
   *
@@ -446,14 +448,14 @@ class MasterProblemBlock : public Block {
  /// initialize an *empty* Master Problem with the given stabilization
  /** Populates the physical representation of MasterProblemBlock with the
   * compact ingredients of the Master Problem, in either the primal or the dual
-  * formulation depending on the chosen stabilization scheme and on the presence
-  * of "easy" components. The Variable, Constraint and Objective objects are
-  * left to the generate_abstract_*() methods.
+  * formulation depending on the chosen stabilization scheme and on the
+  * presence of "easy" components. The Variable, Constraint and Objective
+  * objects are left to the generate_abstract_*() methods.
   *
-  * At call time the per-component bundles are *empty*: the dynamic cuts of each
-  * "hard" component are added on the fly by the surrounding Bundle algorithm
-  * via the Modification interface of the corresponding PolyhedralFunctionBlock
-  * sub-Block.
+  * At call time the per-component bundles are *empty*: the dynamic cuts of
+  * each "hard" component are added on the fly by the surrounding Bundle
+  * algorithm via the Modification interface of the corresponding
+  * PolyhedralFunctionBlock sub-Block.
   *
   * As a general rule the primal form is preferred when no "easy" component is
   * present, while the dual form is the only viable choice when \p NoEasy > 0
@@ -480,8 +482,8 @@ class MasterProblemBlock : public Block {
   * Objective objects are generated later by generate_abstract_variables(),
   * generate_abstract_constraints() and generate_objective().
   *
-  * This method is called internally by CreateEmptyMP() when the dual form is not
-  * strictly required, and is exposed publicly so that derived classes can
+  * This method is called internally by CreateEmptyMP() when the dual form is
+  * not strictly required, and is exposed publicly so that derived classes can
   * override the physical construction. */
 
  void CreatePrimalMP( stabilization_type Stbl );
@@ -513,8 +515,9 @@ class MasterProblemBlock : public Block {
 /*--------------------------------------------------------------------------*/
  /// generate the Constraint groups in the abstract representation
  /** Dispatches to the primal or dual constraint generator. It requires that
-  * generate_abstract_variables() has already materialized the Variable side and
-  * records the generated-constraint stage to make repeated calls idempotent. */
+  * generate_abstract_variables() has already materialized the Variable side
+  * and records the generated-constraint stage to make repeated calls
+  * idempotent. */
 
  void generate_abstract_constraints( Configuration * stcc = nullptr ) override;
 
@@ -621,8 +624,8 @@ class MasterProblemBlock : public Block {
  /// returns the k-th hard-component sub-Block
  /** Returns the PolyhedralFunctionBlock used to model the k-th "hard"
   * component of the sum-function, for k in [0, NoHardCmps). The pointer stays
-  * valid as long as the MP is not torn down by clear() or SetDim(); it is meant
-  * to be used by the driver to feed cuts into the underlying
+  * valid as long as the MP is not torn down by clear() or SetDim(); it is
+  * meant to be used by the driver to feed cuts into the underlying
   * PolyhedralFunction via the Modification interface. */
 
  [[nodiscard]] Block * get_hard_component( int k ) const;
@@ -646,20 +649,20 @@ class MasterProblemBlock : public Block {
  /// add a new linearization (g, alpha_raw) at slot \p slot of bundle B^k
  /** Appends one new linearization to the bundle B^k of the k-th "hard"
   * component, occupying the persistent NDOFi-style "slot" \p slot of that
-  * component. \p slot must lie in [0, MaxBSize) and must currently be empty (an
-  * std::logic_error is thrown otherwise). \p g is the new subgradient (size
-  * NumVars; moved into the PolyhedralFunction); \p alpha is the *raw* cut
-  * constant (the b such that  F_k( x ) >= b + g . x  in convex-min sign,
-  * un-translated). The caller is *not* expected to pre-promote alpha to
-  * the linearization-error-at-x_bar form: the master keeps the raw value
-  * in its bundle and rebuilds the linearization-error form on demand from
-  * the cached F_k( x_bar ) installed via set_reference().
+  * component. \p slot must lie in [0, MaxBSize) and must currently be empty
+  * (an std::logic_error is thrown otherwise). \p g is the new subgradient
+  * (size NumVars; moved into the PolyhedralFunction); \p alpha is the *raw*
+  * cut constant (the b such that F_k( x ) >= b + g . x in convex-min sign,
+  * un-translated). The caller is *not* expected to pre-promote alpha to the
+  * linearization-error-at-x_bar form: the master keeps the raw value in its
+  * bundle and rebuilds the linearization-error form on demand from the cached
+  * F_k( x_bar ) installed via set_reference().
   *
-  * The (k, slot) pair lets the surrounding driver keep its
-  * ItemVcblr / InvItemVcblr name-management *unchanged* across subsequent
-  * remove_cut() calls: MasterPB internally tracks the slot -> local-row mapping
-  * into the PolyhedralFunction of HardCmps[k] (rows are renumbered on
-  * delete_row(), the slot is not).
+  * The (k, slot) pair lets the surrounding driver keep its ItemVcblr /
+  * InvItemVcblr name-management *unchanged* across subsequent remove_cut()
+  * calls: MasterPB internally tracks the slot -> local-row mapping into the
+  * PolyhedralFunction of HardCmps[k] (rows are renumbered on delete_row(), the
+  * slot is not).
   *
   * The call issues the appropriate PolyhedralFunctionModAddd through the usual
   * Modification interface, so the [MILP]Solver attached to MasterProblemBlock
@@ -676,8 +679,8 @@ class MasterProblemBlock : public Block {
 /*--------------------------------------------------------------------------*/
  /// add a new linearization (g, alpha) to bundle B^k, auto-allocating a slot
  /** Like add_cut(k, slot, g, alpha, is_vert) but the slot is chosen by
-  * MasterPB itself; returns the chosen slot (or -1 if no slot is free, i.e. all
-  * MaxBSize positions of B^k are occupied). \p is_vert tags the cut as a
+  * MasterPB itself; returns the chosen slot (or -1 if no slot is free, i.e.
+  * all MaxBSize positions of B^k are occupied). \p is_vert tags the cut as a
   * vertical (feasibility) one so that the PolyhedralFunction back-end records
   * it as such (no v_k epigraph variable on the LHS of the row). */
 
@@ -696,8 +699,8 @@ class MasterProblemBlock : public Block {
 /*--------------------------------------------------------------------------*/
  /// returns the highest "name" currently in use in the k-th hard bundle
  /** In NDOFi-style master problems every item carries a persistent
-  * integer "name" used to map slots to items; MasterPB does not maintain such a
-  * mapping (PolyhedralFunction rows are simply indexed [0, get_nrows())
+  * integer "name" used to map slots to items; MasterPB does not maintain such
+  * a mapping (PolyhedralFunction rows are simply indexed [0, get_nrows())
   * sequentially), so this method returns get_bundle_size(k). Provided as a
   * drop-in for the surrounding driver code that iterates with Index j =
   * Master->MaxName() ; j-- ; ... */
@@ -708,8 +711,8 @@ class MasterProblemBlock : public Block {
 /*--------------------------------------------------------------------------*/
  /// returns whether every hard-component bundle is empty
  /** Returns true iff get_bundle_size(k) == 0 for every k in
-  * [0, NoHardCmps); a convenience for the typical "empty MP" check performed by
-  * the surrounding Bundle algorithm at the very first iteration (or after a
+  * [0, NoHardCmps); a convenience for the typical "empty MP" check performed
+  * by the surrounding Bundle algorithm at the very first iteration (or after a
   * complete bundle reset). */
 
  [[nodiscard]] bool is_bundle_empty( void ) const;
@@ -739,11 +742,11 @@ class MasterProblemBlock : public Block {
 /*--------------------------------------------------------------------------*/
  /// remove the cut occupying slot \p slot from bundle B^k
  /** Deletes the cut stored at the NDOFi-style slot \p slot of the
-  * k-th hard component; \p slot must lie in [0, MaxBSize) and must currently be
-  * occupied (no-op if empty). The corresponding row of the PolyhedralFunction
-  * is delete_row()-ed, and the slot->local-row mapping of MasterPB is updated
-  * coherently (every other slot whose local row was past the removed one is
-  * shifted down by one). */
+  * k-th hard component; \p slot must lie in [0, MaxBSize) and must currently
+  * be occupied (no-op if empty). The corresponding row of the
+  * PolyhedralFunction is delete_row()-ed, and the slot->local-row mapping of
+  * MasterPB is updated coherently (every other slot whose local row was past
+  * the removed one is shifted down by one). */
 
  void remove_cut( int k , int slot );
 
@@ -773,9 +776,9 @@ class MasterProblemBlock : public Block {
 /*--------------------------------------------------------------------------*/
  /// returns the optimal multiplier theta at slot \p slot of B^k
  /** Returns the current value of the dual multiplier theta^k stored at
-  * NDOFi-style slot \p slot of HardCmps[k]; the lookup goes through the slot ->
-  * local-row mapping. Meaningful only after solve_master() and only in the dual
-  * MP form; returns 0 if the slot is empty. */
+  * NDOFi-style slot \p slot of HardCmps[k]; the lookup goes through the slot
+  * -> local-row mapping. Meaningful only after solve_master() and only in the
+  * dual MP form; returns 0 if the slot is empty. */
 
  [[nodiscard]] double get_theta( int k , int slot ) const;
 
@@ -835,8 +838,9 @@ class MasterProblemBlock : public Block {
  /// is the cut at slot \p slot of B^k a "true" subgradient (vs feasibility)?
  /** Returns true iff the cut occupying slot \p slot of HardCmps[k] is a
   * diagonal linearization (a "true" subgradient), false if it is a vertical /
-  * feasibility cut (in the PolyhedralFunction's is_row_vertical sense). Returns
-  * false for empty slots; the NDOFi counterpart is Master->IsSubG( name ). */
+  * feasibility cut (in the PolyhedralFunction's is_row_vertical sense).
+  * Returns false for empty slots; the NDOFi counterpart is Master->IsSubG(
+  * name ). */
 
  [[nodiscard]] bool is_subgradient( int k , int slot ) const;
 
@@ -865,15 +869,16 @@ class MasterProblemBlock : public Block {
   * set_reference / set_F_at_x_bar, and the cached stability centre f_x_bar.
   *
   * \p k == -1 (default) sums over every hard component (the global aggregated
-  * linearization error); \p k in [0, NoHardCmps) restricts the sum to component
-  * k. In pure-level dual form the row masses carry eta, so the returned Sigma
-  * is divided by eta to stay in the normalized bundle-method units. Meaningful
-  * only after solve_master() and only in the dual MP form; returns 0 otherwise. */
+  * linearization error); \p k in [0, NoHardCmps) restricts the sum to
+  * component k. In pure-level dual form the row masses carry eta, so the
+  * returned Sigma is divided by eta to stay in the normalized bundle-method
+  * units. Meaningful only after solve_master() and only in the dual MP form;
+  * returns 0 otherwise. */
 
  [[nodiscard]] double get_aggregated_alpha( int k = -1 ) const;
 
 /*--------------------------------------------------------------------------*/
- /// returns sum_i theta^k_i * alpha_raw_i (the un-translated convex combination)
+ /// returns sum_i theta^k_i * alpha_raw_i, the un-translated combination
  /** Companion of #get_aggregated_alpha that exposes the *raw* convex
   * combination of the native cut constants stored in the bundle, without
   * applying the F_k( x_bar ) / g . x_bar translation. Useful for callers
@@ -895,11 +900,11 @@ class MasterProblemBlock : public Block {
 /*--------------------------------------------------------------------------*/
  /// returns the model value v*[k] of the cutting-plane model at the step
  /** NDOFi counterpart of Master->ReadFiBLambda() / ReadFiBLambda(k+1).
-  * In the primal MP this is just Var_v_hard[k].get_value() (per-cmp, \p k >= 0)
-  * or the sum over every k (\p k == -1). In the dual MP the same quantity is
-  * read from the dual optimality identities: proximal uses d* = -t z*, while
-  * pure level uses d* = -eta z* because the level row multiplier carries the
-  * aggregate mass. Meaningful only after solve_master(). */
+  * In the primal MP this is just Var_v_hard[k].get_value() (per-cmp, \p k >=
+  * 0) or the sum over every k (\p k == -1). In the dual MP the same quantity
+  * is read from the dual optimality identities: proximal uses d* = -t z*,
+  * while pure level uses d* = -eta z* because the level row multiplier carries
+  * the aggregate mass. Meaningful only after solve_master(). */
 
  [[nodiscard]] double get_FiBLambda( int k = -1 ) const;
 
@@ -908,9 +913,9 @@ class MasterProblemBlock : public Block {
  /** NDOFi counterpart of Master->ReadZ() (the dense, global, no-bse
   * variant). In the dual MP Var_z is returned directly for proximal/doubly
   * stabilization, but in pure level it is divided by eta because the dual
-  * stationarity vector stores eta z*. In the primal MP z* is reconstructed from
-  * the solved displacement and the active stabilization. Meaningful only after
-  * solve_master(). */
+  * stationarity vector stores eta z*. In the primal MP z* is reconstructed
+  * from the solved displacement and the active stabilization. Meaningful only
+  * after solve_master(). */
 
  [[nodiscard]] std::vector< double > get_z_vector( void ) const;
 
@@ -957,8 +962,9 @@ class MasterProblemBlock : public Block {
  /// returns g^k_slot . d, the scalar product of the cut subgradient and d
  /** NDOFi counterpart of Master->ReadGid( name ) (the per-name variant).
   * \p k and \p slot identify the cut in the bundle of the k-th hard component;
-  * the call returns sum_j g^k_slot[j] * d[j] using get_subgradient(k, slot) and
-  * get_d_vector(). Returns 0 if the slot is empty or if d is not available. */
+  * the call returns sum_j g^k_slot[j] * d[j] using get_subgradient(k, slot)
+  * and get_d_vector(). Returns 0 if the slot is empty or if d is not
+  * available. */
 
  [[nodiscard]] double get_Gid( int k , int slot ) const;
 
@@ -966,9 +972,9 @@ class MasterProblemBlock : public Block {
  /// invalidate every cut of B^k (NBModification on the underlying f_polyf)
  /** NDOFi counterpart of Master->ChgSubG(...) when the whole bundle B^k
   * has to be marked "stale" because the underlying subgradient values changed
-  * (e.g. the active Variable of the C05Function were re-bound). MasterPB issues
-  * an NBModification on the PolyhedralFunctionBlock of HardCmps[k], which is
-  * the SMS++ "everything in this Block has just changed" signal: the
+  * (e.g. the active Variable of the C05Function were re-bound). MasterPB
+  * issues an NBModification on the PolyhedralFunctionBlock of HardCmps[k],
+  * which is the SMS++ "everything in this Block has just changed" signal: the
   * [MILP]Solver attached to MasterProblemBlock will then re-load the full
   * PolyhedralFunction on the next compute(). Returns silently if the slot is
   * empty / not a PFB. */
@@ -978,11 +984,11 @@ class MasterProblemBlock : public Block {
 /*--------------------------------------------------------------------------*/
  /// bulk replacement of the linearization errors of B^k
  /** NDOFi counterpart of Master->ChgAlfa(Alfa.data(), k+1). Replaces
-  * the constant terms of the bundle B^k with the values in \p alphas; \p alphas
-  * must have size at least equal to MaxBSize and is read slot-by-slot through
-  * slot_to_local[k], skipping empty slots. The underlying PolyhedralFunction
-  * issues one C05FunctionModLin per touched row (a future optimisation could
-  * collapse them with a single modify_constants call). */
+  * the constant terms of the bundle B^k with the values in \p alphas; \p
+  * alphas must have size at least equal to MaxBSize and is read slot-by-slot
+  * through slot_to_local[k], skipping empty slots. The underlying
+  * PolyhedralFunction issues one C05FunctionModLin per touched row (a future
+  * optimisation could collapse them with a single modify_constants call). */
 
  void set_alphas_bulk( int k , const std::vector< double > & alphas );
 
@@ -994,8 +1000,8 @@ class MasterProblemBlock : public Block {
   * in the long-term "hard" t-strategy. With the proximal dual MP
   *   v*(t) = sum_k sum_i theta^k_i alpha^k_i + gamma^k LB^k + x_bar . z*
   *           - (t/2) || z* ||^2
-  * and assuming theta^k_i / z* approximately constant in a neighbourhood of the
-  * current t_stab, the implementation returns
+  * and assuming theta^k_i / z* approximately constant in a neighbourhood of
+  * the current t_stab, the implementation returns
   *   vl = - || z* ||^2 / 2
   *   vc = v*(t_stab) - vl * t_stab           (linear extrapolation)
   * In the primal MP both are set to 0 (the sensitivity is not yet implemented
@@ -1006,10 +1012,10 @@ class MasterProblemBlock : public Block {
 /*--------------------------------------------------------------------------*/
  /// returns the whole vector of linearization errors of B^k
  /** Returns a const reference to the full RealVector b of the
-  * PolyhedralFunction of HardCmps[k] (i.e. every alpha^k_i in one shot, indexed
-  * by the *local* position i in B^k). The reference stays valid until the next
-  * bundle modification (add_cut / remove_cut / modify_cut / modify_alpha) on
-  * the same component. */
+  * PolyhedralFunction of HardCmps[k] (i.e. every alpha^k_i in one shot,
+  * indexed by the *local* position i in B^k). The reference stays valid until
+  * the next bundle modification (add_cut / remove_cut / modify_cut /
+  * modify_alpha) on the same component. */
 
  [[nodiscard]] const std::vector< double > & get_alphas( int k ) const;
 
@@ -1081,8 +1087,8 @@ class MasterProblemBlock : public Block {
  /// set the stability centre x_bar of the master problem
  /** In the dual MP the stability centre x_bar enters as the linear
   * coefficient on every z_j (the term + x_bar * z in the Objective); this API
-  * forwards every \p x_bar[j] to the LinearFunction coefficient of Var_z[j]. \p
-  * x_bar must have size NumVars. No-op under the primal MP (where the step
+  * forwards every \p x_bar[j] to the LinearFunction coefficient of Var_z[j].
+  * \p x_bar must have size NumVars. No-op under the primal MP (where the step
   * direction d is the natural primal variable and x_bar contributes to the
   * constant gradient b through set_b). */
 
@@ -1096,8 +1102,8 @@ class MasterProblemBlock : public Block {
 /*--------------------------------------------------------------------------*/
  /// atomically refresh the master reference (x_bar + per-component F_k)
  /** Single-call companion of set_x_bar that, in one shot, installs the new
-  * stability centre and the (hard) per-component reference values F_k( x_bar ).
-  * The atomic form exists so callers can not forget to update either side:
+  * stability centre and the (hard) per-component reference values F_k( x_bar
+  * ). The atomic form exists so callers can not forget to update either side:
   * the master's notion of "current reference" is one indivisible piece of
   * state.
   *
@@ -1317,14 +1323,14 @@ class MasterProblemBlock : public Block {
  /// append \p n new optimization variables to the Master Problem
  /** Drop-in for Master->AddVars(n). Extends the master problem from
   * NumVars to NumVars + n coordinates by appending n new entries to Var_d /
-  * Var_v_hard / Var_z and growing CouplingCns accordingly. This is a structural
-  * change and forces a fresh load_problem() of the registered [MILP]Solver on
-  * the next compute().
+  * Var_v_hard / Var_z and growing CouplingCns accordingly. This is a
+  * structural change and forces a fresh load_problem() of the registered
+  * [MILP]Solver on the next compute().
   *
   * NOT YET IMPLEMENTED -- throws std::logic_error. Adding NumVars on the fly
   * requires rebuilding the diagonal-quadratic part of the Objective (the per-d
-  * / per-z triples) and re-wiring every PolyhedralFunction- Block sub-Block via
-  * set_variables() / set_conjugate_constraint(). */
+  * / per-z triples) and re-wiring every PolyhedralFunction- Block sub-Block
+  * via set_variables() / set_conjugate_constraint(). */
 
  void add_vars( int n );
 
@@ -1335,8 +1341,8 @@ class MasterProblemBlock : public Block {
   * Var_d / Var_v_hard / Var_z, and patches CouplingCns / every
   * PolyhedralFunctionBlock sub-Block accordingly.
   *
-  * NOT YET IMPLEMENTED -- throws std::logic_error. Same caveats as add_vars: it
-  * is a structural change that forces a fresh load_problem(). */
+  * NOT YET IMPLEMENTED -- throws std::logic_error. Same caveats as add_vars:
+  * it is a structural change that forces a fresh load_problem(). */
 
  void remove_vars( const int * subset , int sz );
 
@@ -1417,7 +1423,9 @@ class MasterProblemBlock : public Block {
  /** z_j is the j-th coordinate of the aggregated subgradient z*. \p j
   * must lie in [0, NumVars). Meaningful only after solve_master(). */
 
- [[nodiscard]] double get_z( int j ) const { return( Var_z[ j ].get_value() ); }
+ [[nodiscard]] double get_z( int j ) const {
+  return( Var_z[ j ].get_value() );
+  }
 
 /*--------------------------------------------------------------------------*/
  /// update the proximal stabilization parameter t
@@ -1505,18 +1513,19 @@ class MasterProblemBlock : public Block {
   *
   * This override restores the logical two-way dispatch: each Modification from
   * an easy-component subtree is first passed to the retained Function Block
-  * owner, allowing it to update its caches and issue the corresponding Function
-  * Modification; the original Modification is then passed to
+  * owner, allowing it to update its caches and issue the corresponding
+  * Function Modification; the original Modification is then passed to
   * Block::add_Modification() with \p chnl so the master Solver and master
   * ancestors receive it normally.
   *
   * The owner notification deliberately uses its default channel. The owner and
-  * MasterProblemBlock belong to different Block-tree branches while configured,
-  * so a nonzero channel valid on the master branch is not necessarily valid on
-  * the owner's original branch. An already-formed homogeneous GroupModification
-  * is preserved; a group spanning different easy owners or mixing easy and
-  * non-easy origins is recursively split only for owner notification. The
-  * original group remains unchanged on the master branch. */
+  * MasterProblemBlock belong to different Block-tree branches while
+  * configured, so a nonzero channel valid on the master branch is not
+  * necessarily valid on the owner's original branch. An already-formed
+  * homogeneous GroupModification is preserved; a group spanning different easy
+  * owners or mixing easy and non-easy origins is recursively split only for
+  * owner notification. The original group remains unchanged on the master
+  * branch. */
 
  void add_Modification( sp_Mod mod , ChnlName chnl = 0 ) override;
 
@@ -1653,7 +1662,7 @@ class MasterProblemBlock : public Block {
                                    ///< non-negative slack multipliers s^+
                                    ///< paired with the lower side of the
                                    ///< box  L - x_bar <= d  (cf.
-                                   ///< 
+                                   ///<
                                    ///< / (48)). One entry per coordinate
                                    ///< (size NumVars); coordinates without
                                    ///< a finite L are kept fixed to 0,
@@ -1664,7 +1673,7 @@ class MasterProblemBlock : public Block {
                                    ///< non-negative slack multipliers s^-
                                    ///< paired with the upper side of the
                                    ///< box  d <= U - x_bar  (cf.
-                                   ///< 
+                                   ///<
                                    ///< / (48)). One entry per coordinate
                                    ///< (size NumVars); coordinates without
                                    ///< a finite U are kept fixed to 0.
@@ -1842,8 +1851,8 @@ class MasterProblemBlock : public Block {
 /*--------------------------------------------------------------------------*/
 
  void generate_primal_abstract_variables();
-                    ///< materialize the primal master variables and wire the
-                    ///< hard-component PolyhedralFunctionBlock active variables
+                    ///< materialize the primal master variables and wire
+                    ///< the hard-component PolyhedralFunctionBlock ones
 
  void generate_primal_abstract_constraints();
                     ///< materialize the primal box, level row and PFB rows
@@ -1853,8 +1862,8 @@ class MasterProblemBlock : public Block {
                     ///< objective pieces
 
  void generate_dual_abstract_variables();
-                    ///< materialize the dual master variables and wire the
-                    ///< hard-component PolyhedralFunctionBlock active variables
+                    ///< materialize the dual master variables and wire
+                    ///< the hard-component PolyhedralFunctionBlock ones
 
  void generate_dual_abstract_constraints();
                     ///< materialize the dual normalization/coupling rows and
@@ -1893,11 +1902,11 @@ class MasterProblemBlock : public Block {
 
  /// slot -> local-row mapping into PolyhedralFunction::v_A of HardCmps[k]
  /** slot_to_local[k] has size MaxBSize: slot_to_local[k][s] is the local
-  * index of the cut occupying slot s in the PolyhedralFunction of the k-th hard
-  * component, or -1 if the slot is empty. PolyhedralFunction rows shift on
-  * delete_row(); this map absorbs the shift so that the surrounding
-  * the driver can keep its NDOFi-style persistent name (ItemVcblr) intact
-  * across remove_cut() calls. */
+  * index of the cut occupying slot s in the PolyhedralFunction of the k-th
+  * hard component, or -1 if the slot is empty. PolyhedralFunction rows shift
+  * on delete_row(); this map absorbs the shift so that the surrounding the
+  * driver can keep its NDOFi-style persistent name (ItemVcblr) intact across
+  * remove_cut() calls. */
  std::vector< std::vector< int > > slot_to_local;
 
  /// set of sub-Blocks the inner Solver must ignore; populated by
@@ -2242,7 +2251,7 @@ class MasterProblemLowerBoundMod : public MasterProblemMod
 
  };  // end( class MasterProblemLowerBoundMod )
 
-/** @} end( group( MasterProblemBlock_CLASSES ) ) ----------------------------*/
+/** @} end( group( MasterProblemBlock_CLASSES ) ) ---------------------------*/
 
 }  // end( namespace SMSpp_di_unipi_it )
 
