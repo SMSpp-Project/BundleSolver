@@ -2027,7 +2027,7 @@ public:
      2 ,  // intWZNorm
      0 ,  // intFrcLstSS
      0 ,  // intTrgtMng
-     2 ,  // intMPStbl (default value is DoublyStabilized)
+     0 ,  // intMPStbl (default value is Proximal)
      0 ,  // intMPPrimal (default value is dual)
      2 ,  // intRstAlg, default value:
           // RstAlg = 0  -  reset algorithmic parameters
