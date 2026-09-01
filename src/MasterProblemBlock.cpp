@@ -1969,8 +1969,9 @@ void MasterProblemBlock::modify_cut( int k , int slot ,
   for( auto & gj : g )
    gj = - gj;
 
- poly.modify_row( PolyhedralFunction::Index( loc ) ,
-                  std::move( g ) , b_store );
+ poly.modify_row( PolyhedralFunction::Index( loc ),
+                 std::move( g ), b_store,
+                 eModBlck, is_vert );
  }
 
 /*--------------------------------------------------------------------------*/
