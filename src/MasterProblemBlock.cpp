@@ -843,8 +843,24 @@ void MasterProblemBlock::generate_primal_abstract_constraints( void )
  Bounds_d.resize( NumVars );
  for( int j = 0 ; j < NumVars ; ++j ) {
   Bounds_d[ j ].set_variable( & Var_d[ j ] , eNoMod );
-  Bounds_d[ j ].set_lhs( - Inf< double >() , eNoMod );
-  Bounds_d[ j ].set_rhs( Inf< double >() , eNoMod );
+
+  // set_box() can be called before the abstract constraints are generated.
+  // Materialize its cached bounds now, since a later identical set_box()
+  // call correctly returns without refreshing the abstract representation.
+  const double lower = f_L.empty() ? - Inf< double >() : f_L[ j ];
+  const double upper = f_U.empty() ? Inf< double >() : f_U[ j ];
+  double lhs = std::isfinite( lower ) ? lower : - Inf< double >();
+  double rhs = std::isfinite( upper ) ? upper : Inf< double >();
+  if( ! f_v2_form ) {
+   const double xj = j < int( f_x_bar.size() ) ? f_x_bar[ j ] : 0.0;
+   if( std::isfinite( lhs ) )
+    lhs -= xj;
+   if( std::isfinite( rhs ) )
+    rhs -= xj;
+   }
+
+  Bounds_d[ j ].set_lhs( lhs , eNoMod );
+  Bounds_d[ j ].set_rhs( rhs , eNoMod );
   }
  if( NumVars > 0 )
   add_static_constraint( Bounds_d , "MPB_box" );
