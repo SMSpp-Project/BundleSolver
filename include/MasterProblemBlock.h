@@ -853,6 +853,20 @@ class MasterProblemBlock : public Block {
  [[nodiscard]] int get_vertical_count( void ) const;
 
 /*--------------------------------------------------------------------------*/
+ /// returns the number of *diagonal* rows in the bundle of HardCmps[ k ]
+ /** The rows that carry the convexity mass of the per-component simplex row
+  *
+  *     sum_i theta^k_i + gamma^k = lambda
+  *
+  * are the diagonal ones alone: a vertical row enters that row with a zero
+  * coefficient, being a recession direction rather than a piece of the
+  * model. A component whose bundle holds vertical rows only is therefore
+  * still "empty" as far as that row is concerned, which is what this counts
+  * and get_bundle_size() does not. */
+
+ [[nodiscard]] int get_diagonal_count( int k ) const;
+
+/*--------------------------------------------------------------------------*/
  /// returns Sigma* = aggregated linearization error of the dual bundle
  /** Computes the bundle-method "Sigma" = aggregated linearization error at
   * the current stability centre x_bar.

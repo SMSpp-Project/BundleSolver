@@ -3237,7 +3237,11 @@ void BundleSolver::FormD( void )
   for( Index k = 0 ; k < NrFi ; ++k ) {
    if( NrEasy && IsEasy[ k ] )
     continue;
-   const bool want = ( NrItems[ k ] == 0 ) &&
+   // what makes the per-component simplex row unsatisfiable is having no
+   // *diagonal* item: a vertical one enters that row with a zero
+   // coefficient, so a bundle of vertical items alone still needs the
+   // fictitious bound to free gamma^k
+   const bool want = ( MasterPB->get_diagonal_count( hard_k( k ) ) == 0 ) &&
                       ( LowerBound[ k ] <= - INFshift );
    // Refresh an active fictitious bound after every possible reference-point
    // change. set_reference() rebuilds the PFB bound from the physical lower
@@ -5867,7 +5871,7 @@ void BundleSolver::Delete( Index i , bool ModDelete )
  // where fictitious bounds are normally synchronized. If this was the last
  // cut of a hard component with no genuine lower bound, install its
  // fictitious bound now so the component normalization remains feasible.
- if( MasterPB && ( NrItems[ k ] == 0 ) &&
+ if( MasterPB && ( MasterPB->get_diagonal_count( hard_k( k ) ) == 0 ) &&
      ( ( ! NrEasy ) || ( ! IsEasy[ k ] ) ) &&
      ( LowerBound[ k ] <= - INFshift ) && ( ! FictLB[ k ] ) ) {
   MasterPB->set_fictitious_LB( hard_k( k ) , true );

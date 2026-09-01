@@ -1864,16 +1864,34 @@ int MasterProblemBlock::get_bundle_size( int k ) const
 
 /*--------------------------------------------------------------------------*/
 
+int MasterProblemBlock::get_diagonal_count( int k ) const
+{
+ if( k < 0 || k >= int( HardCmps.size() ) )
+  return( 0 );
+ const auto pfb =
+  dynamic_cast< const PolyhedralFunctionBlock * >( HardCmps[ k ] );
+ if( ! pfb )
+  return( 0 );
+ auto & pf = const_cast< PolyhedralFunctionBlock * >( pfb )
+                 ->get_PolyhedralFunction();
+ const auto n = pf.get_nrows();
+ int total = 0;
+ for( PolyhedralFunction::Index i = 0 ; i < n ; ++i )
+  if( ! pf.is_row_vertical( i ) )
+   ++total;
+ return( total );
+ }
+
+/*--------------------------------------------------------------------------*/
+
 bool MasterProblemBlock::is_bundle_empty( void ) const
 {
- return( std::all_of( HardCmps.cbegin() , HardCmps.cend() ,
-                      []( const Block * b ) {
-                       const auto pfb =
-                        dynamic_cast< const PolyhedralFunctionBlock * >( b );
-                       return( ! pfb ||
-                               const_cast< PolyhedralFunctionBlock * >( pfb )
-                               ->get_PolyhedralFunction().get_nrows() == 0 );
-                       } ) );
+ // a component whose bundle holds vertical rows only is empty for the
+ // per-component simplex row, which is what this predicate is read for
+ for( int k = 0 ; k < int( HardCmps.size() ) ; ++k )
+  if( get_diagonal_count( k ) > 0 )
+   return( false );
+ return( true );
  }
 
 /*--------------------------------------------------------------------------*/
@@ -1888,12 +1906,13 @@ bool MasterProblemBlock::has_pinned_empty_cmp( void ) const
  // whenever Var_r and Var_omega are pinned). A solve in this state
  // would be reported as kError / kInfeasible by the inner :MILPSolver;
  // the caller (solve_master) uses this hook to short-circuit instead
- for( auto * b : HardCmps ) {
-  auto * pfb = dynamic_cast< PolyhedralFunctionBlock * >( b );
+ for( int k = 0 ; k < int( HardCmps.size() ) ; ++k ) {
+  auto * pfb = dynamic_cast< PolyhedralFunctionBlock * >( HardCmps[ k ] );
   if( ! pfb )
    continue;
-  auto & poly = pfb->get_PolyhedralFunction();
-  if( poly.get_nrows() > 0 )
+  // only the diagonal rows carry the convexity mass: a bundle of vertical
+  // rows alone leaves the simplex row as empty as no rows at all
+  if( get_diagonal_count( k ) > 0 )
    continue;  // bundle non-empty for this cmp, row is satisfiable
 
   // bundle empty for this cmp: check gamma^k
@@ -2144,7 +2163,12 @@ double MasterProblemBlock::get_stored_constant(
    for( std::size_t j = 0 ; j < n ; ++j )
     stored += g[ j ] * xref[ j ];
    }
-  return( IsPrimal ? stored : - stored );
+  /* Unlike a diagonal row, a vertical one keeps its constant as it is: the
+   * dual storage negates the g of every row [see add_cut()], and negating
+   * the constant along with it would turn A x + b <= 0 into A x + b >= 0,
+   * i.e., into the opposite half-space. */
+
+  return( stored );
   }
 
  if( IsPrimal ) {
