@@ -36,8 +36,6 @@
 
 using namespace SMSpp_di_unipi_it;
 
-using HpNum = NDO_di_unipi_it::HpNum;
-using cHpRow = NDO_di_unipi_it::cHpRow;
 using Index = Function::Index;
 
 /*--------------------------------------------------------------------------*/
@@ -250,7 +248,7 @@ void BundleSolverML::LoadModel( const std::string & filepath )
 /*----------------------- ML-SPECIFIC METHODS -------------------------------*/
 /*--------------------------------------------------------------------------*/
 
-HpNum BundleSolverML::Heuristic( Index whch )
+double BundleSolverML::Heuristic( Index whch )
 {
  if( ! nn->is_training() )
   nn->train();
@@ -304,22 +302,14 @@ HpNum BundleSolverML::Heuristic( Index whch )
  BML_LOG( "Heuristic: predicted t = " << t_pred << std::endl );
 
  // search direction w
- Index dim;
- const Index * nms;
- std::vector< double > tZ( NumVar );
- Master->ReadZ( tZ.data() , nms , dim );
- tZ.resize( dim );
+ auto tZ = MasterPB->get_z_vector();
  w_vecs.push_back( torch::tensor( tZ ).requires_grad_( true ) );
 
- // subgradient matrix G
- int col_num = 0;
- for( Index i = 0 ; i < Master->MaxName() ; ++i )
-  if( ItemVcblr[ i ].second < vBPar2[ ItemVcblr[ i ].first ] )
-   col_num++;
-
+ // subgradient matrix G, one row for each item in the bundle; the global
+ // name of each of them is kept to read its linearization error below
+ std::vector< Index > G_names;
  std::vector< std::vector< VarValue > > G_mat;
- G_mat.reserve( col_num );
- for( Index i = 0 ; i < Master->MaxName() ; ++i )
+ for( Index i = 0 ; i < ItemVcblr.size() ; ++i )
   if( ItemVcblr[ i ].second < vBPar2[ ItemVcblr[ i ].first ] ) {
    std::vector< VarValue > G( NumVar );
    v_c05f[ ItemVcblr[ i ].first ]->get_linearization_coefficients(
@@ -327,6 +317,7 @@ HpNum BundleSolverML::Heuristic( Index whch )
    if( ! f_convex )
     chgsign( G.data() , NumVar );
    G_mat.push_back( std::move( G ) );
+   G_names.push_back( i );
    }
 
  if( G_mat.empty() ) {
@@ -334,7 +325,7 @@ HpNum BundleSolverML::Heuristic( Index whch )
   // drop the entries recorded so far for this iteration
   phi_vecs.pop_back();
   w_vecs.pop_back();
-  return( HpNum( t_pred ) );
+  return( t_pred );
   }
 
  int rows = G_mat.size();
@@ -369,21 +360,20 @@ HpNum BundleSolverML::Heuristic( Index whch )
  /* Step-type coefficient: +1 SS, -1 NS. Note that SSDone already reflects
   * the type of the current step when Heuristic() is called, while the
   * SS / NS counters do not, as they are updated later. */
- cHpRow tA = Master->ReadLinErr();
  coeff_vecs.push_back( torch::tensor( SSDone ? 1.0f : -1.0f ) );
 
  // Gram matrix Q and linearization errors alpha
  torch::Tensor Q = torch::matmul( G_tensor , G_tensor.transpose( 0 , 1 ) );
  Qs.push_back( Q );
- std::vector< double > alpha( Q.sizes()[ 0 ] , 0 );
- for( Index i = 0 ; i < Q.sizes()[ 0 ] ; ++i )
-  alpha[ i ] = tA[ i ];
+ std::vector< double > alpha( G_names.size() , 0 );
+ for( Index i = 0 ; i < G_names.size() ; ++i )
+  alpha[ i ] = read_alpha_global( G_names[ i ] );
  alphaS.push_back( torch::tensor( alpha , torch::kDouble ) );
 
  tS.push_back( t_pred );
  FiS.push_back( UpFiBest );
 
- return( HpNum( t_pred ) );
+ return( t_pred );
 
  }  // end( BundleSolverML::Heuristic )
 

@@ -332,7 +332,7 @@ class BundleSolverML : public BundleSolver
   *
   * @return the predicted step-size t > 0 */
 
- HpNum Heuristic( Index whch ) override;
+ double Heuristic( Index whch ) override;
 
 /*--------------------------------------------------------------------------*/
  /// computes the gradients and updates the active network parameters
