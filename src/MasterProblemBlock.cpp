@@ -1886,12 +1886,19 @@ int MasterProblemBlock::get_diagonal_count( int k ) const
 
 bool MasterProblemBlock::is_bundle_empty( void ) const
 {
- // a component whose bundle holds vertical rows only is empty for the
- // per-component simplex row, which is what this predicate is read for
- for( int k = 0 ; k < int( HardCmps.size() ) ; ++k )
-  if( get_diagonal_count( k ) > 0 )
-   return( false );
- return( true );
+ /* Every row counts here, vertical ones included: this answers "is there
+  * anything at all in the bundle", which is what decides whether the master
+  * is worth solving, and a vertical row does constrain d even though it
+  * carries no convexity mass [cf. get_diagonal_count()]. */
+
+ return( std::all_of( HardCmps.cbegin() , HardCmps.cend() ,
+                      []( const Block * b ) {
+                       const auto pfb =
+                        dynamic_cast< const PolyhedralFunctionBlock * >( b );
+                       return( ! pfb ||
+                               const_cast< PolyhedralFunctionBlock * >( pfb )
+                               ->get_PolyhedralFunction().get_nrows() == 0 );
+                       } ) );
  }
 
 /*--------------------------------------------------------------------------*/
