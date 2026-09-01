@@ -1128,9 +1128,11 @@ int BundleSolver::compute( bool changedvars )
     //!! the beginning, it should be done only near the end
     }
   else             // regular update mechanism
-   if( tm != tp ){ // if t can change, select it in [ tm , tp ]
+   if( tm != tp )  {  // if t can change, select it in [ tm , tp ]
+    /*!!
     tt = std::min( std::min( tMaior , tp ) ,
-                   std::max( std::max( tMinor , tm ) , tt ) );
+		   std::max( std::max( tMinor , tm ) , tt ) );
+      !!*/
     tt = std::max( std::min( tp , tt ) , tm );
     tt = std::max( std::min( tMaior , tt ) , tMinor );
     }
@@ -3509,9 +3511,9 @@ void BundleSolver::FormD( void )
  // if( f_global_LB < UpFiLmb.back() + vStar.back() )
  // i.e., one would always report the largest f_global_LB ever found.
  // however, declaring a global LB is slippery, as it requires to set NZEps
- // "small enough" and no-one really knows how to do that. As a consequence,
+ // "small enough" and no-one really knows how to do that. as a consequence,
  // one may end up with the final LB being higher than the final UB, which
- // is not something any Solver should ever report. We rather take the
+ // is not something any Solver should ever report. we rather take the
  // conservative stance where the final reported LB is the one of the
  // stopping iteration: since the UB is "that one + v^*" and v^* is negative,
  // this ensures that UB >= LB

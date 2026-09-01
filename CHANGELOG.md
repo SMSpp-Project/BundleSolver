@@ -18,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- the documentation of the int parameters, which did not say that
+  intMaxThread is ignored, the implementation being sequential
+
 - BPar5 and RstAlgPrm were never initialized in the BundleSolver
   constructor, leading to nondeterministic behavior (up to complete stalls
   of the algorithm) whenever dblBPar5 / intRstAlg were not explicitly set
