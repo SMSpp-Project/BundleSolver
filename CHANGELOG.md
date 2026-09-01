@@ -18,6 +18,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- the component index passed to MasterProblemBlock: it keeps a bundle only
+  for the "hard" components and indexes them by their position among those,
+  while BundleSolver counts the components of Fi globally, the "easy" ones
+  included. With no easy component the two numbers coincide, so the
+  difference showed up only under intDoEasy, where it addressed the wrong
+  PolyhedralFunctionBlock or ran past the last one; the translation is now
+  made explicit by hard_k() and, for the easy components, by easy_k()
+
 - the documentation of the int parameters, which did not say that
   intMaxThread is ignored, the implementation being sequential
 

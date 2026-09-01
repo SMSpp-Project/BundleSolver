@@ -441,7 +441,7 @@ BundleSolver::read_alpha_global( Index name ) const
   const auto & loc = ItemVcblr[ name ];
   // ItemVcblr[ name ].second == InINF means "empty slot"; nothing to read
   if( loc.second < Inf< Index >() )
-   return( MasterPB->get_alpha( int( loc.first ) , int( name ) ) );
+   return( MasterPB->get_alpha( hard_k( loc.first ) , int( name ) ) );
   }
  return( 0 );
  }
@@ -454,7 +454,7 @@ BundleSolver::read_theta_global( Index name ) const
  if( MasterPB && name < ItemVcblr.size() ) {
   const auto & loc = ItemVcblr[ name ];
   if( loc.second < Inf< Index >() )
-   return( MasterPB->get_theta( int( loc.first ) , int( name ) ) );
+   return( MasterPB->get_theta( hard_k( loc.first ) , int( name ) ) );
   }
  return( 0 );
  }
@@ -466,7 +466,7 @@ void BundleSolver::remove_cut_global( Index name )
  if( MasterPB && name < ItemVcblr.size() ) {
   const auto & loc = ItemVcblr[ name ];
   if( loc.second < Inf< Index >() )
-   MasterPB->remove_cut( int( loc.first ) , int( name ) );
+   MasterPB->remove_cut( hard_k( loc.first ) , int( name ) );
   }
  }
 
@@ -2385,7 +2385,7 @@ void BundleSolver::get_var_solution_easy_pi( Index k )
  // the master Solver computes(), the dual values of its RowConstraint
  // are written back in place, so there is nothing to copy here.
 
- if( ! MasterPB || ! MasterPB->get_easy_component( int( k ) ) )
+ if( ! MasterPB || ! MasterPB->get_easy_component( easy_k( k ) ) )
   throw( std::logic_error(
        "BundleSolver::get_var_solution_easy_pi: "
        "easy component " + std::to_string( k ) + " not registered "
@@ -2406,7 +2406,7 @@ void BundleSolver::get_var_solution_easy_rc( Index k )
  // the easy sub-Block ColVariable are produced in place by the master
  // Solver, no explicit propagation is needed.
 
- if( ! MasterPB || ! MasterPB->get_easy_component( int( k ) ) )
+ if( ! MasterPB || ! MasterPB->get_easy_component( easy_k( k ) ) )
   throw( std::logic_error(
        "BundleSolver::get_var_solution_easy_rc: "
        "easy component " + std::to_string( k ) + " not registered "
@@ -2458,7 +2458,7 @@ void BundleSolver::get_dual_solution_easy( Index k )
  // v_c05f[ k ]->build_easy_master_block(), the ColVariable values are
  // already in place after the master Solver has solve()d.
 
- if( ! MasterPB || ! MasterPB->get_easy_component( int( k ) ) )
+ if( ! MasterPB || ! MasterPB->get_easy_component( easy_k( k ) ) )
   throw( std::logic_error(
        "BundleSolver::get_dual_solution_easy: "
        "easy component " + std::to_string( k ) + " not registered "
@@ -2486,7 +2486,7 @@ void BundleSolver::get_dual_solution_hard( Index k )
  else if( MasterPB ) {
   // retrieve optimal multipliers from MasterPB and copy them into the
   // LinearCombination
-  const auto thetas = MasterPB->get_thetas( int( k ) );
+  const auto thetas = MasterPB->get_thetas( hard_k( k ) );
   lc.reserve( thetas.size() );
   for( int slot = 0 ; slot < int( thetas.size() ) ; ++slot ) {
    if( thetas[ slot ] == 0 )
@@ -3074,7 +3074,7 @@ void BundleSolver::FormD( void )
    // " LwrBndk -= UpRifFi[ k ] " is gone, paralleling the removal of
    // the per-cut alpha promotion in GetGi
    if( MasterPB )
-    MasterPB->set_LB( int( k ) , LwrBndk );
+    MasterPB->set_LB( hard_k( k ) , LwrBndk );
    }
   }
 
@@ -3244,7 +3244,7 @@ void BundleSolver::FormD( void )
    // bound and can therefore overwrite the fictitious value even though the
    // BundleSolver-side FictLB flag is still true.
    if( want ) {
-    MasterPB->set_fictitious_LB( int( k ) , want );
+    MasterPB->set_fictitious_LB( hard_k( k ) , want );
     FictLB[ k ] = true;
    }
    else
@@ -3254,7 +3254,7 @@ void BundleSolver::FormD( void )
      // bookkeeping flag: calling set_fictitious_LB(false) would erase the
      // genuine bound that has just been installed.
      if( LowerBound[ k ] <= - INFshift )
-      MasterPB->set_fictitious_LB( int( k ) , false );
+      MasterPB->set_fictitious_LB( hard_k( k ) , false );
      FictLB[ k ] = false;
     }
   }
@@ -4426,7 +4426,7 @@ bool BundleSolver::GetGi( Index wFi )
   auto dense_g = make_dense_g1();
   if( MasterPB ) {
    const int identical =
-    MasterPB->find_identical_cut( int( wFi ) , dense_g , ! diagonal );
+    MasterPB->find_identical_cut( hard_k( wFi ) , dense_g , ! diagonal );
    if( identical >= 0 )
     cp = Index( identical );
    }
@@ -4461,7 +4461,7 @@ bool BundleSolver::GetGi( Index wFi )
 
    const auto OldA1k = read_alpha_global( cp );
    const auto NewA1k =
-    MasterPB->get_stored_constant( int( wFi ) , dense_g ,
+    MasterPB->get_stored_constant( hard_k( wFi ) , dense_g ,
                                    Alfa1k_for_master , ! diagonal );
 
    assert( ( ItemVcblr[ cp ].first == wFi ) &&
@@ -4470,7 +4470,7 @@ bool BundleSolver::GetGi( Index wFi )
 
    const auto AlfaTol = std::max( std::abs( NewA1k ) , double( 1 ) )
                         * RelAcc / 10;
-   if( MasterPB->is_stronger_constant( int( wFi ) , OldA1k , NewA1k ,
+   if( MasterPB->is_stronger_constant( hard_k( wFi ) , OldA1k , NewA1k ,
                                        AlfaTol ) ) {
     // replace the original when the copy is substantially stronger; the
     // direction of the comparison depends on the PolyhedralFunction sense
@@ -4510,7 +4510,7 @@ bool BundleSolver::GetGi( Index wFi )
     if( MasterPB ) {
      // replace the cut at global bundle slot cp of HardCmps[ wFi ]
      // with the new ( G1k , Alfa1k ) pair
-     MasterPB->modify_cut( int( wFi ) , int( cp ) ,
+     MasterPB->modify_cut( hard_k( wFi ) , int( cp ) ,
                            std::move( dense_g ) , Alfa1k_for_master );
      }
     // note that the number of items of component wFi in the master problem
@@ -4560,7 +4560,7 @@ bool BundleSolver::GetGi( Index wFi )
 
    // ( G1k , Alfa1k_for_master ) is the cut at slot wh of HardCmps[ wFi ]
    if( MasterPB )
-    MasterPB->add_cut( int( wFi ) , int( wh ) , std::move( dense_g ) ,
+    MasterPB->add_cut( hard_k( wFi ) , int( wh ) , std::move( dense_g ) ,
                        Alfa1k_for_master , ! diagonal );
 
    // now find a position in the global pool of component wFi where to store
@@ -4788,10 +4788,10 @@ void BundleSolver::ResetAlfa( Index k )
    // global reset: every hard component
    for( Index kk = 0 ; kk < NrFi ; ++kk )
     if( ! ( NrEasy && IsEasy[ kk ] ) )
-     MasterPB->set_alphas_bulk( int( kk ) , Alfa );
+     MasterPB->set_alphas_bulk( hard_k( kk ) , Alfa );
    }
   else
-   MasterPB->set_alphas_bulk( int( k ) , Alfa );
+   MasterPB->set_alphas_bulk( hard_k( k ) , Alfa );
   }
 
  }  // end( BundleSolver::ResetAlfa )
@@ -5502,7 +5502,7 @@ Index BundleSolver::BStrategy( Index wFi )
   const auto name = InvItemVcblr[ wFi ][ slot ];
   if( name >= vBPar2.back() )
    continue;  // empty slot in the per-cmp pool
-  const auto th = MasterPB->get_theta( int( wFi ) , int( slot ) );
+  const auto th = MasterPB->get_theta( hard_k( wFi ) , int( slot ) );
   if( th == 0 )
    continue;
   coeff.emplace_back( slot , th / aggregate_mass );
@@ -5540,7 +5540,7 @@ Index BundleSolver::BStrategy( Index wFi )
  //   a* = (1/mass) (sum_i theta_i a_i + gamma LB)
  // In pure level, get_aggregated_subgradient() already returns g*.
  std::vector< double > tZ_buf =
-                              MasterPB->get_aggregated_subgradient( wFi );
+                              MasterPB->get_aggregated_subgradient( hard_k( wFi ) );
  if( tZ_buf.empty() )
   tZ_buf.assign( NumVar , 0.0 );
  if( ! pure_level_aggregate )
@@ -5548,12 +5548,12 @@ Index BundleSolver::BStrategy( Index wFi )
    v /= aggregate_mass;
 
  const double Ai =
-  MasterPB->get_raw_aggregated_alpha_with_LB( wFi ) / aggregate_mass;
+  MasterPB->get_raw_aggregated_alpha_with_LB( hard_k( wFi ) ) / aggregate_mass;
 
  // First remove any pre-existing cut at slot whZ, then re-add the
  // aggregated one
- MasterPB->remove_cut( int( wFi ) , int( whZ ) );
- MasterPB->add_cut( int( wFi ) , int( whZ ) , std::move( tZ_buf ) , Ai );
+ MasterPB->remove_cut( hard_k( wFi ) , int( whZ ) );
+ MasterPB->add_cut( hard_k( wFi ) , int( whZ ) , std::move( tZ_buf ) , Ai );
 
  whisZ[ wFi ] = whZ;      // Z[ wFi ] is in the bundle in position whZ
  Zvalid[ wFi ] = true;    // ... and it is valid
@@ -5870,7 +5870,7 @@ void BundleSolver::Delete( Index i , bool ModDelete )
  if( MasterPB && ( NrItems[ k ] == 0 ) &&
      ( ( ! NrEasy ) || ( ! IsEasy[ k ] ) ) &&
      ( LowerBound[ k ] <= - INFshift ) && ( ! FictLB[ k ] ) ) {
-  MasterPB->set_fictitious_LB( int( k ) , true );
+  MasterPB->set_fictitious_LB( hard_k( k ) , true );
   FictLB[ k ] = true;
   }
 
@@ -6194,7 +6194,7 @@ void BundleSolver::add_to_bundle( Index k , Index i )
  // append the physical ( G1 , Ai ) cut at slot wh of HardCmps[ k ];
  // MasterProblemBlock stores it in the requested primal/dual representation.
  if( MasterPB ) {
-  MasterPB->add_cut( int( k ) , int( wh ) , std::move( G1 ) , Ai ,
+  MasterPB->add_cut( hard_k( k ) , int( wh ) , std::move( G1 ) , Ai ,
                      v_c05f[ k ]->is_linearization_vertical( i ) );
   }
 
@@ -6230,7 +6230,7 @@ void BundleSolver::reset_bundle( void )
  if( MasterPB )
   for( Index k = 0 ; k < NrFi ; ++k )
    if( ! ( NrEasy && IsEasy[ k ] ) )
-    MasterPB->invalidate_subgradients( int( k ) );
+    MasterPB->invalidate_subgradients( hard_k( k ) );
 
  // reset the proximal parameter to its initial value: after a full reset the
  // bundle re-converges from an empty model, which takes a long run of null
@@ -7775,7 +7775,7 @@ void BundleSolver::process_outstanding_Modification( void )
 
   // now actually do it
   if( MasterPB )
-   MasterPB->invalidate_subgradients( int( wFi ) );
+   MasterPB->invalidate_subgradients( hard_k( wFi ) );
 
   }  // end( 5th loop, forward )
 
@@ -7973,7 +7973,7 @@ void BundleSolver::process_outstanding_Modification( void )
       else
        for( Index j = 0 ; j < NumVar ; ++j )
         g_master[ j ] = Gi[ j ];
-      MasterPB->modify_cut( int( k ) , int( InvItemVcblr[ k ][ i ] ) ,
+      MasterPB->modify_cut( hard_k( k ) , int( InvItemVcblr[ k ][ i ] ) ,
                             std::move( g_master ) , Ai );
       }
     }

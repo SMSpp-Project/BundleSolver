@@ -2532,6 +2532,44 @@ public:
   }
 
  /*--------------------------------------------------------------------------*/
+ /// index of component \p k among the "hard" ones
+
+ /** MasterProblemBlock only keeps a bundle for the "hard" components, and
+  * indexes them by their position among those [see its B^k / HardCmps[ k ]
+  * methods], while everything here counts the components of Fi globally,
+  * the "easy" ones included. The two numbers coincide when no component is
+  * easy, which is why passing the global index anyway goes unnoticed until
+  * intDoEasy makes some of them easy. The one method that takes the global
+  * index and translates on its own is get_FiBLambda(). */
+
+ int hard_k( Index k ) const {
+  if( ( ! NrEasy ) || ( IsEasy.size() < NrFi ) )
+   return( int( k ) );
+  int h = 0;
+  for( Index i = 0 ; i < k ; ++i )
+   if( ! IsEasy[ i ] )
+    ++h;
+  return( h );
+  }
+
+ /*--------------------------------------------------------------------------*/
+ /// index of component \p k among the "easy" ones
+
+ /** The counterpart of hard_k() for the components MasterProblemBlock holds
+  * as easy ones: get_easy_component() indexes them by their position among
+  * those [see EasyCmps], not by the global one. \p k must be easy. */
+
+ int easy_k( Index k ) const {
+  if( IsEasy.size() < NrFi )
+   return( int( k ) );
+  int e = 0;
+  for( Index i = 0 ; i < k ; ++i )
+   if( IsEasy[ i ] )
+    ++e;
+  return( e );
+  }
+
+ /*--------------------------------------------------------------------------*/
 
  VarValue reliable_level_LB( void ) const;
 
