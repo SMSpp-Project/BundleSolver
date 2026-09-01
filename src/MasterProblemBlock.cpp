@@ -2132,8 +2132,20 @@ double MasterProblemBlock::get_stored_constant(
                          double alpha , bool is_vert ) const
 {
  double stored = alpha;
- if( is_vert )
+ if( is_vert ) {
+  // A vertical cut is reference-independent in the absolute x-space, but in
+  // displacement coordinates x = x_ref + d its constant is
+  //     alpha + g . x_ref .
+  // Unlike a diagonal cut, it carries no F_k( x_bar ) term. Iterate form uses
+  // the absolute x and therefore keeps the raw alpha unchanged.
+  if( ! f_v2_form ) {
+   const auto & xref = IsPrimal ? f_x_bar : cut_ref();
+   const std::size_t n = std::min( g.size() , xref.size() );
+   for( std::size_t j = 0 ; j < n ; ++j )
+    stored += g[ j ] * xref[ j ];
+   }
   return( IsPrimal ? stored : - stored );
+  }
 
  if( IsPrimal ) {
   if( f_v2_form || k < 0 || k >= int( f_F_at_x_bar.size() ) )
@@ -2851,9 +2863,12 @@ double MasterProblemBlock::get_raw_aggregated_alpha( int k ) const
 
   // recover the raw alpha aggregate sum_i theta_i alpha_i from the stored b,
   // first mapping the objective-sense-signed b back to physical error units.
-  //  displacement form: b_i = F_k - alpha_i + g_i . x_bar, hence
-  //    sum theta alpha = F_k sum_th - b_sum + sum theta ( A_i . x_bar ).
-  //  iterate form: b_i = F_k - alpha_i ( no g . x_bar ), hence
+  // Only diagonal multipliers carry simplex mass and therefore multiply
+  // F_k( x_bar ); vertical multipliers are conic and contribute to b_sum and,
+  // in displacement form, to the x_ref dot product, but not to sum_th.
+  //  displacement diagonal: b_i = F_k - alpha_i + g_i . x_ref;
+  //  displacement vertical: b_i has the alpha_i + g_i . x_ref part only;
+  //  iterate diagonal: b_i = F_k - alpha_i ( no g . x_bar ), hence
   //    sum theta alpha = F_k sum_th - b_sum, with NO z_dot term.
   const bool iterate = ( f_v2_form != 0 );
 
@@ -2865,8 +2880,11 @@ double MasterProblemBlock::get_raw_aggregated_alpha( int k ) const
    const double theta =
     pfb->get_row_multiplier( PolyhedralFunction::Index( i ) );
 
+   const bool is_vert =
+    poly.is_row_vertical( PolyhedralFunction::Index( i ) );
    b_sum  += theta * ( IsConvex ? b[ i ] : - b[ i ] );
-   sum_th += theta;
+   if( ! is_vert )
+    sum_th += theta;
 
    if( ( ! iterate ) && i < A.size() ) {
     const auto & Ai = A[ i ];
@@ -3389,19 +3407,21 @@ void MasterProblemBlock::set_reference(
  // commit the new per-component reference values
  f_F_at_x_bar = F_at_x_bar;
 
- // shift each *diagonal* cut's stored constant to track the moving reference.
+ // Shift every cut's stored constant to track the moving reference.
  //  displacement form ( f_v2_form == 0 ): the stored full lin-error
  //    b[ i ] = sense_sign * ( F_k - alpha + g . x_bar ) is refreshed by
  //    sense_sign * ( ( F_new - F_old ) +
  //                    A[ i ] . ( x_bar_new - x_bar_old ) ).
+ //  A vertical row represents A_i x + b_i <=/>= 0. In displacement
+ //  coordinates its constant is b_i + A_i x_ref, so it receives the same
+ //  geometric A_i . delta-x shift but no F_new - F_old term.
  //  iterate form ( f_v2_form == 1 ): the stored constant is only the
  //    F_k-relative b[ i ] = F_k - alpha ( the g . x_bar cross-term lives in
  //    the explicit +x_bar^T R lin-z ), so its refresh is the UNIFORM
  //    per-component delta dF = F_new - F_old with NO per-cut dot product.
- // (vertical cuts encode a feasibility constraint whose right-hand side is
- // reference-independent and are left alone). The math is the dual of the
- // legacy "shift after a current-point change" loop, but here the bundle is
- // walked once and the update is invisible to the surrounding driver
+ // Vertical rows in iterate form remain raw and receive no shift. The math is
+ // the dual of the legacy "shift after a current-point change" loop, but here
+ // the bundle is walked once and the update is invisible to the driver.
  if( IsPrimal ) {
   for( int k = 0 ; k < int( HardCmps.size() ) ; ++k ) {
    auto * pfb = dynamic_cast< PolyhedralFunctionBlock * >( HardCmps[ k ] );
@@ -3416,8 +3436,6 @@ void MasterProblemBlock::set_reference(
     const auto & A = poly.get_A();
     const auto b = poly.get_b();
     for( PolyhedralFunction::Index i = 0 ; i < b.size() ; ++i ) {
-     if( poly.is_row_vertical( i ) )
-      continue;
      double dot = 0.0;
      if( i < A.size() ) {
       const auto & Ai = A[ i ];
@@ -3425,7 +3443,9 @@ void MasterProblemBlock::set_reference(
       for( std::size_t j = 0 ; j < n ; ++j )
        dot += Ai[ j ] * ( f_x_bar[ j ] - old_x_bar[ j ] );
       }
-     poly.modify_constant( i , b[ i ] + dot - dF );
+     const double delta = poly.is_row_vertical( i ) ? dot : dot - dF;
+     if( delta != 0.0 )
+      poly.modify_constant( i , b[ i ] + delta );
      }
     }
 
@@ -3453,11 +3473,11 @@ void MasterProblemBlock::set_reference(
                     ? ( F_at_x_bar[ k ] - old_F[ k ] )
                     : F_at_x_bar[ k ];
 
-  // walk every row of HardCmps[ k ]; vertical rows are skipped because
-  // their right-hand side does not depend on the reference
+  // Walk every row. Diagonals receive dF plus the geometric shift; verticals
+  // receive only the geometric shift when their stored x_ref is re-aligned.
   for( std::size_t i = 0 ; i < b.size() ; ++i ) {
-   if( poly.is_row_vertical( PolyhedralFunction::Index( i ) ) )
-    continue;
+   const bool is_vert =
+    poly.is_row_vertical( PolyhedralFunction::Index( i ) );
    double dx_dot = 0.0;
    if( ! dxbar.empty() ) {  // displacement g-shift ( x_bar - old_x_bar, or
     const auto & Ai = A[ i ];          // x_bar - x_ref under a lazy reference;
@@ -3465,7 +3485,11 @@ void MasterProblemBlock::set_reference(
     for( std::size_t j = 0 ; j < n ; ++j )     // deferred or iterate form )
      dx_dot += Ai[ j ] * dxbar[ j ];
     }
-   const double delta = ( IsConvex ? 1.0 : -1.0 ) * ( dF + dx_dot );
+   const double delta = is_vert
+                        ? ( ( ! f_v2_form ) && ( ! dxbar.empty() )
+                            ? dx_dot : 0.0 )
+                        : ( IsConvex ? 1.0 : -1.0 ) *
+                          ( dF + dx_dot );
    if( delta == 0.0 )
     continue;
    poly.modify_constant( PolyhedralFunction::Index( i ) , b[ i ] + delta );
