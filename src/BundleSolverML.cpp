@@ -468,15 +468,22 @@ void BundleSolverML::Backward( void )
 
   if( ! nn->is_training() )
    nn->train();
+   const size_t n_rec = phi_vecs.size();
+   const size_t k_win = ( f_ML_window >= int( n_rec ) )
+                       ? n_rec : size_t( f_ML_window );
+
+  for( size_t wstart = 0 ; wstart < n_rec ; wstart += k_win ) {
+   const size_t wend = std::min( wstart + k_win , n_rec );
 
   torch::Tensor loss = torch::zeros( {} , torch::kFloat32 );
-  size_t last_idx = phi_vecs.size() - 1;
+  size_t last_idx = wend - 1;
   int ss_count = 0;
 
   // scalar accumulator for the discounted search directions
   torch::Tensor w_cum = torch::zeros( {} , torch::kFloat32 );
 
-  for( size_t f = 0 ; f < phi_vecs.size() ; ++f ) {
+  
+  for( size_t f = wstart ; f < wend ; ++f ) {
    float coeff_val = coeff_vecs[ f ].item< float >();
    bool is_ss = ( coeff_val > 0 );
    if( ( ! is_ss ) && ( f != last_idx ) )
@@ -508,7 +515,7 @@ void BundleSolverML::Backward( void )
 					   nn_out.item< double >() );
 
     double discount = std::pow( 0.9 ,
-				double( phi_vecs.size() - ss_count ) );
+                                double( ( wend - wstart ) - ss_count ) );
     w_cum = w_cum + float( discount ) * nn_out * w_curr;
 
     auto gs_scalar = Gs_aggreg[ f ].to( torch::kFloat32 ).sum();
@@ -550,6 +557,7 @@ void BundleSolverML::Backward( void )
 	   << std::endl );
 
   f_optimizer->step();
+  }  // end( for( wstart ) ) 
   }
  catch( const std::exception & e ) {
   std::cerr << "Backward: exception: " << e.what() << std::endl;
