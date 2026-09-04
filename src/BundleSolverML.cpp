@@ -300,13 +300,16 @@ HpNum BundleSolverML::Heuristic( Index whch )
   t_pred = 1;
   }
 
- if( f_train_online )
-  phi_vecs.push_back( input );
- BML_LOG( "Heuristic: predicted t = " << t_pred << std::endl );
+
+  BML_LOG( "Heuristic: predicted t = " << t_pred << std::endl );
 
  // nothing below is used unless the trajectory is replayed in Backward()
- if( ! f_train_online )
-  return( HpNum( t_pred ) );
+   ++f_ML_iter;
+    if( ( ! f_train_online ) ||
+        ( f_ML_iter < f_ML_iter_first ) || ( f_ML_iter > f_ML_iter_last ) )
+      return( HpNum( t_pred ) );
+
+    phi_vecs.push_back( input );
 
  // search direction w
  Index dim;
