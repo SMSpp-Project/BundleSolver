@@ -71,6 +71,7 @@
 
 #include "BundleSolver.h"
 #include "BundleSolverMLNet.h"
+#include <climits>
 /*--------------------------------------------------------------------------*/
 /*------------------------------- MACROS -----------------------------------*/
 /*--------------------------------------------------------------------------*/
@@ -365,6 +366,7 @@ class BundleSolverML : public BundleSolver
   lastIndexS.clear();
   tS.clear();
   FiS.clear();
+  f_ML_iter = 0;
   }
 
 /*--------------------------------------------------------------------------*/
@@ -409,9 +411,10 @@ class BundleSolverML : public BundleSolver
   intMLTrainOnline = intLastBndSlvPar ,  ///< auto-train at end of compute()
 
   intMLSeed ,        ///< Torch manual seed (< 0 = leave RNG untouched)
-
   intNTrainRounds ,  ///< number of training re-solves (read by the driver)
-
+  intMLIterFirst ,   ///< first iteration recorded for training [0]
+  intMLIterLast ,    ///< last iteration recorded for training [INF]
+  intMLWindow ,      ///< length of each backward window [INF]
   intLastBndSlvMLPar ///< first allowed new int parameter for derived classes
   };
 
@@ -430,9 +433,12 @@ class BundleSolverML : public BundleSolver
    case( intMLTrainOnline ): return( f_train_online );
    case( intMLSeed ):        return( f_ML_seed );
    case( intNTrainRounds ):  return( f_n_train_rounds );
+   case( intMLIterFirst ):   return( f_ML_iter_first );
+   case( intMLIterLast ):    return( f_ML_iter_last );
+   case( intMLWindow ):      return( f_ML_window );
    default:                  return( BundleSolver::get_int_par( par ) );
-   }
   }
+}
 
 /*--------------------------------------------------------------------------*/
  /// set the int parameter par
@@ -460,9 +466,21 @@ class BundleSolverML : public BundleSolver
 		   "BundleSolverML::set_par: intNTrainRounds must be >= 1" ) );
     f_n_train_rounds = value;
     break;
-   default:
+    case( intMLIterFirst ):
+    f_ML_iter_first = value;
+    return;
+    case( intMLIterLast ):
+    f_ML_iter_last = value;
+    return;
+    case( intMLWindow ):
+    if( value < 1 )
+     throw( std::invalid_argument( "BundleSolverML::set_par: intMLWindow must be >= 1" ) );
+    f_ML_window = value;
+    return;
+    default:
     BundleSolver::set_par( par , value );
    }
+
   }
 
 /*--------------------------------------------------------------------------*/
@@ -473,6 +491,9 @@ class BundleSolverML : public BundleSolver
   if( name == "intMLTrainOnline" ) return( intMLTrainOnline );
   if( name == "intMLSeed" )        return( intMLSeed );
   if( name == "intNTrainRounds" )  return( intNTrainRounds );
+  if( name == "intMLIterFirst" )   return( intMLIterFirst );
+  if( name == "intMLIterLast" )    return( intMLIterLast );
+  if( name == "intMLWindow" )      return( intMLWindow );
 
   return( BundleSolver::int_par_str2idx( name ) );
   }
@@ -482,8 +503,8 @@ class BundleSolverML : public BundleSolver
 
  [[nodiscard]] const std::string & int_par_idx2str( idx_type idx )
   const override {
-  static const std::array< std::string , 3 > int_pars_str_ML = {
-   "intMLTrainOnline" , "intMLSeed" , "intNTrainRounds" };
+  static const std::array< std::string , 6 > int_pars_str_ML = {
+   "intMLTrainOnline" , "intMLSeed" , "intNTrainRounds","intMLIterFirst" , "intMLIterLast" , "intMLWindow" };
 
   if( ( idx >= intLastBndSlvPar ) && ( idx < intLastBndSlvMLPar ) )
    return( int_pars_str_ML[ idx - intLastBndSlvPar ] );
@@ -530,10 +551,13 @@ class BundleSolverML : public BundleSolver
    2      // intRstAlg
    };
 
-  static const std::array< int , 3 > dflt_int_par_ML = {
+  static const std::array< int , 6 > dflt_int_par_ML = {
    0 ,    // intMLTrainOnline
    -1 ,   // intMLSeed
-   1      // intNTrainRounds
+   1 ,    // intNTrainRounds
+   0 ,    // intMLIterFirst
+   INT_MAX ,  // intMLIterLast
+   INT_MAX    // intMLWindow
    };
 
   if( ( par >= intLastBndSlvPar ) && ( par < intLastBndSlvMLPar ) )
@@ -640,6 +664,10 @@ class BundleSolverML : public BundleSolver
  int f_ML_seed = -1;         ///< value of intMLSeed [-1]
 
  int f_n_train_rounds = 1;   ///< value of intNTrainRounds [1]
+ int f_ML_iter_first = 0;        ///< value of intMLIterFirst [0]
+ int f_ML_iter_last = INT_MAX;   ///< value of intMLIterLast [INT_MAX]
+ int f_ML_window = INT_MAX;      ///< value of intMLWindow [INT_MAX]
+ int f_ML_iter = 0;              ///< iteration counter within a solve
 
 /*--------------------------------------------------------------------------*/
 /*-------------------------- PRIVATE METHODS --------------------------------*/
