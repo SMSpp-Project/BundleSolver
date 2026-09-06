@@ -4283,8 +4283,12 @@ bool BundleSolver::GetGi( Index wFi )
   if( ! HasLinearization )  // no new linearization of either type available
    break;                   // nothing else to do
 
-  if( ! diagonal )          // a vertical linearization changes the MP
-   MPchgs = 2;              // no matter what else happens
+  /* A vertical linearization does change the Master Problem, but only if it
+   * ends up in it: when the oracle hands back one that is already in the
+   * bundle and is no stronger than the copy, nothing changes, and claiming
+   * otherwise disables the noise-reduction test below, so the same point is
+   * proposed, answered with the same cut and proposed again forever. The
+   * flag is therefore set where the row is actually inserted or replaced. */
 
   // check if aggregation has to be performed - - - - - - - - - - - - - - - -
   // doing this now could occasionally result in useless aggregations, but it
@@ -4555,6 +4559,9 @@ bool BundleSolver::GetGi( Index wFi )
      MasterPB->modify_cut( hard_k( wFi ) , int( cp ) ,
                            std::move( dense_g ) , Alfa1k_for_master );
      }
+
+    if( ! diagonal )   // a vertical row of the master has changed
+     MPchgs = 2;
     // note that the number of items of component wFi in the master problem
     // is unchanged
     }
@@ -4634,10 +4641,12 @@ bool BundleSolver::GetGi( Index wFi )
 
    if( diagonal )       // it is a subgradient
     OOBase[ wh ] = -1;  // ensure it won't be touched again this round
-   else                 // it is a constraint
+   else {               // it is a constraint
     // mark it as permanently fixed: this may be a bad choice in practice,
     // although it is required by the theory (we'll see ...)
     OOBase[ wh ] = -Inf< SIndex >();
+    MPchgs = 2;         // a new vertical row: the MP is bound to change
+    }
    }
 
   #if CHECK_DS & 1
