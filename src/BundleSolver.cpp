@@ -5992,6 +5992,16 @@ bool BundleSolver::IsOptimal( double eps ) const
  if( vStar.back() >= INFshift )  // some components have no subgradients
   return( false );               // no way one can detect optimality
 
+ // while the bundle is empty t is temporarily collapsed to tMinor [see
+ // FormD()], and Prevt holds the value to be restored as soon as there is
+ // something in the bundle. With that t the step is null, hence z* and Sigma
+ // are zero because of the stabilization and not because the point is
+ // optimal: reading them as optimality certifies whatever point the
+ // algorithm happens to be at, which is how an unbounded problem got
+ // declared solved once a previous call had emptied the bundle
+ if( Prevt < INFshift )
+  return( false );
+
  c_VarValue err = max_error( eps );
  if( err >= INFshift )
   return( false );
