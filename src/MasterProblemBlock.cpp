@@ -2173,7 +2173,16 @@ double MasterProblemBlock::get_stored_constant(
   /* Unlike a diagonal row, a vertical one keeps its constant as it is: the
    * dual storage negates the g of every row [see add_cut()], and negating
    * the constant along with it would turn A x + b <= 0 into A x + b >= 0,
-   * i.e., into the opposite half-space. */
+   * i.e., into the opposite half-space. What it does share with a diagonal
+   * row is the sense of the function, and with the opposite sign: the v
+   * coefficient, which is what orients a diagonal row, is zero here, so it
+   * is the sense of the master that decides on which side the constant has
+   * to stand. Getting this wrong does not make the master unsolvable, it
+   * makes the multiplier of the row unattractive, so the cut sits there and
+   * is never taken and the bundle stops moving. */
+
+  if( ( ! IsPrimal ) && IsConvex )
+   stored = - stored;
 
   return( stored );
   }
