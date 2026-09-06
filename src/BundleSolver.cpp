@@ -2815,6 +2815,10 @@ BundleSolver::VarValue BundleSolver::reliable_level_LB( void ) const
 
 void BundleSolver::reset_level_stabilization( void )
 {
+ // the count of consecutive noise-reduction steps refers to the level
+ // target being reset here, so it goes with it: keeping it would have the
+ // next call stop at its first null step
+ LevelNRCntr = 0;
  f_level_Delta = 0;
  f_level_value = INFshift;
  f_level_LB = -INFshift;
