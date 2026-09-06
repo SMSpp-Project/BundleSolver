@@ -2699,16 +2699,7 @@ double MasterProblemBlock::get_aggregated_alpha( int k ) const
  // b[i] is stored in the physical PolyhedralFunction units. The multiplier
  // must therefore also be expressed in physical units. get_row_multiplier()
  // hides both the active PFB representation and any internal row scaling.
- /* Sigma is the aggregated linearization error of the cutting-plane
-  * *model*, so only the diagonal rows belong in it: a vertical row states
-  * where the domain is, carries no linearization error, and its multiplier
-  * is conic, hence of arbitrary size. Summing it in makes Sigma drift with
-  * a quantity that has nothing to do with the model gap, and can even make
-  * it negative, which then defeats the stopping test. want_vert selects
-  * which half of the rows is being asked for: the model part, or the
-  * vertical mass the master objective carries on top of it. */
-
- auto contrib = [ this ]( int kk , bool want_vert ) -> double {
+ auto contrib = [ this ]( int kk ) -> double {
   if( kk < 0 || kk >= int( HardCmps.size() ) )
    return( 0.0 );
 
@@ -2738,9 +2729,6 @@ double MasterProblemBlock::get_aggregated_alpha( int k ) const
 
   double s = 0.0;
   for( std::size_t i = 0 ; i < b.size() ; ++i ) {
-   if( poly.is_row_vertical( PolyhedralFunction::Index( i ) ) != want_vert )
-    continue;
-
    const double theta =
     pfb->get_row_multiplier( PolyhedralFunction::Index( i ) );
    s += theta * ( IsConvex ? b[ i ] : - b[ i ] );
@@ -2758,8 +2746,7 @@ double MasterProblemBlock::get_aggregated_alpha( int k ) const
   // The component lower bound is a valid horizontal row. If gamma carries
   // mass, it contributes no subgradient, but it does contribute its
   // linearization error F_k(x_bar) - LB_k to Sigma_k.
-  if( ( ! want_vert ) &&
-      kk < int( f_LB_raw.size() ) && kk < int( f_F_at_x_bar.size() ) &&
+  if( kk < int( f_LB_raw.size() ) && kk < int( f_F_at_x_bar.size() ) &&
       std::isfinite( f_LB_raw[ kk ] ) )
    s += get_gamma( kk ) * ( f_F_at_x_bar[ kk ] - f_LB_raw[ kk ] );
 
@@ -2774,13 +2761,7 @@ double MasterProblemBlock::get_aggregated_alpha( int k ) const
   };
 
  if( k >= 0 )
-  return( contrib( k , false ) );
-
- // the master objective carries the vertical mass too, while Sigma must
- // not: compute it here so it can be taken out of the objective below
- double vert_mass = 0.0;
- for( int kk = 0 ; kk < int( HardCmps.size() ) ; ++kk )
-  vert_mass += contrib( kk , true );
+  return( contrib( k ) );
 
  const double mp_obj = get_master_objective_value();
  if( ( ! uses_pure_level_aggregation() ) && std::isfinite( mp_obj ) ) {
@@ -2802,12 +2783,12 @@ double MasterProblemBlock::get_aggregated_alpha( int k ) const
     std::inner_product( f_linear_part.begin() , f_linear_part.end() ,
                         f_x_bar.begin() , 0.0 );
 
-  return( signed_obj - 0.5 * t_stab * get_dual_norm_squared() - vert_mass );
+  return( signed_obj - 0.5 * t_stab * get_dual_norm_squared() );
   }
 
  double total = 0.0;
  for( int kk = 0 ; kk < int( HardCmps.size() ) ; ++kk )
-  total += contrib( kk , false );
+  total += contrib( kk );
 
  return( total );
 }
@@ -2939,16 +2920,11 @@ double MasterProblemBlock::get_raw_aggregated_alpha( int k ) const
    const double theta =
     pfb->get_row_multiplier( PolyhedralFunction::Index( i ) );
 
-   // Sigma is the aggregated linearization error of the *model*, so only
-   // the diagonal rows take part in it: a vertical row is a constraint on
-   // the domain, it carries no linearization error and its (conic, hence
-   // arbitrarily large) multiplier would drag Sigma along an unrelated
-   // quantity. This is what the primal branch above does as well.
-   if( poly.is_row_vertical( PolyhedralFunction::Index( i ) ) )
-    continue;
-
+   const bool is_vert =
+    poly.is_row_vertical( PolyhedralFunction::Index( i ) );
    b_sum  += theta * ( IsConvex ? b[ i ] : - b[ i ] );
-   sum_th += theta;
+   if( ! is_vert )
+    sum_th += theta;
 
    if( ( ! iterate ) && i < A.size() ) {
     const auto & Ai = A[ i ];
