@@ -1282,7 +1282,18 @@ void BundleSolver::set_Block( Block * block )
     Constraint. cVariable may have a lower and upper bound. If the lower
     bound  has a finite value, it must be 0. */
 
- const auto & sb = f_Block->get_nested_Blocks();
+ /* A sub-Block that this Solver has been told to ignore [see
+    Solver::set_excluded_blocks()] is not a component of the sum-function:
+    whoever installed the exclusion list is taking care of it by other means,
+    as BendersDecompositionSolver does with the subproblems it has moved
+    inside a BendersBFunction, and the Block is scanned as if it were not
+    there. */
+
+ std::vector< Block * > sb;
+ sb.reserve( f_Block->get_number_nested_Blocks() );
+ for( auto blk : f_Block->get_nested_Blocks() )
+  if( ! is_excluded( blk ) )
+   sb.push_back( blk );
 
  if( sb.empty() ) {  // no sub-Block
   // the objective function of the Block must be a C05Function  - - - - - - -
