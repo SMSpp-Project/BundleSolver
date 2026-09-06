@@ -6013,7 +6013,8 @@ void BundleSolver::FModChg( VarValue shift , Index wFi )
    --UpFiLmbdef;                // one less known
    }
   UpFiBest = INFshift;          // comprised best one
-  return;
+  reset_level_stabilization();  // the level target is an absolute function
+  return;                       // value, so it means nothing any more
   }
 
  if( shift == -INFshift ) {     // function changed monotonically dn
@@ -6026,6 +6027,7 @@ void BundleSolver::FModChg( VarValue shift , Index wFi )
    --LwFiLmbdef;                // one less known
    }
   f_global_LB = -INFshift;      // global LB no longer valid
+  reset_level_stabilization();  // and so is the level target
   return;
   }
 
@@ -6048,6 +6050,7 @@ void BundleSolver::FModChg( VarValue shift , Index wFi )
    --LwFiLmbdef;                // one less known
    }
   f_global_LB = -INFshift;      // global LB no longer valid
+  reset_level_stabilization();  // and so is the level target
   return;
   }
 
@@ -6075,6 +6078,17 @@ void BundleSolver::FModChg( VarValue shift , Index wFi )
   LwFiLmb.back() += shift;
 
  f_global_LB += shift;
+
+ /* The level target and the lower bound it rests on are absolute function
+  * values, so a known shift moves them along with everything else: leaving
+  * them where they were would keep the master aiming at a value the
+  * function no longer takes. */
+
+ if( f_level_value < INFshift )
+  f_level_value += shift;
+ if( f_level_LB > -INFshift )
+  f_level_LB += shift;
+ install_level_stabilization();
 
  }  // end( BundleSolver::FModChg )
 
