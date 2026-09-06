@@ -4765,12 +4765,11 @@ void BundleSolver::ResetAlfa( Index k )
     // MasterPB owns the raw -> linearization-error translation ( b = F_k -
     // alpha + g . x_bar, using the cut's stored g ), so feed it the RAW
     // constant, not the pre-translated lin-error: passing the lin-error here
-    // would make modify_alpha translate a second time. Vertical cuts store
-    // the raw constant directly ( sign-flipped ), diagonal cuts the raw alpha.
-    if( v_c05f[ kk ]->is_linearization_vertical( nm ) )
-     Alfa[ i ] = - Ai;
-    else
-     Alfa[ i ] = Ai;
+    // would make modify_alpha translate a second time. This holds for a
+    // vertical cut as well: the sense of the master, which is what orients
+    // its constant, is applied by get_stored_constant() and by it alone,
+    // so pre-flipping the sign here would apply it twice.
+    Alfa[ i ] = Ai;
     }
   }
  else {             // only that specific component need be reset
@@ -4791,12 +4790,9 @@ void BundleSolver::ResetAlfa( Index k )
     if( ! f_convex )
      chgsign( Gi.data() , NumVar );
 
-    // feed MasterPB the RAW constant ( it owns the raw -> lin-error
-    // translation ); vertical cuts sign-flipped, diagonal cuts the raw alpha
-    if( v_c05f[ k ]->is_linearization_vertical( i ) )
-     Alfa[ InvItemVcblr[ k ][ i ] ] = - Ai;
-    else
-     Alfa[ InvItemVcblr[ k ][ i ] ] = Ai;
+    // feed MasterPB the RAW constant, vertical cuts included: it owns the
+    // raw -> lin-error translation and the sense of the master [see above]
+    Alfa[ InvItemVcblr[ k ][ i ] ] = Ai;
    }
   }
 
