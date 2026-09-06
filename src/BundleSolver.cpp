@@ -638,17 +638,24 @@ int BundleSolver::compute( bool changedvars )
    continue;                 // return at the start and stop
 
   if( Result == kInfeasible ) {  // the Master Problem is infeasible
+   /* An empty primal Master Problem has two possible causes when both a
+    * level target and vertical linearizations are there: the level set is
+    * empty, which says the level value is a valid lower bound, or the
+    * domain is, which says the problem is. They are told apart by relaxing
+    * the level: if the master is still empty afterwards, the refresh makes
+    * no progress and the domain is the culprit. */
+
    const bool level_empty = UsesPrimalMaster();
    if( UsesLevelStabilization() && f_level_initialized &&
        ( f_level_value < INFshift ) && ( UpFiLmb.back() < INFshift ) &&
-       ( ! get_bc_size() ) && level_empty ) {
+       level_empty ) {
     BLOG( 1 , " ~ level empty: LB = " << def << f_level_value
               << std::endl );
     record_level_lower_bound( f_level_value );
     if( ! refresh_level_after_master( true ) ) {
      BLOG( 1 , " ~ stop (empty level refresh made no progress)"
                << std::endl );
-     Result = kLowPrecision;
+     Result = get_bc_size() ? kInfeasible : kLowPrecision;
      break;
      }
     continue;
@@ -3307,10 +3314,13 @@ void BundleSolver::FormD( void )
   if( mps == Solver::kOK )           // everything's alright
    break;
 
-  const bool level_empty =
-   UsesPrimalMaster()
-   ? ( ( mps == Solver::kInfeasible ) && ( ! get_bc_size() ) )
-   : ( mps == Solver::kUnbounded );
+  /* see the twin test in compute(): with vertical linearizations around, an
+   * empty primal master may be the level set rather than the domain, and
+   * relaxing the level is what tells the two apart */
+
+  const bool level_empty = UsesPrimalMaster()
+                           ? ( mps == Solver::kInfeasible )
+                           : ( mps == Solver::kUnbounded );
 
   if( UsesLevelStabilization() && f_level_initialized &&
       ( f_level_value < INFshift ) && level_empty ) {
@@ -3318,7 +3328,7 @@ void BundleSolver::FormD( void )
    if( ! refresh_level_after_master( true ) ) {
     BLOG( 1 , std::endl
               << "Bundle::FormD: empty level refresh made no progress" );
-    Result = kError;
+    Result = get_bc_size() ? kInfeasible : kError;
     return;
     }
    continue;
