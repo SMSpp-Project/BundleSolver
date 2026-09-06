@@ -3525,11 +3525,17 @@ void MasterProblemBlock::set_reference(
     for( std::size_t j = 0 ; j < n ; ++j )     // deferred or iterate form )
      dx_dot += Ai[ j ] * dxbar[ j ];
     }
-   const double delta = is_vert
-                        ? ( ( ! f_v2_form ) && ( ! dxbar.empty() )
-                            ? dx_dot : 0.0 )
-                        : ( IsConvex ? 1.0 : -1.0 ) *
-                          ( dF + dx_dot );
+   /* The stored constant of a vertical row follows the sense of the master
+    * exactly as a diagonal one does [see get_stored_constant()], so its
+    * geometric shift carries the same sign factor: without it the constant
+    * of every vertical row moves the wrong way at each reference change,
+    * and after one move the row states the opposite half-space. */
+
+   const double delta = ( IsConvex ? 1.0 : -1.0 ) *
+                        ( is_vert
+                          ? ( ( ( ! f_v2_form ) && ( ! dxbar.empty() ) )
+                              ? dx_dot : 0.0 )
+                          : ( dF + dx_dot ) );
    if( delta == 0.0 )
     continue;
    poly.modify_constant( PolyhedralFunction::Index( i ) , b[ i ] + delta );
