@@ -3330,7 +3330,20 @@ void BundleSolver::FormD( void )
    * the inner Solver returning kInfeasible/unbounded can only be a
    * numerical error in disguise. */
 
-  if( mps == Solver::kInfeasible ) {  // the MP is (primal) empty
+  /* The status the inner Solver reports is that of the *formulation* the
+   * Master Problem is written in, so it has to be read back into the primal
+   * one before it can be interpreted: an empty primal shows up as an
+   * unbounded dual, and an unbounded primal as an empty dual (the same
+   * conversion the level-emptiness test above makes). */
+
+  const bool primal_empty = UsesPrimalMaster()
+                            ? ( mps == Solver::kInfeasible )
+                            : ( mps == Solver::kUnbounded );
+  const bool primal_unbounded = UsesPrimalMaster()
+                                ? ( mps == Solver::kUnbounded )
+                                : ( mps == Solver::kInfeasible );
+
+  if( primal_empty ) {                // the MP is (primal) empty
    if( ! get_bc_size() )              // there are no vertical linearizations
     mps = Solver::kError;             // it must be a numerical error
    else {                             // there are vertical linearizations
@@ -3339,7 +3352,7 @@ void BundleSolver::FormD( void )
     }
    }
 
-  if( mps == Solver::kUnbounded ) {   // the MP is (primal) unbounded
+  if( primal_unbounded ) {            // the MP is (primal) unbounded
    if( ! NrEasy )                     // there are no easy components
     mps = Solver::kError;             // it must be a numerical error
    else {                             // there are easy components
