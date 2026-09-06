@@ -2764,7 +2764,12 @@ double MasterProblemBlock::get_aggregated_alpha( int k ) const
   return( contrib( k ) );
 
  const double mp_obj = get_master_objective_value();
- if( ( ! uses_pure_level_aggregation() ) && std::isfinite( mp_obj ) ) {
+ /* The master objective is the model gap plus the stabilization term only
+  * under pure proximal stabilization: with a level row in the master it
+  * also carries the omega * f_lev term, which has nothing to do with Sigma,
+  * so there the aggregate is summed row by row instead. */
+
+ if( ( StblType == kProximal ) && std::isfinite( mp_obj ) ) {
   // The full dual master objective contains the model gap and the quadratic
   // stabilization term. In the convex/min representation it is Sigma + D;
   // in the concave/max representation the objective sense stores the negated
