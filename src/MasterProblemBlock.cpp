@@ -4216,11 +4216,32 @@ int MasterProblemBlock::solve_master( void )
  // when exact easy components are present: their objective and coupling
  // terms already make the master non-empty and must be optimized.
  if( is_bundle_empty() && ( NoEasyCmps == 0 ) ) {
+  /* With an empty bundle the cutting-plane model is empty and the master
+   * reduces to the stabilization alone,
+   *
+   *     min { l.d + || d ||^2 / 2 t }
+   *
+   * l being the gradient of the linear 0-th component [see
+   * set_linear_part()], whose solution is d = - t l rather than d = 0. The
+   * "first call needs no master" convention above holds only when l is
+   * zero: when it is not, answering d = 0 hides the one direction along
+   * which the function is known to decrease, the point never moves, and a
+   * function that is unbounded below because of l alone is never
+   * recognised as such -- the driver keeps re-evaluating Fi at the same
+   * point. z = l is the same answer in the dual frame. */
+
+  const bool has_linear = std::any_of( f_linear_part.begin() ,
+                                       f_linear_part.end() ,
+                                       []( double c ) { return( c != 0 ); } );
   if( IsPrimal )
    for( int i = 0 ; i < int( Var_d.size() ) ; ++i )
-    Var_d[ i ].set_value( f_v2_form ? f_x_bar[ i ] : 0.0 );
+    Var_d[ i ].set_value( ( f_v2_form ? f_x_bar[ i ] : 0.0 )
+                          - ( has_linear ? t_stab * f_linear_part[ i ]
+                                         : 0.0 ) );
   else
-   for( auto & zi : Var_z ) zi.set_value( 0.0 );
+   for( int i = 0 ; i < int( Var_z.size() ) ; ++i )
+    Var_z[ i ].set_value( has_linear ? f_linear_part[ i ] : 0.0 );
+
   return( Solver::kOK );
   }
 
