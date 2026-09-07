@@ -4973,7 +4973,7 @@ void BundleSolver::Log2( double ft )
 
 void BundleSolver::compute_NrmZFctr( void )
 {
- auto wf = ( WZNorm << 2 );
+ auto wf = ( WZNorm >> 2 );
  // if we need to sum but some component has no linearization, return:
  // NrmZFctr remains undefined
  if( wf > 1 )
