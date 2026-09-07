@@ -51,87 +51,13 @@ list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 include(BuildType)
 
 # ----- Requirements -------------------------------------------------------- #
-# OsiCpx and/or OsiGrb needed for LegacyBundleSolver
-find_package(Osi REQUIRED OPTIONAL_COMPONENTS OsiCpx OsiGrb)
-if (NOT Osi_FOUND)
-    set(NDOFiOracle_USE_OSI OFF)
-endif ()
-
-# OsiClp needed for LegacyBundleSolver
-find_package(Clp COMPONENTS OsiClp)
-if (NOT Clp_FOUND)
-    set(NDOFiOracle_USE_CLP OFF)
-endif ()
-
 # Torch needed for BundleSolverML
 find_package(Torch HINTS ${Torch_ROOT})
-
-# Set the WHICH_OSI_QP macro according to these following priorities:
-# - use the given WHICH_OSI_QP in input as CMake option, if any
-# - use Cplex, i.e., 1, if available
-# - use Gurobi, i.e., 2, if available
-# - otherwise, use Clp
-
-# Define a temporary variable to store the value of WHICH_OSI_QP
-set(TEMP_WHICH_OSI_QP 0)
-
-# if WHICH_OSI_QP is *not* given in input as CMake option...
-# (`NOT DEFINED WHICH_OSI_QP` tests `set( )`, not `add_compile_definitions( )`)
-if (NOT DEFINED WHICH_OSI_QP)
-    # ... then use OsiClp in LegacyBundleSolver by default (as in LegacyBundleSolver.cpp:72)
-    set(TEMP_WHICH_OSI_QP 0)
-else () # else if WHICH_OSI_QP is given in input as CMake option...
-    if (WHICH_OSI_QP MATCHES "^(CPLEX|cplex|CPX|cpx|1)$")
-        set(TEMP_WHICH_OSI_QP 1) # ... then use OsiCpx in LegacyBundleSolver
-    elseif (WHICH_OSI_QP MATCHES "^(GUROBI|gurobi|GRB|grb|2)$")
-        set(TEMP_WHICH_OSI_QP 2) # ... then use OsiGrb in LegacyBundleSolver
-    else ()
-        set(TEMP_WHICH_OSI_QP 0) # ... then use OsiClp in LegacyBundleSolver
-    endif ()
-endif ()
-
-# if Gurobi is found...
-if (Osi_OsiGrb_FOUND)
-    # ... and if WHICH_OSI_QP is *not* given in input as CMake option...
-    # (`NOT DEFINED WHICH_OSI_QP` tests `set( )`, not `add_compile_definitions( )`)
-    if (NOT DEFINED WHICH_OSI_QP)
-        # ... then use OsiGrb in LegacyBundleSolver
-        set(TEMP_WHICH_OSI_QP 2)
-    endif ()
-endif ()
-
-# but, if also Cplex is found...
-if (Osi_OsiCpx_FOUND)
-    # ... and if WHICH_OSI_QP is *not* given in input as CMake option...
-    # (`NOT DEFINED WHICH_OSI_QP` tests `set( )`, not `add_compile_definitions( )`)
-    if (NOT DEFINED WHICH_OSI_QP)
-        # ... then use OsiCpx in LegacyBundleSolver
-        set(TEMP_WHICH_OSI_QP 1)
-    endif ()
-endif ()
-
-# Add the compile definition only once at the end to avoid warnings
-add_compile_definitions(WHICH_OSI_QP=${TEMP_WHICH_OSI_QP})
-
-# Unset the temporary variable
-unset(TEMP_WHICH_OSI_QP)
 
 if (NOT hasParent)
     # If it's not being called by the umbrella, we need to
     # look for the system-installed libraries.
     find_package(MILPSolver REQUIRED)
-    find_package(NDOFiOracle REQUIRED)
-else ()
-    # NDOFiOracle library, required by LegacyBundleSolver
-    # Requires CoinUtils, Osi and CPLEX
-    set(NDOFiOracle_READ_PATHS OFF CACHE BOOL
-            "Whether NdoFiOracle will read locations for dependencies or not." FORCE)
-    add_subdirectory(NdoFiOracle)
-
-    # Add the binary directory to RPATH, so executables that use
-    # dynamic loading will look into it.
-    set(SMSPP_BUILD_RPATH
-            "${SMSPP_BUILD_RPATH};${CMAKE_CURRENT_BINARY_DIR}/NdoFiOracle")
 endif ()
 
 # ----- Configuration header ------------------------------------------------ #
@@ -155,11 +81,9 @@ endif ()
 # but should be added to anything that links to it.
 # Note: do not GLOB files here.
 target_sources(${modName} PRIVATE
-        src/LegacyBundleSolver.cpp
         src/ParallelBundleSolver.cpp
         src/MasterProblemBlock.cpp
-        src/BundleSolver.cpp
-        MILPMPSolver/MILPMPSolver.cpp)
+        src/BundleSolver.cpp)
 
 # When using target_include_directories(), PUBLIC means that any targets
 # that link to this target also need that include directory.
@@ -174,7 +98,6 @@ target_sources(${modName} PRIVATE
 target_include_directories(
         ${modName} PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/MILPMPSolver>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
         $<INSTALL_INTERFACE:include/${modNamespace}>)
 
@@ -184,8 +107,7 @@ target_include_directories(
 # library, INTERFACE means they will be linked only to the targets that depend
 # on this library.
 target_link_libraries(${modName} PUBLIC
-        ${modNamespace}::MILPSolver
-        NDOFiOracle::NDOFiOracle)
+        ${modNamespace}::MILPSolver)
 
 if (Torch_FOUND)
     message(STATUS "${modName}: Torch found, configuring BundleSolverML")
@@ -193,23 +115,6 @@ if (Torch_FOUND)
     separate_arguments(TORCH_CXX_FLAGS_LIST UNIX_COMMAND "${TORCH_CXX_FLAGS}")
     target_compile_options(${modName} PRIVATE ${TORCH_CXX_FLAGS_LIST})
     target_link_libraries(${modName} PUBLIC ${TORCH_LIBRARIES})
-endif ()
-
-# if NDOFiOracle library is *not* given as subdirectory since it is
-# in the system-installed libraries, we need to link the Coin::Osi* targets here
-if (NOT hasParent)
-    message(STATUS "${modName}: OsiClp found, configuring LegacyBundleSolver")
-    target_link_libraries(${modName} PUBLIC Coin::OsiClp)
-
-    if (Osi_OsiCpx_FOUND)
-        message(STATUS "${modName}: OsiCpx found, configuring LegacyBundleSolver")
-        target_link_libraries(${modName} PUBLIC Coin::OsiCpx)
-    endif ()
-
-    if (Osi_OsiGrb_FOUND)
-        message(STATUS "${modName}: OsiGrb found, configuring LegacyBundleSolver")
-        target_link_libraries(${modName} PUBLIC Coin::OsiGrb)
-    endif ()
 endif ()
 
 # This alias is defined so that executables in this same project can use
@@ -237,7 +142,6 @@ install(TARGETS ${modName}
 
 # Install the headers
 install(FILES
-        ${CMAKE_CURRENT_SOURCE_DIR}/include/LegacyBundleSolver.h
         ${CMAKE_CURRENT_SOURCE_DIR}/include/MasterProblemBlock.h
         ${CMAKE_CURRENT_SOURCE_DIR}/include/BundleSolver.h
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/${modNamespace})

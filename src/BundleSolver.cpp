@@ -1924,8 +1924,7 @@ void BundleSolver::set_Block( Block * block )
  // Lambda region (exactly the box FormLambda1 clamps Lambda1 against). Without
  // it the dual MasterProblemBlock returns the *unconstrained* d* = -t z*,
  // which inflates || z* || (and hence v*) and stalls the bundle on finite
- // optima: the legacy NDOFiOracle MPSolvers receive the same box from the
- // NDOSolver interface and project d*. A effective bounds combine the
+ // optima. The effective bounds combine the
  // ColVariable's own bounds with any supported active bound constraint;
  // set_box() treats any non-finite entry as "no bound" (the matching slack
  // stays fixed to 0)
