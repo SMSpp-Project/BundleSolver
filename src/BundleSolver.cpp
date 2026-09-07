@@ -2500,20 +2500,25 @@ void BundleSolver::get_dual_solution_hard( Index k )
   lc[ 0 ].second = 1;
   }
  else if( MasterPB ) {
-  // retrieve optimal multipliers from MasterPB and copy them into the
-  // LinearCombination
-  const auto thetas = MasterPB->get_thetas( hard_k( k ) );
-  lc.reserve( thetas.size() );
-  for( int slot = 0 ; slot < int( thetas.size() ) ; ++slot ) {
-   if( thetas[ slot ] == 0 )
+  // retrieve the optimal multipliers from MasterPB and copy them into the
+  // LinearCombination. The master indexes a cut by the global bundle name
+  // it was add_cut()-ed with, while a C05Function names a linearization by
+  // its position in the global pool: InvItemVcblr maps the latter into the
+  // former. The multipliers are scaled by the mass they share, so that the
+  // coefficients are those of a convex combination
+  const auto mass = MasterPB->uses_pure_level_aggregation()
+                    ? MasterPB->get_level_multiplier()
+                    : MasterPB->get_lambda();
+  const auto & inv = InvItemVcblr[ k ];
+  lc.reserve( inv.size() );
+  for( Index slot = 0 ; slot < Index( inv.size() ) ; ++slot ) {
+   const auto name = inv[ slot ];
+   if( name >= vBPar2.back() )
+    continue;  // the position in the global pool is not in the bundle
+   const auto th = MasterPB->get_theta( hard_k( k ) , int( name ) );
+   if( th == 0 )
     continue;
-   // find the global name corresponding to ( k , slot )
-   for( Index name = 0 ; name < Index( ItemVcblr.size() ) ; ++name )
-    if( ItemVcblr[ name ].first == k &&
-        ItemVcblr[ name ].second == Index( slot ) ) {
-     lc.emplace_back( ItemVcblr[ name ].second , thetas[ slot ] );
-     break;
-     }
+   lc.emplace_back( slot , mass > 0 ? th / mass : th );
    }
   }
 
