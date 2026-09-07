@@ -5547,7 +5547,9 @@ Index BundleSolver::BStrategy( Index wFi )
   const auto name = InvItemVcblr[ wFi ][ slot ];
   if( name >= vBPar2.back() )
    continue;  // empty slot in the per-cmp pool
-  const auto th = MasterPB->get_theta( hard_k( wFi ) , int( slot ) );
+  // the master indexes a cut by the global bundle name it was add_cut()-ed
+  // with, not by the per-component global-pool position
+  const auto th = MasterPB->get_theta( hard_k( wFi ) , int( name ) );
   if( th == 0 )
    continue;
   coeff.emplace_back( slot , th / aggregate_mass );
