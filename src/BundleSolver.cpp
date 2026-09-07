@@ -1687,14 +1687,12 @@ void BundleSolver::set_Block( Block * block )
      // description, see GetBNC())
      if( ( ! MILPs->get_num_integer_vars() ) &&
 	 ( ! MILPs->get_numquadrows() ) ) {
+      // the master registers the inner Block of the easy component as a
+      // sub-Block and reads its Objective whole, constant term included,
+      // so nothing of its value has to be compensated for from outside
       IsEasy[ k ] = MILPs;
       ++NrEasy;
-
-     // the master MP cannot carry the constant term of an easy
-     // component on its own, so it is folded into constant_value and
-     // added back when reporting Fi values
-     constant_value += LagB->get_constant_term();
-     }
+      }
     }
    catch( ... ) {  // exception means that something nonlinear is there
     }
