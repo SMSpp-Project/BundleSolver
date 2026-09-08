@@ -1983,8 +1983,10 @@ void BundleSolver::set_par( idx_type par , double value )
 {
  switch( par ) {
   case( dblMaxTime ):
-   if( value <= 0 )
-    throw( std::invalid_argument( "dblMaxTime must be > 0" ) );
+   // a non-positive time is not an error: it says that the budget being
+   // handed down is already spent, so that a caller passing what is left of
+   // one need not special-case the exhausted case. compute() then stops on
+   // the first check of the main loop, before doing any work, with kStopTime
    MaxTime = value;
    break;
   case( dblRelAcc ):

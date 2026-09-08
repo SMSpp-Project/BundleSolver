@@ -1050,7 +1050,12 @@ public:
   * parameters of CDASolver that BundleSolver actually "listens to":
   *
   * - dblMaxTime [Inf< double >()]: maximum CPU time for the next call to
-  *                               compute(), in seconds
+  *                               compute(), in seconds; a non-positive value
+  *                               says that the time is already up, so that a
+  *                               caller handing down what is left of a budget
+  *                               need not special-case the exhausted case,
+  *                               and compute() returns kStopTime having done
+  *                               no work
   *
   * - dblRelAcc [1e-6]: relative accuracy for declaring a solution optimal
   *                     (the "easy part", see dbltStar below for the
