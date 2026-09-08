@@ -577,10 +577,14 @@ int BundleSolver::compute( bool changedvars )
     * why it is not added here [see
     * MasterProblemBlock::set_zeroth_quadratic()]. */
    const auto & tr = f_qf->get_v_var();
-   for( Index i = 0 ; i < tr.size() && i < NumVar ; ++i )
-    b[ i ] = f_convex ? std::get< 1 >( tr[ i ] )
+   std::vector< double > rho( NumVar , 0 );
+   for( Index i = 0 ; i < tr.size() ; ++i ) {
+    const auto j = v_qf2global[ i ];
+    b[ j ] = f_convex ? std::get< 1 >( tr[ i ] )
                       : - std::get< 1 >( tr[ i ] );
-   MasterPB->set_zeroth_quadratic( f_convex ? f_rho0 : - f_rho0 );
+    rho[ j ] = f_rho0[ i ];
+    }
+   MasterPB->set_zeroth_quadratic( rho );
    }
   MasterPB->set_linear_part( b );
   f_linear_part_set = true;
@@ -1376,40 +1380,29 @@ void BundleSolver::set_Block( Block * block )
                 "the objective is neither a LinearFunction nor a "
                 "DQuadFunction" ) );
 
-    /* An isotropic quadratic 0-th component is carried by the master in its
+    /* A separable quadratic 0-th component is carried by the master in its
      * stabilization [see MasterProblemBlock::set_zeroth_quadratic()], which
-     * is why it costs nothing; a general diagonal one is not, since the
-     * proximal term it would be absorbed into is isotropic. */
+     * is why it costs nothing. */
 
     if( f_qf ) {
-     f_rho0 = 0;
      const auto & tr = f_qf->get_v_var();
+     f_rho0.assign( tr.size() , 0 );
      for( decltype( tr.size() ) i = 0 ; i < tr.size() ; ++i ) {
       const double qi = std::get< 2 >( tr[ i ] );
-      if( ! i )
-       f_rho0 = qi;
-      else
-       if( qi != f_rho0 )
-        throw( std::logic_error(
-                   "BundleSolver::set_Block: the quadratic 0-th component "
-                   "must be isotropic, i.e., the same coefficient on every "
-                   "Variable" ) );
+      if( qi < 0 )
+       throw( std::logic_error(
+                  "BundleSolver::set_Block: the quadratic 0-th component "
+                  "must be convex, i.e., its coefficients nonnegative" ) );
+
+      /* A DQuadFunction is the sum of q_i x_i^2 + l_i x_i, so the coefficient
+       * read here is q = rho / 2: what the master and the gradient want is
+       * rho, the term being ( rho / 2 ) x^2 and the gradient b + rho * x. */
+      f_rho0[ i ] = 2.0 * qi;
       }
-
-     if( f_rho0 < 0 )
-      throw( std::logic_error(
-                 "BundleSolver::set_Block: the quadratic 0-th component must "
-                 "be convex, i.e., its coefficient nonnegative" ) );
-
-     /* A DQuadFunction is the sum of q_i x_i^2 + l_i x_i, so the coefficient
-      * read above is q = rho / 2: what the master and the gradient want is
-      * rho, the term being ( rho / 2 ) || lambda ||^2 and the gradient
-      * b + rho * lambda. */
-     f_rho0 *= 2.0;
 
      if( ! f_qf->get_num_active_var() ) {  // no Variable: no component
       f_qf = nullptr;
-      f_rho0 = 0;
+      f_rho0.clear();
       }
      }
 
@@ -1523,8 +1516,9 @@ void BundleSolver::set_Block( Block * block )
    }
   };
 
+ v_qf2global.clear();
  if( auto z0 = zeroth_component() )
-  register_active( z0 , nullptr );
+  register_active( z0 , f_qf ? & v_qf2global : nullptr );
 
  for( Index i = 0 ; i < v_c05f.size() ; ++i )
   register_active( v_c05f[ i ] , & v_local2global[ i ] );
@@ -1535,8 +1529,6 @@ void BundleSolver::set_Block( Block * block )
  // LamVcblr, or the full set in a non-identity order. In both cases
  // switch to the sparse Lambda path.
  if( f_lf && f_lf->get_num_active_var() != NumVar )
-  f_sparse_lambda = true;
- if( f_qf && f_qf->get_num_active_var() != NumVar )
   f_sparse_lambda = true;
  for( Index h = 0 ; ! f_sparse_lambda && h < v_local2global.size() ; ++h ) {
   const auto & m = v_local2global[ h ];
@@ -5059,9 +5051,9 @@ void BundleSolver::compute_NrmZFctr( void )
  else
   if( f_qf ) {     // the quadratic one is, whose gradient is b + rho * lambda
    auto & tr = f_qf->get_v_var();
-   for( Index i = 0 ; i < NumVar ; ++i )
-    tg[ i ] = std::get< 1 >( tr[ i ] ) +
-              f_rho0 * std::get< 0 >( tr[ i ] )->get_value();
+   for( Index i = 0 ; i < tr.size() ; ++i )
+    tg[ v_qf2global[ i ] ] = std::get< 1 >( tr[ i ] ) +
+                    f_rho0[ i ] * std::get< 0 >( tr[ i ] )->get_value();
    }
  else              // there is no 0-th component
   if( wf <= 1 ) {  // and we just wanted is subgradient

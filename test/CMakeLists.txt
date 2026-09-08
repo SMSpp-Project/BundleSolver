@@ -73,7 +73,7 @@ endif ()
 
 # --------------------------------------------------------------------------- #
 
-# ----- the isotropic quadratic 0-th component ------------------------------ #
+# ----- the quadratic 0-th component ---------------------------------------- #
 # Neither of these needs Torch: the first checks the arithmetic the master
 # absorbs the component with, the second solves the same regularised risk
 # twice, with the bundle and as one quadratic program, and compares. The

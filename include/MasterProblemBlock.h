@@ -1307,12 +1307,12 @@ class MasterProblemBlock : public Block {
  void set_linear_part( const std::vector< double > & b );
 
 /*--------------------------------------------------------------------------*/
- /// install the isotropic quadratic "0-th" component \p rho
+ /// install the quadratic "0-th" component \p rho
  /** The original objective may have, besides the linear "0-th" component
-  * \f$ b^\top \lambda \f$ installed by set_linear_part(), an isotropic
+  * \f$ b^\top \lambda \f$ installed by set_linear_part(), a separable
   * quadratic one
   * \f[
-  *    \frac{\rho}{2} \| \lambda \|^2 \; , \qquad \rho \geq 0 \; ,
+  *    \frac{1}{2} \sum_j \rho_j \lambda_j^2 \; , \qquad \rho_j \geq 0 \; ,
   * \f]
   * which is what a regularised risk, i.e. any bundle on a strongly convex
   * objective, has in front of the sum of the components.
@@ -1326,19 +1326,22 @@ class MasterProblemBlock : public Block {
   *   t' = \frac{t}{1 + \rho t} \; ,
   * \f]
   * i.e. the master stays the very same quadratic program with the proximal
-  * parameter shrunk to \f$ t' \f$ and the linear part shifted to
-  * \f$ b + \rho \bar{x} \f$, plus a constant that only the *value* sees.
-  * The effective \f$ t \f$ is therefore bounded by \f$ 1 / \rho \f$, which
-  * is proper: a strongly convex objective cannot be destabilized.
+  * parameter shrunk to \f$ t'_j \f$ on each coordinate and the linear part
+  * shifted to \f$ b + \rho \bar{x} \f$, plus a constant that only the
+  * *value* sees. The effective \f$ t \f$ is therefore bounded by
+  * \f$ 1 / \rho_j \f$, which is proper: a strongly convex objective cannot
+  * be destabilized. The coordinates with \f$ \rho_j = 0 \f$, such as a bias
+  * that is not regularised, simply keep the proximal parameter they had.
   *
-  * With \p rho zero, which is the default, nothing at all changes: this is
-  * why the quadratic component costs nothing when it is not there.
+  * With \p rho empty or all-zero, which is the default, nothing at all
+  * changes: this is why the quadratic component costs nothing when it is not
+  * there. It must have one entry per Variable of the master.
   *
   * Only the primal MP with #kProximal stabilization supports it: the dual MP
   * would need the term dualized, and the level ones would need the level row,
   * which is linear in the model, to carry it. Both throw std::logic_error. */
 
- void set_zeroth_quadratic( double rho );
+ void set_zeroth_quadratic( const std::vector< double > & rho );
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// modify the linear part on a contiguous range of coordinates
@@ -1751,8 +1754,8 @@ class MasterProblemBlock : public Block {
 
  double t_stab;     ///< current value of the proximal parameter t
 
- /// the isotropic quadratic "0-th" component, 0 if there is none
- double f_rho = 0.0;
+ /// the diagonal of the quadratic "0-th" component, empty if there is none
+ std::vector< double > f_rho;
 
  bool f_primal_objective_dirty = false;
                     ///< whether the primal objective must be synchronized

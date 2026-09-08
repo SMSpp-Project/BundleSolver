@@ -2,12 +2,12 @@
 /*----------------- File test_zeroth_quadratic_e2e.cpp ---------------------*/
 /*--------------------------------------------------------------------------*/
 /** @file
- * End-to-end test of the isotropic quadratic "0-th" component of the bundle
+ * End-to-end test of the quadratic "0-th" component of the bundle
  * [see MasterProblemBlock::set_zeroth_quadratic()].
  *
  * The problem is
  * \f[
- *   \min_x \; \frac{\rho}{2} \| x \|^2 + b^\top x +
+ *   \min_x \; \frac{1}{2} \sum_j \rho_j x_j^2 + b^\top x +
  *             \max_{i} \{ a_i^\top x + c_i \} \; ,
  * \f]
  * i.e. a regularised risk, which is what the Benders master of a support
@@ -131,7 +131,8 @@ static void make_instance( Index n , Index m , unsigned seed )
 /// the problem as the bundle sees it: the quadratic 0-th component in the
 /// Objective of the root, the polyhedral one in a sub-Block
 
-static double solve_with_bundle( Index n , double rho , const char * bsc_fn )
+static double solve_with_bundle( Index n , const std::vector< double > & rho ,
+                                 const char * bsc_fn )
 {
  auto root = new AbstractBlock();
 
@@ -140,11 +141,12 @@ static double solve_with_bundle( Index n , double rho , const char * bsc_fn )
   xi.is_unitary( false , eNoMod );
  root->add_static_variable( *x , "x" );
 
- // the 0-th component: ( rho / 2 ) || x ||^2 + b . x, i.e. a DQuadFunction
- // whose quadratic coefficient is rho / 2 on every Variable
+ // the 0-th component: ( 1 / 2 ) sum_j rho_j x_j^2 + b . x, i.e. a
+ // DQuadFunction whose quadratic coefficient is rho_j / 2
  DQuadFunction::v_coeff_triple triples( n );
  for( Index i = 0 ; i < n ; ++i )
-  triples[ i ] = std::make_tuple( &(*x)[ i ] , b_lin[ i ] , rho / 2.0 );
+  triples[ i ] = std::make_tuple( &(*x)[ i ] , b_lin[ i ] ,
+                                  rho[ i ] / 2.0 );
 
  auto obj0 = new FRealObjective( root , new DQuadFunction(
                                               std::move( triples ) ) );
@@ -180,7 +182,8 @@ static double solve_with_bundle( Index n , double rho , const char * bsc_fn )
 
 /// the same problem written out as one quadratic program in ( x , v )
 
-static double solve_monolithic( Index n , double rho , const char * bsc_fn )
+static double solve_monolithic( Index n , const std::vector< double > & rho ,
+                                const char * bsc_fn )
 {
  const Index m = A.size();
 
@@ -207,11 +210,11 @@ static double solve_monolithic( Index n , double rho , const char * bsc_fn )
   }
  blk->add_static_constraint( *cons , "epi" );
 
- // ( rho / 2 ) || x ||^2 + b . x + v
+ // ( 1 / 2 ) sum_j rho_j x_j^2 + b . x + v
  DQuadFunction::v_coeff_triple triples;
  triples.reserve( n + 1 );
  for( Index j = 0 ; j < n ; ++j )
-  triples.emplace_back( &(*x)[ j ] , b_lin[ j ] , rho / 2.0 );
+  triples.emplace_back( &(*x)[ j ] , b_lin[ j ] , rho[ j ] / 2.0 );
  triples.emplace_back( v , 1.0 , 0.0 );
 
  auto obj = new FRealObjective( blk , new DQuadFunction(
@@ -248,10 +251,22 @@ int main( int argc , char ** argv )
   * comparison being meaningless. */
 
  for( double rho : { 1.0 , 3.0 , 10.0 } ) {
-  const double bundle = solve_with_bundle( n , rho , "BSPar-rho.txt" );
-  const double mono = solve_monolithic( n , rho , "MPBCfg-rho.txt" );
+  const std::vector< double > rhos( n , rho );
+  const double bundle = solve_with_bundle( n , rhos , "BSPar-rho.txt" );
+  const double mono = solve_monolithic( n , rhos , "MPBCfg-rho.txt" );
   check_close( bundle , mono , 1e-6 ,
                "rho = " + std::to_string( rho ) );
+  }
+
+ // the coefficients need not be all equal: a Benders master where only some
+ // of the variables are regularised is the reason why
+
+ { std::vector< double > rhos( n );
+  for( Index j = 0 ; j < n ; ++j )
+   rhos[ j ] = 1.0 + j;
+  const double bundle = solve_with_bundle( n , rhos , "BSPar-rho.txt" );
+  const double mono = solve_monolithic( n , rhos , "MPBCfg-rho.txt" );
+  check_close( bundle , mono , 1e-6 , "a rho per coordinate" );
   }
 
  cout << ( failed ? RED( Shit happened!! ) : GREEN( All tests passed!! ) )

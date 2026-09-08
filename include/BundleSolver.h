@@ -3275,16 +3275,20 @@ public:
 
  LinearFunction * f_lf;  ///< the 0-th component of the sum function
 
- /* The 0-th component may also be an isotropic quadratic one,
-  * b . lambda + ( rho / 2 ) || lambda ||^2, which is what a regularised risk
-  * has in front of the sum: f_qf is then the DQuadFunction it is written as
-  * and f_rho0 the rho, f_lf being nullptr. The master carries it in its
+ /* The 0-th component may also be a separable quadratic one,
+  * b . lambda + ( 1 / 2 ) sum_j rho_j lambda_j^2, which is what a regularised
+  * risk has in front of the sum: f_qf is then the DQuadFunction it is written
+  * as and f_rho0 the rho, f_lf being nullptr. The master carries it in its
   * stabilization [see MasterProblemBlock::set_zeroth_quadratic()], so the
   * only thing that changes here is that the gradient of the component is no
-  * longer constant, being b + rho * lambda. */
+  * longer constant, being b + rho * lambda. Coefficients are allowed to be
+  * zero, and the component need not span the whole Lambda: v_qf2global maps
+  * the position of each of its Variable, in the order the DQuadFunction
+  * keeps them, to the index of that Variable in LamVcblr. */
 
  DQuadFunction * f_qf = nullptr;  ///< the quadratic 0-th component, if any
- double f_rho0 = 0.0;             ///< its (isotropic) quadratic coefficient
+ std::vector< double > f_rho0;    ///< its quadratic coefficients
+ std::vector< Index > v_qf2global;  ///< where its Variable sit in Lambda
 
  bool f_convex;          ///< true if all objectives are convex
 

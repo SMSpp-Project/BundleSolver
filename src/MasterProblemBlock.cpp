@@ -952,17 +952,17 @@ void MasterProblemBlock::generate_primal_objective( void )
  DQuadFunction::v_coeff_triple triples;
  triples.reserve( NumVars + ( level_probe ? NoHardCmps : 0 ) );
 
- /* The isotropic quadratic 0-th component is absorbed into the stabilization
-  * [see set_zeroth_quadratic()]: the quadratic coefficient becomes
-  * 1 / ( 2 t' ) with t' = t / ( 1 + rho t ), and in the translated form the
-  * linear one is shifted by rho * x_bar, the term rho/2 || x_bar ||^2 being a
-  * constant that only the value sees. With rho == 0 nothing changes. */
+ /* The quadratic 0-th component is absorbed into the stabilization
+  * [see set_zeroth_quadratic()]: the quadratic coefficient of coordinate j
+  * becomes 1 / ( 2 t'_j ) with t'_j = t / ( 1 + rho_j t ), and in the
+  * translated form the linear one is shifted by rho_j * x_bar_j, the term
+  * ( rho_j / 2 ) x_bar_j^2 being a constant that only the value sees. With
+  * rho == 0 nothing changes. */
 
- const double quad_coeff = ( level_probe ? 1.0 / ( 2.0 * t_stab )
-                                         : pure_level ? 0.5
-                                         : ( has_quad ? 1.0 / ( 2.0 * t_stab )
-                                                      : 0.0 ) )
-                           + f_rho / 2.0;
+ const double quad_coeff = level_probe ? 1.0 / ( 2.0 * t_stab )
+                                       : pure_level ? 0.5
+                                       : ( has_quad ? 1.0 / ( 2.0 * t_stab )
+                                                    : 0.0 );
  for( int i = 0 ; i < NumVars ; ++i ) {
   double lin_coeff = level_probe
                      ? ( f_linear_part[ i ] +
@@ -974,7 +974,9 @@ void MasterProblemBlock::generate_primal_objective( void )
    * set_linear_part() into the Objective once it exists: the rho * x_bar
    * shift that goes with it is therefore added by refresh_primal_objective(),
    * which has both and runs before every solve. */
-  triples.emplace_back( & Var_d[ i ] , lin_coeff , quad_coeff );
+  triples.emplace_back( & Var_d[ i ] , lin_coeff ,
+                        quad_coeff + ( f_rho.empty() ? 0.0
+                                                     : f_rho[ i ] / 2.0 ) );
   }
 
  level_model_obj_idx = -1;
@@ -2411,14 +2413,11 @@ double MasterProblemBlock::get_FiBLambda( int k ) const
    * promise a decrease the function does not deliver [see
    * set_zeroth_quadratic()]. */
 
-  if( f_rho != 0.0 ) {
-   const std::size_t nq = std::min( d.size() , f_x_bar.size() );
-   double xd = 0.0 , dd = 0.0;
+  if( ! f_rho.empty() ) {
+   const std::size_t nq = std::min( { d.size() , f_x_bar.size() ,
+                                      f_rho.size() } );
    for( std::size_t j = 0 ; j < nq ; ++j )
-    xd += f_x_bar[ j ] * d[ j ];
-   for( std::size_t j = 0 ; j < d.size() ; ++j )
-    dd += d[ j ] * d[ j ];
-   sum += f_rho * xd + ( f_rho / 2.0 ) * dd;
+    sum += f_rho[ j ] * ( f_x_bar[ j ] * d[ j ] + d[ j ] * d[ j ] / 2.0 );
    }
 
   return( sum );
@@ -3621,7 +3620,7 @@ void MasterProblemBlock::set_x_bar( const std::vector< double > & x_bar )
   // In raw form x_bar changes the linear part of
   // ||x-x_bar||^2/(2t). Defer the abstract objective update until the next
   // actual solve, where it is batched with any intervening t / b changes.
-  if( f_v2_form || ( f_rho != 0.0 ) )
+  if( f_v2_form || ( ! f_rho.empty() ) )
    f_primal_objective_dirty = true;
 
   if( ! f_v2_form && int( Bounds_d.size() ) == NumVars )
@@ -4132,14 +4131,16 @@ void MasterProblemBlock::refresh_primal_objective( void )
  const bool level_probe = has_initial_level_objective();
  const bool has_quad = pure_level || ( StblType == kProximal ||
                                       StblType == kDoublyStabilized );
- const double quad = ( level_probe ? 1.0 / ( 2.0 * t_stab )
-                                   : pure_level ? 0.5
-                                   : ( has_quad ? 1.0 / ( 2.0 * t_stab )
-                                                : 0.0 ) )
-                     + f_rho / 2.0;
+ const double quad = level_probe ? 1.0 / ( 2.0 * t_stab )
+                                 : pure_level ? 0.5
+                                : ( has_quad ? 1.0 / ( 2.0 * t_stab )
+                                             : 0.0 );
 
  std::vector< double > linear( NumVars );
  std::vector< double > quadratic( NumVars , quad );
+ if( ! f_rho.empty() )
+  for( int j = 0 ; j < NumVars ; ++j )
+   quadratic[ j ] += f_rho[ j ] / 2.0;
  bool changed = false;
 
  for( int j = 0 ; j < NumVars ; ++j ) {
@@ -4151,8 +4152,8 @@ void MasterProblemBlock::refresh_primal_objective( void )
     linear[ j ] -= f_x_bar[ j ] / t_stab;
    }
   else
-   if( f_rho != 0.0 )   // the translated form carries rho * x_bar instead
-    linear[ j ] += f_rho * f_x_bar[ j ];
+   if( ! f_rho.empty() )  // the translated form carries rho * x_bar instead
+    linear[ j ] += f_rho[ j ] * f_x_bar[ j ];
 
   changed = changed ||
    ( linear[ j ] !=
@@ -4336,16 +4337,26 @@ int MasterProblemBlock::solve_master( void )
 /*------------------------- STABILIZATION PARAMETER ------------------------*/
 /*--------------------------------------------------------------------------*/
 
-void MasterProblemBlock::set_zeroth_quadratic( double rho )
+void MasterProblemBlock::set_zeroth_quadratic( const std::vector< double > &
+                                              rho )
 {
- if( rho < 0.0 )
+ if( ( ! rho.empty() ) && ( int( rho.size() ) != NumVars ) )
   throw( std::invalid_argument(
-       "MasterProblemBlock::set_zeroth_quadratic: rho must be nonnegative" ) );
+       "MasterProblemBlock::set_zeroth_quadratic: rho must have NumVars "
+       "entries" ) );
+
+ bool any = false;
+ for( auto rj : rho ) {
+  if( rj < 0.0 )
+   throw( std::invalid_argument(
+        "MasterProblemBlock::set_zeroth_quadratic: rho must be nonnegative" ) );
+  any = any || ( rj > 0.0 );
+  }
 
  if( rho == f_rho )
   return;
 
- if( rho > 0.0 ) {
+ if( any ) {
   if( ! IsPrimal )
    throw( std::logic_error(
         "MasterProblemBlock::set_zeroth_quadratic: only the primal MP carries "

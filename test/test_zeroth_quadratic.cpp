@@ -2,7 +2,7 @@
 /*------------------- File test_zeroth_quadratic.cpp -----------------------*/
 /*--------------------------------------------------------------------------*/
 /** @file
- * Self-contained internal test for the isotropic quadratic "0-th" component
+ * Self-contained internal test for the quadratic "0-th" component
  * of MasterProblemBlock [see MasterProblemBlock::set_zeroth_quadratic()].
  *
  * The component is not solved for here: what is checked is the arithmetic it
@@ -115,7 +115,7 @@ static MasterProblemBlock * make_mpb( int n , double t ,
  mpb->set_linear_part( b );
  mpb->set_x_bar( x_bar );
  if( rho )
-  mpb->set_zeroth_quadratic( rho );
+  mpb->set_zeroth_quadratic( std::vector< double >( n , rho ) );
  mpb->generate_objective();
  return( mpb );
  }
@@ -179,13 +179,37 @@ int main( void )
 
    }
 
+ // the coefficients need not be all equal, and a zero one, as an
+ // unregularised bias has, leaves its coordinate untouched - - - - - - - - -
+
+ { auto mpb = new MasterProblemBlock();
+   mpb->configure( true , 10 , n , 1 , {} , {} ,
+                   MasterProblemBlock::kProximal );
+   mpb->generate_abstract_variables();
+   mpb->generate_abstract_constraints();
+   mpb->set_t( t );
+   mpb->set_linear_part( b );
+   mpb->set_x_bar( x_bar );
+   const std::vector< double > rhos = { rho , 0.0 , 2.0 * rho };
+   mpb->set_zeroth_quadratic( rhos );
+   mpb->generate_objective();
+
+   auto dqf = objective_of( mpb );
+   for( int j = 0 ; j < n ; ++j ) {
+    const double tj = t / ( 1.0 + rhos[ j ] * t );
+    check_close( dqf->get_quadratic_coefficient( j ) , 1.0 / ( 2.0 * tj ) ,
+                 1e-12 , "coordinate " + std::to_string( j ) +
+                 " carries its own rho" );
+    }
+   }
+
  // what is not supported says so - - - - - - - - - - - - - - - - - - - - - -
 
  { auto mpb = new MasterProblemBlock();
    mpb->configure( true , 10 , n , 1 , {} , {} ,
                    MasterProblemBlock::kDoublyStabilized );
    bool thrown = false;
-   try { mpb->set_zeroth_quadratic( rho ); }
+   try { mpb->set_zeroth_quadratic( std::vector< double >( n , rho ) ); }
    catch( const std::logic_error & ) { thrown = true; }
    check( thrown , "the level row cannot carry it, and it says so" );
    }
