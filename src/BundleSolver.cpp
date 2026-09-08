@@ -536,10 +536,10 @@ int BundleSolver::compute( bool changedvars )
  // reset to INFshift both at the very first call and whenever a
  // C05FunctionModLin* mutates the linear part's coefficients, so it
  // doubles as the "the master's linear part is out of date" signal below
- const bool lin_recompute = f_lf && ( Fi0Lmb == INFshift );
+ const bool lin_recompute = zeroth_component() && ( Fi0Lmb == INFshift );
  if( lin_recompute ) {
-  f_lf->compute( true );
-  Fi0Lmb = rs( f_lf->get_upper_estimate() );
+  zeroth_component()->compute( true );
+  Fi0Lmb = rs( zeroth_component()->get_upper_estimate() );
   if( UpFiLmbdef == NrFi ) {  // ready to compute the total upper bound
    ++UpFiLmbdef;              // do so
    UpFiLmb.back() = std::accumulate( UpFiLmb.begin() , --(UpFiLmb.end()) ,
@@ -562,11 +562,26 @@ int BundleSolver::compute( bool changedvars )
  // hence the search direction. For problems treated as concave maxima
  // (f_convex == false) the gradient is flipped in sign to match the
  // convex-min convention used inside MasterProblemBlock
- if( MasterPB && f_lf && ( ( ! f_linear_part_set ) || lin_recompute ) ) {
+ if( MasterPB && zeroth_component() &&
+     ( ( ! f_linear_part_set ) || lin_recompute ) ) {
   std::vector< double > b( NumVar , 0.0 );
-  const auto & cf = f_lf->get_v_var();
-  for( Index i = 0 ; i < cf.size() && i < NumVar ; ++i )
-   b[ i ] = f_convex ? cf[ i ].second : - cf[ i ].second;
+  if( f_lf ) {
+   const auto & cf = f_lf->get_v_var();
+   for( Index i = 0 ; i < cf.size() && i < NumVar ; ++i )
+    b[ i ] = f_convex ? cf[ i ].second : - cf[ i ].second;
+   }
+  else {
+   /* The quadratic 0-th component gives the master its linear part and its
+    * rho separately: the master absorbs the latter into the stabilization,
+    * which is where the term rho * x_bar of the linear part comes from and
+    * why it is not added here [see
+    * MasterProblemBlock::set_zeroth_quadratic()]. */
+   const auto & tr = f_qf->get_v_var();
+   for( Index i = 0 ; i < tr.size() && i < NumVar ; ++i )
+    b[ i ] = f_convex ? std::get< 1 >( tr[ i ] )
+                      : - std::get< 1 >( tr[ i ] );
+   MasterPB->set_zeroth_quadratic( f_convex ? f_rho0 : - f_rho0 );
+   }
   MasterPB->set_linear_part( b );
   f_linear_part_set = true;
   }
@@ -1330,12 +1345,15 @@ void BundleSolver::set_Block( Block * block )
               "can only minimize convex / maximize concave" ) );
   v_c05f.push_back( c05f );
   f_lf = nullptr;
+  f_qf = nullptr;
   }
  else {  // there are sub-Block
   // the objective function of the block must be a LinearFunction- - - - - - -
 
-  if( ! f_Block->get_objective() )  // there is no Objective
+  if( ! f_Block->get_objective() ) {  // there is no Objective
    f_lf = nullptr;
+   f_qf = nullptr;
+   }
   else {
    auto obj = dynamic_cast< FRealObjective * >( f_Block->get_objective() );
    if( ! obj )
@@ -1345,16 +1363,58 @@ void BundleSolver::set_Block( Block * block )
 
    if( ! obj->get_function() ) { // the FRealObjective has no Function
     f_lf = nullptr;
+    f_qf = nullptr;
     }
    else {
     f_lf = dynamic_cast< LinearFunction * >( obj->get_function() );
-    if( ! f_lf )
+    f_qf = f_lf ? nullptr
+                : dynamic_cast< DQuadFunction * >( obj->get_function() );
+
+    if( ( ! f_lf ) && ( ! f_qf ) )
      throw( std::logic_error(
                 "BundleSolver::set_Block: "
-                "the objective is not a LinearFunction" ) );
+                "the objective is neither a LinearFunction nor a "
+                "DQuadFunction" ) );
 
-    if( ! f_lf->get_num_active_var() )  // the LinearFunction has no Variable
-     f_lf = nullptr;
+    /* An isotropic quadratic 0-th component is carried by the master in its
+     * stabilization [see MasterProblemBlock::set_zeroth_quadratic()], which
+     * is why it costs nothing; a general diagonal one is not, since the
+     * proximal term it would be absorbed into is isotropic. */
+
+    if( f_qf ) {
+     f_rho0 = 0;
+     const auto & tr = f_qf->get_v_var();
+     for( decltype( tr.size() ) i = 0 ; i < tr.size() ; ++i ) {
+      const double qi = std::get< 2 >( tr[ i ] );
+      if( ! i )
+       f_rho0 = qi;
+      else
+       if( qi != f_rho0 )
+        throw( std::logic_error(
+                   "BundleSolver::set_Block: the quadratic 0-th component "
+                   "must be isotropic, i.e., the same coefficient on every "
+                   "Variable" ) );
+      }
+
+     if( f_rho0 < 0 )
+      throw( std::logic_error(
+                 "BundleSolver::set_Block: the quadratic 0-th component must "
+                 "be convex, i.e., its coefficient nonnegative" ) );
+
+     /* A DQuadFunction is the sum of q_i x_i^2 + l_i x_i, so the coefficient
+      * read above is q = rho / 2: what the master and the gradient want is
+      * rho, the term being ( rho / 2 ) || lambda ||^2 and the gradient
+      * b + rho * lambda. */
+     f_rho0 *= 2.0;
+
+     if( ! f_qf->get_num_active_var() ) {  // no Variable: no component
+      f_qf = nullptr;
+      f_rho0 = 0;
+      }
+     }
+
+    if( f_lf && ( ! f_lf->get_num_active_var() ) )
+     f_lf = nullptr;  // the LinearFunction has no Variable
 
     }
    }
@@ -1463,8 +1523,8 @@ void BundleSolver::set_Block( Block * block )
    }
   };
 
- if( f_lf )
-  register_active( f_lf , nullptr );
+ if( auto z0 = zeroth_component() )
+  register_active( z0 , nullptr );
 
  for( Index i = 0 ; i < v_c05f.size() ; ++i )
   register_active( v_c05f[ i ] , & v_local2global[ i ] );
@@ -1475,6 +1535,8 @@ void BundleSolver::set_Block( Block * block )
  // LamVcblr, or the full set in a non-identity order. In both cases
  // switch to the sparse Lambda path.
  if( f_lf && f_lf->get_num_active_var() != NumVar )
+  f_sparse_lambda = true;
+ if( f_qf && f_qf->get_num_active_var() != NumVar )
   f_sparse_lambda = true;
  for( Index h = 0 ; ! f_sparse_lambda && h < v_local2global.size() ; ++h ) {
   const auto & m = v_local2global[ h ];
@@ -1494,6 +1556,12 @@ void BundleSolver::set_Block( Block * block )
   // sparse is engaged, otherwise the f_lf gather paths would also need
   // translation. Typical sparse-producing callers leave f_lf == nullptr
   // (the linear term is empty), so this check is mostly defensive.
+  if( f_qf )
+   throw( std::logic_error(
+       "BundleSolver::set_Block: the quadratic 0-th component is only "
+       "supported with the dense Lambda, every Variable being active in "
+       "it in the same order" ) );
+
   if( f_lf ) {
    if( f_lf->get_num_active_var() != NumVar )
     throw( std::logic_error(
@@ -3737,9 +3805,9 @@ void BundleSolver::FormLambda1( double Tau )
 
  // now compute total upper and lower bound (possibly +/- INF)
  // this requires the value of the linear function, so ensure it is computed
- if( f_lf ) {
-  f_lf->compute( true );
-  Fi0Lmb1 = rs( f_lf->get_upper_estimate() );
+ if( auto z0 = zeroth_component() ) {
+  z0->compute( true );
+  Fi0Lmb1 = rs( z0->get_upper_estimate() );
   }
  else
   Fi0Lmb1 = 0;
@@ -4988,6 +5056,13 @@ void BundleSolver::compute_NrmZFctr( void )
   for( Index i = 0 ; i < NumVar ; ++i )
    tg[ i ] = cf[ i ].second;
   }
+ else
+  if( f_qf ) {     // the quadratic one is, whose gradient is b + rho * lambda
+   auto & tr = f_qf->get_v_var();
+   for( Index i = 0 ; i < NumVar ; ++i )
+    tg[ i ] = std::get< 1 >( tr[ i ] ) +
+              f_rho0 * std::get< 0 >( tr[ i ] )->get_value();
+   }
  else              // there is no 0-th component
   if( wf <= 1 ) {  // and we just wanted is subgradient
    NrmZFctr = 1;   // ... which is all-0, so use 1
@@ -6337,7 +6412,8 @@ bool BundleSolver::is_special_GroupMod( GroupModification & gmod )
  // contain FunctionModVars* not necessarily C05FunctionModVars* because
  // the Modification may not be strongly quasi-additive
 
- if( gmod.sub_Modifications().size() != NrFi + ( f_lf ? 1 : 0 ) )
+ if( gmod.sub_Modifications().size() !=
+     NrFi + ( zeroth_component() ? 1 : 0 ) )
   return( false );
 
  auto smi = gmod.sub_Modifications().begin();
@@ -6495,7 +6571,7 @@ void BundleSolver::process_outstanding_Modification( void )
   // access to the component, and any FunctionMod pertaining to an already
   // reset component can be almost immediately deleted
   if( const auto tmod = std::dynamic_pointer_cast< FunctionMod >( mod ) ) {
-   if( tmod->function() == f_lf ) {
+   if( tmod->function() == zeroth_component() ) {
     const auto shift = tmod->shift();
     // special immediate treatment of the 0-th component, which is simple
     if( std::isnan( shift ) ) {  // is a C05FunctionModLin*
@@ -6665,7 +6741,7 @@ void BundleSolver::process_outstanding_Modification( void )
   // variable change also implies a reset
   // in no case, however, the Modification is removed from the list
   if( const auto tmod = std::dynamic_pointer_cast< FunctionModVars >( mod ) ) {
-   if( ( NrFi > 1 ) || f_lf )
+   if( ( NrFi > 1 ) || zeroth_component() )
     throw( std::invalid_argument(
                "BundleSolver::process_outstanding_Modification: "
                "naked FunctionModVars not allowed" ) );
@@ -7309,7 +7385,7 @@ void BundleSolver::process_outstanding_Modification( void )
      // in dense mode every v_c05f[ h ] (and f_lf, if any) sees the
      // full LamVcblr in identity order, so each global slot is
      // referenced by every component
-     const Index refs = v_c05f.size() + ( f_lf ? 1 : 0 );
+     const Index refs = v_c05f.size() + ( zeroth_component() ? 1 : 0 );
      v_ref_count.assign( LamVcblr.size() , refs );
      // identity map of size NumVar + 1 with trailing Inf< Index >()
      const Index lN = LamVcblr.size();

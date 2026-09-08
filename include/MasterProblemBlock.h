@@ -1306,6 +1306,40 @@ class MasterProblemBlock : public Block {
 
  void set_linear_part( const std::vector< double > & b );
 
+/*--------------------------------------------------------------------------*/
+ /// install the isotropic quadratic "0-th" component \p rho
+ /** The original objective may have, besides the linear "0-th" component
+  * \f$ b^\top \lambda \f$ installed by set_linear_part(), an isotropic
+  * quadratic one
+  * \f[
+  *    \frac{\rho}{2} \| \lambda \|^2 \; , \qquad \rho \geq 0 \; ,
+  * \f]
+  * which is what a regularised risk, i.e. any bundle on a strongly convex
+  * objective, has in front of the sum of the components.
+  *
+  * In the *primal* MP it costs nothing to carry, since with
+  * \f$ \lambda = \bar{x} + d \f$
+  * \f[
+  *   \frac{\rho}{2} \| \bar{x} + d \|^2 + \frac{1}{2t} \| d \|^2 =
+  *   \frac{1}{2t'} \| d \|^2 + \rho \, \bar{x}^\top d +
+  *   \frac{\rho}{2} \| \bar{x} \|^2 \; , \qquad
+  *   t' = \frac{t}{1 + \rho t} \; ,
+  * \f]
+  * i.e. the master stays the very same quadratic program with the proximal
+  * parameter shrunk to \f$ t' \f$ and the linear part shifted to
+  * \f$ b + \rho \bar{x} \f$, plus a constant that only the *value* sees.
+  * The effective \f$ t \f$ is therefore bounded by \f$ 1 / \rho \f$, which
+  * is proper: a strongly convex objective cannot be destabilized.
+  *
+  * With \p rho zero, which is the default, nothing at all changes: this is
+  * why the quadratic component costs nothing when it is not there.
+  *
+  * Only the primal MP with #kProximal stabilization supports it: the dual MP
+  * would need the term dualized, and the level ones would need the level row,
+  * which is linear in the model, to carry it. Both throw std::logic_error. */
+
+ void set_zeroth_quadratic( double rho );
+
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /// modify the linear part on a contiguous range of coordinates
  /** Installs b[ i ] on coordinate range.first + i for the left-closed,
@@ -1716,6 +1750,9 @@ class MasterProblemBlock : public Block {
  // - - - - - - - - - - - - - - -  stabilization parameters  - - - - - - - -
 
  double t_stab;     ///< current value of the proximal parameter t
+
+ /// the isotropic quadratic "0-th" component, 0 if there is none
+ double f_rho = 0.0;
 
  bool f_primal_objective_dirty = false;
                     ///< whether the primal objective must be synchronized

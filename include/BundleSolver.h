@@ -143,6 +143,8 @@
 #include "C05Function.h"
 #include "LinearFunction.h"
 
+#include "DQuadFunction.h"
+
 #include "Block.h"
 #include "ColVariable.h"
 #include "FRealObjective.h"
@@ -1569,6 +1571,14 @@ public:
   * called, or has last been called with nullptr argument. */
 
  LinearFunction * l_component( void ) const { return( f_lf ); }
+
+/*--------------------------------------------------------------------------*/
+ /// the 0-th component whatever it is, or nullptr if there is none
+
+ C05Function * zeroth_component( void ) const {
+  return( f_lf ? static_cast< C05Function * >( f_lf )
+               : static_cast< C05Function * >( f_qf ) );
+  }
 
 /** @} ---------------------------------------------------------------------*/
 /*---------------------- METHODS FOR EVENTS HANDLING -----------------------*/
@@ -3264,6 +3274,17 @@ public:
  ///< the vector of (pointers to) the components of the sum function
 
  LinearFunction * f_lf;  ///< the 0-th component of the sum function
+
+ /* The 0-th component may also be an isotropic quadratic one,
+  * b . lambda + ( rho / 2 ) || lambda ||^2, which is what a regularised risk
+  * has in front of the sum: f_qf is then the DQuadFunction it is written as
+  * and f_rho0 the rho, f_lf being nullptr. The master carries it in its
+  * stabilization [see MasterProblemBlock::set_zeroth_quadratic()], so the
+  * only thing that changes here is that the gradient of the component is no
+  * longer constant, being b + rho * lambda. */
+
+ DQuadFunction * f_qf = nullptr;  ///< the quadratic 0-th component, if any
+ double f_rho0 = 0.0;             ///< its (isotropic) quadratic coefficient
 
  bool f_convex;          ///< true if all objectives are convex
 

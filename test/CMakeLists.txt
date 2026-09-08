@@ -72,3 +72,28 @@ if (Torch_FOUND)
 endif ()
 
 # --------------------------------------------------------------------------- #
+
+# ----- the isotropic quadratic 0-th component ------------------------------ #
+# Neither of these needs Torch: the first checks the arithmetic the master
+# absorbs the component with, the second solves the same regularised risk
+# twice, with the bundle and as one quadratic program, and compares. The
+# linker has to be told to keep the libraries whose objects only register
+# themselves into the factories
+add_executable(zeroth_quadratic_test test_zeroth_quadratic.cpp)
+target_link_libraries(zeroth_quadratic_test PRIVATE SMS++::BundleSolver)
+add_test(NAME zeroth_quadratic_test COMMAND zeroth_quadratic_test)
+
+if (TARGET SMS++::MILPSolver)
+    add_executable(zeroth_quadratic_e2e_test test_zeroth_quadratic_e2e.cpp)
+    target_link_libraries(zeroth_quadratic_e2e_test PRIVATE
+                          SMS++::BundleSolver
+                          SMS++::MILPSolver)
+    if (BUILD_SHARED_LIBS AND UNIX AND (NOT APPLE))
+        target_link_options(zeroth_quadratic_e2e_test PRIVATE
+                            "-Wl,--no-as-needed")
+    endif ()
+    # the test reads BSPar-rho.txt and MPBCfg-rho.txt from the working directory
+    add_test(NAME zeroth_quadratic_e2e_test
+             COMMAND zeroth_quadratic_e2e_test
+             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+endif ()

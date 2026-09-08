@@ -1,0 +1,23 @@
+BlockSolverConfig
+1  # differential
+1  # one Solver
+BundleSolver
+1  # one ComputeConfig
+ComputeConfig
+1  # differential
+6  # number of integer parameters
+intMaxIter    500
+intLogVerb      0
+intBPar2      100
+intMPPrimal     1   # the primal MP, the only one that carries the quadratic
+intMPStbl       0   # 0 = proximal: the level row could not carry it
+inttSPar1      12
+2  # number of double parameters
+dblRelAcc    1e-8
+dbltStar     1e+2
+1  # number of string parameters
+strMPBSolverCfg MPBCfg-rho.txt
+0  # number of vector-of-int parameters
+0  # number of vector-of-double parameters
+0  # number of vector-of-string parameters
+*  # [none]
