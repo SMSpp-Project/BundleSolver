@@ -2774,6 +2774,26 @@ class FakeFiOracle : public FiOracle
 
  HpNum Heuristic4( void );
 
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+/** The heuristics make use of data about the newly obtained aggregate
+ * subgradient in the tentative point (G1), such as its linearization error
+ * (Alfa1) and its scalar product with the direction (ScPr1). Since this is
+ * potentially costly to update, it is done only if "someone is actually
+ * looking at it". This is specified by the three methods below, of which
+ * BundleSolver gives an implementation based on which bits of inttSPar1
+ * are set, i.e., which of its four baisc heuristics are used. However,
+ * derived classes may have other heuristics and therefore have other needs,
+ * which is why the three methods are virtual. */
+
+ /// true if Alfa1 needs be computed
+ virtual bool NeedsAlfa1( void );
+
+ /// true if ScPr1 needs be computed
+ virtual bool NeedsScPr1( void );
+
+ /// true if G1 needs be computed
+ virtual bool NeedsG1( void );
+
 /*--------------------------------------------------------------------------*/
 /*---------------------------- PROTECTED FIELDS  ---------------------------*/
 /*--------------------------------------------------------------------------*/
@@ -3188,14 +3208,6 @@ class FakeFiOracle : public FiOracle
 /*--------------------------------------------------------------------------*/
 
  Index FindAPlace( Index wFi );
-
-/*--------------------------------------------------------------------------*/
-
- bool NeedsAlfa1( void );
-
- bool NeedsScPr1( void );
-
- bool NeedsG1( void );
 
 /*--------------------------------------------------------------------------*/
 
