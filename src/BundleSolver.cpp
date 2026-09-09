@@ -5905,7 +5905,7 @@ void BundleSolver::ReSetAlg( unsigned char RstLvl )
   Lambda.assign( NumVar , 0 );
   // "tell" this to the ColVariable of the C05Function(s)
   for( Index i = 0 ; i < NumVar ; ++i )
-   LamVcblr[ i++ ]->set_value( 0 );
+   LamVcblr[ i ]->set_value( 0 );
   Fi0Lmb = 0;  // then the value of the linear part is quite obvious ...
 
   // Seed / refresh the master reference cache. Lambda has just been
