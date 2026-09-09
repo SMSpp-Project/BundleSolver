@@ -573,6 +573,7 @@ public:
   IsMPPrimal = bool( get_dflt_int_par( intMPPrimal ) );
   MPV2Form = get_dflt_int_par( intMPV2Form );
   MPHScaling = get_dflt_int_par( intMPHScaling );
+  RstAlgPrm = get_dflt_int_par( intRstAlg );
 
   MaxTime = CDASolver::get_dflt_dbl_par( dblMaxTime );
   RelAcc = CDASolver::get_dflt_dbl_par( dblRelAcc );
