@@ -261,7 +261,13 @@ HpNum BundleSolverML::Heuristic( Index whch )
   * being huge with random weights. The normalized tensor is what is stored
   * in phi_vecs, so that Backward() re-runs the forward pass with the same
   * scaled inputs that produced the original prediction. */
- features[ 0 ] = float( tHasChgd );             // binary { 0 , 1 }
+ features[ 0 ] = float( tHasChgd );             // binary { 0 , 1 } 
+if( G1Norm == INFshift ) {    // Heuristic4() computes this lazily, but
+ double n2 = 0;               // BundleSolverML replaces Heuristic4()
+ for( auto gi : G1 )
+  n2 += double( gi ) * double( gi );
+G1Norm = std::sqrt( n2 );
+  }
  features[ 1 ] = float( G1Norm ) / 1e3f;        // subgradient norm
  features[ 2 ] = float( ScPr1 ) / 1e4f;         // scalar product
  features[ 3 ] = float( Alfa1 ) / 1e4f;         // linearization error

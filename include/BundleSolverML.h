@@ -664,6 +664,18 @@ class BundleSolverML : public BundleSolver
  int f_ML_seed = -1;         ///< value of intMLSeed [-1]
 
  int f_n_train_rounds = 1;   ///< value of intNTrainRounds [1]
+ 
+ 
+ /* The network needs the subgradient norm, the scalar product and the
+  * linearization error at every iteration, but the base class computes
+  * them only when a classical heuristic that uses them is selected. */
+
+ bool NeedsAlfa1( void ) override { return( true ); }
+
+ bool NeedsScPr1( void ) override { return( true ); }
+
+ bool NeedsG1( void ) override { return( true ); }
+
  int f_ML_iter_first = 0;        ///< value of intMLIterFirst [0]
  int f_ML_iter_last = INT_MAX;   ///< value of intMLIterLast [INT_MAX]
  int f_ML_window = INT_MAX;      ///< value of intMLWindow [INT_MAX]
