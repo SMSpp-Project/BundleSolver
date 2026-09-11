@@ -9,12 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+### Changed
+
+### Fixed
+
+## [0.5.0] - 2026-09-12
+
+### Added
+
 - BundleSolverML, a BundleSolver variant whose step-size t is predicted by
   a neural network (Torch) trainable online across solves, with shared
   weights among multiple instances and TorchScript model save / load; it is
   only built if Torch is available.
 
 ### Changed
+
+- the version of the module is the git tag of its repository, or the
+  VERSION.txt of a release tarball, and the shared library carries it: its
+  SONAME is major.minor while the major is 0, and it is installed with an
+  RPATH relative to itself, so that an installed tree keeps working wherever
+  it is moved
 
 ### Fixed
 
@@ -26,6 +40,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of the algorithm) whenever dblBPar5 / intRstAlg were not explicitly set
   by the ComputeConfig.
 
+- the package configuration file finds the libraries the module links, so that
+  a project using the installed module needs nothing more than find_package()
 
 ## [0.4.5] - 2025-12-12
 
@@ -229,7 +245,11 @@ Several major improvements:
 
 - First test release.
 
-[Unreleased]: https://gitlab.com/smspp/bundlesolver/-/compare/0.4.3...develop
+[Unreleased]: https://gitlab.com/smspp/bundlesolver/-/compare/0.5.0...develop
+[0.5.0]: https://gitlab.com/smspp/bundlesolver/-/compare/0.4.5...0.5.0
+[0.4.5]: https://gitlab.com/smspp/bundlesolver/-/compare/0.4.4.1...0.4.5
+[0.4.4.1]: https://gitlab.com/smspp/bundlesolver/-/compare/0.4.4...0.4.4.1
+[0.4.4]: https://gitlab.com/smspp/bundlesolver/-/compare/0.4.3...0.4.4
 [0.4.3]: https://gitlab.com/smspp/bundlesolver/-/compare/0.4.2...0.4.3
 [0.4.2]: https://gitlab.com/smspp/bundlesolver/-/compare/0.4.1...0.4.2
 [0.4.1]: https://gitlab.com/smspp/bundlesolver/-/compare/0.4.0...0.4.1
