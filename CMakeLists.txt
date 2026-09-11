@@ -15,16 +15,22 @@
 #                         Dipartimento di Informatica                         #
 #                             Universita' di Pisa                             #
 # --------------------------------------------------------------------------- #
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.21)
 cmake_policy(VERSION 3.15)
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/DeriveVersion.cmake)
+smspp_derive_version(SMSPP_MODULE_VERSION)
+
 project(BundleSolver
-        VERSION 0.4.5
+        VERSION ${SMSPP_MODULE_VERSION}
         DESCRIPTION "SMS++ BundleSolver module"
         HOMEPAGE_URL https://gitlab.com/smspp/bundlesolver
         LANGUAGES C CXX)
 
 # These variables make the code harder to read but easier to change.
 set(modName ${PROJECT_NAME})
+
+# C-safe form of modName for the preprocessor macros in <modName>Config.h
+string(MAKE_C_IDENTIFIER "${modName}" modMacro)
 set(modNamespace "SMS++")
 
 # Find out if it's being called by the umbrella.
@@ -57,10 +63,13 @@ if (NOT Clp_FOUND)
     set(NDOFiOracle_USE_CLP OFF)
 endif ()
 
+# Torch needed for BundleSolverML
+find_package(Torch HINTS ${Torch_ROOT})
+
 # Set the WHICH_OSI_QP macro according to these following priorities:
 # - use the given WHICH_OSI_QP in input as CMake option, if any
-# - use Gurobi, i.e., 1, if available
-# - use Cplex, i.e., 2, if available
+# - use Cplex, i.e., 1, if available
+# - use Gurobi, i.e., 2, if available
 # - otherwise, use Clp
 
 # Define a temporary variable to store the value of WHICH_OSI_QP
@@ -116,24 +125,57 @@ else ()
     # NDOFiOracle library, required by BundleSolver.
     # Requires CoinUtils, Osi and CPLEX.
     set(NDOFiOracle_READ_PATHS OFF CACHE BOOL
-        "Whether NdoFiOracle will read locations for dependencies or not." FORCE)
+            "Whether NdoFiOracle will read locations for dependencies or not." FORCE)
     add_subdirectory(NdoFiOracle)
 
     # Add the binary directory to RPATH, so executables that use
     # dynamic loading will look into it.
     set(SMSPP_BUILD_RPATH
-        "${SMSPP_BUILD_RPATH};${CMAKE_CURRENT_BINARY_DIR}/NdoFiOracle")
+            "${SMSPP_BUILD_RPATH};${CMAKE_CURRENT_BINARY_DIR}/NdoFiOracle")
 endif ()
 
 # ----- Configuration header ------------------------------------------------ #
 # This will generate a *Config.h header in the build directory.
 configure_file(cmake/${modName}Config.h.in ${modName}Config.h)
 
+# ----- RPATH --------------------------------------------------------------- #
+# The installed libraries and executables look for the libraries of the same
+# installation relative to their own location, so that the installed tree can
+# be moved as a whole; the directories of the external libraries are kept.
+include(GNUInstallDirs)
+if (NOT CMAKE_INSTALL_RPATH)
+    if (APPLE)
+        set(rpathOrigin "@loader_path")
+    else ()
+        set(rpathOrigin "$ORIGIN")
+    endif ()
+    file(RELATIVE_PATH binToLib ${CMAKE_INSTALL_FULL_BINDIR}
+            ${CMAKE_INSTALL_FULL_LIBDIR})
+    set(CMAKE_INSTALL_RPATH "${rpathOrigin}" "${rpathOrigin}/${binToLib}")
+endif ()
+set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+
 # ----- Library ------------------------------------------------------------- #
 # With the BUILD_SHARED_LIBS variable we can specify if the library will
 # be STATIC or SHARED, so no reason to do it now.
 add_library(${modName})
 target_compile_features(${modName} PUBLIC cxx_std_17)
+
+# The name of the shared library carries the version of its binary interface,
+# which any minor release may change while the major version is 0, and then
+# any major release.
+if (PROJECT_VERSION_MAJOR EQUAL 0)
+    set(soVersion ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR})
+else ()
+    set(soVersion ${PROJECT_VERSION_MAJOR})
+endif ()
+set_target_properties(${modName} PROPERTIES
+        VERSION ${PROJECT_VERSION}
+        SOVERSION ${soVersion})
+
+if (MSVC AND BUILD_SHARED_LIBS)
+    target_link_options(${modName} INTERFACE "/INCLUDE:SMSpp_force_load_${modName}")
+endif ()
 
 # When adding source files with target_sources(), PRIVATE means that the files
 # should only be added to this library, whereas PUBLIC means they should be
@@ -142,8 +184,8 @@ target_compile_features(${modName} PUBLIC cxx_std_17)
 # but should be added to anything that links to it.
 # Note: do not GLOB files here.
 target_sources(${modName} PRIVATE
-               src/BundleSolver.cpp
-               src/ParallelBundleSolver.cpp)
+        src/BundleSolver.cpp
+        src/ParallelBundleSolver.cpp)
 
 # When using target_include_directories(), PUBLIC means that any targets
 # that link to this target also need that include directory.
@@ -158,6 +200,7 @@ target_sources(${modName} PRIVATE
 target_include_directories(
         ${modName} PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
         $<INSTALL_INTERFACE:include/${modNamespace}>)
 
 # When linking other targets to the library with target_link_libraries(),
@@ -166,8 +209,16 @@ target_include_directories(
 # library, INTERFACE means they will be linked only to the targets that depend
 # on this library.
 target_link_libraries(${modName} PUBLIC
-                      ${modNamespace}::MILPSolver
-                      NDOFiOracle::NDOFiOracle)
+        ${modNamespace}::MILPSolver
+        NDOFiOracle::NDOFiOracle)
+
+if (Torch_FOUND)
+    message(STATUS "${modName}: Torch found, configuring BundleSolverML")
+    target_sources(${modName} PRIVATE src/BundleSolverML.cpp)
+    separate_arguments(TORCH_CXX_FLAGS_LIST UNIX_COMMAND "${TORCH_CXX_FLAGS}")
+    target_compile_options(${modName} PRIVATE ${TORCH_CXX_FLAGS_LIST})
+    target_link_libraries(${modName} PUBLIC ${TORCH_LIBRARIES})
+endif ()
 
 # if NDOFiOracle library is *not* given as subdirectory since it is
 # in the system-installed libraries, we need to link the Coin::Osi* targets here
@@ -192,7 +243,7 @@ add_library(${modNamespace}::${modName} ALIAS ${modName})
 
 # ----- Subdirectories ------------------------------------------------------ #
 if (BUILD_TESTING)
-    # Just consuming BUILD_TESTING to avoid warnings
+    add_subdirectory(test)
 endif ()
 
 # ----- Install instructions ------------------------------------------------ #
@@ -213,6 +264,12 @@ install(TARGETS ${modName}
 install(FILES
         ${CMAKE_CURRENT_SOURCE_DIR}/include/BundleSolver.h
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/${modNamespace})
+
+if (Torch_FOUND)
+    install(DIRECTORY include/
+            DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/${modNamespace}
+            FILES_MATCHING PATTERN "BundleSolverML*")
+endif ()
 
 # Install the auto-generated configuration header (see above).
 install(FILES ${PROJECT_BINARY_DIR}/${modName}Config.h
@@ -256,8 +313,8 @@ install(FILES
 # dynamic loading will look into it.
 if (hasParent)
     set(SMSPP_BUILD_RPATH
-        "${SMSPP_BUILD_RPATH};${CMAKE_CURRENT_BINARY_DIR}"
-        PARENT_SCOPE)
+            "${SMSPP_BUILD_RPATH};${CMAKE_CURRENT_BINARY_DIR}"
+            PARENT_SCOPE)
 endif ()
 
 # ----- Packaging support --------------------------------------------------- #
@@ -272,9 +329,9 @@ if (NOT hasParent)
     set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_LIST_DIR}/LICENSE")
     set(CPACK_RESOURCE_FILE_README "${CMAKE_CURRENT_LIST_DIR}/README.md")
     set(CPACK_SOURCE_IGNORE_FILES
-        \\\\.git/
-        \\\\.gitignore$
-        \\\\.gitattributes$)
+            \\\\.git/
+            \\\\.gitignore$
+            \\\\.gitattributes$)
     include(CPack)
 endif ()
 

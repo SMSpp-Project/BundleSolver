@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+#
+# usage: batch [ exe ]
+#        exe = path of the executable file, default ./BundleSolverML_test
+#
+# Self-contained sweep over problem sizes, densities and seeds of the random
+# generator; the script exits with a nonzero code as soon as one run fails.
+# The BlockSolverConfig (BSPar.txt and BSPar-ML.txt) are read from the current
+# directory. Requires Torch, since BundleSolverML must be registered in the
+# Solver factory (BundleSolver built with Torch).
+#
+# Tunable via environment variables:
+#   - epochs: number of training epochs per instance (default: 5)
+#   - sizes:  list of sizes to test (default: "10 20")
+#   - denss:  list of densities to test (default: "4")
+
+exe=${1:-./BundleSolverML_test}
+
+epochs=${epochs:-5}
+sizes=${sizes:-"10 20"}
+denss=${denss:-"4"}
+
+for size in $sizes; do
+  for dens in $denss; do
+    for (( seed = 0 ; seed < 10 ; seed++ )); do
+
+      printf '[ %s %s %s %s ]: ' "$seed" "$size" "$dens" "$epochs"
+      "$exe" "$seed" "$size" "$dens" "$epochs" || exit 1
+
+    done
+  done
+done
+
+# the end - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -

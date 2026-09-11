@@ -8,7 +8,11 @@
  *         Dipartimento di Informatica \n
  *         Universita' di Pisa \n
  *
- * \copyright &copy; by Antonio Frangioni
+ * \author Donato Meoli \n
+ *         Dipartimento di Informatica \n
+ *         Universita' di Pisa \n
+ *
+ * \copyright &copy; by Antonio Frangioni, Donato Meoli
  */
 /*--------------------------------------------------------------------------*/
 /*---------------------------- IMPLEMENTATION ------------------------------*/
@@ -17,6 +21,8 @@
 /*--------------------------------------------------------------------------*/
 
 #include "ParallelBundleSolver.h"
+
+#include <deque>
 
 #include <iomanip>
 
@@ -131,6 +137,12 @@ BundleSolver::Index ParallelBundleSolver::InnerLoop( bool extrastep )
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  if( ( NrFi == 1 ) || ( MaxThread == 0 ) )
   return( BundleSolver::InnerLoop( extrastep ) );
+
+ // if a deterministic formulation is selected, dispatch to it - - - - - - - -
+ // bit 0 of ParFrm picks fixed-order consumption; bits 1/2 select the
+ // discard (faithful) and batch sub-behaviours
+ if( ParFrm & 1 )
+  return( InnerLoopOrdered( extrastep , ParFrm & 2 , ParFrm & 4 ) );
 
  // compute the minimum number of components to evaluate
  Index minceval = ( MinNrEvls >= 0 ? Index( MinNrEvls )
@@ -442,8 +454,214 @@ BundleSolver::Index ParallelBundleSolver::InnerLoop( bool extrastep )
   }  // end( for( ramp-down phase loop ) )
 
  return( ceval );
- 
+
  }  // end( ParallelBundleSolver::InnerLoop )
+
+/*--------------------------------------------------------------------------*/
+
+BundleSolver::Index ParallelBundleSolver::InnerLoopOrdered( bool extrastep ,
+							   bool discard ,
+							   bool batch )
+{
+ /* Deterministic parallel inner loop. Up to MaxThread components are kept
+  * in flight (each compute()-d by a std::async), but, unlike the legacy
+  * formulation, their results are *consumed in the fixed round-robin order
+  * in which they were launched*: the main thread always blocks on the head
+  * of the in-flight queue, even if a later task finished first. This removes
+  * any dependence on thread timing, so both the set and the order of the
+  * processed components are reproducible. Blocking on the head also makes
+  * the dampened active wait (PoolingInt) unnecessary.
+  *
+  * The two flags select the remaining behaviour:
+  *
+  * - discard: when the master problem is guaranteed to change, the still
+  *   in-flight tasks are dropped without being used (their provisional
+  *   FiStatus is restored), so that exactly the components the sequential
+  *   BundleSolver would process, and no more, are processed; if false the
+  *   in-flight tasks are consumed instead (work-conserving);
+  *
+  * - batch: every ( NrFi - NrEasy ) component is evaluated, with no early
+  *   stop on MPchgs (non-incremental). */
+
+ // with at most one "hard" component there is nothing to parallelize: defer
+ // to the base version, which also has the right edge-case semantics
+ if( NrFi - NrEasy <= 1 )
+  return( BundleSolver::InnerLoop( extrastep ) );
+
+ // minimum number of components to evaluate; batch forces them all
+ Index minceval = ( MinNrEvls >= 0 ? Index( MinNrEvls )
+		                   : ( NrFi - NrEasy ) * ( - MinNrEvls ) );
+ if( batch )
+  minceval = NrFi - NrEasy;
+
+ Index ceval = 0;  // how many distinct components have been evaluated
+
+ // an in-flight task: the component, its FiStatus before the (provisional)
+ // overwrite (needed to restore it on discard), and the std::future
+ struct Task { Index wFi; int prev; std::future< int > fut; };
+ std::deque< Task > inflight;
+
+ // launch the evaluation of component w and push it at the back of the queue
+ // note: FiStatus is provisionally set to kOK so that FindNext() does not
+ // produce w again while it is in flight (see the legacy InnerLoop())
+ auto launch = [ & ]( Index w ) {
+  if( extrastep )
+   SetupFiLambda( w );
+  else
+   SetupFiLambda1( w );
+  Task t { w , int( FiStatus[ w ] ) , v_c05f[ w ]->compute_async(
+					    ( FiStatus[ w ] == kUnEval ) ) };
+  FiStatus[ w ] = kOK;
+  inflight.push_back( std::move( t ) );
+  };
+
+ // drain the still in-flight tasks without using their results, restoring
+ // the FiStatus they had before being launched (so they are re-evaluated as
+ // if never touched this round)
+ auto drain = [ & ]( void ) {
+  for( auto & t : inflight ) {
+   t.fut.get();
+   FiStatus[ t.wFi ] = t.prev;
+   }
+  inflight.clear();
+  };
+
+ // ramp-up: launch up to MaxThread components in round-robin order - - - - -
+ for( Index i = std::min( MaxThread , NrFi - NrEasy ) ; i ; --i ) {
+  if( ! FindNext() )
+   break;
+  launch( f_wFi );
+  }
+
+ bool insrtd = false;
+ bool stoplaunch = false;  // once true no new task is started
+ Index lastproc = f_wFi;   // last processed component, to restore round-robin
+
+ // consume the queue in launch order - - - - - - - - - - - - - - - - - - - -
+ while( ! inflight.empty() ) {
+  // block on the head (fixed order), even if a later task is ready first
+  Task t = std::move( inflight.front() );
+  inflight.pop_front();
+  Index wFi = t.wFi;
+
+  FiStatus[ wFi ] = t.fut.get();  // get() the status of compute()
+
+  if( ! CurrNrEvls[ wFi ] )  // not evaluated before
+   ++ceval;                  // one more evaluated
+  ++CurrNrEvls[ wFi ];       // evaluated once more
+  lastproc = wFi;
+
+  BLOG( 6 , std::endl << "ordered: component " << wFi << " has status "
+	    << FiStatus[ wFi ] );
+
+  // unrecoverable error: stop, the whole compute() aborts- - - - - - - - - -
+  if( ( FiStatus[ wFi ] <= kUnEval ) || ( FiStatus[ wFi ] >= kError ) ) {
+   BLOG( 3 , std::endl << "            Component " << wFi
+	     << " evaluated: Error" );
+   Result = kError;
+   drain();
+   break;
+   }
+
+  // collect function values (upper and lower bound)- - - - - - - - - - - - -
+  auto fwFi = v_c05f[ wFi ];
+  auto ue = fwFi->get_upper_estimate();
+  auto le = fwFi->get_lower_estimate();
+
+  #if VERBOSE_LOG
+   if( f_log && ( LogVerb > 3 ) ) {
+    *f_log << std::endl << "            Component " << wFi
+	   << " evaluated: UB = " << def;
+    pval( *f_log , ue );
+    *f_log << ", LB = ";
+    pval( *f_log , le );
+    }
+  #endif
+
+  // a component evaluating to -INF makes the whole problem unbounded below;
+  // by convexity this shows up immediately, so just stop- - - - - - - - - - -
+  if( ( f_convex && ( ue == -INFshift ) ) ||
+      ( ( ! f_convex ) && ( le == INFshift ) ) ) {
+   UpFiLmb1[ wFi ] = UpFiLmb1.back() = -INFshift;
+   drain();
+   break;
+   }
+
+  if( extrastep ) {
+   // the method is actually being called on Lambda: update Lambda's
+   // estimates and move on to the next component (no early stop)
+   update_UpFiLambd( wFi , f_convex ? ue : - le );
+   update_LwFiLambd( wFi , f_convex ? le : - ue );
+   }
+  else {
+   // update UpFiLambd1[ wFi ] (and possibly UpFiLambd1[ NrFi ])
+   update_UpFiLambd1( wFi , f_convex ? ue : - le );
+
+   // if bit 4 of TrgtMng == 1, try to tighten UpFiLmb[ wFi ] using the
+   // Lipschitz constant; the upper target is *not* changed (see legacy)
+   if( ( TrgtMng & 16 ) && ( UpFiLmb1[ wFi ] < INFshift ) ) {
+    c_VarValue LwFi = fwFi->get_Lipschitz_constant();
+    if( LwFi < INFshift )
+     update_UpFiLambd( wFi , UpFiLmb1[ wFi ] + LwFi * NrmD );
+    }
+
+   // update LwFiLambd1[ wFi ] (and possibly LwFiLambd1[ NrFi ])
+   update_LwFiLambd1( wFi , f_convex ? le : - ue );
+
+   // get new linearizations
+   if( GetGi( wFi ) )
+    insrtd = true;
+
+   // check if the accrued information changes the MP (see legacy for the
+   // detailed rationale of the strict inequalities)
+   if( ( ! MPchgs ) && ( UpFiLmb1.back() < UpTrgt ) )
+    MPchgs = 1;
+
+   if( ( ! MPchgs ) && insrtd && RifeqFi && ( LwFiLmb1.back() > LwTrgt ) )
+    MPchgs = 1;
+
+   // wind-down tests (skipped in the extrastep path, as in the legacy one).
+   // "earlystop" means the MP is already guaranteed to change (or time is
+   // up): we must stop launching new tasks, and in faithful (discard) mode
+   // we also drop the still in-flight tasks so that exactly the components
+   // the sequential run would process, and no more, are processed. This is
+   // *different* from simply running out of components to launch (FindNext()
+   // below returning false): in that case the in-flight tasks are the last
+   // components and must still be consumed, never dropped.
+   bool earlystop = false;
+   if( ( MaxTime < INFshift ) && ( get_elapsed_time() > MaxTime ) ) {
+    Result = kStopTime;
+    earlystop = true;
+    }
+
+   if( ( ! batch ) && MPchgs && ( ceval >= minceval ) )
+    earlystop = true;
+
+   if( earlystop ) {
+    if( discard ) {     // faithful: drop the in-flight tasks and stop
+     drain();
+     break;
+     }
+    stoplaunch = true;  // work-conserving: keep consuming the in-flight ones
+    }
+   }
+
+  // refill: launch the next component unless we have stopped launching - - - -
+  if( ! stoplaunch ) {
+   if( ! FindNext() )
+    stoplaunch = true;  // no component left; just drain what is in flight
+   else
+    launch( f_wFi );
+   }
+  }  // end( while( consume queue ) )
+
+ // restore the round-robin pointer to the last processed component, so that
+ // the next InnerLoop() resumes exactly where a sequential run would
+ f_wFi = lastproc;
+
+ return( ceval );
+
+ }  // end( ParallelBundleSolver::InnerLoopOrdered )
 
 /*--------------------------------------------------------------------------*/
 /*------------------- End File ParallelBundleSolver.cpp --------------------*/

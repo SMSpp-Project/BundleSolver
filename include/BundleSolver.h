@@ -510,6 +510,20 @@ public:
   vstrCmpCfg = vstrLastParCDAS ,
   ///< parameter for configuring (possibly) each component individually
 
+  vstr_C05_SPAR_Names ,
+  ///< string parameters names that are set differently to each C05Function
+
+  vstr_C05_SPAR_Vals ,
+  ///< baseline values for different string parameters to each C05Function
+
+  vstr_C05_EI_SPAR_Names ,
+  /**< string parameters names that are changed at every iteration and call
+   * differently to each C05Function */
+
+  vstr_C05_EI_SPAR_Vals ,
+  /**< baseline values for string parameters changed at every iteration and
+   * call differently to each C05Function */
+
   vstrLastBndSlvPar ///< first allowed new vector-of-string parameter
                     /**< Convenience value for easily allow derived classes
 		     * to extend the set of vector-of-string parameters. */
@@ -562,6 +576,7 @@ public:
   algo = get_dflt_int_par( intOSImp1 );
   reduction = get_dflt_int_par( intOSImp2 );
   threads = get_dflt_int_par( intOSImp3 );
+  RstAlgPrm = get_dflt_int_par( intRstAlg );
 
   MaxTime = CDASolver::get_dflt_dbl_par( dblMaxTime );
   RelAcc = CDASolver::get_dflt_dbl_par( dblRelAcc );
@@ -570,6 +585,7 @@ public:
   NZEps = get_dflt_dbl_par( dblNZEps );
   tStar = get_dflt_dbl_par( dbltStar );
   MinNrEvls = get_dflt_dbl_par( dblMinNrEvls );
+  BPar5 = get_dflt_dbl_par( dblBPar5 );
   m1 = get_dflt_dbl_par( dblm1 );
   m2 = get_dflt_dbl_par( dblm2 );
   m3 = get_dflt_dbl_par( dblm3 );
@@ -616,7 +632,11 @@ public:
 /*--------------------------------------------------------------------------*/
  /// set the int parameters of BundleSolver
  /** Set the int parameters specific of BundleSolver, together with the
-  * parameters of CDASolver that BundleSolver actually "listens to":
+  * parameters of CDASolver that BundleSolver actually "listens to". Note
+  * that intMaxThread is not one of them, the implementation being entirely
+  * sequential: setting it has no effect, and reading it back gives the
+  * default, i.e., 0 [see ParallelBundleSolver for the one that listens to
+  * it]. The parameters are:
   *
   * - intMaxIter [Inf< int >]: maximum iterations for the next call to solve()
   *
@@ -1030,7 +1050,12 @@ public:
   * parameters of CDASolver that BundleSolver actually "listens to":
   *
   * - dblMaxTime [Inf< double >()]: maximum CPU time for the next call to
-  *                               compute(), in seconds
+  *                               compute(), in seconds; a non-positive value
+  *                               says that the time is already up, so that a
+  *                               caller handing down what is left of a budget
+  *                               need not special-case the exhausted case,
+  *                               and compute() returns kStopTime having done
+  *                               no work
   *
   * - dblRelAcc [1e-6]: relative accuracy for declaring a solution optimal
   *                     (the "easy part", see dbltStar below for the
@@ -1361,8 +1386,53 @@ public:
   *   is applied. If everything is empty then the component is not
   *   configured (the existing configuration is not changed). Note that it
   *   is still possible to completely reset a component by passing it an
-  *   "empty" ComputeConfig with f_diff == true, which is different from
-  *   no ComputeConfig at all. */
+  *   "empty" ComputeConfig with diff() == true, which is different from
+  *   no ComputeConfig at all.
+  *
+  * - vstr_C05_SPAR_Names [empty]: [vector-of-]string parameters names that
+  *                                are set differently to each C05Function
+  *   when BundleSolver is register()-ed to the Block. This parameter works
+  *   in tandem with vstr_C05_SPAR_Vals [see].
+  *
+  * - vstr_C05_SPAR_Vals [empty]: baseline values for [vector-of-]string
+  *                               parameters that are set differently to each
+  *   C05Function when BundleSolver is register()-ed to the Block. This
+  *   parameter works in tandem with vstr_C05_SPAR_Names as follows. They
+  *   must have the same length. Then, for every h = 0, 1, ...,
+  *   n_components() - 1, the parameter vstr_C05_SPAR_Names[ i ] is set to
+  *   value <prefix>"_h"<suffix>, where <prefix> is the first part of
+  *   vstr_C05_SPAR_Vals[ i ] up until the rightmost "." (if any) excluded,
+  *   while <suffix> is the last part of vstr_C05_SPAR_Vals[ i ] from the
+  *   rightmost "." included up untile the end (empty if there is no ".").
+  *   The parameter is set as a vector-of-string one containing one single
+  *   value if the first 4 characters of vstr_C05_SPAR_Names[ i ] are
+  *   exactly "vstr", and as a single string parameter otherwise. This is
+  *   geared towards setting different filenames (e.g., log files,
+  *   Configuration files, instance files, ...) to each of the compute() of
+  *   each C05Function.
+  *
+  * - vstr_C05_EI_SPAR_Names [empty]: [vector-of-]string parameters names
+  *                                   that are set differently to each
+  *   C05Function at every iteration (and call). This parameter works in
+  *   tandem with vstr_C05_EI_SPAR_Vals [see].
+  *
+  * - vstr_C05_EI_SPAR_Vals [empty]: baseline values for [vector-of-]string
+  *                                  parameters that are set differently to
+  *   each C05Function at every iteration (and call). This parameter works in
+  *   tandem with vstr_C05_EI_SPAR_Names as follows. They must have the same
+  *   length. Then, for every h = 0, 1, ..., n_components() - 1, at every
+  *   iteration k [see get_elapsed_iterations()] of every call z [see
+  *   get_elapsed_calls()], the parameter vstr_C05_EI_SPAR_Names[ i ] is set
+  *   to value <prefix>"_h_z_k"<suffix>, where <prefix> is the first part of
+  *   vstr_C05_EI_SPAR_Vals[ i ] up until the rightmost "." (if any) excluded,
+  *   while <suffix> is the last part of vstr_C05_EI_SPAR_Vals[ i ] from the
+  *   rightmost "." included up untile the end (empty if there is no ".").
+  *   The parameter is set as a vector-of-string one containing one single
+  *   value if the first 4 characters of vstr_C05_EI_SPAR_Names[ i ] are
+  *   exactly "vstr", and as a single string parameter otherwise. This is
+  *   geared towards setting different filenames (e.g., log files,
+  *   Configuration files, instance files, ...) to each of the compute() of
+  *   each C05Function at every iteration (of every call). */
 
  void set_par( idx_type par , std::vector< std::string > && value ) override;
 
@@ -1930,7 +2000,7 @@ public:
 !!*/
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
-/* !! not necessary so far: CDASolver and Solver do not have vector-of-int
+/* !! not necessary so far: CDASolver and Solver do not have vector-of-string
  *    parameters and the default is empty anyway
 
  const std::vector< std::string > & get_dflt_vstr_par( idx_type par )
@@ -2059,8 +2129,17 @@ public:
 
  [[nodiscard]] idx_type vstr_par_str2idx( const std::string & name )
   const override {
-  if( name == "vstrCmpCfg" )
-   return( vstrCmpCfg );
+  static const std::map< std::string , idx_type > vstr_pars_map = {
+   { "vstrCmpCfg" , BundleSolver::vstrCmpCfg } ,
+   { "vstr_C05_SPAR_Names" , BundleSolver::vstr_C05_SPAR_Names } ,
+   { "vstr_C05_SPAR_Vals" , BundleSolver::vstr_C05_SPAR_Vals } ,
+   { "vstr_C05_EI_SPAR_Names" , BundleSolver::vstr_C05_EI_SPAR_Names } ,
+   { "vstr_C05_EI_SPAR_Vals" , BundleSolver::vstr_C05_EI_SPAR_Vals }
+   };
+
+  const auto it = vstr_pars_map.find( name );
+  if( it != vstr_pars_map.end() )
+   return( it->second );
 
   return( CDASolver::vstr_par_str2idx( name ) );
   }
@@ -2126,9 +2205,12 @@ public:
 
  [[nodiscard]] const std::string & vstr_par_idx2str( idx_type idx )
   const override {
-  static const std::string __psname = "vstrCmpCfg";
-  if( idx == vstrCmpCfg )
-   return( __psname );
+  static const std::array< std::string , 5 > vstr_pars_str = { "vstrCmpCfg" ,
+   "vstr_C05_SPAR_Names" , "vstr_C05_SPAR_Vals " , "vstr_C05_EI_SPAR_Names" ,
+   "vstr_C05_EI_SPAR_Vals" };
+
+  if( ( idx >= vstrLastParCDAS ) && ( idx < vstrLastBndSlvPar ) )
+   return( vstr_pars_str[ idx - vstrCmpCfg ] );
 
   return( CDASolver::vstr_par_idx2str( idx ) );
   }
@@ -2193,6 +2275,136 @@ public:
  using Vec_SIndex = std::vector< SIndex >;  ///< a std::vector of SIndex
 
  using Vec_Bool = std::vector< bool >;      ///< a std::vector of bool
+
+/*--------------------------------------------------------------------------*/
+/*------------------------- CLASS FakeFiOracle  ----------------------------*/
+/*--------------------------------------------------------------------------*/
+/*--------------------------- GENERAL NOTES --------------------------------*/
+/*--------------------------------------------------------------------------*/
+/** FakeFiOracle implements the part of the FiOracle interface that is
+ * strictly necessary to use a MPSolver inside BundleSolver. This hack will
+ * one day be replaced with a native implementation of the master problem
+ * solver, but until then, there you go. */
+
+class FakeFiOracle : public FiOracle
+{
+
+/*----------------------- PUBLIC PART OF THE CLASS -------------------------*/
+
+ public:
+
+/*--------------------- PUBLIC METHODS OF THE CLASS ------------------------*/
+/*--------------------------------------------------------------------------*/
+/*---------------------------- CONSTRUCTOR ---------------------------------*/
+/** Constructor of the class: takes the pointer to the BundleSolver it has
+ * to "serve". */
+
+ FakeFiOracle( BundleSolver *solver ) : FiOracle() {
+  bslv = solver;
+  }
+
+/*-------------------------- OTHER INITIALIZATIONS -------------------------*/
+
+ void SetNDOSolver( NDOSolver *NwSlvr = 0 ) override {
+  throw( std::logic_error( "this method cannot be called" ) );
+  }
+
+/*--------------------------------------------------------------------------*/
+
+ void SetFiLog( std::ostream * outs = 0 , const char lvl = 0 ) override {
+  throw( std::logic_error( "this method cannot be called" ) );
+  }
+
+/*--------------------------------------------------------------------------*/
+
+ void SetFiTime( const bool TimeIt = true ) override {
+  throw( std::logic_error( "this method cannot be called" ) );
+  }
+
+/*--------------------------------------------------------------------------*/
+
+ void SetMaxName( cIndex MxNme = 0 ) override {
+  throw( std::logic_error( "this method cannot be called" ) );
+  }
+
+/*-------------- METHODS FOR READING THE DATA OF THE PROBLEM ---------------*/
+/// get the number of Variable
+/** Variable cannot be changed. This means that is used the default
+ *  implementation of GetMaxNumVar(). The maximum number of variables is
+ *  equal to the current number of variable*/
+
+ Index GetNumVar( void ) const override;
+
+/*--------------------------------------------------------------------------*/
+
+ Index GetNrFi( void ) const override;
+
+/*--------------------------------------------------------------------------*/
+
+ Index GetMaxName( void ) const override;
+
+/*--------------------------------------------------------------------------*/
+
+ bool GetUC( cIndex i ) override;
+
+/*--------------------------------------------------------------------------*/
+
+ LMNum GetUB( cIndex i ) override;
+
+/*--------------------------------------------------------------------------*/
+
+ Index GetBNC( cIndex wFi ) override;
+
+/*--------------------------------------------------------------------------*/
+
+ Index GetBNR( cIndex wFi ) override;
+
+/*--------------------------------------------------------------------------*/
+
+ Index GetBNZ( cIndex wFi ) override;
+
+/*--------------------------------------------------------------------------*/
+
+ void GetBDesc( cIndex wFi , int *Bbeg , int *Bind , double *Bval ,
+		double *lhs , double *rhs , double *cst ,
+		double *lbd , double *ubd ) override;
+
+/*--------------------------------------------------------------------------*/
+
+ Index GetANZ( cIndex wFi , cIndex strt = 0 , Index stp = Inf< Index >() )
+  override;
+
+/*--------------------------------------------------------------------------*/
+
+ void GetADesc( cIndex wFi , int *Abeg , int *Aind , double *Aval ,
+		cIndex strt = 0 , Index stp = Inf< Index >() ) override;
+
+/*--------------------------------------------------------------------------*/
+
+ HpNum Fi( cIndex wFi = Inf< Index >() ) override {
+  throw( std::logic_error( "this method cannot be called" ) );
+  }
+
+/*------------- METHODS FOR READING SUBGRADIENTS / CONSTRAINTS -------------*/
+
+ bool NewGi( cIndex wFi = Inf< Index >() ) override { return( true ); }
+
+/*--------------------------------------------------------------------------*/
+
+ Index GetGi( SgRow SubG , cIndex_Set &SGBse , cIndex Name = Inf< Index >() ,
+	      cIndex strt = 0 , Index stp = Inf< Index >() ) override;
+
+/*------------------------------ DESTRUCTOR --------------------------------*/
+
+ virtual ~FakeFiOracle() { }
+
+/*-------------------- PROTECTED PART OF THE CLASS -------------------------*/
+
+ protected:
+
+ BundleSolver * bslv;  ///< the BundleSolver that I "serve"
+
+ };  // end( class FakeFiOracle )
 
 /*--------------------------------------------------------------------------*/
 /*-------------------------- PROTECTED METHODS -----------------------------*/
@@ -2277,6 +2489,11 @@ public:
  bool FiAndGi( Index wFi , bool getgi = true );
 
 /*--------------------------------------------------------------------------*/
+ // Set the component-specific string parameters, if any
+
+ void SetupFiStrPar( Index wFi );
+
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
  /* Prepares component wFi for computation on Lambda1 by setting the
   * thresholds and accuracy. */
 
@@ -2557,6 +2774,26 @@ public:
 
  HpNum Heuristic4( void );
 
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+/** The heuristics make use of data about the newly obtained aggregate
+ * subgradient in the tentative point (G1), such as its linearization error
+ * (Alfa1) and its scalar product with the direction (ScPr1). Since this is
+ * potentially costly to update, it is done only if "someone is actually
+ * looking at it". This is specified by the three methods below, of which
+ * BundleSolver gives an implementation based on which bits of inttSPar1
+ * are set, i.e., which of its four baisc heuristics are used. However,
+ * derived classes may have other heuristics and therefore have other needs,
+ * which is why the three methods are virtual. */
+
+ /// true if Alfa1 needs be computed
+ virtual bool NeedsAlfa1( void );
+
+ /// true if ScPr1 needs be computed
+ virtual bool NeedsScPr1( void );
+
+ /// true if G1 needs be computed
+ virtual bool NeedsG1( void );
+
 /*--------------------------------------------------------------------------*/
 /*---------------------------- PROTECTED FIELDS  ---------------------------*/
 /*--------------------------------------------------------------------------*/
@@ -2637,13 +2874,29 @@ public:
 
  int RstAlgPrm;     ///< reset parameter, bit-wise coded
 
- std::string EasyCfg;  ///< filename for the Block[Solver]Config of easy
+ std::string EasyCfg;
+ ///< filename for the Block[Solver]Config of easy components
 
- std::string HardCfg;  ///< filename for the Block[Solver]Config of non-easy
- 
+ std::string HardCfg;
+ ///< filename for the Block[Solver]Config of non-easy components
+
  std::vector< int > NoEasy;  ///< which components never treat as "easy"
 
  std::vector< std::string > CmpCfg;  ///< individual Configurations
+
+ std::vector< std::string > v_C05_SPAR_Names;
+ ///< string parameters names that are set differently to each C05Function
+
+ std::vector< std::string > v_C05_SPAR_Vals;
+ ///< baseline values for different string parameters to each C05Function
+
+ std::vector< std::string > v_C05_EI_SPAR_Names;
+ /**< string parameters names that are changed at every iteration and call
+  * differently to each C05Function */
+
+ std::vector< std::string > v_C05_EI_SPAR_Vals;
+ /**< baseline values for string parameters changed at every iteration and
+  * call differently to each C05Function */
 
  // generic fields- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -2799,8 +3052,8 @@ public:
   * p = InvItemVcblr[ k ][ i ], if p < vBPar2[ NrFi ], then the linearization
   * with name i in the global pool of h is in the bundle at position p.
   * If p == INF, then there is no linearization with name i in the global
-  * pool of k. If vBPar2[ NrFi ] <= p < INF, then there is a linearization with
-  * name i in the global pool of h, but it is not in the bundle.
+  * pool of k. If vBPar2[ NrFi ] <= p < INF, then there is a linearization
+  * with name i in the global pool of h, but it is not in the bundle.
   *
   * NOTE: THE GLOBAL POOL OF SOME C05Function CAN BE LARGER THAN vBPar2[ k ],
   * BUT ALL ELEMENTS WITH NAME LARGER THAN vBPar2[ k ] ARE NEVER USED OR
@@ -2842,6 +3095,54 @@ public:
 
  std::vector< ColVariable * > LamVcblr;  ///< map Lambda -> ColVariable
 
+ // per-component local→global Lambda index map for sparse Lambda mode.
+ // v_local2global[ h ] has size get_num_active_var() + 1 for v_c05f[ h ];
+ // entries [ 0 .. loc_NV - 1 ] are the indices in LamVcblr of h's active
+ // Variables in the order get_linearization_coefficients writes them, and
+ // the last slot is Inf< Index >() so v_local2global[ h ].data() is a
+ // ready-to-use Inf-terminated SGBse for MPSolver::SetItemBse. Empty
+ // (size 0) when f_sparse_lambda is false (legacy dense path).
+ //
+ // Owned by BundleSolver (not by the C05Function), in line with the
+ // policy that Solver-specific bookkeeping never leaks into the
+ // Function interface; the Inf-terminated convention is an OSIMPSolver
+ // implementation detail that will disappear with Bundle 2.0.
+ std::vector< std::vector< Index > > v_local2global;
+
+ // true iff at least one v_c05f[ h ] (or f_lf) exposes a strict subset
+ // of LamVcblr as its active variables (or the same set in a different
+ // order). Auto-detected in two places: at set_Block, by comparing per-
+ // component active sets against the union LamVcblr; and at runtime in
+ // process_outstanding_Modification's 4th loop, where a naked
+ // FunctionModVars* (i.e. one that did NOT arrive as a lockstep
+ // GroupModification covering all components) promotes a dense Solver
+ // to sparse on the spot — materialising identity local-to-global maps
+ // in v_local2global[ * ] and rebuilding Lambda2Idx / v_ref_count from
+ // the dense invariant — before the sparse handlers below process the
+ // Mod. When false, every gather site falls back to the legacy "all
+ // components see the same dense Lambda" code path.
+ bool f_sparse_lambda = false;
+
+ // pointer → global Lambda index map, the inverse of LamVcblr. Kept live
+ // (and incrementally maintained) only when f_sparse_lambda == true; used
+ // to resolve ColVariable * coming from a FunctionModVars* against the
+ // global Lambda index space when v_c05f[ h ] is sparse (i.e. when the
+ // dense invariant "all components have identical active vars in the
+ // same order" does not hold and the Mod's first()/range()/subset()
+ // entries cannot be interpreted globally). In dense mode this map is
+ // cleared after set_Block to save memory.
+ std::unordered_map< ColVariable * , Index > Lambda2Idx;
+
+ // per-LamVcblr-slot refcount: v_ref_count[ i ] is the number of
+ // v_c05f (+ f_lf if any) that have LamVcblr[ i ] as an active
+ // variable. Built in set_Block alongside LamVcblr; decremented by the
+ // sparse FunctionModVarsRngd / FunctionModVarsSbst handlers, and when
+ // it reaches 0 the slot is queued for global removal — at the end of
+ // the 4th Modification loop we compact LamVcblr / Lambda / Lambda2Idx
+ // / v_local2global[ * ] and call Master->RmvVars to reclaim the
+ // master row. Kept live only when f_sparse_lambda == true.
+ std::vector< Index > v_ref_count;
+
  VarValue UpTrgt;        ///< upper target
  VarValue LwTrgt;        ///< lower target
 
@@ -2881,6 +3182,10 @@ public:
  std::chrono::time_point< std::chrono::system_clock > c_start;
  ///< starting instant of last call to compute()
 
+ // the FakeFiOracle object - - - - - - - - - - - - - - - - - - - - - - - - -
+
+ FakeFiOracle FakeFi;  ///< the FakeFiOracle object
+
 /*--------------------------------------------------------------------------*/
 /*--------------------- PRIVATE PART OF THE CLASS --------------------------*/
 /*--------------------------------------------------------------------------*/
@@ -2890,135 +3195,6 @@ public:
 /*--------------------------------------------------------------------------*/
 /*--------------------------- PRIVATE TYPES --------------------------------*/
 /*--------------------------------------------------------------------------*/
-/*------------------------- CLASS FakeFiOracle  ----------------------------*/
-/*--------------------------------------------------------------------------*/
-/*--------------------------- GENERAL NOTES --------------------------------*/
-/*--------------------------------------------------------------------------*/
-/** FakeFiOracle implements the part of the FiOracle interface that is
- * strictly necessary to use a MPSolver inside BundleSolver. This hack will
- * one day be replaced with a native implementation of the master problem
- * solver, but until then, there you go. */
-
-class FakeFiOracle : public FiOracle
-{
-
-/*----------------------- PUBLIC PART OF THE CLASS -------------------------*/
-
- public:
-
-/*--------------------- PUBLIC METHODS OF THE CLASS ------------------------*/
-/*--------------------------------------------------------------------------*/
-/*---------------------------- CONSTRUCTOR ---------------------------------*/
-/** Constructor of the class: takes the pointer to the BundleSolver it has
- * to "serve". */
-
- FakeFiOracle( BundleSolver *solver ) : FiOracle() {
-  bslv = solver;
-  }
-
-/*-------------------------- OTHER INITIALIZATIONS -------------------------*/
-
- void SetNDOSolver( NDOSolver *NwSlvr = 0 ) override {
-  throw( std::logic_error( "this method cannot be called" ) );
-  }
-
-/*--------------------------------------------------------------------------*/
-
- void SetFiLog( std::ostream * outs = 0 , const char lvl = 0 ) override {
-  throw( std::logic_error( "this method cannot be called" ) );
-  }
-
-/*--------------------------------------------------------------------------*/
-
- void SetFiTime( const bool TimeIt = true ) override {
-  throw( std::logic_error( "this method cannot be called" ) );
-  }
-
-/*--------------------------------------------------------------------------*/
-
- void SetMaxName( cIndex MxNme = 0 ) override {
-  throw( std::logic_error( "this method cannot be called" ) );
-  }
-
-/*-------------- METHODS FOR READING THE DATA OF THE PROBLEM ---------------*/
-/// get the number of Variable
-/** Variable cannot be changed. This means that is used the default
- *  implementation of GetMaxNumVar(). The maximum number of variables is
- *  equal to the current number of variable*/
-
- Index GetNumVar( void ) const override;
-
-/*--------------------------------------------------------------------------*/
-
- Index GetNrFi( void ) const override;
-
-/*--------------------------------------------------------------------------*/
-
- Index GetMaxName( void ) const override;
-
-/*--------------------------------------------------------------------------*/
-
- bool GetUC( cIndex i ) override;
-
-/*--------------------------------------------------------------------------*/
-
- LMNum GetUB( cIndex i ) override;
-
-/*--------------------------------------------------------------------------*/
-
- Index GetBNC( cIndex wFi ) override;
-
-/*--------------------------------------------------------------------------*/
-
- Index GetBNR( cIndex wFi ) override;
-
-/*--------------------------------------------------------------------------*/
-
- Index GetBNZ( cIndex wFi ) override;
-
-/*--------------------------------------------------------------------------*/
-
- void GetBDesc( cIndex wFi , int *Bbeg , int *Bind , double *Bval ,
-		double *lhs , double *rhs , double *cst ,
-		double *lbd , double *ubd ) override;
-
-/*--------------------------------------------------------------------------*/
-
- Index GetANZ( cIndex wFi , cIndex strt = 0 , Index stp = Inf< Index >() )
-  override;
-
-/*--------------------------------------------------------------------------*/
-
- void GetADesc( cIndex wFi , int *Abeg , int *Aind , double *Aval ,
-		cIndex strt = 0 , Index stp = Inf< Index >() ) override;
-
-/*--------------------------------------------------------------------------*/
-
- HpNum Fi( cIndex wFi = Inf< Index >() ) override {
-  throw( std::logic_error( "this method cannot be called" ) );
-  }
-
-/*------------- METHODS FOR READING SUBGRADIENTS / CONSTRAINTS -------------*/
-
- bool NewGi( cIndex wFi = Inf< Index >() ) override { return( true ); }
-
-/*--------------------------------------------------------------------------*/
-
- Index GetGi( SgRow SubG , cIndex_Set &SGBse , cIndex Name = Inf< Index >() ,
-	      cIndex strt = 0 , Index stp = Inf< Index >() ) override;
-
-/*------------------------------ DESTRUCTOR --------------------------------*/
-
- virtual ~FakeFiOracle() { }
-
-/*-------------------- PROTECTED PART OF THE CLASS -------------------------*/
-
- protected:
-
- BundleSolver * bslv;  ///< the BundleSolver that I "serve"
-
- };  // end( class FakeFiOracle )
-
 /*--------------------------------------------------------------------------*/
 /*-------------------------- PRIVATE METHODS -------------------------------*/
 /*--------------------------------------------------------------------------*/
@@ -3032,14 +3208,6 @@ class FakeFiOracle : public FiOracle
 /*--------------------------------------------------------------------------*/
 
  Index FindAPlace( Index wFi );
-
-/*--------------------------------------------------------------------------*/
-
- bool NeedsAlfa1( void );
-
- bool NeedsScPr1( void );
-
- bool NeedsG1( void );
 
 /*--------------------------------------------------------------------------*/
 
@@ -3138,8 +3306,6 @@ class FakeFiOracle : public FiOracle
 /*--------------------------------------------------------------------------*/
 
  Index aBP3;       // current max number of items to be fetched
-
- FakeFiOracle FakeFi;  ///< the FakeFiOracle object
 
 /*--------------------------------------------------------------------------*/
 

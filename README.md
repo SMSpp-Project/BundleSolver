@@ -23,9 +23,17 @@ a "Generalized Bundle" algorithm; cf. e.g.
   2020](http://pages.di.unipi.it/frangio/abstracts.html#NDOB18)
 
 
+The module also provides BundleSolverML, a BundleSolver variant whose
+step-size t is predicted by a small feedforward neural network (implemented
+with the Torch C++ API) that can be trained online across solves, and
+whose weights can be shared among multiple instances and saved to / loaded
+from TorchScript archives cross-compatible with Python. BundleSolverML is
+only built if Torch is available [see Requirements].
+
+
 ## Getting started
 
-These instructions will let you build MCFBlock and MCFSolver on your system.
+These instructions will let you build the `BundleSolver` module on your system.
 
 ### Requirements
 
@@ -36,6 +44,12 @@ These instructions will let you build MCFBlock and MCFSolver on your system.
 - The [NDOSolver/FiOracle project](https://gitlab.com/frangio68/ndosolver_fioracle_project)
   and its requirements (depending on the actual MPSolver built); note that this
   dependency is supposed to be removed down the line.
+
+- Optionally, [Torch](https://pytorch.org/get-started/locally/) (the
+  PyTorch C++ API), which is required by (and only by) BundleSolverML: with
+  the makefiles it is searched for at `$(Torch_ROOT)` (see
+  `extlib/makefile-default-paths-*`), with CMake via `find_package(Torch)`;
+  if it is not found, BundleSolverML is simply not built.
 
 ### Build and install with CMake
 
@@ -136,6 +150,8 @@ conduct, and the process for submitting merge requests to us.
 - **Enrico Gorgone**  
   Dipartimento di Matematica ed Informatica  
   Università di Cagliari
+
+### Contributors
 
 
 ## License

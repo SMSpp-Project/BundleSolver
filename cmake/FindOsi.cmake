@@ -44,29 +44,29 @@ find_package(GUROBI)
 
 # ----- Find the headers ---------------------------------------------------- #
 find_path(Osi_INCLUDE_DIR
-          NAMES OsiConfig.h
-          PATHS ${Osi_ROOT}/include
-          PATH_SUFFIXES coin osi/coin coin-or
-          DOC "Osi include directory.")
+        NAMES OsiConfig.h
+        PATHS ${Osi_ROOT}/include
+        PATH_SUFFIXES coin osi/coin coin-or
+        DOC "Osi include directory.")
 
 # ----- Find the library ---------------------------------------------------- #
 find_library(Osi_LIBRARY
-             NAMES Osi
-             PATHS ${Osi_ROOT}/lib
-             DOC "Osi library.")
+        NAMES Osi
+        PATHS ${Osi_ROOT}/lib
+        DOC "Osi library.")
 
 # ----- OsiCpx component ---------------------------------------------------- #
 if (CPLEX_FOUND)
     find_path(Osi_OsiCpx_INCLUDE_DIR
-              NAMES OsiCpxSolverInterface.hpp
-              PATHS ${Osi_ROOT}/include
-              PATH_SUFFIXES coin osi/coin coin-or
-              DOC "OsiCpx include directory.")
+            NAMES OsiCpxSolverInterface.hpp
+            PATHS ${Osi_ROOT}/include
+            PATH_SUFFIXES coin osi/coin coin-or
+            DOC "OsiCpx include directory.")
 
     find_library(Osi_OsiCpx_LIBRARY
-                 NAMES OsiCpx
-                 PATHS ${Osi_ROOT}/lib
-                 DOC "OsiCpx library.")
+            NAMES OsiCpx
+            PATHS ${Osi_ROOT}/lib
+            DOC "OsiCpx library.")
 
     if (Osi_OsiCpx_INCLUDE_DIR AND Osi_OsiCpx_LIBRARY)
         set(Osi_OsiCpx_FOUND TRUE)
@@ -76,15 +76,15 @@ endif ()
 # ----- OsiGrb component ---------------------------------------------------- #
 if (GUROBI_FOUND)
     find_path(Osi_OsiGrb_INCLUDE_DIR
-              NAMES OsiGrbSolverInterface.hpp
-              PATHS ${Osi_ROOT}/include
-              PATH_SUFFIXES coin osi/coin coin-or
-              DOC "OsiGrb include directory.")
+            NAMES OsiGrbSolverInterface.hpp
+            PATHS ${Osi_ROOT}/include
+            PATH_SUFFIXES coin osi/coin coin-or
+            DOC "OsiGrb include directory.")
 
     find_library(Osi_OsiGrb_LIBRARY
-                 NAMES OsiGrb
-                 PATHS ${Osi_ROOT}/lib
-                 DOC "OsiGrb library.")
+            NAMES OsiGrb
+            PATHS ${Osi_ROOT}/lib
+            DOC "OsiGrb library.")
 
     if (Osi_OsiGrb_INCLUDE_DIR AND Osi_OsiGrb_LIBRARY)
         set(Osi_OsiGrb_FOUND TRUE)
@@ -166,7 +166,7 @@ endif ()
 # Variables marked as advanced are not displayed in CMake GUIs, see:
 # https://cmake.org/cmake/help/latest/command/mark_as_advanced.html
 mark_as_advanced(Osi_INCLUDE_DIR Osi_OsiCpx_INCLUDE_DIR Osi_OsiGrb_INCLUDE_DIR
-                 Osi_LIBRARY Osi_OsiCpx_LIBRARY Osi_OsiGrb_LIBRARY
-                 Osi_VERSION)
+        Osi_LIBRARY Osi_OsiCpx_LIBRARY Osi_OsiGrb_LIBRARY
+        Osi_VERSION)
 
 # --------------------------------------------------------------------------- #
