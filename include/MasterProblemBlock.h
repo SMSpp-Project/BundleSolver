@@ -191,7 +191,21 @@ class PolyhedralFunctionBlock;
  *
  * A regular Solver (typically a [MILP]Solver from the SMS++ MILPSolver module)
  * is attached to MasterProblemBlock through register_Solver(), and is then
- * asked to solve the MP at every Bundle iteration. */
+ * asked to solve the MP at every Bundle iteration.
+ *
+ * That Solver is asked for something rather more specific than an optimal
+ * value, which puts two demands on how it is configured. It has to re-optimise
+ * from the basis of the previous call, a handful of new columns at a time, so
+ * it has to be an active-set method: an interior point one cannot restart, and
+ * its multipliers, which here *are* the algorithm rather than a by-product,
+ * are only accurate to about 1e-7 relative, which the stopping test of the
+ * Bundle does not survive. And it has to satisfy the rows of the MP more
+ * tightly than the oracle satisfies its own: a step that violates a row by
+ * less than the accuracy the oracle works at is feasible for the MP and
+ * infeasible for the component, which answers with the cut that is already
+ * there, and the iteration repeats forever. Hence the feasibility and
+ * optimality tolerances of the Solver go well below the accuracy the Bundle is
+ * asked to reach. */
 
 class MasterProblemBlock : public Block {
 
