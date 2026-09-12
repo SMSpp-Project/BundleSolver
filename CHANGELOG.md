@@ -18,6 +18,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- a component returning kLowPrecision no longer stops the algorithm: that
+  code comes after kError, so the checks on the status of the components
+  took it for an error, while it only says that the required accuracy was
+  not reached; what the component returned is now used as inexact
+  information, as for any other component
+
 - the component index passed to MasterProblemBlock: it keeps a bundle only
   for the "hard" components and indexes them by their position among those,
   while BundleSolver counts the components of Fi globally, the "easy" ones
