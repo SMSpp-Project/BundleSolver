@@ -1343,6 +1343,12 @@ public:
   *
   *        Delta <- m_l * Delta .
   *
+  *   In doubly-stabilized mode this additionally requires the level-row
+  *   multiplier from the last master solve to exceed 1e-8 (mu > 1 up to
+  *   numerical tolerance). If either test fails, no NS relaxation is made.
+  *   Pure-level mode keeps the counter gate alone. Empty-level recovery
+  *   is independent of these gates.
+  *
   *   Under a Serious Step, if LB is reliable and the usual consecutive-SS gate
   *   controlled by intMnSSC allows a significant update, Delta is capped at
   *   the new centre:

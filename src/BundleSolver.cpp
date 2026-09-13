@@ -176,6 +176,10 @@ BundleSolver::effective_bounds( const ColVariable * var )
 static constexpr double Nearly  = 1.01;
 static constexpr double Nearly2 = 1.02;
 
+// Absolute tolerance for the nonnegative level-row multiplier. Its scale
+// is fixed by the unit model coefficient in the doubly stabilized master.
+static constexpr double kLevelMultiplierTol = 1e-8;
+
 static constexpr char LogBnd = 16;        // log Bundle changes
 static constexpr char LogVar = 32;        // log variables changes
 
@@ -716,8 +720,9 @@ int BundleSolver::compute( bool changedvars )
   // one plus the level-row multiplier, in either master formulation.
   const bool doubly_stabilized =
    MPStbl == MasterProblemBlock::kDoublyStabilized;
-  const auto ds_mu = doubly_stabilized
-                      ? 1.0 + MasterPB->get_level_multiplier() : 1.0;
+  const auto ds_level_multiplier = doubly_stabilized
+                                    ? MasterPB->get_level_multiplier() : 0.0;
+  const auto ds_mu = 1.0 + ds_level_multiplier;
 
   if( IsOptimal() ) {  // if optimality is detected
    // run optimality events - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1145,7 +1150,19 @@ int BundleSolver::compute( bool changedvars )
 
 
    BLOG( 1 , std::endl );
-   update_level_after_step( false , gated_level_update );
+   // Combine our consecutive-NS gate with de Oliveira--Solodov's
+   // level-iterate test (mu > 1). Use the saved solve multiplier, since
+   // the oracle/bundle updates may already have invalidated the solution.
+   const bool relax_level = gated_level_update &&
+    ( ! doubly_stabilized || ds_level_multiplier > kLevelMultiplierTol );
+   const auto old_level_delta = f_level_Delta;
+   update_level_after_step( false , relax_level );
+   if( doubly_stabilized )
+    BLOG( 2 , " ~ DS null step: gate = " << gated_level_update
+              << ", level_multiplier = " << def << ds_level_multiplier
+              << ", relax = " << relax_level
+              << ", Delta = " << old_level_delta
+              << ", Delta_new = " << f_level_Delta << std::endl );
    CSSCntr = 0;
 
    }   // end else( NS )- - - - - - - - - - - - - - - - - - - - - - - - - - -
