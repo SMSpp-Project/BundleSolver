@@ -711,6 +711,14 @@ int BundleSolver::compute( bool changedvars )
   // check for optimality - - - - - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
+  // Save the multiplier of this solve before bundle/oracle/centre updates
+  // can invalidate the solution. In de Oliveira--Solodov notation mu is
+  // one plus the level-row multiplier, in either master formulation.
+  const bool doubly_stabilized =
+   MPStbl == MasterProblemBlock::kDoublyStabilized;
+  const auto ds_mu = doubly_stabilized
+                      ? 1.0 + MasterPB->get_level_multiplier() : 1.0;
+
   if( IsOptimal() ) {  // if optimality is detected
    // run optimality events - - - - - - - - - - - - - - - - - - - - - - - - -
    int res = eContinue;
@@ -1036,18 +1044,22 @@ int BundleSolver::compute( bool changedvars )
     BLOG( 1 , - DeltaFi << def << " ~ Lw1(" << - UpFiLmb1.back()
               << ") >= LwTrgt(" << - UpTrgt << ")" );
 
-   if( ( ! UsesPureLevelStabilization() ) && ( tSPar1 & 1 ) ) {
+   if( ( ! UsesPureLevelStabilization() ) && ( ! doubly_stabilized ) &&
+       ( tSPar1 & 1 ) ) {
     tt = Heuristic( tSPar1 >> 6 );
     BLOG( 1 , " ~ Ht = " << shrt << tt );
     }
 
-   if( ( ! UsesPureLevelStabilization() ) && tSPar3 ) {
+   if( ( ! UsesPureLevelStabilization() ) && ( ! doubly_stabilized ) &&
+       tSPar3 ) {
     tp *= std::abs( tSPar3 );
     if( tSPar3 > 0 )
      tm /= tSPar3;
     }
 
    const bool gated_level_update = CSSCntr + 1 > MnSSC;
+   // Keep the counter/reset policy used by level-target management. For
+   // doubly stabilized SS, the t interval computed here is overridden below.
    if( ( ++CSSCntr > MnSSC ) &&
        ( ! UsesPureLevelStabilization() ) ) {
     // due to the fact that the counter has just been increased
@@ -1141,9 +1153,18 @@ int BundleSolver::compute( bool changedvars )
   // actually update t- - - - - - - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
+  // De Oliveira--Solodov, Algorithm 2.4, Step 5.1: every doubly
+  // stabilized serious step uses t_new = t * mu. Keep the configured
+  // absolute bounds, but bypass the heuristic, consecutive-SS and endgame
+  // rules: in particular, an inactive level (mu = 1) leaves t unchanged.
+  if( SSDone && doubly_stabilized ) {
+   tt = std::max( tMinor , std::min( tMaior , t * ds_mu ) );
+   BLOG( 1 , " ~ DS serious step: t = " << def << t
+             << ", mu = " << ds_mu << ", t_new = " << tt << std::endl );
+   }
   // if the endgame t-strategy fires (note the "/ 10"!!), the regular
   // t-updating mechanism is superseeded
-  if( ( ! UsesPureLevelStabilization() ) &&
+  else if( ( ! UsesPureLevelStabilization() ) &&
       ( tSPar1 & kEGTTS ) &&
       ( UpFiLmb.back() < INFshift ) &&
       ( DSTS < max_error() / 10 ) ) {

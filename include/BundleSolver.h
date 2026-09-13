@@ -1019,6 +1019,11 @@ public:
   * - intMPStbl [0]: type of stabilization to be used for the Master Problem.
   *                  Please see [MasterProblemBlock.h:207] for the currently
   *                  implemented stabilization type.
+  *   In doubly-stabilized mode (2), each serious step sets
+  *   t_new = t * (1 + level multiplier), subject to dbltMinor/dbltMaior.
+  *   This overrides serious-step t heuristics, the intMnSSC gate for t,
+  *   and the endgame t strategy. Null-step and level-target updates retain
+  *   their own existing rules.
   *
   * - intMPPrimal [0]: tells which formulation should be used for the Master
   *                    Problem. If 1 then the primal version of the MP will be
