@@ -2527,10 +2527,12 @@ public:
     failures in the subproblem solver, typically eliminating some of the
     items in the bundle.
 
-    Set the protected field Result to kOK if (eventually after some "fatal"
-    failure) a tentative descent direction could be found, to kUnfsbl if the
-    MP is dual unfeasible and to kError if this was returned by SolveMP(): in
-    the latter cases, the whole algorithm must abort. */
+    Leave Result at kStillRunning when a tentative direction is found.
+    If an empty level certifies optimality from the centre-to-bound gap,
+    set Result to kOK and return without a fresh master solution; compute()
+    must then run its termination events without using master quantities.
+    Otherwise report an unrecoverable master failure through Result so
+    compute() can stop or handle it. */
 
  void FormD( void );
 
@@ -2594,6 +2596,11 @@ public:
  /*--------------------------------------------------------------------------*/
 
  VarValue reliable_level_LB( void ) const;
+
+ /*--------------------------------------------------------------------------*/
+
+ /// Whether a finite centre and reliable bound meet the requested accuracy.
+ bool level_gap_closed( void ) const;
 
  /*--------------------------------------------------------------------------*/
 

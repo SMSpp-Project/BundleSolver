@@ -648,7 +648,11 @@ int BundleSolver::compute( bool changedvars )
 
   // some log - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-  Log1();
+  // FormD can certify the centre from the level gap without obtaining a
+  // new master solution. Do not log or consume stale master quantities.
+  bool level_gap_optimal = ( Result == kOK );
+  if( Result == kStillRunning )
+   Log1();
 
   // another iteration (master problem solution)- - - - - - - - - - - - - - -
 
@@ -675,16 +679,24 @@ int BundleSolver::compute( bool changedvars )
     BLOG( 1 , " ~ level empty: LB = " << def << f_level_value
               << std::endl );
     record_level_lower_bound( f_level_value );
-    if( ! refresh_level_after_master( true ) ) {
-     BLOG( 1 , " ~ stop (empty level refresh made no progress)"
-               << std::endl );
-     Result = get_bc_size() ? kInfeasible : kLowPrecision;
-     break;
+    if( level_gap_closed() ) {
+     level_gap_optimal = true;
+     Result = kOK;
      }
-    continue;
+    else {
+     if( ! refresh_level_after_master( true ) ) {
+      BLOG( 1 , " ~ stop (empty level refresh made no progress)"
+                << std::endl );
+      Result = get_bc_size() ? kInfeasible : kLowPrecision;
+      break;
+      }
+     continue;
+     }
     }
-   BLOG( 1 , " ~ stop (infeasible)" << std::endl );
-   break;
+   else {
+    BLOG( 1 , " ~ stop (infeasible)" << std::endl );
+    break;
+    }
    }
 
   if( Result == kUnbounded ) {  // the Master Problem is unbounded
@@ -695,16 +707,24 @@ int BundleSolver::compute( bool changedvars )
     BLOG( 1 , " ~ level empty: LB = " << def << f_level_value
               << std::endl );
     record_level_lower_bound( f_level_value );
-    if( ! refresh_level_after_master( true ) ) {
-     BLOG( 1 , " ~ stop (empty level refresh made no progress)"
-               << std::endl );
-     Result = kLowPrecision;
-     break;
+    if( level_gap_closed() ) {
+     level_gap_optimal = true;
+     Result = kOK;
      }
-    continue;
+    else {
+     if( ! refresh_level_after_master( true ) ) {
+      BLOG( 1 , " ~ stop (empty level refresh made no progress)"
+                << std::endl );
+      Result = kLowPrecision;
+      break;
+      }
+     continue;
+     }
     }
-   BLOG( 1 , " ~ stop (MP unbounded)" << std::endl );
-   break;
+   else {
+    BLOG( 1 , " ~ stop (MP unbounded)" << std::endl );
+    break;
+    }
    }
 
   if( Result >= kError ) {  // problems in the Master Problem solver
@@ -715,16 +735,7 @@ int BundleSolver::compute( bool changedvars )
   // check for optimality - - - - - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-  // Save the multiplier of this solve before bundle/oracle/centre updates
-  // can invalidate the solution. In de Oliveira--Solodov notation mu is
-  // one plus the level-row multiplier, in either master formulation.
-  const bool doubly_stabilized =
-   MPStbl == MasterProblemBlock::kDoublyStabilized;
-  const auto ds_level_multiplier = doubly_stabilized
-                                    ? MasterPB->get_level_multiplier() : 0.0;
-  const auto ds_mu = 1.0 + ds_level_multiplier;
-
-  if( IsOptimal() ) {  // if optimality is detected
+  if( level_gap_optimal || IsOptimal() ) {  // if optimality is detected
    // run optimality events - - - - - - - - - - - - - - - - - - - - - - - - -
    int res = eContinue;
    for( auto & ev : v_events[ eBeforeTermination ] )
@@ -733,6 +744,7 @@ int BundleSolver::compute( bool changedvars )
 
    if( res == eForceContinue ) {
     BLOG( 1 , " ~ optimal stop aborted by optimality event" << std::endl );
+    Result = kStillRunning;
     continue;  // go back to master problem solution
     }
 
@@ -742,10 +754,20 @@ int BundleSolver::compute( bool changedvars )
     break;
     }
 
-   BLOG( 1 , " ~ stop (optimal)" << std::endl );
+   BLOG( 1 , " ~ stop (optimal"
+             << ( level_gap_optimal ? ", certified level gap" : "" )
+             << ")" << std::endl );
    Result = kOK;
    break;
    }
+
+  // Save only a successfully solved master's multiplier, before any
+  // bundle/oracle/centre update can invalidate it. mu = 1 + lambda_level.
+  const bool doubly_stabilized =
+   MPStbl == MasterProblemBlock::kDoublyStabilized;
+  const auto ds_level_multiplier = doubly_stabilized
+                                    ? MasterPB->get_level_multiplier() : 0.0;
+  const auto ds_mu = 1.0 + ds_level_multiplier;
 
   // run iteration-periodic events- - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -2920,6 +2942,28 @@ BundleSolver::VarValue BundleSolver::reliable_level_LB( void ) const
 
 /*--------------------------------------------------------------------------*/
 
+bool BundleSolver::level_gap_closed( void ) const
+{
+ // This certificate uses only an evaluated centre and a reliable global
+ // bound; it must not depend on a solution of the (empty) master.
+ if( ! UsesLevelStabilization() || UpFiLmbdef != NrFi + 1 )
+  return( false );
+
+ const auto value = UpFiLmb.back();
+ const auto lb = reliable_level_LB();
+ if( ! std::isfinite( value ) || ! std::isfinite( lb ) )
+  return( false );
+
+ const auto gap = value - lb;
+ const auto tolerance = max_error( value , RelAcc );
+ // A bound substantially above the centre is inconsistent, not proof of
+ // optimality. Allow only discrepancies within the requested tolerance.
+ return( std::isfinite( gap ) && std::isfinite( tolerance ) &&
+         tolerance >= 0 && gap >= - tolerance && gap <= tolerance );
+ }
+
+/*--------------------------------------------------------------------------*/
+
 void BundleSolver::reset_level_stabilization( void )
 {
  // the count of consecutive noise-reduction steps refers to the level
@@ -3425,6 +3469,10 @@ void BundleSolver::FormD( void )
   if( UsesLevelStabilization() && f_level_initialized &&
       ( f_level_value < INFshift ) && level_empty ) {
    record_level_lower_bound( f_level_value );
+   if( level_gap_closed() ) {
+    Result = kOK;
+    return;  // no fresh master solution: compute() uses the gap certificate
+    }
    if( ! refresh_level_after_master( true ) ) {
     BLOG( 1 , std::endl
               << "Bundle::FormD: empty level refresh made no progress" );
