@@ -127,6 +127,10 @@ conduct, and the process for submitting merge requests to us.
   Dipartimento di Matematica ed Informatica  
   Università di Cagliari
 
+- **Donato Meoli**  
+  Dipartimento di Informatica  
+  Università di Pisa
+
 ### Contributors
 
 
