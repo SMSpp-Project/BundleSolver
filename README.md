@@ -123,6 +123,10 @@ conduct, and the process for submitting merge requests to us.
   Dipartimento di Informatica  
   Università di Pisa
 
+- **Enrico Calandrini**  
+  Dipartimento di Informatica  
+  Università di Pisa
+
 - **Enrico Gorgone**  
   Dipartimento di Matematica ed Informatica  
   Università di Cagliari
