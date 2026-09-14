@@ -41,10 +41,6 @@ These instructions will let you build the `BundleSolver` module on your system.
 
 - The [MILPSolver](https://gitlab.com/smspp/milpsolver) SMS++ module.
 
-- The [NDOSolver/FiOracle project](https://gitlab.com/frangio68/ndosolver_fioracle_project)
-  and its requirements (depending on the actual MPSolver built); note that this
-  dependency is supposed to be removed down the line.
-
 - Optionally, [Torch](https://pytorch.org/get-started/locally/) (the
   PyTorch C++ API), which is required by (and only by) BundleSolverML: with
   the makefiles it is searched for at `$(Torch_ROOT)` (see
@@ -63,18 +59,6 @@ cmake --build .
 ```
 The library has the same configuration options of
 [SMS++](https://gitlab.com/smspp/smspp-project/-/wikis/Customize-the-configuration).
-
-You can also choose the following configuration options:
-
-| Variable       | Description         | Default value |
-|----------------|---------------------|---------------|
-| `WHICH_OSI_QP` | Use CPLEX or GUROBI | GUROBI        |
-
-You can set them with:
-
-```sh
-cmake <source-path> -D<var>=<value>
-```
 
 Optionally, install the library in the system with:
 
@@ -118,14 +102,6 @@ create the `../extlib/makefile-paths` out of the
 
 Check the [SMS++ installation wiki](https://gitlab.com/smspp/smspp-project/-/wikis/Customize-the-configuration#location-of-required-libraries)
 for further details.
-
-Note that the [NDOSolver/FiOracle
-project](https://gitlab.com/frangio68/ndosolver_fioracle_project) has a similar
-arrangement with its own extlib/ folder, but the `*_ROOT` values are set in the
-SMS++ files and therefore are immediately available there, so there is no need
-to separately edit the NDOSolver/FiOracle project ones (but there would be if
-it were downloaded and compiled independently).
-
 
 ## Getting help
 

@@ -16,6 +16,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- the master problem is solved only through MasterProblemBlock and a
+  :MILPSolver attached to it, so the bundle over the NDOSolver MPSolver is
+  gone and with it the NDOSolver/FiOracle submodule and the Osi and Clp
+  requirements: a BundleSolver now needs the core library and MILPSolver, and
+  the solver of the master is chosen by the BlockSolverConfig that
+  strMPBSolverCfg points at
+
 ### Fixed
 
 - a component returning kLowPrecision no longer stops the algorithm: that
