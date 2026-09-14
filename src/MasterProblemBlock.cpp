@@ -2826,6 +2826,31 @@ double MasterProblemBlock::get_aggregated_alpha( int k ) const
  for( int kk = 0 ; kk < int( HardCmps.size() ) ; ++kk )
   total += contrib( kk );
 
+ // The aggregate residual includes the box normals, so its error at the
+ // centre must include their slacks too. These belong only to the total
+ // essential objective, not to any individual component's aggregate cut.
+ // Omitting them can falsely certify optimality when a large t makes z
+ // small even though the master step reaches a distant box boundary.
+ double box_error = 0.0;
+ const auto n = std::min( { f_x_bar.size() , Var_s_plus.size() ,
+                           Var_s_minus.size() } );
+ for( std::size_t j = 0 ; j < n ; ++j ) {
+  if( j < f_L.size() && std::isfinite( f_L[ j ] ) )
+   box_error += Var_s_plus[ j ].get_value() *
+                ( f_x_bar[ j ] - f_L[ j ] );
+  if( j < f_U.size() && std::isfinite( f_U[ j ] ) )
+   box_error += Var_s_minus[ j ].get_value() *
+                ( f_U[ j ] - f_x_bar[ j ] );
+  }
+
+ // Match the normalization of the component errors and residual in pure
+ // level mode. Proximal objective recovery above already includes the box.
+ if( uses_pure_level_aggregation() ) {
+  const double eta = get_level_multiplier();
+  box_error = ( eta > 0.0 ) ? box_error / eta : 0.0;
+  }
+ total += box_error;
+
  return( total );
 }
 
