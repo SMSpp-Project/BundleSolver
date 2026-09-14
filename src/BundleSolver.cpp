@@ -3361,12 +3361,22 @@ void BundleSolver::FormD( void )
   install_level_stabilization();
   }
 
+ // Without its level row the doubly stabilized master is already proximal:
+ // use that first solve to seed Delta, without changing its objective or
+ // invoking the pure-level objective-removal machinery. A reset after model
+ // modifications may require a new probe; a reliable LB takes precedence.
+ const bool doubly_level_probe = MasterPB &&
+  ( MPStbl == MasterProblemBlock::kDoublyStabilized ) &&
+  ( ! f_level_initialized ) && ( ! empty_bundle ) &&
+  ( reliable_level_LB() <= -INFshift ) &&
+  ( UpFiLmbdef == NrFi + 1 );
+
  const bool initial_level_probe =
   MasterPB && UsesLevelStabilization() &&
-  MasterPB->has_initial_level_objective() &&
-  ( ParIter > 0 ) &&
+  ( MasterPB->has_initial_level_objective() || doubly_level_probe ) &&
+  ( ParIter > 0 || doubly_level_probe ) &&
   RifeqFi &&
-  ( UpFiLmb.back() < INFshift );
+  std::isfinite( UpFiLmb.back() );
 
  if( initial_level_probe )
   MasterPB->set_f_lev( INFshift );
@@ -3717,11 +3727,17 @@ void BundleSolver::FormD( void )
  }
 
  if( initial_level_probe && MasterPB ) {
-  if( ( UpFiLmb.back() < INFshift ) && ( vStar.back() < INFshift ) ) {
+  if( doubly_level_probe && ( reliable_level_LB() > -INFshift ) )
+   refresh_level_after_master();  // the probe itself may certify a bound
+  else if( std::isfinite( UpFiLmb.back() ) &&
+           std::isfinite( vStar.back() ) ) {
    f_level_Delta = std::max( - vStar.back() , VarValue( 0 ) );
-   if( f_level_Delta <= 0 )
-    f_level_Delta = LStabDlt * std::max( std::abs( UpFiLmb.back() ) ,
-                                         VarValue( 1 ) );
+   // A tiny t can make the proximal prediction arbitrarily small. Since
+   // doubly stabilized SS do not increase t when the level is inactive,
+   // retain the exogenous gap as a floor to avoid locking in tiny steps.
+   if( doubly_level_probe || f_level_Delta <= 0 )
+    f_level_Delta = std::max( f_level_Delta ,
+     LStabDlt * std::max( std::abs( UpFiLmb.back() ) , VarValue( 1 ) ) );
    f_level_LB = -INFshift;
    f_level_reliable_LB = false;
    f_level_value = UpFiLmb.back() - f_level_Delta;
@@ -3729,6 +3745,9 @@ void BundleSolver::FormD( void )
    }
   else
    refresh_level_after_master();
+  BLOG( 2 , " ~ initial level probe: predicted decrease = " << def
+            << - vStar.back() << ", Delta = " << f_level_Delta
+            << std::endl );
   }
 
  }  // end( BundleSolver::FormD )

@@ -1357,10 +1357,19 @@ public:
   *                      (1 - m_l) * ( Fi( Lambda+ ) - LB ) ) .
   *
   * - dblLStabDlt [0.1]: fallback exogenous Delta fraction used while no
-  *   reliable lower bound is known. If the one-shot initial level probe cannot
+  *   reliable lower bound is known. Both level modes first seed Delta from
+  *   the predicted decrease of a proximal master solve with the level row
+  *   disabled. Doubly stabilized retains its objective and enables the level
+  *   afterwards; pure level switches to its projection objective. Doubly
+  *   stabilized repeats initialization if model changes reset the level.
+  *   If the initial probe cannot
   *   provide a positive predicted decrease, the heuristic value is
   *
   *        Delta = dblLStabDlt * max( | Fi( Lambda ) | , 1 ) .
+  *
+  *   In doubly stabilized mode this heuristic also provides a minimum for
+  *   the probe-based Delta: a tiny initial t must not lock the method into
+  *   tiny steps by making the predicted decrease too small.
   *
   *   This exogenous initialization is abandoned as soon as the solver
   *   discovers a reliable lower bound, either from a global certificate or
