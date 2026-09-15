@@ -13,6 +13,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- when a component had used up its share of the bundle with constraints
+  (vertical linearizations, which are never removed), a new one was still
+  put in a free spot elsewhere in the bundle, beyond the global pool of the
+  component, and the C05Function then refused to store it with "invalid
+  linearization name"; this happens when a Lagrangian subproblem is unbounded
+  over and over, and now the solve ends with kError and says that the bundle
+  of that component is full of constraints
+
 - a component answering kLowPrecision stopped the whole solve with an error:
   that code sorts after kError among the return codes, and the two places
   that read the status of a component only asked whether it was at least

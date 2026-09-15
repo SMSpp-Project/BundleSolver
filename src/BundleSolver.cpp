@@ -3992,8 +3992,21 @@ bool BundleSolver::GetGi( Index wFi )
   else {           // the item is not a copy- - - - - - - - - - - - - - - - -
    // insert the item, if there is space
 
-   if( wh == InINF )  // the position has not been selected in BStrategy()
+   if( wh == InINF ) {  // the position has not been selected in BStrategy()
+    if( NrItems[ wFi ] >= vBPar2[ wFi ] ) {
+     // BStrategy() found nothing to remove although component wFi has
+     // used up its share of the bundle, i.e., all its items are constraints
+     // (which are never removed): a free spot elsewhere in the bundle would
+     // take the component beyond its global pool, and since the constraints
+     // stay there will never be room for it again
+     BLOG( 1 , std::endl << " ERROR: no space in the bundle for Fi[ " << wFi
+	   << " ], full of constraints" << std::endl );
+     Result = kError;   // signal an error to end the outer Fi-cycle
+     break;             // the cycle ends
+     }
+
     wh = FindAPlace( wFi );  // find a free spot in the bundle
+    }
 
    if( wh == InINF ) {  // no space found ...
     if( ! Ftchd ) {     // ... and this was the first item
