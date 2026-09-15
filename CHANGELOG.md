@@ -16,6 +16,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- BundleSolverML is a library of its own, SMS++::BundleSolverML: Torch is
+  some hundreds of megabytes of shared objects, and a program linking
+  BundleSolver paid the loading of every one of them at each start, 0.2 s per
+  process on our machines, whether or not the ML variant was ever used.
+  Whoever wants that variant links the new library, which brings BundleSolver
+  along with it
+
+- the Modification that MasterProblemBlock issues in a loop travel in one
+  channel: the shift of the constant of every cut at a move of the reference
+  [see set_reference()], the refresh of the box, the linear part of the
+  0-th component and the quadratic term of every z at a change of t. A
+  Solver able to write a whole set of coefficients, or of sides, in one
+  operation then does that instead of one call per cut, per variable or per
+  coupling row
+
 - the master problem is solved only through MasterProblemBlock and a
   :MILPSolver attached to it, so the bundle over the NDOSolver MPSolver is
   gone and with it the NDOSolver/FiOracle submodule and the Osi and Clp

@@ -3087,7 +3087,8 @@ void MasterProblemBlock::set_C( double C )
 /*--------------------------------------------------------------------------*/
 
 void MasterProblemBlock::refresh_box_coordinate( Index j ,
-                                                 DQuadFunction * dqf )
+                                                 DQuadFunction * dqf ,
+                                                 ModParam issueMod )
 {
  if( IsPrimal ) {
   if( int( Bounds_d.size() ) != NumVars )
@@ -3103,8 +3104,8 @@ void MasterProblemBlock::refresh_box_coordinate( Index j ,
    if( std::isfinite( rhs ) )
     rhs -= xj;
    }
-  Bounds_d[ j ].set_lhs( lhs );
-  Bounds_d[ j ].set_rhs( rhs );
+  Bounds_d[ j ].set_lhs( lhs , issueMod );
+  Bounds_d[ j ].set_rhs( rhs , issueMod );
   return;
   }
 
@@ -3122,7 +3123,7 @@ void MasterProblemBlock::refresh_box_coordinate( Index j ,
  if( ! has_L )
   Var_s_plus[ j ].set_value( 0.0 );
  dqf->modify_term( DQuadFunction::Index( s_plus_obj_idx + int( j ) ) ,
-                   has_L ? sgn * ( lower - xj ) : 0.0 , 0.0 );
+                   has_L ? sgn * ( lower - xj ) : 0.0 , 0.0 , issueMod );
 
  const double upper = f_U.empty() ? Inf< double >() : f_U[ j ];
  const bool has_U = std::isfinite( upper );
@@ -3130,7 +3131,7 @@ void MasterProblemBlock::refresh_box_coordinate( Index j ,
  if( ! has_U )
   Var_s_minus[ j ].set_value( 0.0 );
  dqf->modify_term( DQuadFunction::Index( s_minus_obj_idx + int( j ) ) ,
-                   has_U ? - sgn * ( upper - xj ) : 0.0 , 0.0 );
+                   has_U ? - sgn * ( upper - xj ) : 0.0 , 0.0 , issueMod );
  }
 
 /*--------------------------------------------------------------------------*/
@@ -3184,9 +3185,16 @@ void MasterProblemBlock::set_box( const std::vector< double > & L ,
                      MasterProblemRngdMod::Values( upper ) ) );
   };
 
+ /* One coordinate of the box is one Modification, and the box is refreshed
+  * as a whole at every change of the stabilization: they travel in a channel
+  * so that a Solver that has a batched form of the change [see
+  * Solver::add_Modification()] executes them in one go. */
+
  if( IsPrimal ) {
+  auto chnl = open_channel();
   for( Index j = 0 ; j < Index( NumVars ) ; ++j )
-   refresh_box_coordinate( j , nullptr );
+   refresh_box_coordinate( j , nullptr , make_par( eModBlck , chnl ) );
+  close_channel( chnl );
   issue_box_modifications();
   return;
   }
@@ -3194,8 +3202,10 @@ void MasterProblemBlock::set_box( const std::vector< double > & L ,
  auto obj = dynamic_cast< FRealObjective * >( get_objective() );
  auto dqf = obj ? dynamic_cast< DQuadFunction * >( obj->get_function() )
                 : nullptr;
+ auto chnl = open_channel();
  for( Index j = 0 ; j < Index( NumVars ) ; ++j )
-  refresh_box_coordinate( j , dqf );
+  refresh_box_coordinate( j , dqf , make_par( eModBlck , chnl ) );
+ close_channel( chnl );
 
  issue_box_modifications();
  }
@@ -3250,8 +3260,11 @@ void MasterProblemBlock::set_box( std::vector< double > L ,
   dqf = obj ? dynamic_cast< DQuadFunction * >( obj->get_function() )
             : nullptr;
   }
+ // see set_box() above for why the Modification travel in a channel
+ auto chnl = open_channel();
  for( Index j = range.first ; j < range.second ; ++j )
-  refresh_box_coordinate( j , dqf );
+  refresh_box_coordinate( j , dqf , make_par( eModBlck , chnl ) );
+ close_channel( chnl );
 
  if( anyone_there() ) {
   if( lower_changed )
@@ -3342,8 +3355,11 @@ void MasterProblemBlock::set_box( std::vector< double > L ,
   dqf = obj ? dynamic_cast< DQuadFunction * >( obj->get_function() )
             : nullptr;
   }
+ // see set_box() above for why the Modification travel in a channel
+ auto chnl = open_channel();
  for( auto j : subset )
-  refresh_box_coordinate( j , dqf );
+  refresh_box_coordinate( j , dqf , make_par( eModBlck , chnl ) );
+ close_channel( chnl );
 
  if( anyone_there() ) {
   if( lower_changed ) {
@@ -3523,6 +3539,13 @@ void MasterProblemBlock::set_reference(
  // Vertical rows in iterate form remain raw and receive no shift. The math is
  // the dual of the legacy "shift after a current-point change" loop, but here
  // the bundle is walked once and the update is invisible to the driver.
+ /* Every cut of every component has its constant shifted here, i.e., one
+  * Modification per cut at every move of the reference: they travel in one
+  * channel, so that a Solver with a batched form of the change executes the
+  * whole walk in one go rather than one cut at a time. */
+ auto chnl = open_channel();
+ const auto cpar = make_par( eModBlck , chnl );
+
  if( IsPrimal ) {
   for( int k = 0 ; k < int( HardCmps.size() ) ; ++k ) {
    auto * pfb = dynamic_cast< PolyhedralFunctionBlock * >( HardCmps[ k ] );
@@ -3546,7 +3569,7 @@ void MasterProblemBlock::set_reference(
       }
      const double delta = poly.is_row_vertical( i ) ? dot : dot - dF;
      if( delta != 0.0 )
-      poly.modify_constant( i , b[ i ] + delta );
+      poly.modify_constant( i , b[ i ] + delta , cpar );
      }
     }
 
@@ -3555,6 +3578,7 @@ void MasterProblemBlock::set_reference(
    if( k < int( f_LB_raw.size() ) && std::isfinite( f_LB_raw[ k ] ) )
     poly.modify_bound( get_stored_constant( k , {} , f_LB_raw[ k ] , false ) );
    }
+  close_channel( chnl );
   issue_reference_mod();
   return;
   }
@@ -3599,7 +3623,8 @@ void MasterProblemBlock::set_reference(
                           : ( dF + dx_dot ) );
    if( delta == 0.0 )
     continue;
-   poly.modify_constant( PolyhedralFunction::Index( i ) , b[ i ] + delta );
+   poly.modify_constant( PolyhedralFunction::Index( i ) , b[ i ] + delta ,
+                         cpar );
    }
 
   // also refresh the per-cmp gamma * ( F_k(x_bar) - LB ) coefficient: the
@@ -3613,6 +3638,8 @@ void MasterProblemBlock::set_reference(
                        ( F_at_x_bar[ k ] - LB_raw ) );
    }
   }
+
+ close_channel( chnl );
 
  issue_reference_mod();
  }
@@ -3819,12 +3846,21 @@ void MasterProblemBlock::set_linear_part( const std::vector< double > & b )
  // bundle uphill. The lambda * b_j term lives as the coefficient -b_j on
  // Var_lambda, kept at position 1 of every coupling LinearFunction by
  // CreateDualMP; the RHS stays 0
+  // one coefficient per coupling row: they all go into a single
+  // GroupModification, so that a Solver able to write a whole set of them in
+  // one operation does that instead of one call per row [see
+  // MILPSolver::process_group_modification()]
+  auto chnl = open_channel();
+  const auto cpar = make_par( eModBlck , chnl );
+
   int j = 0;
   for( auto & cns : CouplingCns ) {
    auto * lf = static_cast< LinearFunction * >( cns.get_function() );
-   lf->modify_coefficient( 1 , - b[ j ] , eModBlck );
+   lf->modify_coefficient( 1 , - b[ j ] , cpar );
    ++j;
    }
+
+  close_channel( chnl );
   }
 
  if( anyone_there() )
@@ -3867,16 +3903,22 @@ void MasterProblemBlock::set_linear_part( std::vector< double > b ,
    }
   }
  else {
+  // see set_linear_part() above for why they travel in one group
+  auto chnl = open_channel();
+  const auto cpar = make_par( eModBlck , chnl );
+
   Index j = 0;
   for( auto & cns : CouplingCns ) {
    if( j >= range.second )
     break;
    if( j >= range.first ) {
     auto * lf = static_cast< LinearFunction * >( cns.get_function() );
-    lf->modify_coefficient( 1 , - b[ j - range.first ] , eModBlck );
+    lf->modify_coefficient( 1 , - b[ j - range.first ] , cpar );
     }
    ++j;
    }
+
+  close_channel( chnl );
   }
 
  if( anyone_there() )
@@ -3941,6 +3983,10 @@ void MasterProblemBlock::set_linear_part( std::vector< double > b ,
    }
   }
  else {
+  // see set_linear_part() above for why they travel in one group
+  auto chnl = open_channel();
+  const auto cpar = make_par( eModBlck , chnl );
+
   std::size_t i = 0;
   Index j = 0;
   for( auto & cns : CouplingCns ) {
@@ -3948,11 +3994,13 @@ void MasterProblemBlock::set_linear_part( std::vector< double > b ,
     break;
    if( j == subset[ i ] ) {
     auto * lf = static_cast< LinearFunction * >( cns.get_function() );
-    lf->modify_coefficient( 1 , - b[ i ] , eModBlck );
+    lf->modify_coefficient( 1 , - b[ i ] , cpar );
     ++i;
     }
    ++j;
    }
+
+  close_channel( chnl );
   }
 
  if( anyone_there() )
@@ -4464,12 +4512,21 @@ void MasterProblemBlock::set_t( double t )
  // the centre-dependent z term installed by set_x_bar().
  const double sgn = IsConvex ? -1.0 : 1.0;
  const double quad_coeff = - sgn * t_stab / 2.0;
+
+ // one term of the Objective per variable, and t changes at almost every
+ // iteration of the bundle: they go in one channel, so that a Solver able to
+ // write a whole set of them in one operation does that instead of one call
+ // per variable [see MILPSolver::process_group_modification()]
+ auto tpar = open_if_needed( eNoBlck , NumVars );
+
  for( int i = 0 ; i < NumVars ; ++i ) {
   const double lin_coeff = dqf->get_linear_coefficient(
                                        DQuadFunction::Index( i ) );
   dqf->modify_term( DQuadFunction::Index( i ) , lin_coeff , quad_coeff ,
-                    eNoBlck );
+                    tpar );
   }
+
+ close_if_needed( tpar , NumVars );
 
  issue_t_mod();
 

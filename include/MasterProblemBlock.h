@@ -1957,9 +1957,14 @@ class MasterProblemBlock : public Block {
                     ///< refresh a subset of b coefficients in the primal
                     ///< level row
 
- void refresh_box_coordinate( Index j , DQuadFunction * dqf );
+ void refresh_box_coordinate( Index j , DQuadFunction * dqf ,
+                              ModParam issueMod = eModBlck );
                     ///< synchronize one cached box coordinate with the
                     ///< generated primal/dual abstract representation
+                    /**< The Modification are issued with the given
+                     * parameter, so that a caller refreshing many
+                     * coordinates can have them all travel in one channel
+                     * and reach a Solver as one group. */
 
  static PolyhedralFunctionBlock *
  pfb_at( const std::vector< Block * > & HardCmps , int k , const char * fn );
