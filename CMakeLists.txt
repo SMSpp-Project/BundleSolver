@@ -224,12 +224,35 @@ target_link_libraries(${modName} PUBLIC
         ${modNamespace}::MILPSolver
         NDOFiOracle::NDOFiOracle)
 
+# BundleSolverML is a library of its own: Torch is some hundreds of megabytes
+# of shared objects, and a program that links the one here pays the loading of
+# every one of them at each start, which on a machine of ours is 0.2 s per
+# process whether or not the ML variant is ever used. Whoever wants that
+# variant links SMS++::BundleSolverML, which brings this one along with it.
 if (Torch_FOUND)
-    message(STATUS "${modName}: Torch found, configuring BundleSolverML")
-    target_sources(${modName} PRIVATE src/BundleSolverML.cpp)
+    message(STATUS "${modName}: Torch found, configuring ${modName}ML")
+
+    add_library(${modName}ML)
+    target_compile_features(${modName}ML PUBLIC cxx_std_17)
+
+    if (MSVC AND BUILD_SHARED_LIBS)
+        target_link_options(${modName}ML INTERFACE
+                            "/INCLUDE:SMSpp_force_load_${modName}ML")
+    endif ()
+
+    target_sources(${modName}ML PRIVATE src/BundleSolverML.cpp)
+
+    target_include_directories(
+            ${modName}ML PUBLIC
+            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+            $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
+            $<INSTALL_INTERFACE:include/${modNamespace}>)
+
     separate_arguments(TORCH_CXX_FLAGS_LIST UNIX_COMMAND "${TORCH_CXX_FLAGS}")
-    target_compile_options(${modName} PRIVATE ${TORCH_CXX_FLAGS_LIST})
-    target_link_libraries(${modName} PUBLIC ${TORCH_LIBRARIES})
+    target_compile_options(${modName}ML PRIVATE ${TORCH_CXX_FLAGS_LIST})
+    target_link_libraries(${modName}ML PUBLIC ${modName} ${TORCH_LIBRARIES})
+
+    add_library(${modNamespace}::${modName}ML ALIAS ${modName}ML)
 endif ()
 
 # if NDOFiOracle library is *not* given as subdirectory since it is
@@ -266,6 +289,16 @@ endif ()
 include(GNUInstallDirs)
 
 # Install the library
+# the ML variant goes in the same export set, so that a consumer finding this
+# module gets SMS++::BundleSolverML too when it was built
+if (Torch_FOUND)
+    install(TARGETS ${modName}ML
+            EXPORT ${modName}Targets
+            RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} # .dll
+            LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} # .so .dylib
+            ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}) # .lib
+endif ()
+
 install(TARGETS ${modName}
         EXPORT ${modName}Targets
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} # .dll

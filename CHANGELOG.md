@@ -11,6 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- BundleSolverML is a library of its own, SMS++::BundleSolverML: Torch is
+  some hundreds of megabytes of shared objects, and a program linking
+  BundleSolver paid the loading of every one of them at each start, 0.2 s per
+  process on our machines, whether or not the ML variant was ever used.
+  Whoever wants that variant links the new library, which brings BundleSolver
+  along with it
+
 ### Fixed
 
 - when a component had used up its share of the bundle with constraints
