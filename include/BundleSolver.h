@@ -1361,9 +1361,9 @@ public:
   *   the predicted decrease of a proximal master solve with the level row
   *   disabled. Doubly stabilized retains its objective and enables the level
   *   afterwards; pure level switches to its projection objective. Doubly
-  *   stabilized repeats initialization if model changes reset the level.
-  *   If the initial probe cannot
-  *   provide a positive predicted decrease, the heuristic value is
+  *   stabilized repeats initialization if model changes reset the level. If
+  *   the initial probe cannot provide a positive predicted decrease, the
+  *   heuristic value is
   *
   *        Delta = dblLStabDlt * max( | Fi( Lambda ) | , 1 ) .
   *
