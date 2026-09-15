@@ -13,6 +13,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- a component answering kLowPrecision stopped the whole solve with an error:
+  that code sorts after kError among the return codes, and the two places
+  that read the status of a component only asked whether it was at least
+  kError. A component saying kLowPrecision has found a solution and says it
+  could not prove it optimal, which is inexact information and not a
+  failure, so it is now let through and used as such
+
 ## [0.5.0] - 2026-09-12
 
 ### Added

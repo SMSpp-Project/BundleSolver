@@ -3348,8 +3348,13 @@ BundleSolver::Index BundleSolver::InnerLoop( bool extrastep )
   if( FiAndGi( f_wFi , ! extrastep ) )
    insrtd = true;
 
-  // return if an unrecoverable error happens
-  if( ( FiStatus[ f_wFi ] <= kUnEval ) || ( FiStatus[ f_wFi ] >= kError ) ) {
+  // return if an unrecoverable error happens; kLowPrecision is not one: it
+  // comes after kError among the codes, but it only says that the component
+  // could not reach the required accuracy, and what it returned is used as
+  // the inexact information it is
+  if( ( FiStatus[ f_wFi ] <= kUnEval ) ||
+      ( ( FiStatus[ f_wFi ] >= kError ) &&
+	( FiStatus[ f_wFi ] != kLowPrecision ) ) ) {
    Result = kError;
    break;
    }
@@ -3435,7 +3440,10 @@ bool BundleSolver::FiAndGi( Index wFi , bool getgi )
  auto end = std::chrono::system_clock::now();
  std::chrono::duration< double > elapsed = end - start;
 
- if( ( FiStatus[ wFi ] <= kUnEval ) || ( FiStatus[ wFi ] >= kError ) ) {
+ // kLowPrecision is not an error [see InnerLoop()]
+ if( ( FiStatus[ wFi ] <= kUnEval ) ||
+     ( ( FiStatus[ wFi ] >= kError ) &&
+       ( FiStatus[ wFi ] != kLowPrecision ) ) ) {
   if( f_log && ( LogVerb > 3 ) )
    *f_log << " ] = Error #" <<  FiStatus[ wFi ] << ", stop";
   return( false );
