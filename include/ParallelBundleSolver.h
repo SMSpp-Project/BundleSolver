@@ -161,7 +161,7 @@ public:
 
  ParallelBundleSolver( void ) : BundleSolver() {
   // ensure all parameters are properly given their default value
-  MaxThread = ThinComputeInterface::get_dflt_int_par( intMaxIter );
+  MaxThread = ThinComputeInterface::get_dflt_int_par( intMaxThread );
   PoolingInt = 1e-4;
   ParFrm = 0;  // legacy (completion-order) formulation
   }

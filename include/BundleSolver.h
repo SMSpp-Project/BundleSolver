@@ -2693,6 +2693,16 @@ public:
  bool FiAndGi( Index wFi , bool getgi = true );
 
 /*--------------------------------------------------------------------------*/
+ /* Updates the estimates of component wFi out of the ones its compute() has
+  * produced, in Lambda if getgi == false and in Lambda1 otherwise. Returns
+  * true <=> the linearizations of the component have still to be fetched,
+  * which is never the case if getgi == false. FiAndGi() and the parallel
+  * inner loops, which compute the components in different orders, share it. */
+
+ bool update_Fi_estimates( Index wFi , bool getgi , c_VarValue ue ,
+			   c_VarValue le );
+
+/*--------------------------------------------------------------------------*/
  // Set the component-specific string parameters, if any
 
  void SetupFiStrPar( Index wFi );

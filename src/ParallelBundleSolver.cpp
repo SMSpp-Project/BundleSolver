@@ -260,31 +260,13 @@ BundleSolver::Index ParallelBundleSolver::InnerLoop( bool extrastep )
   if( extrastep ) {
    // if extrastep == true the method is actually being called on Lambda,
    // hence it is Lambda's estimates that need be updated, not Lambda1's
-   update_UpFiLambd( wFi , f_convex ? ue : - le );
-   update_LwFiLambd( wFi , f_convex ? le : - ue );
+   update_Fi_estimates( wFi , false , ue , le );
 
    // furthermore one immediately goes to put in the new task
    goto PutInNewTask;
    }
   
-  // update UpFiLambd1[ wFi ] (and possibly UpFiLambd1[ NrFi ])
-  update_UpFiLambd1( wFi , f_convex ? ue : - le );
-
-  // if bit 4 of TrgtMng == 1, then compute the upper bound in Lambda
-  // provided by the upper bound in Lambda1 and try to update UpFiLmb[ wFi ]
-  // (and possibly UpFiLambd1[ NrFi ])
-  // note that, even if this succeeds and therefore decreases UpFiLmb[ wFi ]
-  // (and possibly UpFiLambd[ NrFi ], which would be a "rather big" decrease
-  // from +INF to something finite), as the theory requires the upper target
-  // is *not* changed
-  if( ( TrgtMng & 16 ) && ( UpFiLmb1[ wFi ] < INFshift ) ) {
-   c_VarValue LwFi = fwFi->get_Lipschitz_constant();
-   if( LwFi < INFshift )
-    update_UpFiLambd( wFi , UpFiLmb1[ wFi ] + LwFi * NrmD );
-   }
-
-  // update LwFiLambd1[ wFi ] (and possibly LwFiLambd1[ NrFi ])
-  update_LwFiLambd1( wFi , f_convex ? le : - ue );
+  update_Fi_estimates( wFi , true , ue , le );
 
   // get new linearizations - - - - - - - - - - - - - - - - - - - - - - - - -
   if( GetGi( wFi ) )
@@ -410,30 +392,12 @@ BundleSolver::Index ParallelBundleSolver::InnerLoop( bool extrastep )
   if( extrastep ) {
    // if extrastep == true the method is actually being called on Lambda,
    // hence it is Lambda's estimates that need be updated, not Lambda1's
-   update_UpFiLambd( wFi , f_convex ? ue : - le );
-   update_LwFiLambd( wFi , f_convex ? le : - ue );
+   update_Fi_estimates( wFi , false , ue , le );
 
    continue;  // amd there is nothing left to do
    }
  
-  // update UpFiLambd1[ wFi ] (and possibly UpFiLambd1[ NrFi ])
-  update_UpFiLambd1( wFi , f_convex ? ue : - le );
-
-  // if bit 4 of TrgtMng == 1, then compute the upper bound in Lambda
-  // provided by the upper bound in Lambda1 and try to update UpFiLmb[ wFi ]
-  // (and possibly UpFiLambd1[ NrFi ])
-  // note that, even if this succeeds and therefore decreases UpFiLmb[ wFi ]
-  // (and possibly UpFiLambd[ NrFi ], which would be a "rather big" decrease
-  // from +INF to something finite), as the theory requires the upper target
-  // is *not* changed
-  if( ( TrgtMng & 16 ) && ( UpFiLmb1[ wFi ] < INFshift ) ) {
-   c_VarValue LwFi = fwFi->get_Lipschitz_constant();
-   if( LwFi < INFshift )
-    update_UpFiLambd( wFi , UpFiLmb1[ wFi ] + LwFi * NrmD );
-   }
-
-  // update LwFiLambd1[ wFi ] (and possibly LwFiLambd1[ NrFi ])
-  update_LwFiLambd1( wFi , f_convex ? le : - ue );
+  update_Fi_estimates( wFi , true , ue , le );
 
   // if an unrecoverable error had happened previously, or the problem had
   // already been found unbounded below, do nothing else
@@ -610,23 +574,10 @@ BundleSolver::Index ParallelBundleSolver::InnerLoopOrdered( bool extrastep ,
   if( extrastep ) {
    // the method is actually being called on Lambda: update Lambda's
    // estimates and move on to the next component (no early stop)
-   update_UpFiLambd( wFi , f_convex ? ue : - le );
-   update_LwFiLambd( wFi , f_convex ? le : - ue );
+   update_Fi_estimates( wFi , false , ue , le );
    }
   else {
-   // update UpFiLambd1[ wFi ] (and possibly UpFiLambd1[ NrFi ])
-   update_UpFiLambd1( wFi , f_convex ? ue : - le );
-
-   // if bit 4 of TrgtMng == 1, try to tighten UpFiLmb[ wFi ] using the
-   // Lipschitz constant; the upper target is *not* changed (see legacy)
-   if( ( TrgtMng & 16 ) && ( UpFiLmb1[ wFi ] < INFshift ) ) {
-    c_VarValue LwFi = fwFi->get_Lipschitz_constant();
-    if( LwFi < INFshift )
-     update_UpFiLambd( wFi , UpFiLmb1[ wFi ] + LwFi * NrmD );
-    }
-
-   // update LwFiLambd1[ wFi ] (and possibly LwFiLambd1[ NrFi ])
-   update_LwFiLambd1( wFi , f_convex ? le : - ue );
+   update_Fi_estimates( wFi , true , ue , le );
 
    // get new linearizations
    if( GetGi( wFi ) )

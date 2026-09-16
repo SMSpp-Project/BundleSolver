@@ -4118,6 +4118,23 @@ bool BundleSolver::FiAndGi( Index wFi , bool getgi )
   *f_log << " [" << fixd << elapsed.count() << "] " << def;
   }
 
+ if( ! update_Fi_estimates( wFi , getgi , ue , le ) )
+  return( false );
+
+ // get new linearizations - - - - - - - - - - - - - - - - - - - - - - - - - -
+ //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+ return( GetGi( wFi ) );
+
+ }  // end( BundleSolver::FiAndGi )
+
+/*--------------------------------------------------------------------------*/
+
+bool BundleSolver::update_Fi_estimates( Index wFi , bool getgi ,
+					c_VarValue ue , c_VarValue le )
+{
+ auto fwFi = v_c05f[ wFi ];
+
  // very special case: the sub-problem is unbounded (value == -INF in convex
  // convention, or +INF in concave). Do *not* short-circuit here: even though
  // no finite subgradient exists, the oracle may have produced a feasibility
@@ -4142,10 +4159,10 @@ bool BundleSolver::FiAndGi( Index wFi , bool getgi )
 
  if( unbounded )
   // skip the remaining accounting (Lipschitz upper-bound refresh and
-  // LwFiLambd1 update both rely on a finite value) and go straight to
-  // fetching a vertical certificate; GetGi() sees UpFiLmb1[ wFi ] = -INF
-  // (resp. +INF in concave) and asks the oracle for a ray first
-  return( GetGi( wFi ) );
+  // LwFiLambd1 update both rely on a finite value) and let the caller go
+  // straight to fetching a vertical certificate; GetGi() sees
+  // UpFiLmb1[ wFi ] = -INF (resp. +INF in concave) and asks for a ray first
+  return( true );
 
   // if bit 4 of TrgtMng == 1, then compute the upper bound in Lambda
   // provided by the upper bound in Lambda1 and try to update UpFiLmb[ wFi ]
@@ -4163,12 +4180,9 @@ bool BundleSolver::FiAndGi( Index wFi , bool getgi )
  // update LwFiLambd1[ wFi ] (and possibly LwFiLambd1[ NrFi ])
  update_LwFiLambd1( wFi , f_convex ? le : - ue );
 
- // get new linearizations - - - - - - - - - - - - - - - - - - - - - - - - - -
- //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ return( true );
 
- return( GetGi( wFi ) );
-
- }  // end( BundleSolver::FiAndGi )
+ }  // end( BundleSolver::update_Fi_estimates )
 
 /*--------------------------------------------------------------------------*/
 
