@@ -119,15 +119,14 @@ BundleSolver::Index ParallelBundleSolver::InnerLoop( bool extrastep )
   * - in the ramp-up phase, min( MaxThread , NrFi - NrEasy ) tasks are
   *   started, each one compute()-ing a different component;
   *
-  * - in the cruise phase, existing tasks are checked every PoolingInt
-  *   seconds; if one (or more) is found ready it is processed by extracting
-  *   all the relevant information, and it is then substituted by another
-  *   for a different component;
+  * - in the cruise phase, the main thread waits for any task to end; the
+  *   one that has ended is processed by extracting all the relevant
+  *   information, and it is then substituted by another for a different
+  *   component;
   *
-  * - in the ramp-down phases, all existing tasks not "consumed" already are
-  *   checked every PoolingInt seconds; if one (or more) is found ready it is
-  *   processed by extracting all the relevant information, but no other task
-  *   takes its place, so that eventually the process ends.
+  * - in the ramp-down phases, the main thread waits for the tasks not
+  *   "consumed" already to end, processing each one as it does, but no
+  *   other task takes its place, so that eventually the process ends.
   *
   * Note that gathering function values and linearizations from the evaluated
   * components is done in the main thread, and therefore it is a part of the
@@ -156,17 +155,34 @@ BundleSolver::Index ParallelBundleSolver::InnerLoop( bool extrastep )
 
  std::vector< EvalEl > EvalV( std::min( MaxThread , NrFi - NrEasy ) );
 
+ // the threads, and the end of each evaluation is announced by the index of
+ // its position in EvalV
+ auto & pool = get_pool( EvalV.size() );
+
+ // FindNext() does not know which components are being evaluated right now:
+ // one of them must not be handed out again, or two compute() would run on
+ // the same C05Function at once
+ std::vector< char > inflight( NrFi , 0 );
+ auto find_next = [ & ]( void ) {
+  for( Index i = 0 ; i < NrFi ; ++i ) {
+   if( ! FindNext() )
+    return( false );
+   if( ! inflight[ f_wFi ] )
+    return( true );
+   }
+  return( false );
+  };
+
  // ramp-up phase - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // fill-in the vector of std::future
- // note: each time we start the evaluation of a component we provisionally
- // set FiStatus == kOK so that FindNext() will not produce it multiple
- // times before its computation is actually over. when it is, its FiStatus
- // may become, say, kStopTime or kStopIter and the component may be again
- // eligible to be re-evaluated
+ // note: each time we start the evaluation of a component it is marked in
+ // flight, and FiStatus is provisionally set to kOK; when the computation is
+ // over, its FiStatus may become, say, kStopTime or kStopIter and the
+ // component may be again eligible to be re-evaluated
 
  for( auto & el : EvalV ) {
-  if( ! FindNext() )
+  if( ! find_next() )
    throw( std::logic_error( "no component to evaluate in ramp-up phase" ) );
 
   BLOG( 6 , std::endl << "ramp-up: component " << f_wFi << " in position "
@@ -177,9 +193,11 @@ BundleSolver::Index ParallelBundleSolver::InnerLoop( bool extrastep )
    SetupFiLambda( f_wFi );
   else
    SetupFiLambda1( f_wFi );
-  el.second = v_c05f[ f_wFi ]->compute_async(
-					  ( FiStatus[ f_wFi ] == kUnEval ) );
+  el.second = pool.submit( v_c05f[ f_wFi ] ,
+                           ( FiStatus[ f_wFi ] == kUnEval ) ,
+                           Index( & el - & EvalV.front() ) );
   FiStatus[ f_wFi ] = kOK;
+  inflight[ f_wFi ] = 1;
   }
 
  // cruise phase- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -190,27 +208,16 @@ BundleSolver::Index ParallelBundleSolver::InnerLoop( bool extrastep )
 
  bool insrtd = false;
  for( ; ; ) {
-  // check if any future is ready - - - - - - - - - - - - - - - - - - - - - -
-  // note that we assume without checking that all future are valid()
-  it = std::find_if( EvalV.begin() , EvalV.end() ,
-		     []( auto & el ) { return( el.second.wait_for(
-				       std::chrono::duration< int >::zero() )
-				       == std::future_status::ready ); } );
+  // wait for any future to be ready, and read it- - - - - - - - - - - - - -
+  it = EvalV.begin() + pool.wait_any();
 
-  // if not, sleep over and retry later on- - - - - - - - - - - - - - - - - -
-  if( it == EvalV.end() ) {
-   std::this_thread::sleep_for( std::chrono::duration< double >(
-							      PoolingInt ) );
-   continue;
-   }
-  
-  // if one future is ready, read it- - - - - - - - - - - - - - - - - - - - -
   Index wFi = it->first;
   if( ! CurrNrEvls[ wFi ] )  // not evaluated before
    ++ceval;                  // one more evaluated
   ++CurrNrEvls[ wFi ];       // evaluated once more
 
   FiStatus[ wFi ] = it->second.get();  // get() the status of compute()
+  inflight[ wFi ] = 0;
 
   BLOG( 6 , std::endl << "cruise: component " << wFi << " in position "
 	    << it - EvalV.begin() << " has status " << FiStatus[ wFi ] );
@@ -320,7 +327,7 @@ BundleSolver::Index ParallelBundleSolver::InnerLoop( bool extrastep )
   // run a new task in the same position- - - - - - - - - - - - - - - - - - -
   PutInNewTask:
 
-  if( ! FindNext() )       // find next component
+  if( ! find_next() )      // find next component
    break;                  // if none, start ramp-down
 
   it->first = f_wFi;
@@ -328,9 +335,11 @@ BundleSolver::Index ParallelBundleSolver::InnerLoop( bool extrastep )
    SetupFiLambda( f_wFi );
   else
    SetupFiLambda1( f_wFi );
-  it->second = v_c05f[ f_wFi ]->compute_async(
-				          ( FiStatus[ f_wFi ] == kUnEval ) );
+  it->second = pool.submit( v_c05f[ f_wFi ] ,
+                           ( FiStatus[ f_wFi ] == kUnEval ) ,
+                           Index( it - EvalV.begin() ) );
   FiStatus[ f_wFi ] = kOK;
+  inflight[ f_wFi ] = 1;
 
   BLOG( 6 , std::endl << "cruise: in component " << f_wFi );
 
@@ -344,21 +353,11 @@ BundleSolver::Index ParallelBundleSolver::InnerLoop( bool extrastep )
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
  for( Index cnt = EvalV.size() - 1 ; cnt ; ) {
-  // check if any future is both valid() and ready- - - - - - - - - - - - - -
-  it = std::find_if( EvalV.begin() , EvalV.end() ,
-		     []( auto & el ) { return( ( el.first != InINF ) &&
-					       el.second.wait_for(
-				       std::chrono::duration< int >::zero() )
-				       == std::future_status::ready ); } );
+  // wait for any of the still running futures to be ready, and read it - -
+  // note that the one consumed last in the cruise phase is not running, and
+  // therefore it cannot be announced
+  it = EvalV.begin() + pool.wait_any();
 
-  // if not, sleep over and retry later on- - - - - - - - - - - - - - - - - -
-  if( it == EvalV.end() ) {
-   std::this_thread::sleep_for( std::chrono::duration< double >(
-							      PoolingInt ) );
-   continue;
-   }
-
-  // if one future is ready, read it- - - - - - - - - - - - - - - - - - - - -
   Index wFi = it->first;
   it->first = InINF;
   if( ! CurrNrEvls[ wFi ] )  // not evaluated before
@@ -367,6 +366,7 @@ BundleSolver::Index ParallelBundleSolver::InnerLoop( bool extrastep )
   --cnt;                     // one std::future less to wait for
 
   FiStatus[ wFi ] = it->second.get();  // get() the status of compute()
+  inflight[ wFi ] = 0;
 
   BLOG( 6 , std::endl << "ramp-down: component " << wFi << " in position "
  	    << it - EvalV.begin() << " has status " << FiStatus[ wFi ] );
@@ -466,13 +466,12 @@ BundleSolver::Index ParallelBundleSolver::InnerLoopOrdered( bool extrastep ,
 							   bool batch )
 {
  /* Deterministic parallel inner loop. Up to MaxThread components are kept
-  * in flight (each compute()-d by a std::async), but, unlike the legacy
+  * in flight (each compute()-d by a thread of the pool), but, unlike the legacy
   * formulation, their results are *consumed in the fixed round-robin order
   * in which they were launched*: the main thread always blocks on the head
   * of the in-flight queue, even if a later task finished first. This removes
   * any dependence on thread timing, so both the set and the order of the
-  * processed components are reproducible. Blocking on the head also makes
-  * the dampened active wait (PoolingInt) unnecessary.
+  * processed components are reproducible.
   *
   * The two flags select the remaining behaviour:
   *
@@ -501,36 +500,54 @@ BundleSolver::Index ParallelBundleSolver::InnerLoopOrdered( bool extrastep ,
  // an in-flight task: the component, its FiStatus before the (provisional)
  // overwrite (needed to restore it on discard), and the std::future
  struct Task { Index wFi; int prev; std::future< int > fut; };
- std::deque< Task > inflight;
+ std::deque< Task > queue;
 
  // launch the evaluation of component w and push it at the back of the queue
- // note: FiStatus is provisionally set to kOK so that FindNext() does not
- // produce w again while it is in flight (see the legacy InnerLoop())
+ // note: w is marked in flight so that it is not produced again until it is
+ // consumed, and FiStatus is provisionally set to kOK (see InnerLoop())
+ auto & pool = get_pool( std::min( MaxThread , NrFi - NrEasy ) );
+
+ // FindNext() does not know which components are in flight: one of them
+ // must not be launched again [see InnerLoop()]
+ std::vector< char > inflight( NrFi , 0 );
+ auto find_next = [ & ]( void ) {
+  for( Index i = 0 ; i < NrFi ; ++i ) {
+   if( ! FindNext() )
+    return( false );
+   if( ! inflight[ f_wFi ] )
+    return( true );
+   }
+  return( false );
+  };
+
  auto launch = [ & ]( Index w ) {
   if( extrastep )
    SetupFiLambda( w );
   else
    SetupFiLambda1( w );
-  Task t { w , int( FiStatus[ w ] ) , v_c05f[ w ]->compute_async(
-					    ( FiStatus[ w ] == kUnEval ) ) };
+  Task t { w , int( FiStatus[ w ] ) ,
+           pool.submit( v_c05f[ w ] , ( FiStatus[ w ] == kUnEval ) ,
+                        InINF ) };
   FiStatus[ w ] = kOK;
-  inflight.push_back( std::move( t ) );
+  inflight[ w ] = 1;
+  queue.push_back( std::move( t ) );
   };
 
  // drain the still in-flight tasks without using their results, restoring
  // the FiStatus they had before being launched (so they are re-evaluated as
  // if never touched this round)
  auto drain = [ & ]( void ) {
-  for( auto & t : inflight ) {
+  for( auto & t : queue ) {
    t.fut.get();
    FiStatus[ t.wFi ] = t.prev;
+   inflight[ t.wFi ] = 0;
    }
-  inflight.clear();
+  queue.clear();
   };
 
  // ramp-up: launch up to MaxThread components in round-robin order - - - - -
  for( Index i = std::min( MaxThread , NrFi - NrEasy ) ; i ; --i ) {
-  if( ! FindNext() )
+  if( ! find_next() )
    break;
   launch( f_wFi );
   }
@@ -540,13 +557,14 @@ BundleSolver::Index ParallelBundleSolver::InnerLoopOrdered( bool extrastep ,
  Index lastproc = f_wFi;   // last processed component, to restore round-robin
 
  // consume the queue in launch order - - - - - - - - - - - - - - - - - - - -
- while( ! inflight.empty() ) {
+ while( ! queue.empty() ) {
   // block on the head (fixed order), even if a later task is ready first
-  Task t = std::move( inflight.front() );
-  inflight.pop_front();
+  Task t = std::move( queue.front() );
+  queue.pop_front();
   Index wFi = t.wFi;
 
   FiStatus[ wFi ] = t.fut.get();  // get() the status of compute()
+  inflight[ wFi ] = 0;
 
   if( ! CurrNrEvls[ wFi ] )  // not evaluated before
    ++ceval;                  // one more evaluated
@@ -650,7 +668,7 @@ BundleSolver::Index ParallelBundleSolver::InnerLoopOrdered( bool extrastep ,
 
   // refill: launch the next component unless we have stopped launching - - - -
   if( ! stoplaunch ) {
-   if( ! FindNext() )
+   if( ! find_next() )
     stoplaunch = true;  // no component left; just drain what is in flight
    else
     launch( f_wFi );
@@ -664,6 +682,103 @@ BundleSolver::Index ParallelBundleSolver::InnerLoopOrdered( bool extrastep ,
  return( ceval );
 
  }  // end( ParallelBundleSolver::InnerLoopOrdered )
+
+/*--------------------------------------------------------------------------*/
+/*----------------------------- THE EvalPool -------------------------------*/
+/*--------------------------------------------------------------------------*/
+
+ParallelBundleSolver::EvalPool::EvalPool( Index n )
+{
+ v_thread.reserve( n );
+ for( Index i = 0 ; i < n ; ++i )
+  v_thread.emplace_back( [ this ]() {
+   for( ; ; ) {
+    Job job;
+    {
+     std::unique_lock< std::mutex > lock( f_mutex );
+     f_job_cv.wait( lock , [ this ]() {
+                              return( f_stop || ( ! q_job.empty() ) );
+                              } );
+     if( q_job.empty() )  // f_stop and nothing left to run
+      return;
+     job = std::move( q_job.front() );
+     q_job.pop_front();
+     }
+
+    job.task();  // the outcome, exception included, goes in the future
+
+    if( job.tag != InINF ) {
+     {
+      std::lock_guard< std::mutex > lock( f_mutex );
+      q_done.push_back( job.tag );
+      }
+     f_done_cv.notify_one();
+     }
+    }
+   } );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+ParallelBundleSolver::EvalPool::~EvalPool()
+{
+ {
+  std::lock_guard< std::mutex > lock( f_mutex );
+  f_stop = true;
+  }
+ f_job_cv.notify_all();
+ for( auto & t : v_thread )
+  t.join();
+ }
+
+/*--------------------------------------------------------------------------*/
+
+std::future< int > ParallelBundleSolver::EvalPool::submit(
+                  ThinComputeInterface * f , bool changedvars , Index tag )
+{
+ std::packaged_task< int() > task( [ f , changedvars ]() {
+                                    return( f->compute( changedvars ) );
+                                    } );
+ auto fut = task.get_future();
+ {
+  std::lock_guard< std::mutex > lock( f_mutex );
+  q_job.push_back( Job{ std::move( task ) , tag } );
+  }
+ f_job_cv.notify_one();
+ return( fut );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+BundleSolver::Index ParallelBundleSolver::EvalPool::wait_any( void )
+{
+ std::unique_lock< std::mutex > lock( f_mutex );
+ f_done_cv.wait( lock , [ this ]() { return( ! q_done.empty() ); } );
+ const auto tag = q_done.front();
+ q_done.pop_front();
+ return( tag );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+void ParallelBundleSolver::EvalPool::clear_finished( void )
+{
+ std::lock_guard< std::mutex > lock( f_mutex );
+ q_done.clear();
+ }
+
+/*--------------------------------------------------------------------------*/
+
+ParallelBundleSolver::EvalPool & ParallelBundleSolver::get_pool( Index n )
+{
+ if( ( ! f_pool ) || ( f_pool->size() < n ) ) {
+  f_pool.reset();  // the old threads end before the new ones start
+  f_pool = std::make_unique< EvalPool >( n );
+  }
+
+ f_pool->clear_finished();
+ return( *f_pool );
+ }
 
 /*--------------------------------------------------------------------------*/
 /*------------------- End File ParallelBundleSolver.cpp --------------------*/
