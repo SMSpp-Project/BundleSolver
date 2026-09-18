@@ -1531,23 +1531,23 @@ void BundleSolver::set_Block( Block * block )
                "nephew sub-Blocks are not allowed" ) );
 
    // Variable not allowed - - - - - - - - - - - - - - - - - - - - - - - - - -
-   if( sb[ i ]->get_static_variables().size() )
+   if( ! sb[ i ]->get_static_variable_groups().empty() )
     throw( std::logic_error(
                "BundleSolver::set_Block: "
                "static Variable in sub-Block are not allowed" ) );
 
-   if( sb[ i ]->get_dynamic_variables().size() )
+   if( ! sb[ i ]->get_dynamic_variable_groups().empty() )
     throw( std::logic_error(
                "BundleSolver::set_Block: "
                "dynamic Variable in sub-Block are not allowed" ) );
 
    // neither are Constraint - - - - - - - - - - - - - - - - - - - - - - - - -
-   if( sb[ i ]->get_static_constraints().size() )
+   if( ! sb[ i ]->get_static_constraint_groups().empty() )
     throw( std::logic_error(
                "BundleSolver::set_Block: "
                "static Constraint in sub-Block are not allowed" ) );
 
-   if( sb[ i ]->get_dynamic_constraints().size() )
+   if( ! sb[ i ]->get_dynamic_constraint_groups().empty() )
     throw( std::logic_error(
                "BundleSolver::set_Block: "
                "dynamic Constraint in sub-Block are not allowed" ) );
