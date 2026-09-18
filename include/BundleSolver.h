@@ -136,6 +136,7 @@
 
 #include <chrono>
 #include <queue>
+#include <memory>
 #include <unordered_map>
 
 #include "CDASolver.h"
@@ -393,6 +394,8 @@ public:
 
  intMaxLevelNR ,  ///< maximum number of NR steps allowed
 
+ intCmpAggrSeed ,  ///< seed of the assignment to the aggregated components
+
  intLastBndSlvPar  ///< first allowed new int parameter for derived classes
                    /**< Convenience value for easily allow derived classes
                     * to extend the set of int algorithmic parameters. */
@@ -448,6 +451,8 @@ public:
 
   dblLStabSmall , ///< small model-error threshold for level Delta increases
 
+  dblCmpAggr ,    ///< share of the components each aggregated one holds
+
   dblLastBndSlvPar ///< first allowed new double parameter for derived classes
                    /**< Convenience value for easily allow derived classes
                     * to extend the set of double algorithmic parameters. */
@@ -466,7 +471,7 @@ public:
 
   strHardCfg ,                   ///< string name for not-easy Configurations
 
-  strMPBSolverCfg ,                 ///< string name for Configuration of the
+  strMPBSolverCfg ,              ///< string name for Configuration of the
                                  ///  solver associated with the MPBlock
 
   strLastBndSlvPar ///< first allowed new string parameter for derived classes
@@ -600,6 +605,8 @@ public:
   LStabIncr = get_dflt_dbl_par( dblLStabIncr );
   LStabSmall = get_dflt_dbl_par( dblLStabSmall );
   MaxLevelNR = get_dflt_int_par( intMaxLevelNR );
+  CmpAggrSeed = get_dflt_int_par( intCmpAggrSeed );
+  CmpAggr = get_dflt_dbl_par( dblCmpAggr );
 
   v_events.resize( max_event_number() );
   }
@@ -1051,7 +1058,10 @@ public:
   *                     2 = global only, 3 = both.
   *
   * - intMaxLevelNR [5]: TBD (max steps of NR for level method allowed)
-  */
+  *
+  * - intCmpAggrSeed [42]: the seed of the random generator that assigns the
+  *                       components to the aggregated ones the master
+  *   problem sees [see dblCmpAggr]; the same seed gives the same groups. */
 
  void set_par( idx_type par , int value ) override;
 
@@ -1406,7 +1416,21 @@ public:
   *   vStar as a predicted improvement, hence
   *
   *        Fi_{B,Lambda}( d* ) = Fi( Lambda ) + vStar .
-  */
+  *
+  * - dblCmpAggr [0]: how much the non-easy components are aggregated before
+  *                  the master problem sees them. With 0 every component is
+  *   a component of the master problem, with 1 all of them are summed into
+  *   a single one, and with a value x in between each component of the
+  *   master problem is the sum of about a fraction x of them, i.e., there are
+  *   round( 1 / x ) of them (but no more than the non-easy components). The
+  *   components are assigned to the groups at random, with the seed
+  *   intCmpAggrSeed, and the groups are as large as possible to each other.
+  *   A group is a C05FunctionGroup: it is computed by computing all its
+  *   members, and its linearizations are sums of theirs, stored under the
+  *   same name in their global pools. Fewer components make a smaller master
+  *   problem and a coarser model, i.e., cheaper iterations but typically more
+  *   of them. The parameter is read when the Block is set, as the
+  *   components are. */
 
  void set_par( idx_type par , double value ) override;
 
@@ -2048,7 +2072,7 @@ public:
 /*--------------------------------------------------------------------------*/
 
  [[nodiscard]] int get_dflt_int_par( idx_type par ) const override {
-  static const std::array< int , 20 > dflt_int_par = {
+  static const std::array< int , 21 > dflt_int_par = {
     10 ,  // intBPar1
    100 ,  // intBPar2
      1 ,  // intBPar3
@@ -2070,7 +2094,8 @@ public:
           // RstCrr = 1  -  set current point to using values of the Variable
      0 ,  // intMPV2Form (default value is displacement form)
      0 ,  // intMPHScaling (default value is no hard-component scaling)
-     5    // intMaxLevelNR
+     5 ,  // intMaxLevelNR
+    42    // intCmpAggrSeed
      };
 
   if( ( par >= intLastParCDAS ) && ( par < intLastBndSlvPar ) )
@@ -2082,7 +2107,7 @@ public:
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
  [[nodiscard]] double get_dflt_dbl_par( idx_type par ) const override {
-  static const std::array< double , 20 > dflt_dbl_par = {
+  static const std::array< double , 21 > dflt_dbl_par = {
    0 ,      // dblNZEps
    1e+2 ,   // dbltStar
    0 ,      // dblMinNrEvls
@@ -2102,7 +2127,8 @@ public:
    0.5 ,    // dblLStabM
    0.1 ,    // dblLStabDlt
    2.0 ,    // dblLStabIncr
-   1e-2     // dblLStabSmall
+   1e-2 ,   // dblLStabSmall
+   0        // dblCmpAggr
    };
 
   if( ( par >= dblLastParCDAS ) && ( par < dblLastBndSlvPar ) )
@@ -2116,7 +2142,7 @@ public:
  const std::string & get_dflt_str_par( idx_type par ) const override {
   static std::string __empty;
   if( ( par == strEasyCfg ) || ( par == strHardCfg ) ||
-        ( par == strMPBSolverCfg ) )
+      ( par == strMPBSolverCfg ) )
    return( __empty );
 
   return( CDASolver::get_dflt_str_par( par ) );
@@ -2196,7 +2222,8 @@ public:
    { "intRstAlg" , BundleSolver::intRstAlg } ,
    { "intMPV2Form" , BundleSolver::intMPV2Form } ,
    { "intMPHScaling" , BundleSolver::intMPHScaling } ,
-   { "intMaxLevelNR" , BundleSolver::intMaxLevelNR }
+   { "intMaxLevelNR" , BundleSolver::intMaxLevelNR } ,
+   { "intCmpAggrSeed" , BundleSolver::intCmpAggrSeed }
    };
 
   const auto it = int_pars_map.find( name );
@@ -2230,7 +2257,8 @@ public:
    { "dblLStabM" , BundleSolver::dblLStabM } ,
    { "dblLStabDlt" , BundleSolver::dblLStabDlt } ,
    { "dblLStabIncr" , BundleSolver::dblLStabIncr } ,
-   { "dblLStabSmall" , BundleSolver::dblLStabSmall }
+   { "dblLStabSmall" , BundleSolver::dblLStabSmall } ,
+   { "dblCmpAggr" , BundleSolver::dblCmpAggr }
    };
 
   const auto it = dbl_pars_map.find( name );
@@ -2288,12 +2316,12 @@ public:
 
  [[nodiscard]] const std::string & int_par_idx2str( idx_type idx )
   const override {
-  static const std::array< std::string , 20 > int_pars_str = {
+  static const std::array< std::string , 21 > int_pars_str = {
    "intBPar1" , "intBPar2" , "intBPar3" , "intBPar4" , "intBPar6" ,
    "intBPar7" , "intMnSSC" , "intMnNSC" , "inttSPar1" , "intMaxNrEvls" ,
    "intDoEasy" , "intWZNorm" , "intFrcLstSS" , "intTrgtMng" ,
    "intMPStbl" , "intMPPrimal" , "intRstAlg" , "intMPV2Form" ,
-   "intMPHScaling" , "intMaxLevelNR" };
+   "intMPHScaling" , "intMaxLevelNR" , "intCmpAggrSeed" };
 
   if( ( idx >= intLastParCDAS ) && ( idx < intLastBndSlvPar ) )
    return( int_pars_str[ idx - intBPar1 ] );
@@ -2305,12 +2333,12 @@ public:
 
  [[nodiscard]] const std::string & dbl_par_idx2str( idx_type idx )
   const override {
-  static const std::array< std::string , 20 > dbl_pars_str = {
+  static const std::array< std::string , 21 > dbl_pars_str = {
    "dblNZEps" , "dbltStar" , "dblMinNrEvls" , "dblBPar5" , "dblm1" ,
    "dblm2" , "dblm3" , "dblmxIncr" , "dblmnIncr" , "dblmxDecr" ,
    "dblmnDecr" , "dbltMaior" , "dbltMinor" , "dbltInit" , "dbltSPar2" ,
    "dbltSPar3" , "dblLStabM" , "dblLStabDlt" , "dblLStabIncr" ,
-   "dblLStabSmall" };
+   "dblLStabSmall" , "dblCmpAggr" };
 
  if( ( idx >= dblLastParCDAS ) && ( idx < dblLastBndSlvPar ) )
    return( dbl_pars_str[ idx - dblLastParCDAS ] );
@@ -2418,6 +2446,383 @@ public:
  using Vec_SIndex = std::vector< SIndex >;  ///< a std::vector of SIndex
 
  using Vec_Bool = std::vector< bool >;      ///< a std::vector of bool
+
+/*--------------------------------------------------------------------------*/
+ /// a C05Function that is the sum of a group of C05Function
+ /** The class C05FunctionGroup represents the sum
+  *
+  *     f( x ) = \sum_{ h \in G } f_h( x )
+  *
+  * of a group G of C05Function, the members, which are neither owned nor
+  * changed in any other way than by being computed and by having their
+  * global pools used. Its "active" Variable are the union of those of the
+  * members, in the order given to the constructor.
+  *
+  * A linearization of the group is a sum of linearizations of the members
+  * stored under the *same* name in their global pools, which therefore must
+  * all have (at least) the size of the one of the group:
+  *
+  * - a diagonal one is the sum of one diagonal linearization per member,
+  *   all of them computed at the same point; a member that gives none there
+  *   although it has a finite global lower [upper] bound, as a convex
+  *   [concave] C05Function is allowed to do at its minimum [maximum], takes
+  *   part with the horizontal linearization at that bound, which the group
+  *   records for that name instead of storing it in the member, and whose
+  *   constant is the bound when it is read; if every member is at its bound
+  *   there is no diagonal linearization, as for a single member;
+  *
+  * - a vertical one is the sum of the vertical linearizations of the members
+  *   that have one, since for each of them 0 >= alpha_h + g_h x holds; the
+  *   members that do not have one take no part in it, and do not hold that
+  *   name in their global pool.
+  *
+  * Accordingly, a combination of linearizations of the group is the
+  * combination, member by member, of those among them that the member holds.
+  * A member that holds diagonal ones among them is expected to give to the
+  * mass their multipliers leave the horizontal linearization at its bound, as
+  * PolyhedralFunction does; a member that holds none takes part in a diagonal
+  * combination with the horizontal one, if any of the combined ones is such.
+  *
+  * The value, the estimates, the global bounds and the Lipschitz constant are
+  * the sums of those of the members. Parameters are passed on to every member
+  * as they are, save for the targets dblUpCutOff and dblLwCutOff, which cannot
+  * be split among them and are therefore not; note that this means that a time
+  * limit is given to each member, and not to the group as a whole.
+  *
+  * The State of a C05FunctionGroup is not supported, and neither is changing
+  * its Variable: the members are Observed as usual by whoever Observes them,
+  * and it is up to that one to know that they are part of a group. */
+
+ class C05FunctionGroup : public C05Function
+ {
+
+ /*--------------------------------------------------------------------------*/
+ /*----------------------- PUBLIC PART OF THE CLASS -------------------------*/
+ /*--------------------------------------------------------------------------*/
+
+  public:
+
+ /*--------------------------------------------------------------------------*/
+ /*--------------------- PUBLIC TYPES OF THE CLASS --------------------------*/
+ /*--------------------------------------------------------------------------*/
+
+  /// iterator over the "active" Variable
+  class v_iterator : public ThinVarDepInterface::v_iterator
+  {
+   public:
+
+   explicit v_iterator( std::vector< ColVariable * >::iterator itr )
+    : itr_( itr ) {}
+
+   v_iterator * clone( void ) override final {
+    return( new v_iterator( itr_ ) );
+    }
+
+   void operator++( void ) override final { ++itr_; }
+
+   reference operator*( void ) const override final { return( **itr_ ); }
+
+   pointer operator->( void ) const override final { return( *itr_ ); }
+
+   bool operator==( const ThinVarDepInterface::v_iterator & rhs )
+    const override final {
+    auto tmp = dynamic_cast< const C05FunctionGroup::v_iterator * >( & rhs );
+    return( tmp ? itr_ == tmp->itr_ : false );
+    }
+
+   bool operator!=( const ThinVarDepInterface::v_iterator & rhs )
+    const override final {
+    auto tmp = dynamic_cast< const C05FunctionGroup::v_iterator * >( & rhs );
+    return( tmp ? itr_ != tmp->itr_ : true );
+    }
+
+   private:
+
+   std::vector< ColVariable * >::iterator itr_;
+   };
+
+ /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+  /// const iterator over the "active" Variable
+
+  class v_const_iterator : public ThinVarDepInterface::v_const_iterator
+  {
+   public:
+
+   explicit v_const_iterator(
+                        std::vector< ColVariable * >::const_iterator itr )
+    : itr_( itr ) {}
+
+   v_const_iterator * clone( void ) override final {
+    return( new v_const_iterator( itr_ ) );
+    }
+
+   void operator++( void ) override final { ++itr_; }
+
+   reference operator*( void ) const override final { return( **itr_ ); }
+
+   pointer operator->( void ) const override final { return( *itr_ ); }
+
+   bool operator==( const ThinVarDepInterface::v_const_iterator & rhs )
+    const override final {
+    auto tmp =
+     dynamic_cast< const C05FunctionGroup::v_const_iterator * >( & rhs );
+    return( tmp ? itr_ == tmp->itr_ : false );
+    }
+
+   bool operator!=( const ThinVarDepInterface::v_const_iterator & rhs )
+    const override final {
+    auto tmp =
+     dynamic_cast< const C05FunctionGroup::v_const_iterator * >( & rhs );
+    return( tmp ? itr_ != tmp->itr_ : true );
+    }
+
+   private:
+
+   std::vector< ColVariable * >::const_iterator itr_;
+   };
+
+ /*--------------------------------------------------------------------------*/
+ /*--------------- CONSTRUCTING AND DESTRUCTING C05FunctionGroup ------------*/
+ /*--------------------------------------------------------------------------*/
+
+  /// constructor: the members and the union of their "active" Variable
+  /** Constructs the group of the given members, whose "active" Variable are
+   * vars; each "active" Variable of each member must be in vars, which
+   * dictates their order in the group. The members must be all convex or all
+   * concave. */
+
+  C05FunctionGroup( std::vector< C05Function * > && members ,
+                    std::vector< ColVariable * > && vars );
+
+ /*--------------------------------------------------------------------------*/
+
+  ~C05FunctionGroup() override = default;
+
+ /*--------------------------------------------------------------------------*/
+ /*-------------------------------- GETTERS ---------------------------------*/
+ /*--------------------------------------------------------------------------*/
+
+  /// the members of the group
+  const std::vector< C05Function * > & get_members( void ) const {
+   return( v_members );
+   }
+
+  /// removes the linearizations where member is horizontal at a stale bound
+  /** Removes from the global pool of the group, without issuing any
+   * Modification, the linearizations where member takes part with the
+   * horizontal linearization at a bound that is no longer its global bound,
+   * and returns their names, ordered. The caller is expected to call it
+   * whenever member has changed, and to deal with them as removed. */
+
+  Subset remove_stale_flat_linearizations( const C05Function * member );
+
+ /*--------------------------------------------------------------------------*/
+ /*--------------- METHODS FOR HANDLING THE PARAMETERS ----------------------*/
+ /*--------------------------------------------------------------------------*/
+
+  void set_par( idx_type par , int value ) override;
+
+  void set_par( idx_type par , double value ) override;
+
+  void set_par( idx_type par , std::string && value ) override;
+
+  void set_ComputeConfig( const ComputeConfig * scfg = nullptr ) override;
+
+  [[nodiscard]] int get_int_par( idx_type par ) const override {
+   return( v_members.front()->get_int_par( par ) );
+   }
+
+  [[nodiscard]] double get_dbl_par( idx_type par ) const override {
+   return( v_members.front()->get_dbl_par( par ) );
+   }
+
+ /*--------------------------------------------------------------------------*/
+ /*----------- METHODS FOR HANDLING THE "ACTIVE" Variable ------------------*/
+ /*--------------------------------------------------------------------------*/
+
+  [[nodiscard]] Block * get_Block( void ) const override { return( nullptr ); }
+
+  [[nodiscard]] Index get_num_active_var( void ) const override {
+   return( Index( v_vars.size() ) );
+   }
+
+  Index is_active( const Variable * var ) const override {
+   const auto it = f_var2idx.find( var );
+   return( it == f_var2idx.end() ? Inf< Index >() : it->second );
+   }
+
+  [[nodiscard]] Variable * get_active_var( Index i ) const override {
+   return( v_vars[ i ] );
+   }
+
+  v_iterator * v_begin( void ) override {
+   return( new v_iterator( v_vars.begin() ) );
+   }
+
+  [[nodiscard]] v_const_iterator * v_begin( void ) const override {
+   return( new v_const_iterator( v_vars.cbegin() ) );
+   }
+
+  v_iterator * v_end( void ) override {
+   return( new v_iterator( v_vars.end() ) );
+   }
+
+  [[nodiscard]] v_const_iterator * v_end( void ) const override {
+   return( new v_const_iterator( v_vars.cend() ) );
+   }
+
+  void remove_variable( Index i , ModParam issueMod = eModBlck ) override;
+
+ /*--------------------------------------------------------------------------*/
+ /*-------------------- METHODS FOR COMPUTING THE FUNCTION ------------------*/
+ /*--------------------------------------------------------------------------*/
+
+  /// computes all the members, and returns the first status that is not kOK
+  int compute( bool changedvars = true ) override;
+
+  [[nodiscard]] FunctionValue get_value( void ) override;
+
+  [[nodiscard]] FunctionValue get_lower_estimate( void ) override;
+
+  [[nodiscard]] FunctionValue get_upper_estimate( void ) override;
+
+  FunctionValue get_global_lower_bound( void ) override;
+
+  FunctionValue get_global_upper_bound( void ) override;
+
+  FunctionValue get_Lipschitz_constant( void ) override;
+
+  [[nodiscard]] bool is_convex( void ) override { return( f_convex ); }
+
+  [[nodiscard]] bool is_concave( void ) override { return( f_concave ); }
+
+ /*--------------------------------------------------------------------------*/
+ /*---------------------- METHODS FOR LINEARIZATIONS ------------------------*/
+ /*--------------------------------------------------------------------------*/
+
+  bool has_linearization( bool diagonal = true ) override;
+
+  /// no further linearization is produced beyond the first one
+  bool compute_new_linearization( bool diagonal = true ) override {
+   return( false );
+   }
+
+  void store_linearization( Index name , ModParam issueMod = eModBlck )
+   override;
+
+  [[nodiscard]] bool is_linearization_there( Index name ) const override;
+
+  [[nodiscard]] bool is_linearization_vertical( Index name ) const override;
+
+  void store_combination_of_linearizations(
+                          c_LinearCombination & coefficients , Index name ,
+                          ModParam issueMod = eModBlck ) override;
+
+  void set_important_linearization( LinearCombination && coefficients )
+   override;
+
+  [[nodiscard]] c_LinearCombination & get_important_linearization_coefficients(
+                                                         void ) const override {
+   return( f_important );
+   }
+
+  void delete_linearization( Index name , ModParam issueMod = eModBlck )
+   override;
+
+  void delete_linearizations( Subset && which , bool ordered = true ,
+                              ModParam issueMod = eModBlck ) override;
+
+  void get_linearization_coefficients( FunctionValue * g ,
+                                       Range range = INFRange ,
+                                       Index name = Inf< Index >() ) override;
+
+  void get_linearization_coefficients( FunctionValue * g ,
+                                       c_Subset & subset ,
+                                       bool ordered = false ,
+                                       Index name = Inf< Index >() ) override;
+
+  FunctionValue get_linearization_constant( Index name = Inf< Index >() )
+   override;
+
+ /*--------------------------------------------------------------------------*/
+ /*------------------------- METHODS FOR THE State --------------------------*/
+ /*--------------------------------------------------------------------------*/
+
+  [[nodiscard]] State * get_State( void ) const override;
+
+  void put_State( const State & state ) override;
+
+  void put_State( State && state ) override;
+
+  void serialize_State( netCDF::NcGroup & group ,
+                        const std::string & sub_group_name = "" )
+   const override;
+
+ /*--------------------------------------------------------------------------*/
+ /*--------------------- PRIVATE PART OF THE CLASS --------------------------*/
+ /*--------------------------------------------------------------------------*/
+
+  private:
+
+  /// the coefficients of the linearization name of the group, all of them
+  void full_coefficients( Index name );
+
+  /// true if member h gives coefficients to the linearization name
+  [[nodiscard]] bool takes_part( Index h , Index name ) const {
+   return( name == Inf< Index >() ? ( v_part[ h ] == 1 )
+                                  : v_members[ h ]->is_linearization_there(
+                                                                    name ) );
+   }
+
+  /// true if member h is horizontal at its bound in the linearization name
+  [[nodiscard]] bool is_flat( Index h , Index name ) const {
+   return( name == Inf< Index >() ? ( v_part[ h ] == 2 )
+                                  : ( v_flat[ h ].count( name ) > 0 ) );
+   }
+
+  /// the global lower [upper] bound of member h, if convex [concave]
+  [[nodiscard]] FunctionValue bound_of( Index h ) const {
+   return( f_convex ? v_members[ h ]->get_global_lower_bound()
+                    : v_members[ h ]->get_global_upper_bound() );
+   }
+
+  /// records member h as horizontal at its current bound in name
+  void set_flat( Index h , Index name , ModParam issueMod );
+
+  /// removes from member h the linearization name, if any
+  void unset( Index h , Index name , ModParam issueMod );
+
+  std::vector< C05Function * > v_members;  ///< the members
+
+  std::vector< ColVariable * > v_vars;     ///< the "active" Variable
+
+  std::unordered_map< const Variable * , Index > f_var2idx;
+  ///< the position of each "active" Variable
+
+  std::vector< std::vector< Index > > v_map;
+  ///< v_map[ h ][ i ] = position in v_vars of the i-th Variable of member h
+
+  std::vector< char > v_part;
+  ///< how the members take part in the last computed linearization: 0 not
+  ///< at all, 1 with their own, 2 with the horizontal one at their bound
+
+  std::vector< std::unordered_map< Index , FunctionValue > > v_flat;
+  ///< v_flat[ h ][ name ] = the bound member h is horizontal at in name
+
+  bool f_convex;   ///< true if the members are convex
+
+  bool f_concave;  ///< true if the members are concave
+
+  LinearCombination f_important;  ///< the important linearization
+
+  std::vector< FunctionValue > f_g;    ///< scratch: the group coefficients
+
+  std::vector< FunctionValue > f_gh;   ///< scratch: those of a member
+
+ /*--------------------------------------------------------------------------*/
+
+  };  // end( class( C05FunctionGroup ) )
+
 
 /*--------------------------------------------------------------------------*/
 /*-------------------------- PROTECTED METHODS -----------------------------*/
@@ -3220,6 +3625,16 @@ public:
 
  VarValue LStabSmall;  ///< threshold for a small model error, level stab.
 
+ int CmpAggrSeed;      ///< seed of the assignment to the aggregated components
+
+ double CmpAggr;       ///< share of the components each aggregated one holds
+
+ std::vector< std::unique_ptr< C05FunctionGroup > > v_groups;
+ ///< the aggregated components, if any, which v_c05f points to
+
+ std::unordered_map< const Function * , Index > f_member2cmp;
+ ///< the component of v_c05f each member of an aggregated one is in
+
  VarValue t;           ///< the (tremendous) t parameter
  VarValue Prevt;       ///< what t were before being changed for funny reasons
 
@@ -3519,11 +3934,29 @@ public:
 
 /*--------------------------------------------------------------------------*/
 
+ /* Replaces the non-easy components in v_c05f with C05FunctionGroup, each
+  * summing about a share CmpAggr of them chosen at random with the seed
+  * CmpAggrSeed [see dblCmpAggr]; the groups come first in v_c05f and the
+  * easy components follow in their order. Called at the end of set_Block(),
+  * it rebuilds what set_Block() had computed per component (the sizes of the
+  * global pools, the maps of the active Variable and the dense / sparse
+  * decision). The active Variable of the members must not change
+  * afterwards. */
+
+ void aggregate_components( void );
+
+/*--------------------------------------------------------------------------*/
+
  Index get_index_of_component( Function * f )
  {
   const auto fit = std::find( v_c05f.begin() , v_c05f.end() , f );
   if( fit != v_c05f.end() )
    return( std::distance( v_c05f.begin() , fit ) );
+
+  // a member of an aggregated component speaks for its group
+  const auto mit = f_member2cmp.find( f );
+  if( mit != f_member2cmp.end() )
+   return( mit->second );
 
   return( Inf< Index >() );
   }

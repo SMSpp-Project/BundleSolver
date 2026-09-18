@@ -26,6 +26,8 @@
 
 #include "BundleSolver.h"
 
+#include <random>
+
 #include "LagBFunction.h"
 
 #include "OneVarConstraint.h"
@@ -282,8 +284,8 @@ static void set_difference_in_place( BundleSolver::Subset & S1 ,
  // removes from S1 all elements in S2, resizing it accordingly
  // both S1 and S2 are assumed to be ordered and with unique elements
 
- if( S1.empty() )  // nothing to delete from
-  return;          // nothing to do
+ if( S1.empty() || S2.empty() )  // nothing to delete, or from
+  return;                        // nothing to do
 
  auto S1it = S1.begin();
  auto S2it = S2.begin();
@@ -1985,6 +1987,12 @@ void BundleSolver::set_Block( Block * block )
    }
   }
 
+ // aggregate the non-easy components, if so required - - - - - - - - - - - -
+ //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+ if( CmpAggr > 0 )
+  aggregate_components();
+
  // allocate memory- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -2235,6 +2243,7 @@ void BundleSolver::set_par( idx_type par , int value )
    MPHScaling = value;
    break;
   case( intMaxLevelNR ): MaxLevelNR = value; break;
+  case( intCmpAggrSeed ): CmpAggrSeed = value; break;
   default: CDASolver::set_par( par , value );
   }
  }  // end( BundleSolver::set_par( int ) )
@@ -2383,6 +2392,12 @@ void BundleSolver::set_par( idx_type par , double value )
     throw( std::invalid_argument(
                "BundleSolver::set_par: LStabSmall must be > 0" ) );
    LStabSmall = value;
+   break;
+  case( dblCmpAggr ):
+   if( ( value < 0 ) || ( value > 1 ) )
+    throw( std::invalid_argument(
+               "BundleSolver::set_par: CmpAggr must be in [0, 1]" ) );
+   CmpAggr = value;
    break;
   default:
    CDASolver::set_par( par , value );
@@ -2674,6 +2689,7 @@ int BundleSolver::get_int_par( idx_type par ) const
   case( intMPV2Form ):  return( MPV2Form );
   case( intMPHScaling ): return( MPHScaling );
   case( intMaxLevelNR ): return( MaxLevelNR );
+  case( intCmpAggrSeed ): return( CmpAggrSeed );
   default:              return( CDASolver::get_int_par( par ) );
   }
  }  // end( BundleSolver::get_int_par )
@@ -2707,6 +2723,7 @@ double BundleSolver::get_dbl_par( idx_type par ) const
   case( dblLStabDlt ):   return( LStabDlt );
   case( dblLStabIncr ):  return( LStabIncr );
   case( dblLStabSmall ): return( LStabSmall );
+  case( dblCmpAggr ):    return( CmpAggr );
   default:               return( CDASolver::get_dbl_par( par ) );
   }
  }  // end( BundleSolver::get_dbl_par )
@@ -4766,12 +4783,11 @@ bool BundleSolver::GetGi( Index wFi )
    if( wh == InINF ) {  // the position has not been selected in BStrategy()
     if( NrItems[ wFi ] >= vBPar2[ wFi ] ) {
      // BStrategy() found nothing to remove although component wFi has
-     // used up its share of the bundle, i.e., all its items are constraints
-     // (which are never removed): a free spot elsewhere in the bundle would
-     // take the component beyond its global pool, and since the constraints
-     // stay there will never be room for it again
+     // used up its share of the bundle, i.e., no item of it can be removed
+     // nor aggregated this round: a free spot elsewhere in the bundle would
+     // take the component beyond its global pool
      BLOG( 1 , std::endl << " ERROR: no space in the bundle for Fi[ " << wFi
-	   << " ], full of constraints" << std::endl );
+	   << " ]" << std::endl );
      Result = kError;   // signal an error to end the outer Fi-cycle
      break;             // the cycle ends
      }
@@ -4844,14 +4860,15 @@ bool BundleSolver::GetGi( Index wFi )
    insrtd = true;
    add_to_global_pool( wFi , gpp , wh );
 
-   if( diagonal )       // it is a subgradient
-    OOBase[ wh ] = -1;  // ensure it won't be touched again this round
-   else {               // it is a constraint
-    // mark it as permanently fixed: this may be a bad choice in practice,
-    // although it is required by the theory (we'll see ...)
-    OOBase[ wh ] = -Inf< SIndex >();
-    MPchgs = 2;         // a new vertical row: the MP is bound to change
-    }
+   // a vertical is dealt with as a diagonal: it is not touched again this
+   // round, it is removed once it has been out of base for long enough and,
+   // when there is no room left, it is aggregated with the other items of its
+   // component [see BStrategy()]. Keeping the vertical ones forever does not
+   // guarantee termination anyway, the feasible region needing not be a
+   // polyhedron, and with a finite bundle it may leave no room at all
+   OOBase[ wh ] = -1;
+   if( ! diagonal )     // a new vertical row: the MP is bound to change
+    MPchgs = 2;
    }
 
   #if CHECK_DS & 1
@@ -5755,8 +5772,17 @@ Index BundleSolver::BStrategy( Index wFi )
  if( aggregate_mass <= aggregate_mass_eps )
   return( InINF );
 
+ // diagonal and vertical items are aggregated together: the diagonal ones
+ // make up the convex combination, whose multipliers sum to the mass, and
+ // the vertical ones enter it with conic multipliers, so that the result is
+ // a valid diagonal linearization. If no diagonal item has a positive
+ // multiplier the vertical ones alone make a vertical linearization, which
+ // is normalized with the sum of their multipliers; the fictitious lower
+ // bound of a component without diagonal items must not enter it
  LinearCombination coeff;
  coeff.reserve( InvItemVcblr[ wFi ].size() );
+ double diag_theta = 0;
+ double vert_theta = 0;
  for( Index slot = 0 ; slot < InvItemVcblr[ wFi ].size() ; ++slot ) {
   const auto name = InvItemVcblr[ wFi ][ slot ];
   if( name >= vBPar2.back() )
@@ -5764,10 +5790,23 @@ Index BundleSolver::BStrategy( Index wFi )
   // the master indexes a cut by the global bundle name it was add_cut()-ed
   // with, not by the per-component global-pool position
   const auto th = MasterPB->get_theta( hard_k( wFi ) , int( name ) );
-  if( th == 0 )
+  if( th <= 0 )
    continue;
-  coeff.emplace_back( slot , th / aggregate_mass );
+  if( is_subgradient_global( name ) )
+   diag_theta += th;
+  else
+   vert_theta += th;
+  coeff.emplace_back( slot , th );
   }
+
+ const bool vertical_aggregate = ( diag_theta <= aggregate_mass_eps ) &&
+                                 ( vert_theta > aggregate_mass_eps );
+ if( ( ! vertical_aggregate ) && ( diag_theta <= aggregate_mass_eps ) )
+  return( InINF );  // nothing in base to aggregate
+
+ const double norm = vertical_aggregate ? vert_theta : aggregate_mass;
+ for( auto & p : coeff )
+  p.second /= norm;
 
  Index whZ = InINF;  // the position where Z[ wFi ] has to go
  if( ( whisZ[ wFi ] < InINF ) && is_subgradient_global( whisZ[ wFi ] ) )
@@ -5783,6 +5822,47 @@ Index BundleSolver::BStrategy( Index wFi )
 
  if( whZ == InINF )  // there is no removable item apart from wh
   return( InINF );   // nothing else to do except complaining very loudly
+
+ if( vertical_aggregate ) {
+  // the C05Function combines its vertical linearizations into the one in
+  // the global pool position of whZ, and the master gets it back from there
+  // exactly as GetGi() gets a new vertical one
+  const auto gpp = ItemVcblr[ whZ ].second;
+  auto fwFi = v_c05f[ wFi ];
+
+  inhibit_Modification( true );
+  fwFi->store_combination_of_linearizations( coeff , gpp );
+  inhibit_Modification( false );
+
+  const Index loc_NV = f_sparse_lambda ? fwFi->get_num_active_var() : NumVar;
+  std::vector< double > gk( loc_NV , 0.0 );
+  fwFi->get_linearization_coefficients( gk.data() , Range( 0 , loc_NV ) ,
+                                        gpp );
+  if( ! f_convex )
+   chgsign( gk.data() , loc_NV );
+
+  std::vector< double > g( NumVar , 0.0 );
+  if( f_sparse_lambda ) {
+   const auto & m = v_local2global[ wFi ];
+   for( Index li = 0 ; li < loc_NV ; ++li )
+    g[ m[ li ] ] = gk[ li ];
+   }
+  else
+   g = std::move( gk );
+
+  const double alpha = rs( fwFi->get_linearization_constant( gpp ) );
+
+  remove_cut_global( whZ );
+  MasterPB->add_cut( hard_k( wFi ) , int( whZ ) , std::move( g ) , alpha ,
+                     true );
+
+  OOBase[ whZ ] = -1;  // it won't be removed in this iteration
+  MPchgs = 2;          // a vertical row of the master has changed
+
+  BLOG( 2 , std::endl << "Vertical aggregation performed into " << whZ );
+
+  return( wh );
+  }
 
  // tell the C05Function what is going to happen
  // note that this only happens when the bundle (for component wFi) is
@@ -5978,7 +6058,166 @@ void BundleSolver::guts_of_destructor( void )
 
  v_c05f.clear();
 
+ f_member2cmp.clear();
+ v_groups.clear();  // the members are not owned, the groups are
+
  }  // end( BundleSolver:guts_of_destructor )
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::aggregate_components( void )
+{
+ std::vector< Index > hard;
+ hard.reserve( NrFi );
+ for( Index k = 0 ; k < NrFi ; ++k )
+  if( ! ( NrEasy && IsEasy[ k ] ) )
+   hard.push_back( k );
+
+ const Index nh = hard.size();
+ const Index ng = std::clamp( Index( std::lround( 1 / CmpAggr ) ) ,
+                              Index( 1 ) , nh );
+ if( ng >= nh )  // every group would be a single component
+  return;
+
+ // the assignment is random, but the same seed gives the same groups
+ std::mt19937 rg( CmpAggrSeed );
+ std::shuffle( hard.begin() , hard.end() , rg );
+
+ // the position of each Variable in LamVcblr, which orders those of a group
+ std::unordered_map< const ColVariable * , Index > pos;
+ pos.reserve( LamVcblr.size() );
+ for( Index i = 0 ; i < LamVcblr.size() ; ++i )
+  pos.emplace( LamVcblr[ i ] , i );
+
+ auto positions_of = [ & ]( C05Function * f ) {
+  std::vector< Index > p( f->get_num_active_var() );
+  for( Index i = 0 ; i < p.size() ; ++i )
+   p[ i ] = pos.at( static_cast< ColVariable * >( f->get_active_var( i ) ) );
+  return( p );
+  };
+
+ std::vector< C05Function * > n_c05f;
+ std::vector< bool > n_IsEasy;
+ std::vector< Index > n_vBPar2;
+ std::vector< std::vector< Index > > n_map;
+ n_c05f.reserve( ng + NrEasy );
+ n_vBPar2.reserve( ng + NrEasy + 1 );
+ n_map.reserve( ng + NrEasy );
+
+ std::vector< Index > refs( LamVcblr.size() , 0 );
+ if( auto z0 = zeroth_component() )
+  for( auto p : positions_of( z0 ) )
+   ++refs[ p ];
+
+ // the groups, as large as possible to each other- - - - - - - - - - - - - -
+ for( Index g = 0 ; g < ng ; ++g ) {
+  const Index first = ( g * nh ) / ng;
+  const Index last = ( ( g + 1 ) * nh ) / ng;
+
+  std::vector< C05Function * > members;
+  std::vector< Index > vpos;
+  Index gps = Inf< Index >();
+  for( Index j = first ; j < last ; ++j ) {
+   const auto k = hard[ j ];
+   members.push_back( v_c05f[ k ] );
+   const auto p = positions_of( v_c05f[ k ] );
+   vpos.insert( vpos.end() , p.begin() , p.end() );
+   gps = std::min( gps , vBPar2[ k ] );
+   }
+
+  // the union of the Variable of the members, in LamVcblr order
+  std::sort( vpos.begin() , vpos.end() );
+  vpos.erase( std::unique( vpos.begin() , vpos.end() ) , vpos.end() );
+
+  std::vector< ColVariable * > vars( vpos.size() );
+  for( Index i = 0 ; i < vpos.size() ; ++i ) {
+   vars[ i ] = LamVcblr[ vpos[ i ] ];
+   ++refs[ vpos[ i ] ];
+   }
+
+  for( auto m : members )
+   f_member2cmp.emplace( m , n_c05f.size() );
+
+  v_groups.push_back( std::make_unique< C05FunctionGroup >(
+                                  std::move( members ) , std::move( vars ) ) );
+  n_c05f.push_back( v_groups.back().get() );
+  n_IsEasy.push_back( false );
+  n_vBPar2.push_back( gps );
+  n_map.push_back( std::move( vpos ) );
+  }
+
+ // the easy components, in their order - - - - - - - - - - - - - - - - - - -
+ for( Index k = 0 ; NrEasy && ( k < NrFi ) ; ++k )
+  if( IsEasy[ k ] ) {
+   n_c05f.push_back( v_c05f[ k ] );
+   n_IsEasy.push_back( true );
+   n_vBPar2.push_back( vBPar2[ k ] );
+   auto p = positions_of( v_c05f[ k ] );
+   for( auto i : p )
+    ++refs[ i ];
+   n_map.push_back( std::move( p ) );
+   }
+
+ // what set_Block() had computed per component- - - - - - - - - - - - - - -
+ v_c05f = std::move( n_c05f );
+ NrFi = v_c05f.size();
+ if( NrEasy )
+  IsEasy = std::move( n_IsEasy );
+
+ Index total = 0;
+ for( auto s : n_vBPar2 )
+  total += s;
+ n_vBPar2.push_back( total );
+ vBPar2 = std::move( n_vBPar2 );
+
+ InvItemVcblr.assign( NrFi , {} );
+ for( Index k = 0 ; k < NrFi ; ++k )
+  InvItemVcblr[ k ].resize( vBPar2[ k ] , InINF );
+
+ // a component is dense only if it has every Variable in LamVcblr order
+ f_sparse_lambda = ( f_lf && ( f_lf->get_num_active_var() != NumVar ) );
+ for( Index k = 0 ; ( ! f_sparse_lambda ) && ( k < NrFi ) ; ++k ) {
+  const auto & m = n_map[ k ];
+  if( m.size() != NumVar )
+   f_sparse_lambda = true;
+  else
+   for( Index i = 0 ; i < NumVar ; ++i )
+    if( m[ i ] != i ) {
+     f_sparse_lambda = true;
+     break;
+     }
+  }
+
+ if( f_sparse_lambda ) {
+  if( f_qf )
+   throw( std::logic_error(
+       "BundleSolver::set_Block: the quadratic 0-th component is only "
+       "supported with the dense Lambda, every Variable being active in "
+       "it in the same order" ) );
+
+  v_local2global = std::move( n_map );
+  for( auto & m : v_local2global )
+   m.push_back( Inf< Index >() );
+
+  Lambda2Idx.clear();
+  for( Index i = 0 ; i < LamVcblr.size() ; ++i )
+   Lambda2Idx.emplace( LamVcblr[ i ] , i );
+
+  if( f_lf )
+   for( auto & r : refs )
+    ++r;
+  v_ref_count = std::move( refs );
+  }
+ else {
+  v_local2global.clear();
+  Lambda2Idx.clear();
+  v_ref_count.clear();
+  }
+
+ BLOG( 1 , std::endl << "BundleSolver: " << nh << " non-easy components "
+           "aggregated into " << ng << std::endl );
+
+ }  // end( BundleSolver::aggregate_components )
 
 /*--------------------------------------------------------------------------*/
 
@@ -6493,6 +6732,10 @@ void BundleSolver::reset_bundle( void )
  // so has(ve) been received. this only affects the BundleSolver data
  // structures and the MPSolver, not the C05Function(s)
 
+ // the cuts go from the master first, while ItemVcblr still says where
+ for( Index name = 0 ; name < f_max_name ; ++name )
+  remove_cut_global( name );
+
  OOBase.assign( vBPar2.back() , Inf< SIndex >() );
 
  ItemVcblr.assign( vBPar2.back() , std::make_pair( InINF , InINF ) );
@@ -6642,6 +6885,35 @@ void BundleSolver::process_outstanding_Modification( void )
  v_mod.clear();
 
  f_mod_lock.clear( std::memory_order_release );  // release lock
+
+ // the linearizations a member of an aggregated component removes from its
+ // global pool are removed from those of all the members, which keeps the
+ // global pool of the group what the Modification say it is. also, a changed
+ // member may have changed its global bound, which makes stale the horizontal
+ // linearizations its group records for it: they are dealt with as removed
+ // from the global pool of the group
+ if( ! v_groups.empty() ) {
+  Lst_sp_Mod stale;
+  for( const auto & mod : v_mod_tmp ) {
+   const auto fmod = std::dynamic_pointer_cast< FunctionMod >( mod );
+   if( ! fmod )
+    continue;
+   const auto it = f_member2cmp.find( fmod->function() );
+   if( it == f_member2cmp.end() )
+    continue;
+   const auto group = static_cast< C05FunctionGroup * >( v_c05f[ it->second ] );
+   if( const auto cmod = std::dynamic_pointer_cast< C05FunctionMod >( fmod ) )
+    if( cmod->type() == C05FunctionMod::GlobalPoolRemoved )
+     group->delete_linearizations( Subset( cmod->which() ) , true , eNoMod );
+   auto which = group->remove_stale_flat_linearizations(
+                         static_cast< const C05Function * >( fmod->function() ) );
+   if( ! which.empty() )
+    stale.push_back( std::make_shared< C05FunctionMod >( group ,
+                                          C05FunctionMod::GlobalPoolRemoved ,
+                                          std::move( which ) , 0 ) );
+   }
+  v_mod_tmp.splice( v_mod_tmp.end() , stale );
+  }
 
   #ifndef NDEBUG
   // high-verbosity diagnostic (LogVerb >= 7): account for every time the
@@ -8653,6 +8925,538 @@ void BundleSolverState::serialize( netCDF::NcGroup & group ) const
   v_comp_State[ i ]->serialize( gi );
   }
  }  // end( BundleSolverState::serialize )
+
+// the compensated sum of the values of a group, an infinite one absorbing the
+// others: the members are summed with the Kahan-Babuska correction, so that
+// the error does not grow with their number, which matters because the value
+// of a group is often much smaller than those of its members
+
+class group_sum
+{
+ public:
+
+ using FunctionValue = Function::FunctionValue;
+
+ void operator+=( FunctionValue v ) {
+  static constexpr auto INF = Inf< FunctionValue >();
+  if( ( v == INF ) || ( v == -INF ) ) {
+   if( f_inf && ( f_inf != v ) )
+    f_nan = true;
+   f_inf = v;
+   return;
+   }
+
+  const auto t = f_sum + v;
+  f_c += ( std::abs( f_sum ) >= std::abs( v ) ) ? ( f_sum - t ) + v
+                                                : ( v - t ) + f_sum;
+  f_sum = t;
+  }
+
+ operator FunctionValue( void ) const {
+  if( f_nan )
+   return( std::nan( "" ) );
+  return( f_inf ? f_inf : f_sum + f_c );
+  }
+
+ private:
+
+ FunctionValue f_sum = 0;   ///< the sum so far
+ FunctionValue f_c = 0;     ///< what the sum has lost so far
+ FunctionValue f_inf = 0;   ///< the infinite value, if any
+ bool f_nan = false;        ///< true if both infinities are there
+ };
+
+/*--------------------------------------------------------------------------*/
+/*--------------- METHODS OF BundleSolver::C05FunctionGroup ----------------*/
+/*--------------------------------------------------------------------------*/
+
+BundleSolver::C05FunctionGroup::C05FunctionGroup( std::vector< C05Function * > && members ,
+                                    std::vector< ColVariable * > && vars )
+ : C05Function() , v_members( std::move( members ) ) ,
+   v_vars( std::move( vars ) )
+{
+ if( v_members.empty() )
+  throw( std::invalid_argument( "C05FunctionGroup: the group is empty" ) );
+
+ f_var2idx.reserve( v_vars.size() );
+ for( Index i = 0 ; i < v_vars.size() ; ++i )
+  f_var2idx.emplace( v_vars[ i ] , i );
+
+ f_convex = v_members.front()->is_convex();
+ f_concave = v_members.front()->is_concave();
+
+ v_map.resize( v_members.size() );
+ for( Index h = 0 ; h < v_members.size() ; ++h ) {
+  auto m = v_members[ h ];
+  if( ( m->is_convex() != f_convex ) || ( m->is_concave() != f_concave ) )
+   throw( std::invalid_argument( "C05FunctionGroup: the members are not all "
+                                 "convex or all concave" ) );
+
+  const auto n = m->get_num_active_var();
+  v_map[ h ].resize( n );
+  for( Index i = 0 ; i < n ; ++i ) {
+   const auto it = f_var2idx.find( m->get_active_var( i ) );
+   if( it == f_var2idx.end() )
+    throw( std::invalid_argument( "C05FunctionGroup: a Variable of a member "
+                                  "is not among those of the group" ) );
+   v_map[ h ][ i ] = it->second;
+   }
+  }
+
+ v_part.assign( v_members.size() , 0 );
+ v_flat.resize( v_members.size() );
+ }
+
+/*--------------------------------------------------------------------------*/
+/*--------------- METHODS FOR HANDLING THE PARAMETERS ----------------------*/
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::C05FunctionGroup::set_par( idx_type par , int value )
+{
+ for( auto m : v_members )
+  m->set_par( par , value );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::C05FunctionGroup::set_par( idx_type par , double value )
+{
+ // a target on the sum cannot be split among the members
+ if( ( par == dblUpCutOff ) || ( par == dblLwCutOff ) )
+  return;
+
+ // the errors of the members add up in the group, hence each of them is
+ // required the share of the absolute ones that is its own; the relative
+ // errors are passed on as they are, the value of a member having nothing
+ // to do with that of the group
+ if( ( par == dblAbsAcc ) || ( par == dblAAccLin ) || ( par == dblAAccMlt ) )
+  value /= v_members.size();
+
+ for( auto m : v_members )
+  m->set_par( par , value );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::C05FunctionGroup::set_par( idx_type par , std::string && value )
+{
+ for( auto m : v_members )
+  m->set_par( par , std::string( value ) );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::C05FunctionGroup::set_ComputeConfig( const ComputeConfig * scfg )
+{
+ for( auto m : v_members )
+  m->set_ComputeConfig( scfg );
+ }
+
+/*--------------------------------------------------------------------------*/
+/*----------- METHODS FOR HANDLING THE "ACTIVE" Variable ------------------*/
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::C05FunctionGroup::remove_variable( Index i , ModParam issueMod )
+{
+ throw( std::logic_error( "BundleSolver::C05FunctionGroup::remove_variable: the Variable "
+                          "of a group cannot be changed" ) );
+ }
+
+/*--------------------------------------------------------------------------*/
+/*-------------------- METHODS FOR COMPUTING THE FUNCTION ------------------*/
+/*--------------------------------------------------------------------------*/
+
+int BundleSolver::C05FunctionGroup::compute( bool changedvars )
+{
+ int status = kOK;
+ for( auto m : v_members ) {
+  const int s = m->compute( changedvars );
+  if( ( s <= kUnEval ) || ( s >= kError ) )  // an error ends it all
+   return( s );
+  if( status == kOK )
+   status = s;
+  }
+
+ return( status );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+Function::FunctionValue BundleSolver::C05FunctionGroup::get_value( void )
+{
+ group_sum v;
+ for( auto m : v_members )
+  v += m->get_value();
+ return( v );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+Function::FunctionValue BundleSolver::C05FunctionGroup::get_lower_estimate( void )
+{
+ group_sum v;
+ for( auto m : v_members )
+  v += m->get_lower_estimate();
+ return( v );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+Function::FunctionValue BundleSolver::C05FunctionGroup::get_upper_estimate( void )
+{
+ group_sum v;
+ for( auto m : v_members )
+  v += m->get_upper_estimate();
+ return( v );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+Function::FunctionValue BundleSolver::C05FunctionGroup::get_global_lower_bound( void )
+{
+ group_sum v;
+ for( auto m : v_members )
+  v += m->get_global_lower_bound();
+ return( v );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+Function::FunctionValue BundleSolver::C05FunctionGroup::get_global_upper_bound( void )
+{
+ group_sum v;
+ for( auto m : v_members )
+  v += m->get_global_upper_bound();
+ return( v );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+Function::FunctionValue BundleSolver::C05FunctionGroup::get_Lipschitz_constant( void )
+{
+ group_sum v;
+ for( auto m : v_members )
+  v += m->get_Lipschitz_constant();
+ return( v );
+ }
+
+/*--------------------------------------------------------------------------*/
+/*---------------------- METHODS FOR LINEARIZATIONS ------------------------*/
+/*--------------------------------------------------------------------------*/
+
+bool BundleSolver::C05FunctionGroup::has_linearization( bool diagonal )
+{
+ if( diagonal ) {
+  // every member gives one, or is horizontal at its finite bound
+  bool own = false;
+  for( Index h = 0 ; h < v_members.size() ; ++h )
+   if( v_members[ h ]->has_linearization( true ) ) {
+    v_part[ h ] = 1;
+    own = true;
+    }
+   else {
+    const auto b = bound_of( h );
+    if( ( b == Inf< FunctionValue >() ) || ( b == -Inf< FunctionValue >() ) )
+     return( false );
+    v_part[ h ] = 2;
+    }
+
+  return( own );  // with every member at its bound, the bound says it all
+  }
+
+ // the members that give a vertical one make it, the others take no part
+ bool any = false;
+ for( Index h = 0 ; h < v_members.size() ; ++h )
+  if( ( v_part[ h ] = v_members[ h ]->has_linearization( false ) ) )
+   any = true;
+
+ return( any );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::C05FunctionGroup::set_flat( Index h , Index name ,
+                                              ModParam issueMod )
+{
+ if( v_members[ h ]->is_linearization_there( name ) )
+  v_members[ h ]->delete_linearization( name , issueMod );
+ v_flat[ h ][ name ] = bound_of( h );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+BundleSolver::Subset BundleSolver::C05FunctionGroup::
+                 remove_stale_flat_linearizations( const C05Function * member )
+{
+ Subset stale;
+ const auto it = std::find( v_members.begin() , v_members.end() , member );
+ if( it == v_members.end() )
+  return( stale );
+
+ const Index h = std::distance( v_members.begin() , it );
+ const auto b = bound_of( h );
+ for( const auto & f : v_flat[ h ] )
+  if( f.second != b )
+   stale.push_back( f.first );
+
+ std::sort( stale.begin() , stale.end() );
+ for( auto name : stale )
+  delete_linearization( name , eNoMod );
+
+ return( stale );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::C05FunctionGroup::unset( Index h , Index name ,
+                                           ModParam issueMod )
+{
+ if( v_members[ h ]->is_linearization_there( name ) )
+  v_members[ h ]->delete_linearization( name , issueMod );
+ v_flat[ h ].erase( name );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::C05FunctionGroup::store_linearization( Index name , ModParam issueMod )
+{
+ for( Index h = 0 ; h < v_members.size() ; ++h )
+  switch( v_part[ h ] ) {
+   case( 1 ):
+    v_members[ h ]->store_linearization( name , issueMod );
+    v_flat[ h ].erase( name );
+    break;
+   case( 2 ): set_flat( h , name , issueMod ); break;
+   default:   unset( h , name , issueMod );
+   }
+ }
+
+/*--------------------------------------------------------------------------*/
+
+bool BundleSolver::C05FunctionGroup::is_linearization_there( Index name ) const
+{
+ for( Index h = 0 ; h < v_members.size() ; ++h )
+  if( v_members[ h ]->is_linearization_there( name ) || is_flat( h , name ) )
+   return( true );
+ return( false );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+bool BundleSolver::C05FunctionGroup::is_linearization_vertical( Index name ) const
+{
+ // a diagonal linearization is in every member, possibly as the horizontal
+ // one at its bound, a vertical one only in the members that made it, and
+ // all of them hold a vertical one
+ bool there = false;
+ for( Index h = 0 ; h < v_members.size() ; ++h ) {
+  if( is_flat( h , name ) )
+   return( false );
+  const auto m = v_members[ h ];
+  if( m->is_linearization_there( name ) ) {
+   if( ! m->is_linearization_vertical( name ) )
+    return( false );
+   there = true;
+   }
+  }
+ return( there );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::C05FunctionGroup::store_combination_of_linearizations(
+                                          c_LinearCombination & coefficients ,
+                                          Index name , ModParam issueMod )
+{
+ // the member combines those it holds, and gives the horizontal linearization
+ // at its bound to the mass left by its diagonal ones; if it holds no
+ // diagonal one, the group records the horizontal one if any is combined
+ LinearCombination own;
+ for( Index h = 0 ; h < v_members.size() ; ++h ) {
+  const auto m = v_members[ h ];
+  own.clear();
+  bool own_diag = false;
+  bool flat = false;
+  for( const auto & c : coefficients )
+   if( m->is_linearization_there( c.first ) ) {
+    own.push_back( c );
+    if( ! m->is_linearization_vertical( c.first ) )
+     own_diag = true;
+    }
+   else
+    if( is_flat( h , c.first ) )
+     flat = true;
+
+  if( ! own.empty() )
+   m->store_combination_of_linearizations( own , name , issueMod );
+  else
+   if( m->is_linearization_there( name ) )
+    m->delete_linearization( name , issueMod );
+
+  if( flat && ! own_diag )
+   v_flat[ h ][ name ] = bound_of( h );
+  else
+   v_flat[ h ].erase( name );
+  }
+ }
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::C05FunctionGroup::set_important_linearization(
+                                         LinearCombination && coefficients )
+{
+ LinearCombination own;
+ for( auto m : v_members ) {
+  own.clear();
+  for( const auto & c : coefficients )
+   if( m->is_linearization_there( c.first ) )
+    own.push_back( c );
+  m->set_important_linearization( std::move( own ) );
+  }
+
+ f_important = std::move( coefficients );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::C05FunctionGroup::delete_linearization( Index name , ModParam issueMod )
+{
+ for( Index h = 0 ; h < v_members.size() ; ++h )
+  unset( h , name , issueMod );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::C05FunctionGroup::delete_linearizations( Subset && which , bool ordered ,
+                                              ModParam issueMod )
+{
+ if( which.empty() ) {  // all of them, in every member
+  for( auto m : v_members )
+   m->delete_linearizations( Subset() , ordered , issueMod );
+  for( auto & f : v_flat )
+   f.clear();
+  return;
+  }
+
+ for( Index h = 0 ; h < v_members.size() ; ++h ) {
+  const auto m = v_members[ h ];
+  Subset own;
+  for( auto name : which ) {
+   if( m->is_linearization_there( name ) )
+    own.push_back( name );
+   v_flat[ h ].erase( name );
+   }
+  if( ! own.empty() )
+   m->delete_linearizations( std::move( own ) , ordered , issueMod );
+  }
+ }
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::C05FunctionGroup::full_coefficients( Index name )
+{
+ f_g.assign( v_vars.size() , 0 );
+
+ for( Index h = 0 ; h < v_members.size() ; ++h ) {
+  if( ! takes_part( h , name ) )
+   continue;
+
+  const auto & map = v_map[ h ];
+  f_gh.resize( map.size() );
+  v_members[ h ]->get_linearization_coefficients( f_gh.data() ,
+                                                  Range( 0 , map.size() ) ,
+                                                  name );
+  for( Index i = 0 ; i < map.size() ; ++i )
+   f_g[ map[ i ] ] += f_gh[ i ];
+  }
+ }
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::C05FunctionGroup::get_linearization_coefficients( FunctionValue * g ,
+                                                       Range range ,
+                                                       Index name )
+{
+ range.second = std::min( range.second , get_num_active_var() );
+ if( range.second <= range.first )
+  return;
+
+ full_coefficients( name );
+ std::copy( f_g.begin() + range.first , f_g.begin() + range.second , g );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::C05FunctionGroup::get_linearization_coefficients( FunctionValue * g ,
+                                                       c_Subset & subset ,
+                                                       bool ordered ,
+                                                       Index name )
+{
+ if( subset.empty() )
+  return;
+
+ full_coefficients( name );
+ for( auto i : subset )
+  *(g++) = f_g[ i ];
+ }
+
+/*--------------------------------------------------------------------------*/
+
+Function::FunctionValue BundleSolver::C05FunctionGroup::get_linearization_constant(
+                                                                 Index name )
+{
+ group_sum a;
+ for( Index h = 0 ; h < v_members.size() ; ++h ) {
+  if( takes_part( h , name ) )
+   a += v_members[ h ]->get_linearization_constant( name );
+  if( name == Inf< Index >() ) {
+   if( v_part[ h ] == 2 )
+    a += bound_of( h );
+   }
+  else {
+   const auto it = v_flat[ h ].find( name );
+   if( it != v_flat[ h ].end() )
+    a += it->second;
+   }
+  }
+ return( a );
+ }
+
+/*--------------------------------------------------------------------------*/
+/*------------------------- METHODS FOR THE State --------------------------*/
+/*--------------------------------------------------------------------------*/
+
+State * BundleSolver::C05FunctionGroup::get_State( void ) const
+{
+ throw( std::logic_error( "BundleSolver::C05FunctionGroup::get_State: the State of a "
+                          "group is not supported" ) );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::C05FunctionGroup::put_State( const State & state )
+{
+ throw( std::logic_error( "BundleSolver::C05FunctionGroup::put_State: the State of a "
+                          "group is not supported" ) );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::C05FunctionGroup::put_State( State && state )
+{
+ throw( std::logic_error( "BundleSolver::C05FunctionGroup::put_State: the State of a "
+                          "group is not supported" ) );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::C05FunctionGroup::serialize_State( netCDF::NcGroup & group ,
+                                        const std::string & sub_group_name )
+ const
+{
+ throw( std::logic_error( "BundleSolver::C05FunctionGroup::serialize_State: the State of a"
+                          " group is not supported" ) );
+ }
 
 /*--------------------------------------------------------------------------*/
 /*----------------------- End File BundleSolver.cpp ------------------------*/
