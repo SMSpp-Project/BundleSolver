@@ -9,6 +9,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+### Changed
+
+- BundleSolverML is a library of its own, SMS++::BundleSolverML: Torch is
+  some hundreds of megabytes of shared objects, and a program linking
+  BundleSolver paid the loading of every one of them at each start, 0.2 s per
+  process on our machines, whether or not the ML variant was ever used.
+  Whoever wants that variant links the new library, which brings BundleSolver
+  along with it
+
+### Fixed
+
+- when a component had used up its share of the bundle with constraints
+  (vertical linearizations, which are never removed), a new one was still
+  put in a free spot elsewhere in the bundle, beyond the global pool of the
+  component, and the C05Function then refused to store it with "invalid
+  linearization name"; this happens when a Lagrangian subproblem is unbounded
+  over and over, and now the solve ends with kError and says that the bundle
+  of that component is full of constraints
+
+- a component answering kLowPrecision stopped the whole solve with an error:
+  that code sorts after kError among the return codes, and the two places
+  that read the status of a component only asked whether it was at least
+  kError. A component saying kLowPrecision has found a solution and says it
+  could not prove it optimal, which is inexact information and not a
+  failure, so it is now let through and used as such
+
+## [0.5.0] - 2026-09-12
+
+### Added
+
 - BundleSolverML, a BundleSolver variant whose step-size t is predicted by
   a neural network (Torch) trainable online across solves, with shared
   weights among multiple instances and TorchScript model save / load; it is
@@ -37,6 +67,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   requirements: a BundleSolver now needs the core library and MILPSolver, and
   the solver of the master is chosen by the BlockSolverConfig that
   strMPBSolverCfg points at
+
+- the version of the module is the git tag of its repository, or the
+  VERSION.txt of a release tarball, and the shared library carries it: its
+  SONAME is major.minor while the major is 0, and it is installed with an
+  RPATH relative to itself, so that an installed tree keeps working wherever
+  it is moved
 
 ### Fixed
 
@@ -70,6 +106,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of the algorithm) whenever dblBPar5 / intRstAlg were not explicitly set
   by the ComputeConfig.
 
+- the package configuration file finds the libraries the module links, so that
+  a project using the installed module needs nothing more than find_package()
 
 ## [0.4.5] - 2025-12-12
 
@@ -273,7 +311,11 @@ Several major improvements:
 
 - First test release.
 
-[Unreleased]: https://gitlab.com/smspp/bundlesolver/-/compare/0.4.3...develop
+[Unreleased]: https://gitlab.com/smspp/bundlesolver/-/compare/0.5.0...develop
+[0.5.0]: https://gitlab.com/smspp/bundlesolver/-/compare/0.4.5...0.5.0
+[0.4.5]: https://gitlab.com/smspp/bundlesolver/-/compare/0.4.4.1...0.4.5
+[0.4.4.1]: https://gitlab.com/smspp/bundlesolver/-/compare/0.4.4...0.4.4.1
+[0.4.4]: https://gitlab.com/smspp/bundlesolver/-/compare/0.4.3...0.4.4
 [0.4.3]: https://gitlab.com/smspp/bundlesolver/-/compare/0.4.2...0.4.3
 [0.4.2]: https://gitlab.com/smspp/bundlesolver/-/compare/0.4.1...0.4.2
 [0.4.1]: https://gitlab.com/smspp/bundlesolver/-/compare/0.4.0...0.4.1

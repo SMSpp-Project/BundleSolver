@@ -20,6 +20,10 @@ include(CMakeFindDependencyMacro)
 find_dependency(MILPSolver)
 find_dependency(NDOFiOracle)
 
+if (@Torch_FOUND@)
+    find_dependency(Torch HINTS @Torch_DIR@)
+endif ()
+
 # ----- Import target ------------------------------------------------------- #
 if (NOT TARGET @modNamespace@::@modName@)
     include("${@modName@_CMAKE_DIR}/@modName@Targets.cmake")

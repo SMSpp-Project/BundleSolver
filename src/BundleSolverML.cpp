@@ -259,7 +259,13 @@ double BundleSolverML::Heuristic( Index whch )
   * being huge with random weights. The normalized tensor is what is stored
   * in phi_vecs, so that Backward() re-runs the forward pass with the same
   * scaled inputs that produced the original prediction. */
- features[ 0 ] = float( tHasChgd );             // binary { 0 , 1 }
+ features[ 0 ] = float( tHasChgd );             // binary { 0 , 1 } 
+if( G1Norm == INFshift ) {    // Heuristic4() computes this lazily, but
+ double n2 = 0;               // BundleSolverML replaces Heuristic4()
+ for( auto gi : G1 )
+  n2 += double( gi ) * double( gi );
+G1Norm = std::sqrt( n2 );
+  }
  features[ 1 ] = float( G1Norm ) / 1e3f;        // subgradient norm
  features[ 2 ] = float( ScPr1 ) / 1e4f;         // scalar product
  features[ 3 ] = float( Alfa1 ) / 1e4f;         // linearization error
@@ -298,8 +304,16 @@ double BundleSolverML::Heuristic( Index whch )
   t_pred = 1;
   }
 
- phi_vecs.push_back( input );
  BML_LOG( "Heuristic: predicted t = " << t_pred << std::endl );
+
+ /* Nothing below is used unless the trajectory is replayed in Backward(),
+  * i.e., unless the training is on and this iteration is in the window
+  * [ intMLIterFirst , intMLIterLast ]. */
+ if( ( ! f_train_online ) || ( ++f_ML_iter < f_ML_iter_first ) ||
+     ( f_ML_iter > f_ML_iter_last ) )
+  return( t_pred );
+
+ phi_vecs.push_back( input );
 
  // search direction w
  auto tZ = MasterPB->get_z_vector();
@@ -440,15 +454,22 @@ void BundleSolverML::Backward( void )
 
   if( ! nn->is_training() )
    nn->train();
+   const size_t n_rec = phi_vecs.size();
+   const size_t k_win = ( f_ML_window >= int( n_rec ) )
+                       ? n_rec : size_t( f_ML_window );
+
+  for( size_t wstart = 0 ; wstart < n_rec ; wstart += k_win ) {
+   const size_t wend = std::min( wstart + k_win , n_rec );
 
   torch::Tensor loss = torch::zeros( {} , torch::kFloat32 );
-  size_t last_idx = phi_vecs.size() - 1;
+  size_t last_idx = wend - 1;
   int ss_count = 0;
 
   // scalar accumulator for the discounted search directions
   torch::Tensor w_cum = torch::zeros( {} , torch::kFloat32 );
 
-  for( size_t f = 0 ; f < phi_vecs.size() ; ++f ) {
+  
+  for( size_t f = wstart ; f < wend ; ++f ) {
    float coeff_val = coeff_vecs[ f ].item< float >();
    bool is_ss = ( coeff_val > 0 );
    if( ( ! is_ss ) && ( f != last_idx ) )
@@ -463,6 +484,10 @@ void BundleSolverML::Backward( void )
     }
 
    try {
+    std::unique_ptr<torch::NoGradGuard> no_grad;
+    if ( !f_train_online ) {
+    no_grad = std::make_unique<torch::NoGradGuard>();
+    }
     auto nn_out = nn->forward( phi_vecs[ f ] ).sum();  // scalar, float32
 
     if( ! nn_out.requires_grad() ) {
@@ -476,7 +501,7 @@ void BundleSolverML::Backward( void )
 					   nn_out.item< double >() );
 
     double discount = std::pow( 0.9 ,
-				double( phi_vecs.size() - ss_count ) );
+                                double( ( wend - wstart ) - ss_count ) );
     w_cum = w_cum + float( discount ) * nn_out * w_curr;
 
     auto gs_scalar = Gs_aggreg[ f ].to( torch::kFloat32 ).sum();
@@ -518,6 +543,7 @@ void BundleSolverML::Backward( void )
 	   << std::endl );
 
   f_optimizer->step();
+  }  // end( for( wstart ) ) 
   }
  catch( const std::exception & e ) {
   std::cerr << "Backward: exception: " << e.what() << std::endl;
