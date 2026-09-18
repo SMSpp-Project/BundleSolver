@@ -9025,6 +9025,14 @@ void BundleSolver::C05FunctionGroup::set_par( idx_type par , double value )
  if( ( par == dblUpCutOff ) || ( par == dblLwCutOff ) )
   return;
 
+ // the time is not given to every member, or the group would be allowed
+ // as many times it as it has members: it is kept here and handed down one
+ // member at a time, each of them getting what the previous ones have left
+ if( par == dblMaxTime ) {
+  f_max_time = value;
+  return;
+  }
+
  // the errors of the members add up in the group, hence each of them is
  // required the share of the absolute ones that is its own; the relative
  // errors are passed on as they are, the value of a member having nothing
@@ -9068,14 +9076,30 @@ void BundleSolver::C05FunctionGroup::remove_variable( Index i , ModParam issueMo
 
 int BundleSolver::C05FunctionGroup::compute( bool changedvars )
 {
+ const bool timed = ( f_max_time < Inf< double >() );
+ auto left = f_max_time;
+ auto start = std::chrono::system_clock::now();
+
  int status = kOK;
  for( auto m : v_members ) {
+  if( timed ) {
+   if( left <= 0 )  // the time is up: what is left is not computed
+    return( kStopTime );
+   m->set_par( dblMaxTime , left );
+   }
+
   ++f_member_evals;
   const int s = m->compute( changedvars );
   if( ( s <= kUnEval ) || ( s >= kError ) )  // an error ends it all
    return( s );
   if( status == kOK )
    status = s;
+
+  if( timed ) {  // what this member has taken is not there for the others
+   const auto now = std::chrono::system_clock::now();
+   left = f_max_time -
+          std::chrono::duration< double >( now - start ).count();
+   }
   }
 
  return( status );

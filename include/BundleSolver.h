@@ -2646,6 +2646,8 @@ public:
    }
 
   [[nodiscard]] double get_dbl_par( idx_type par ) const override {
+   if( par == dblMaxTime )
+    return( f_max_time );
    return( v_members.front()->get_dbl_par( par ) );
    }
 
@@ -2818,6 +2820,9 @@ public:
   std::vector< char > v_part;
   ///< how the members take part in the last computed linearization: 0 not
   ///< at all, 1 with their own, 2 with the horizontal one at their bound
+
+  double f_max_time = Inf< double >();
+  ///< the time the group is given, which it hands down one member at a time
 
   long f_member_evals = 0;
   ///< how many members have been computed [see get_member_evaluations()]
