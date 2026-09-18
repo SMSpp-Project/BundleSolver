@@ -1679,25 +1679,17 @@ void BundleSolver::set_Block( Block * block )
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
  Index NumBVar = 0;  // count the number of Variable in the Block
- auto v_s_Variable = f_Block->get_static_variables();
- for( auto & el : v_s_Variable ) {
-  auto sz = un_any_thing_count_static( ColVariable , el );
-  if( sz == Inf< std::size_t >() )
-   throw( std::logic_error(
-              "BundleSolver::set_Block: "
-              "some static Variable is not a ColVariable" ) );
-  NumBVar += sz;
-  }
-
- auto v_d_Variable = f_Block->get_dynamic_variables();
- for( auto & el : v_d_Variable ) {
-  auto sz = un_any_thing_count_dynamic( ColVariable , el );
-  if( sz == Inf< std::size_t >() )
-   throw( std::logic_error(
-              "BundleSolver::set_Block: "
-              "some dynamic Variable is not a ColVariable" ) );
-  NumBVar += sz;
-  }
+ for( auto groups : { & f_Block->get_static_variable_groups() ,
+		      & f_Block->get_dynamic_variable_groups() } )
+  for( const auto & group : *groups ) {
+   if( ! group )
+    continue;
+   if( ! group->elements_are< ColVariable >() )
+    throw( std::logic_error(
+               "BundleSolver::set_Block: "
+               "some Variable is not a ColVariable" ) );
+   NumBVar += group->get_num_elements();
+   }
 
  if( NumBVar < NumVar )
   throw( std::logic_error(
@@ -1710,13 +1702,12 @@ void BundleSolver::set_Block( Block * block )
  std::vector< ColVariable * > LamBVcblr( NumBVar );
 
  Index cnt = 0;
- for( auto & el : v_s_Variable )
-  un_any_static( el , [ & ]( ColVariable & sv ) { LamBVcblr[ cnt++ ] = & sv;
-                  } , un_any_type< ColVariable >() );
-
- for( auto & el : v_d_Variable )
-  un_any_dynamic( el , [ & ]( ColVariable & sv ) { LamBVcblr[ cnt++ ] = & sv;
-                  } , un_any_type< ColVariable >() );
+ for( auto groups : { & f_Block->get_static_variable_groups() ,
+		      & f_Block->get_dynamic_variable_groups() } )
+  for( const auto & group : *groups )
+   if( group )
+    group->for_each_as< ColVariable >( [ & ]( ColVariable & sv ) {
+      LamBVcblr[ cnt++ ] = & sv; } );
 
  // these are the Block variables
  std::sort( LamBVcblr.begin() , LamBVcblr.end() );
@@ -1739,40 +1730,24 @@ void BundleSolver::set_Block( Block * block )
  // -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // one day general linear constraints will be allowed
- //
- // note that un_any_thing_*() only serves to verify that the stuff is of the
- // right type, and therefore it has to do nothing; this is obtained by
- // passing it as, the "function" argument, a void --> void lambda doing
- // nothing immediately applied to nothing, cue the curios list of
- // parentheses "[](){}()"
 
- for( auto & el : f_Block->get_static_constraints() ) {
-  if( un_any_thing_static( BoxConstraint , el , [](){}() ) )
-   continue;
-  if( un_any_thing_static( LB0Constraint , el , [](){}() ) )
-   continue;
-  if( un_any_thing_static( NNConstraint , el , [](){}() ) )
-   continue;
-  //!! this should never have been needed in the first place
-  //!!if( un_any_const_static( el , []( BoxConstraint & b ){} ,
-  //!!                         un_any_type< BoxConstraint >() ) )
-  //!! continue;
-  throw( std::logic_error(
-             "BundleSolver::set_Block: "
-             "unsupported type of static Constraint" ) );
-  }
+ for( auto groups : { & f_Block->get_static_constraint_groups() ,
+		      & f_Block->get_dynamic_constraint_groups() } )
+  for( const auto & group : *groups ) {
+   if( ! group )
+    continue;
+   // the type of the elements is asked of the group, which answers once for
+   // all of them, and nothing has to be done with them
+   if( group->elements_are< BoxConstraint >() ||
+       group->elements_are< LB0Constraint >() ||
+       group->elements_are< NNConstraint >() )
+    continue;
 
- for( auto & el : f_Block->get_dynamic_constraints() ) {
-  if( un_any_thing_dynamic( BoxConstraint , el , [](){}() ) )
-   continue;
-  if( un_any_thing_dynamic( LB0Constraint , el , [](){}() ) )
-   continue;
-  if( un_any_thing_dynamic( NNConstraint , el , [](){}() ) )
-   continue;
-  throw( std::logic_error(
-             "BundleSolver::set_Block: "
-             "unsupported type of dynamic Constraint" ) );
-  }
+   throw( std::logic_error( std::string( "BundleSolver::set_Block: "
+					 "unsupported type of " ) +
+			    ( group->is_dynamic() ? "dynamic" : "static" ) +
+			    " Constraint" ) );
+   }
 
  // read information about the C05Function - - - - - - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -5783,15 +5758,17 @@ Index BundleSolver::BStrategy( Index wFi )
  if( aggregate_mass <= aggregate_mass_eps )
   return( InINF );
 
- // diagonal and vertical items are aggregated together: the diagonal ones
- // make up the convex combination, whose multipliers sum to the mass, and
- // the vertical ones enter it with conic multipliers, so that the result is
- // a valid diagonal linearization. If no diagonal item has a positive
- // multiplier the vertical ones alone make a vertical linearization, which
- // is normalized with the sum of their multipliers; the fictitious lower
- // bound of a component without diagonal items must not enter it
- LinearCombination coeff;
- coeff.reserve( InvItemVcblr[ wFi ].size() );
+ // the aggregate is made of the diagonal items alone, with the multipliers
+ // they have in the master problem: these sum to one, save for the mass the
+ // lower bounds take. The individual lower bound of a component takes some
+ // and contributes nothing, its subgradient being the all-zero one, while
+ // the global lower bound takes the share r, whence the scaling by 1 / ( 1 -
+ // r ). A vertical item is stronger than a diagonal one, and an aggregate of
+ // vertical items is vertical, hence it is only built when there is no
+ // diagonal item in the base at all, which is the last resort
+ LinearCombination diag;
+ LinearCombination vert;
+ diag.reserve( InvItemVcblr[ wFi ].size() );
  double diag_theta = 0;
  double vert_theta = 0;
  for( Index slot = 0 ; slot < InvItemVcblr[ wFi ].size() ; ++slot ) {
@@ -5803,19 +5780,31 @@ Index BundleSolver::BStrategy( Index wFi )
   const auto th = MasterPB->get_theta( hard_k( wFi ) , int( name ) );
   if( th <= 0 )
    continue;
-  if( is_subgradient_global( name ) )
+  if( is_subgradient_global( name ) ) {
    diag_theta += th;
-  else
+   diag.emplace_back( slot , th );
+   }
+  else {
    vert_theta += th;
-  coeff.emplace_back( slot , th );
+   vert.emplace_back( slot , th );
+   }
   }
 
- const bool vertical_aggregate = ( diag_theta <= aggregate_mass_eps ) &&
-                                 ( vert_theta > aggregate_mass_eps );
- if( ( ! vertical_aggregate ) && ( diag_theta <= aggregate_mass_eps ) )
+ // in pure level the multipliers carry the level mass eta, which is what
+ // they have to be divided by; otherwise it is the mass the global lower
+ // bound leaves, i.e. 1 - r
+ const double diag_norm = pure_level_aggregate
+                          ? aggregate_mass
+                          : ( 1 - MasterPB->get_r() );
+
+ const bool vertical_aggregate = ( diag_theta <= aggregate_mass_eps ) ||
+                                 ( diag_norm <= aggregate_mass_eps );
+ if( vertical_aggregate && ( vert_theta <= aggregate_mass_eps ) )
   return( InINF );  // nothing in base to aggregate
 
- const double norm = vertical_aggregate ? vert_theta : aggregate_mass;
+ LinearCombination coeff = vertical_aggregate ? std::move( vert )
+                                              : std::move( diag );
+ const double norm = vertical_aggregate ? vert_theta : diag_norm;
  for( auto & p : coeff )
   p.second /= norm;
 
