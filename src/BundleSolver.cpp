@@ -1305,6 +1305,17 @@ int BundleSolver::compute( bool changedvars )
    pval( *f_log , rs( UpRifFi.back() ) );
    }
   *f_log << std::endl;
+
+  // the evaluations above are those of the components the master problem
+  // sees: when these are groups, each of them has cost one evaluation per
+  // member, and that is the number to compare with a disaggregated run
+  if( ! v_groups.empty() ) {
+   long members = 0;
+   for( const auto & g : v_groups )
+    members += g->get_member_evaluations();
+   *f_log << "        " << v_groups.size() << " groups, "
+          << members << " evaluations of their members" << std::endl;
+   }
   }
 
  unlock();  // unlock the mutex
@@ -9070,6 +9081,7 @@ int BundleSolver::C05FunctionGroup::compute( bool changedvars )
 {
  int status = kOK;
  for( auto m : v_members ) {
+  ++f_member_evals;
   const int s = m->compute( changedvars );
   if( ( s <= kUnEval ) || ( s >= kError ) )  // an error ends it all
    return( s );

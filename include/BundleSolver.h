@@ -2607,6 +2607,19 @@ public:
    return( v_members );
    }
 
+ /*--------------------------------------------------------------------------*/
+  /// how many members have been computed since the group was built
+  /** The number of times a member of the group has been computed, i.e., the
+   * number of evaluations of the original components that the evaluations of
+   * the group have cost. Computing the group computes every member, hence
+   * this is the number of evaluations of the group times the number of its
+   * members, and it is what has to be compared with the evaluations of a
+   * solver that sees the components one by one. */
+
+  [[nodiscard]] long get_member_evaluations( void ) const {
+   return( f_member_evals );
+   }
+
   /// removes the linearizations where member is horizontal at a stale bound
   /** Removes from the global pool of the group, without issuing any
    * Modification, the linearizations where member takes part with the
@@ -2805,6 +2818,9 @@ public:
   std::vector< char > v_part;
   ///< how the members take part in the last computed linearization: 0 not
   ///< at all, 1 with their own, 2 with the horizontal one at their bound
+
+  long f_member_evals = 0;
+  ///< how many members have been computed [see get_member_evaluations()]
 
   std::vector< std::unordered_map< Index , FunctionValue > > v_flat;
   ///< v_flat[ h ][ name ] = the bound member h is horizontal at in name
