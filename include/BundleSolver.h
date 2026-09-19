@@ -2807,6 +2807,9 @@ public:
   /// removes from member h the linearization name, if any
   void unset( Index h , Index name , ModParam issueMod );
 
+  /// how the absolute accuracies are shared out among the members
+  std::vector< double > accuracy_shares( void ) const;
+
   std::vector< C05Function * > v_members;  ///< the members
 
   std::vector< ColVariable * > v_vars;     ///< the "active" Variable
@@ -2826,6 +2829,15 @@ public:
 
   long f_member_evals = 0;
   ///< how many members have been computed [see get_member_evaluations()]
+
+  std::map< idx_type , FunctionValue > f_abs_par;
+  ///< the absolute accuracies asked of the group, which it shares out among
+  ///< the members at each compute() [see set_par( idx_type , double )]
+
+  std::vector< FunctionValue > v_last;
+  ///< v_last[ h ] = what member h was worth at its last evaluation, which is
+  ///< the share of the absolute accuracies it gets; empty until the first
+  ///< compute(), where the shares are equal
 
   std::vector< std::unordered_map< Index , FunctionValue > > v_flat;
   ///< v_flat[ h ][ name ] = the bound member h is horizontal at in name

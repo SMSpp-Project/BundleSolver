@@ -9004,6 +9004,8 @@ BundleSolver::C05FunctionGroup::C05FunctionGroup( std::vector< C05Function * > &
   }
 
  v_part.assign( v_members.size() , 0 );
+ v_last.assign( v_members.size() ,
+                std::numeric_limits< FunctionValue >::quiet_NaN() );
  v_flat.resize( v_members.size() );
  }
 
@@ -9033,12 +9035,19 @@ void BundleSolver::C05FunctionGroup::set_par( idx_type par , double value )
   return;
   }
 
- // the errors of the members add up in the group, hence each of them is
- // required the share of the absolute ones that is its own; the relative
- // errors are passed on as they are, the value of a member having nothing
- // to do with that of the group
- if( ( par == dblAbsAcc ) || ( par == dblAAccLin ) || ( par == dblAAccMlt ) )
-  value /= v_members.size();
+ /* The errors of the members add up in the group, so each of them can only
+  * be allowed the share of an absolute accuracy that is its own; the share
+  * is not the same for everybody, since dividing by the number of members
+  * assumes that they are worth the same, which they need not be. The
+  * accuracy is therefore recorded here and shared out at each compute(),
+  * where what each member was worth at its last evaluation is known. The
+  * relative accuracies are passed on as they are, the value of a member
+  * having nothing to do with that of the group. */
+
+ if( ( par == dblAbsAcc ) || ( par == dblAAccLin ) || ( par == dblAAccMlt ) ) {
+  f_abs_par[ par ] = value;
+  return;
+  }
 
  for( auto m : v_members )
   m->set_par( par , value );
@@ -9074,26 +9083,87 @@ void BundleSolver::C05FunctionGroup::remove_variable( Index i , ModParam issueMo
 /*-------------------- METHODS FOR COMPUTING THE FUNCTION ------------------*/
 /*--------------------------------------------------------------------------*/
 
+std::vector< double > BundleSolver::C05FunctionGroup::accuracy_shares( void )
+ const
+{
+ /* An absolute accuracy asked of the group has to be split among its
+  * members, whose errors add up; splitting it in equal parts assumes that
+  * the members are worth the same, and a member worth 1e9 next to one worth
+  * 1 would be asked for an accuracy it has no way of delivering while the
+  * small one is asked for far more than it is worth. The share is therefore
+  * proportional to what the member was worth at its last evaluation, and
+  * equal parts are used until there is one, or when what the members are
+  * worth says nothing (one of them is infinite, or they are all worth
+  * nothing). No member is left without a share, whatever it is worth: a
+  * share of zero would ask it for an exact answer. */
+
+ const auto k = v_members.size();
+ std::vector< double > shares( k , 1.0 / double( k ) );
+
+ if( v_last.size() != k )
+  return( shares );
+
+ double total = 0;
+ for( const auto v : v_last ) {
+  if( ! std::isfinite( v ) )
+   return( shares );
+  total += std::abs( v );
+  }
+
+ if( ! ( total > 0 ) )
+  return( shares );
+
+ const double least = 1.0 / ( 10.0 * double( k ) );  // the floor of a share
+ double sum = 0;
+ for( Index h = 0 ; h < k ; ++h ) {
+  shares[ h ] = std::max( std::abs( v_last[ h ] ) / total , least );
+  sum += shares[ h ];
+  }
+
+ for( auto & share : shares )   // the floors have to be paid for
+  share /= sum;
+
+ return( shares );
+ }
+
+/*--------------------------------------------------------------------------*/
+
 int BundleSolver::C05FunctionGroup::compute( bool changedvars )
 {
  const bool timed = ( f_max_time < Inf< double >() );
  auto left = f_max_time;
  auto start = std::chrono::system_clock::now();
 
+ // the share of the absolute accuracies each member is given
+ const auto shares = accuracy_shares();
+
  int status = kOK;
- for( auto m : v_members ) {
+ for( Index h = 0 ; h < v_members.size() ; ++h ) {
+  auto m = v_members[ h ];
   if( timed ) {
    if( left <= 0 )  // the time is up: what is left is not computed
     return( kStopTime );
    m->set_par( dblMaxTime , left );
    }
 
+  for( const auto & [ par , value ] : f_abs_par )
+   m->set_par( par , value * shares[ h ] );
+
   ++f_member_evals;
   const int s = m->compute( changedvars );
-  if( ( s <= kUnEval ) || ( s >= kError ) )  // an error ends it all
-   return( s );
-  if( status == kOK )
+
+  // kLowPrecision is not an error: it says that the member is worth what it
+  // returns only up to the accuracy it was given, which is what an inexact
+  // oracle is, and the group is inexact with it; stopping here would leave
+  // the other members unevaluated and the group without a value
+  if( ( s <= kUnEval ) || ( ( s >= kError ) && ( s != kLowPrecision ) ) )
+   return( s );                    // an error ends it all
+  if( s == kLowPrecision )   // an inexact member makes the group inexact
+   status = kLowPrecision;
+  else if( status == kOK )
    status = s;
+
+  v_last[ h ] = m->get_value();
 
   if( timed ) {  // what this member has taken is not there for the others
    const auto now = std::chrono::system_clock::now();
