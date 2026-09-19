@@ -9143,6 +9143,24 @@ std::vector< double > BundleSolver::C05FunctionGroup::accuracy_shares( void )
 
 /*--------------------------------------------------------------------------*/
 
+void BundleSolver::C05FunctionGroup::update_member_time(
+                const std::chrono::system_clock::time_point & from ,
+                Index howmany )
+{
+ if( ! howmany )
+  return;
+
+ const auto now = std::chrono::system_clock::now();
+ const double each = std::chrono::duration< double >( now - from ).count() /
+                     double( howmany );
+
+ // an exponential average, so that a group whose members become expensive
+ // (or cheap) is followed rather than remembered
+ f_member_time = f_member_time > 0 ? 0.7 * f_member_time + 0.3 * each : each;
+ }
+
+/*--------------------------------------------------------------------------*/
+
 int BundleSolver::C05FunctionGroup::compute_parallel( bool changedvars ,
                                        const std::vector< double > & shares )
 {
@@ -9200,6 +9218,11 @@ int BundleSolver::C05FunctionGroup::compute_parallel( bool changedvars ,
    return( bad );
   }
 
+ // what the members have taken together is not what one of them takes, but
+ // the threads have been spent all the same: the average is refreshed on
+ // the wall-clock time divided by how many have run at once
+ update_member_time( start , ( k + at_once - 1 ) / at_once );
+
  return( status );
  }
 
@@ -9214,8 +9237,18 @@ int BundleSolver::C05FunctionGroup::compute( bool changedvars )
  // the share of the absolute accuracies each member is given
  const auto shares = accuracy_shares();
 
- if( f_max_thread > 1 )   // the members are evaluated together
+ /* The members are evaluated together only if they are worth a thread each:
+  * spawning one and waiting for it costs of the order of 100 microseconds,
+  * so a group whose members are answered by a dynamic program in ten of
+  * them would spend on the threads several times what the evaluation takes.
+  * What a member has cost so far is therefore what decides, and since it is
+  * not known before the first evaluation, that one is done one member at a
+  * time. */
+
+ if( ( f_max_thread > 1 ) && ( f_member_time > 1e-3 ) )
   return( compute_parallel( changedvars , shares ) );
+
+ const auto t0 = std::chrono::system_clock::now();
 
  int status = kOK;
  for( Index h = 0 ; h < v_members.size() ; ++h ) {
@@ -9251,6 +9284,8 @@ int BundleSolver::C05FunctionGroup::compute( bool changedvars )
           std::chrono::duration< double >( now - start ).count();
    }
   }
+
+ update_member_time( t0 , v_members.size() );
 
  return( status );
  }

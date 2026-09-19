@@ -2826,6 +2826,11 @@ public:
   /// current one of the group [see compute_new_linearization()]
   bool random_combination( void );
 
+  /// refreshes what a member costs, which is what decides whether they are
+  /// evaluated together [see compute()]
+  void update_member_time( const std::chrono::system_clock::time_point & from ,
+                           Index howmany );
+
   /// evaluates the members together, as many at a time as the threads the
   /// group is allowed [see compute()]
   int compute_parallel( bool changedvars ,
@@ -2860,6 +2865,11 @@ public:
   std::map< idx_type , FunctionValue > f_abs_par;
   ///< the absolute accuracies asked of the group, which it shares out among
   ///< the members at each compute() [see set_par( idx_type , double )]
+
+  double f_member_time = 0;
+  ///< what a member has taken, on average, at the evaluations so far: it is
+  ///< what says whether evaluating them together is worth a thread each
+  ///< [see compute()]
 
   int f_max_thread = 1;
   ///< how many members the group evaluates at once: one, i.e. one at a time,
