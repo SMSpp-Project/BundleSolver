@@ -1391,21 +1391,11 @@ void BundleSolver::set_Block( Block * block )
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
  Index NumBVar = 0;  // count the number of Variable in the Block
- auto v_s_Variable = f_Block->get_static_variables();
- for( auto & el : v_s_Variable ) {
-  auto sz = un_any_thing_count_static( ColVariable , el );
-  if( sz == Inf< std::size_t >() )
-   throw( std::logic_error( "some static Variable is not a ColVariable" ) );
-  NumBVar += sz;
-  }
-
- auto v_d_Variable = f_Block->get_dynamic_variables();
- for( auto & el : v_d_Variable ) {
-  auto sz = un_any_thing_count_dynamic( ColVariable , el );
-  if( sz == Inf< std::size_t >() )
-   throw( std::logic_error( "some dynamic Variable is not a ColVariable" ) );
-  NumBVar += sz;
-  }
+ f_Block->for_each_variable_group( [ & NumBVar ]( const BaseGroup & group ) {
+   if( ! group.elements_are< ColVariable >() )
+    throw( std::logic_error( "some Variable is not a ColVariable" ) );
+   NumBVar += group.get_num_elements();
+   } );
 
  if( NumBVar < NumVar )
   throw( std::logic_error( "too few ColVariable in the Block" ) );
@@ -1416,13 +1406,10 @@ void BundleSolver::set_Block( Block * block )
  std::vector< ColVariable * > LamBVcblr( NumBVar );
 
  Index cnt = 0;
- for( auto & el : v_s_Variable )
-  un_any_static( el , [ & ]( ColVariable & sv ) { LamBVcblr[ cnt++ ] = & sv;
-                  } , un_any_type< ColVariable >() );
-
- for( auto & el : v_d_Variable )
-  un_any_dynamic( el , [ & ]( ColVariable & sv ) { LamBVcblr[ cnt++ ] = & sv;
-                  } , un_any_type< ColVariable >() );
+ f_Block->for_each_variable_group( [ & ]( const BaseGroup & group ) {
+   group.for_each_as< ColVariable >( [ & ]( ColVariable & sv ) {
+     LamBVcblr[ cnt++ ] = & sv; } );
+   } );
 
  std::sort( LamBVcblr.begin() , LamBVcblr.end() );
 
@@ -1441,36 +1428,19 @@ void BundleSolver::set_Block( Block * block )
  // (with LHS == 0), LB0Constraint or NNConstraint - - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // one day general linear constraints will be allowed
- //
- // note that un_any_thing_*() only serves to verify that the stuff is of the
- // right type, and therefore it has to do nothing; this is obtained by
- // passing it as, the "function" argument, a void --> void lambda doing
- // nothing immediately applied to nothing, cue the curios list of
- // parentheses "[](){}()"
 
- for( auto & el : f_Block->get_static_constraints() ) {
-  if( un_any_thing_static( BoxConstraint , el , [](){}() ) )
-   continue;
-  if( un_any_thing_static( LB0Constraint , el , [](){}() ) )
-   continue;
-  if( un_any_thing_static( NNConstraint , el , [](){}() ) )
-   continue;
-  //!! this should never have been needed in the first place
-  //!!if( un_any_const_static( el , []( BoxConstraint & b ){} ,
-  //!!                         un_any_type< BoxConstraint >() ) )
-  //!! continue;
-  throw( std::logic_error( "unsupported type of static Constraint" ) );
-  }
+ f_Block->for_each_constraint_group( []( const BaseGroup & group ) {
+   // the type of the elements is asked of the group, which answers once for
+   // all of them, and nothing has to be done with them
+   if( group.elements_are< BoxConstraint >() ||
+       group.elements_are< LB0Constraint >() ||
+       group.elements_are< NNConstraint >() )
+    return;
 
- for( auto & el : f_Block->get_dynamic_constraints() ) {
-  if( un_any_thing_dynamic( BoxConstraint , el , [](){}() ) )
-   continue;
-  if( un_any_thing_dynamic( LB0Constraint , el , [](){}() ) )
-   continue;
-  if( un_any_thing_dynamic( NNConstraint , el , [](){}() ) )
-   continue;
-  throw( std::logic_error( "unsupported type of dynamic Constraint" ) );
-  }
+   throw( std::logic_error( std::string( "unsupported type of " ) +
+			    ( group.is_dynamic() ? "dynamic" : "static" ) +
+			    " Constraint" ) );
+   } );
 
  // read information about the C05Function - - - - - - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
