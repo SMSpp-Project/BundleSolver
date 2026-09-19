@@ -215,8 +215,8 @@ BundleSolver::Index ParallelBundleSolver::InnerLoop( bool extrastep )
 
   // if an unrecoverable error happens, immediately start the ramp-down - - -
   if( ( FiStatus[ wFi ] <= kUnEval ) || ( FiStatus[ wFi ] >= kError ) ) {
-   BLOG( 3 , std::endl << "            Component " << wFi
-	     << " evaluated: Error" );
+   BLOG( 1 , std::endl << "            Component " << wFi
+	     << " evaluated: Error, status " << FiStatus[ wFi ] );
    Result = kError;
    break;
    }
@@ -371,9 +371,9 @@ BundleSolver::Index ParallelBundleSolver::InnerLoop( bool extrastep )
 
   // if an unrecoverable error happens, do nothing else - - - - - - - - - - -
   if( ( FiStatus[ wFi ] <= kUnEval ) || ( FiStatus[ wFi ] >= kError ) ) {
-   if( f_log && ( LogVerb > 3 ) )
+   if( f_log && ( LogVerb > 0 ) )
     *f_log << std::endl << "            Component " << wFi
-	   << " evaluated: Error";
+	   << " evaluated: Error, status " << FiStatus[ wFi ];
    Result = kError;
    continue;
    }
@@ -556,8 +556,8 @@ BundleSolver::Index ParallelBundleSolver::InnerLoopOrdered( bool extrastep ,
 
   // unrecoverable error: stop, the whole compute() aborts- - - - - - - - - -
   if( ( FiStatus[ wFi ] <= kUnEval ) || ( FiStatus[ wFi ] >= kError ) ) {
-   BLOG( 3 , std::endl << "            Component " << wFi
-	     << " evaluated: Error" );
+   BLOG( 1 , std::endl << "            Component " << wFi
+	     << " evaluated: Error, status " << FiStatus[ wFi ] );
    Result = kError;
    drain();
    break;
