@@ -139,6 +139,21 @@ BundleSolver::Index ParallelBundleSolver::InnerLoop( bool extrastep )
  if( ( NrFi == 1 ) || ( MaxThread == 0 ) )
   return( BundleSolver::InnerLoop( extrastep ) );
 
+ /* The threads this solver does not spend on evaluating the components at
+  * once are given to the groups, which spend them on their members: with
+  * fewer components than threads the outer loop leaves some of them idle,
+  * and a group of many members is exactly what can use them. A group is
+  * told once per inner loop, the number depending on how many components
+  * there are to evaluate together. */
+
+ if( ! v_groups.empty() ) {
+  const Index at_once = std::max( std::min( MaxThread , NrFi - NrEasy ) ,
+                                  Index( 1 ) );
+  const int each = int( MaxThread / at_once );
+  for( auto & group : v_groups )
+   group->set_members_at_once( each );
+  }
+
  // if a deterministic formulation is selected, dispatch to it - - - - - - - -
  // bit 0 of ParFrm picks fixed-order consumption; bits 1/2 select the
  // discard (faithful) and batch sub-behaviours

@@ -9025,6 +9025,11 @@ void BundleSolver::C05FunctionGroup::set_par( idx_type par , int value )
  if( par == intGPMaxSz )
   f_gp_size = value > 0 ? Index( value ) : 0;
 
+ /* intMaxThread is handed down as everything else is: the threads a member
+  * spends on itself are its own business. How many members the group
+  * evaluates at once is a different number, which only the solver driving
+  * the group knows, and it says so through set_members_at_once(). */
+
  for( auto m : v_members )
   m->set_par( par , value );
  }
@@ -9138,6 +9143,68 @@ std::vector< double > BundleSolver::C05FunctionGroup::accuracy_shares( void )
 
 /*--------------------------------------------------------------------------*/
 
+int BundleSolver::C05FunctionGroup::compute_parallel( bool changedvars ,
+                                       const std::vector< double > & shares )
+{
+ /* The members are evaluated as many at a time as the threads the group has
+  * been allowed. The time cannot be handed down one member at a time here,
+  * they being computed together: each of them is given all of what the group
+  * has left, which is the only thing the group has to respect anyway, and
+  * the ones that run together share it rather than adding up to it. */
+
+ const Index k = v_members.size();
+ const Index at_once = std::min( Index( f_max_thread ) , k );
+
+ int status = kOK;
+ auto start = std::chrono::system_clock::now();
+
+ for( Index from = 0 ; from < k ; from += at_once ) {
+  const Index to = std::min( from + at_once , k );
+
+  if( f_max_time < Inf< double >() ) {
+   const auto now = std::chrono::system_clock::now();
+   const auto left = f_max_time -
+                     std::chrono::duration< double >( now - start ).count();
+   if( left <= 0 )     // the time is up: what is left is not computed
+    return( kStopTime );
+   for( Index h = from ; h < to ; ++h )
+    v_members[ h ]->set_par( dblMaxTime , left );
+   }
+
+  std::vector< std::future< int > > running;
+  running.reserve( to - from );
+  for( Index h = from ; h < to ; ++h ) {
+   for( const auto & [ par , value ] : f_abs_par )
+    v_members[ h ]->set_par( par , value * shares[ h ] );
+   v_members[ h ]->set_par( intMaxThread , 1 );
+   ++f_member_evals;
+   running.push_back( v_members[ h ]->compute_async( changedvars ) );
+   }
+
+  // whatever happens, every member that has been started is waited for:
+  // returning while one of them is still writing its own Block would leave
+  // the group reading a value that is being changed under it
+  int bad = kOK;
+  for( Index h = from ; h < to ; ++h ) {
+   const int s = running[ h - from ].get();
+   if( ( s <= kUnEval ) || ( ( s >= kError ) && ( s != kLowPrecision ) ) )
+    bad = s;
+   else if( s == kLowPrecision )
+    status = kLowPrecision;
+   else if( ( status == kOK ) && ( s != kOK ) )
+    status = s;
+   v_last[ h ] = v_members[ h ]->get_value();
+   }
+
+  if( bad != kOK )   // an error ends it all, but only once everybody is in
+   return( bad );
+  }
+
+ return( status );
+ }
+
+/*--------------------------------------------------------------------------*/
+
 int BundleSolver::C05FunctionGroup::compute( bool changedvars )
 {
  const bool timed = ( f_max_time < Inf< double >() );
@@ -9146,6 +9213,9 @@ int BundleSolver::C05FunctionGroup::compute( bool changedvars )
 
  // the share of the absolute accuracies each member is given
  const auto shares = accuracy_shares();
+
+ if( f_max_thread > 1 )   // the members are evaluated together
+  return( compute_parallel( changedvars , shares ) );
 
  int status = kOK;
  for( Index h = 0 ; h < v_members.size() ; ++h ) {

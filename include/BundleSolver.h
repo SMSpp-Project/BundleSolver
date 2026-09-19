@@ -137,6 +137,7 @@
 #include <chrono>
 #include <queue>
 #include <memory>
+#include <future>
 #include <random>
 #include <set>
 #include <unordered_map>
@@ -2605,6 +2606,18 @@ public:
  /*--------------------------------------------------------------------------*/
 
   /// the members of the group
+  /// how many members the group evaluates at once
+  /** Sets how many of its members the group is allowed to evaluate at the
+   * same time, which is one unless somebody says otherwise. The number is
+   * not read from intMaxThread because the threads are either spent by the
+   * group on its members or by each member on itself: the solver that drives
+   * the group is the only one that knows how many of them are not already
+   * spent on evaluating the groups themselves. */
+
+  void set_members_at_once( int n ) {
+   f_max_thread = n > 1 ? n : 1;
+   }
+
   const std::vector< C05Function * > & get_members( void ) const {
    return( v_members );
    }
@@ -2813,6 +2826,11 @@ public:
   /// current one of the group [see compute_new_linearization()]
   bool random_combination( void );
 
+  /// evaluates the members together, as many at a time as the threads the
+  /// group is allowed [see compute()]
+  int compute_parallel( bool changedvars ,
+                        const std::vector< double > & shares );
+
   /// the name member h contributes to the linearization name of the group
   [[nodiscard]] Index name_of( Index h , Index name ) const {
    return( ( name == Inf< Index >() ) && ( ! v_pick.empty() ) ? v_pick[ h ]
@@ -2842,6 +2860,11 @@ public:
   std::map< idx_type , FunctionValue > f_abs_par;
   ///< the absolute accuracies asked of the group, which it shares out among
   ///< the members at each compute() [see set_par( idx_type , double )]
+
+  int f_max_thread = 1;
+  ///< how many members the group evaluates at once: one, i.e. one at a time,
+  ///< unless whoever drives the group says otherwise
+  ///< [see set_members_at_once()]
 
   Index f_gp_size = 0;
   ///< how many names the global pool of each member holds [intGPMaxSz]
