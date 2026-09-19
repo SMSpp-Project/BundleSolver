@@ -2717,10 +2717,7 @@ public:
 
   bool has_linearization( bool diagonal = true ) override;
 
-  /// no further linearization is produced beyond the first one
-  bool compute_new_linearization( bool diagonal = true ) override {
-   return( false );
-   }
+  bool compute_new_linearization( bool diagonal = true ) override;
 
   void store_linearization( Index name , ModParam issueMod = eModBlck )
    override;
@@ -2833,6 +2830,14 @@ public:
   std::map< idx_type , FunctionValue > f_abs_par;
   ///< the absolute accuracies asked of the group, which it shares out among
   ///< the members at each compute() [see set_par( idx_type , double )]
+
+  Index f_solo = Inf< Index >();
+  ///< when < Inf, the current linearization is the vertical one of this
+  ///< member alone, the group handing the vertical ones out one at a time
+  ///< after the first request [see compute_new_linearization()]
+
+  std::vector< char > v_vert;
+  ///< which members still have a vertical linearization to hand out
 
   std::vector< FunctionValue > v_last;
   ///< v_last[ h ] = what member h was worth at its last evaluation, which is

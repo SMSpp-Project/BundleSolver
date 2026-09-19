@@ -9239,8 +9239,66 @@ Function::FunctionValue BundleSolver::C05FunctionGroup::get_Lipschitz_constant( 
 /*---------------------- METHODS FOR LINEARIZATIONS ------------------------*/
 /*--------------------------------------------------------------------------*/
 
+bool BundleSolver::C05FunctionGroup::compute_new_linearization( bool diagonal )
+{
+ if( diagonal ) {
+  /* A new linearization of the group is a new combination of those of its
+   * members, and the first new combination to look for is the one the
+   * members themselves can produce: each of them is asked for one more, and
+   * those that have one move to it while the others stay where they are, so
+   * that the sum is a linearization the group has not reported yet. A member
+   * sitting at its bound has nothing else to give, the flat subgradient
+   * being the only one it has there. */
+
+  bool any = false;
+  for( Index h = 0 ; h < v_members.size() ; ++h )
+   if( ( v_part[ h ] == 1 ) &&
+       v_members[ h ]->compute_new_linearization( true ) )
+    any = true;
+
+  return( any );
+  }
+
+ /* The vertical ones are a different matter: their sum is a valid inequality
+  * of the domain, but a weaker one than any of its terms, so it is worth
+  * reporting only when a single linearization is asked for. Each further
+  * request is therefore answered with the vertical linearization of one
+  * member alone, the members being walked in order; when they have all been
+  * handed out, they are asked for a new one each and the walk starts again
+  * over those that have one. */
+
+ if( v_vert.size() != v_members.size() )  // no vertical round is on
+  return( false );
+
+ for( ; ; ) {
+  const Index from = ( f_solo == Inf< Index >() ? 0 : f_solo + 1 );
+  for( Index h = from ; h < v_members.size() ; ++h )
+   if( v_vert[ h ] ) {
+    f_solo = h;
+    v_part.assign( v_members.size() , 0 );
+    v_part[ h ] = 1;
+    return( true );
+    }
+
+  // they have all been handed out: ask each of them for one more
+  bool any = false;
+  for( Index h = 0 ; h < v_members.size() ; ++h )
+   if( ( v_vert[ h ] = v_members[ h ]->compute_new_linearization( false ) ) )
+    any = true;
+
+  if( ! any )
+   return( false );
+
+  f_solo = Inf< Index >();
+  }
+ }
+
+/*--------------------------------------------------------------------------*/
+
 bool BundleSolver::C05FunctionGroup::has_linearization( bool diagonal )
 {
+ f_solo = Inf< Index >();  // whatever is asked for, the round starts again
+
  if( diagonal ) {
   // every member gives one, or is horizontal at its finite bound
   bool own = false;
@@ -9259,11 +9317,24 @@ bool BundleSolver::C05FunctionGroup::has_linearization( bool diagonal )
   return( own );  // with every member at its bound, the bound says it all
   }
 
- // the members that give a vertical one make it, the others take no part
+ // the members that give a vertical one make it, the others take no part;
+ // when only one of them does, the sum is that member's own linearization,
+ // so the round of the single ones starts after it rather than handing the
+ // same row back a second time [see compute_new_linearization]
  bool any = false;
+ f_solo = Inf< Index >();
+ Index only = Inf< Index >();
+ Index howmany = 0;
+ v_vert.assign( v_members.size() , 0 );
  for( Index h = 0 ; h < v_members.size() ; ++h )
-  if( ( v_part[ h ] = v_members[ h ]->has_linearization( false ) ) )
+  if( ( v_vert[ h ] = v_part[ h ] = v_members[ h ]->has_linearization( false ) ) ) {
    any = true;
+   only = h;
+   ++howmany;
+   }
+
+ if( howmany == 1 )    // the sum is the linearization of that member alone
+  f_solo = only;       // which is therefore already given
 
  return( any );
  }
