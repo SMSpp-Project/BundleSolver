@@ -8982,6 +8982,11 @@ BundleSolver::C05FunctionGroup::C05FunctionGroup( std::vector< C05Function * > &
  for( Index i = 0 ; i < v_vars.size() ; ++i )
   f_var2idx.emplace( v_vars[ i ] , i );
 
+ // the vectors of entries are drawn from a generator of the group's own, so
+ // that a run is repeatable: the seed is the size of the group, which is
+ // what tells one group of a run from another
+ f_rnd.seed( std::mt19937::result_type( v_members.size() ) );
+
  f_convex = v_members.front()->is_convex();
  f_concave = v_members.front()->is_concave();
 
@@ -9015,6 +9020,11 @@ BundleSolver::C05FunctionGroup::C05FunctionGroup( std::vector< C05Function * > &
 
 void BundleSolver::C05FunctionGroup::set_par( idx_type par , int value )
 {
+ // the size of the global pool is the range of names the members are asked
+ // about when a combination of what they hold is looked for
+ if( par == intGPMaxSz )
+  f_gp_size = value > 0 ? Index( value ) : 0;
+
  for( auto m : v_members )
   m->set_par( par , value );
  }
@@ -9239,6 +9249,66 @@ Function::FunctionValue BundleSolver::C05FunctionGroup::get_Lipschitz_constant( 
 /*---------------------- METHODS FOR LINEARIZATIONS ------------------------*/
 /*--------------------------------------------------------------------------*/
 
+bool BundleSolver::C05FunctionGroup::random_combination( void )
+{
+ /* When the members have nothing new to give, what they have given before is
+  * still there: each of them holds in its global pool the linearizations of
+  * the entries the group has stored, and a vector that takes one of them from
+  * each member is again a linearization of the group, a sum of lower models
+  * of the members being a lower model of their sum. The vectors are drawn at
+  * random, without giving the same one twice since the last evaluation, and
+  * the vertical entries are left out of the draw, a constraint of the domain
+  * not being a model of the function. */
+
+ const auto k = v_members.size();
+ if( ! k )
+  return( false );
+
+ // the size of the pool is asked of the members when it has not been set
+ // through the group, which happens when they had a large enough one of
+ // their own and nobody had to change it
+ if( ! f_gp_size ) {
+  const auto gps = get_int_par( intGPMaxSz );
+  if( gps <= 0 )
+   return( false );
+  f_gp_size = Index( gps );
+  }
+
+ std::vector< std::vector< Index > > held( k );
+ Index most = 0;
+ for( Index h = 0 ; h < k ; ++h ) {
+  const auto m = v_members[ h ];
+  for( Index n = 0 ; n < f_gp_size ; ++n )
+   if( m->is_linearization_there( n ) && ( ! m->is_linearization_vertical( n ) ) )
+    held[ h ].push_back( n );
+
+  if( held[ h ].empty() )   // a member with nothing to contribute leaves the
+   return( false );         // group without a combination to make
+  most = std::max( most , Index( held[ h ].size() ) );
+  }
+
+ if( most < 2 )   // there is one vector only, and it has been given already
+  return( false );
+
+ for( Index trial = 0 ; trial < 10 ; ++trial ) {
+  std::vector< Index > pick( k );
+  for( Index h = 0 ; h < k ; ++h )
+   pick[ h ] = held[ h ][ f_rnd() % held[ h ].size() ];
+
+  if( f_given.count( pick ) )   // this one has been given already
+   continue;
+
+  f_given.insert( pick );
+  v_pick = std::move( pick );
+  v_part.assign( k , 1 );
+  return( true );
+  }
+
+ return( false );   // ten draws and nothing new: enough for this evaluation
+ }
+
+/*--------------------------------------------------------------------------*/
+
 bool BundleSolver::C05FunctionGroup::compute_new_linearization( bool diagonal )
 {
  if( diagonal ) {
@@ -9256,7 +9326,13 @@ bool BundleSolver::C05FunctionGroup::compute_new_linearization( bool diagonal )
        v_members[ h ]->compute_new_linearization( true ) )
     any = true;
 
-  return( any );
+  if( any )
+   return( true );
+
+  // the members have nothing new: what they have given before is still in
+  // their global pool, and a vector taking one entry from each of them is a
+  // linearization of the group that has not been reported yet
+  return( random_combination() );
   }
 
  /* The vertical ones are a different matter: their sum is a valid inequality
@@ -9298,6 +9374,8 @@ bool BundleSolver::C05FunctionGroup::compute_new_linearization( bool diagonal )
 bool BundleSolver::C05FunctionGroup::has_linearization( bool diagonal )
 {
  f_solo = Inf< Index >();  // whatever is asked for, the round starts again
+ v_pick.clear();           // and so does the drawing of the vectors
+ f_given.clear();
 
  if( diagonal ) {
   // every member gives one, or is horizontal at its finite bound
@@ -9389,7 +9467,17 @@ void BundleSolver::C05FunctionGroup::store_linearization( Index name , ModParam 
  for( Index h = 0 ; h < v_members.size() ; ++h )
   switch( v_part[ h ] ) {
    case( 1 ):
-    v_members[ h ]->store_linearization( name , issueMod );
+    // when the current linearization is a vector over what the members hold,
+    // each of them copies the entry it contributes into the new name rather
+    // than storing the one it has just computed [see random_combination]
+    if( v_pick.empty() )
+     v_members[ h ]->store_linearization( name , issueMod );
+    else if( v_pick[ h ] != name ) {
+     LinearCombination one( { std::pair( v_pick[ h ] ,
+                                         FunctionValue( 1 ) ) } );
+     v_members[ h ]->store_combination_of_linearizations( one , name ,
+                                                          issueMod );
+     }
     v_flat[ h ].erase( name );
     break;
    case( 2 ): set_flat( h , name , issueMod ); break;
@@ -9531,7 +9619,7 @@ void BundleSolver::C05FunctionGroup::full_coefficients( Index name )
   f_gh.resize( map.size() );
   v_members[ h ]->get_linearization_coefficients( f_gh.data() ,
                                                   Range( 0 , map.size() ) ,
-                                                  name );
+                                                  name_of( h , name ) );
   for( Index i = 0 ; i < map.size() ; ++i )
    f_g[ map[ i ] ] += f_gh[ i ];
   }
@@ -9574,7 +9662,7 @@ Function::FunctionValue BundleSolver::C05FunctionGroup::get_linearization_consta
  group_sum a;
  for( Index h = 0 ; h < v_members.size() ; ++h ) {
   if( takes_part( h , name ) )
-   a += v_members[ h ]->get_linearization_constant( name );
+   a += v_members[ h ]->get_linearization_constant( name_of( h , name ) );
   if( name == Inf< Index >() ) {
    if( v_part[ h ] == 2 )
     a += bound_of( h );

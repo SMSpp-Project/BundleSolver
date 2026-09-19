@@ -137,6 +137,8 @@
 #include <chrono>
 #include <queue>
 #include <memory>
+#include <random>
+#include <set>
 #include <unordered_map>
 
 #include "CDASolver.h"
@@ -2807,6 +2809,16 @@ public:
   /// how the absolute accuracies are shared out among the members
   std::vector< double > accuracy_shares( void ) const;
 
+  /// takes one linearization of each member at random and makes it the
+  /// current one of the group [see compute_new_linearization()]
+  bool random_combination( void );
+
+  /// the name member h contributes to the linearization name of the group
+  [[nodiscard]] Index name_of( Index h , Index name ) const {
+   return( ( name == Inf< Index >() ) && ( ! v_pick.empty() ) ? v_pick[ h ]
+                                                              : name );
+   }
+
   std::vector< C05Function * > v_members;  ///< the members
 
   std::vector< ColVariable * > v_vars;     ///< the "active" Variable
@@ -2830,6 +2842,21 @@ public:
   std::map< idx_type , FunctionValue > f_abs_par;
   ///< the absolute accuracies asked of the group, which it shares out among
   ///< the members at each compute() [see set_par( idx_type , double )]
+
+  Index f_gp_size = 0;
+  ///< how many names the global pool of each member holds [intGPMaxSz]
+
+  std::vector< Index > v_pick;
+  ///< when not empty, the current linearization of the group is the vector
+  ///< that takes the linearization v_pick[ h ] of each member h, rather than
+  ///< the one each of them holds as its own current
+
+  std::set< std::vector< Index > > f_given;
+  ///< the vectors already handed out since the last evaluation, so that the
+  ///< same combination is not reported twice
+
+  std::mt19937 f_rnd;
+  ///< the generator of the vectors, seeded as the grouping is
 
   Index f_solo = Inf< Index >();
   ///< when < Inf, the current linearization is the vertical one of this
