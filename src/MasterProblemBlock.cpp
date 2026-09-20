@@ -164,15 +164,23 @@ void MasterProblemBlock::clear()
  // (Var_lambda, Var_r, Var_omega, NormalizationCns, LevelCns) keep
  // their default state and are released by their own destructors when
  // *this is destroyed
+ // the rows go before the columns they are written on: destroying a
+ // Constraint hands its Function back, and the Function tells each Variable
+ // it is active in that it is not any more, which the Variable has to be
+ // there to hear. The two rows that are members of *this outlive clear(),
+ // so they are the ones that have to give their Function up by hand
+ CouplingCns.clear();
+ Bounds_v_hard.clear();
+ NormalizationCns.set_function( nullptr , eNoMod );
+ LevelCns.set_function( nullptr , eNoMod );
+
  Var_d.clear();
  Var_v_hard.clear();
- Bounds_v_hard.clear();
  Var_z.clear();
  Var_lambda.set_value( 0.0 );
  Var_lambda.is_fixed( false , eNoMod );
  Var_s_plus.clear();
  Var_s_minus.clear();
- CouplingCns.clear();
  slot_to_local.clear();
 
  }  // end( MasterProblemBlock::clear )
