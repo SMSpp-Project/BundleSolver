@@ -5631,6 +5631,17 @@ void BundleSolver::InitMPB( void )
      env && env[ 0 ] )
   MasterPB->set_xref_tol( std::atof( env ) );
 
+ /* configure() has just built the structure of the master anew, and with it
+  * the abstract representation that went with the previous one is gone. A
+  * :MILPSolver that is registered on the master reads it through that
+  * representation, and asks for it when it is registered: a master that is
+  * being recycled keeps the Solver it already has, so nobody would ask
+  * again, and the master would be solved with no Variable in it. The three
+  * calls are idempotent, each returning at once when its part is there. */
+ MasterPB->generate_abstract_variables();
+ MasterPB->generate_abstract_constraints();
+ MasterPB->generate_objective();
+
  tHasChgd = true;
 
  }  // end( BundleSolver::InitMPB )
