@@ -242,8 +242,9 @@ BundleSolver::Index ParallelBundleSolver::InnerLoop( bool extrastep )
   if( ( FiStatus[ wFi ] <= kUnEval ) ||
       ( ( FiStatus[ wFi ] >= kError ) &&
 	( FiStatus[ wFi ] != kLowPrecision ) ) ) {
-   BLOG( 1 , std::endl << "            Component " << wFi
-	     << " evaluated: Error, status " << FiStatus[ wFi ] );
+   if( f_log && ( LogVerb > 0 ) )
+    *f_log << std::endl << "            Component " << wFi
+	   << " evaluated: Error, status " << FiStatus[ wFi ];
    Result = kError;
    break;
    }
@@ -564,8 +565,9 @@ BundleSolver::Index ParallelBundleSolver::InnerLoopOrdered( bool extrastep ,
   if( ( FiStatus[ wFi ] <= kUnEval ) ||
       ( ( FiStatus[ wFi ] >= kError ) &&
 	( FiStatus[ wFi ] != kLowPrecision ) ) ) {
-   BLOG( 1 , std::endl << "            Component " << wFi
-	     << " evaluated: Error, status " << FiStatus[ wFi ] );
+   if( f_log && ( LogVerb > 0 ) )
+    *f_log << std::endl << "            Component " << wFi
+	   << " evaluated: Error, status " << FiStatus[ wFi ];
    Result = kError;
    drain();
    break;
