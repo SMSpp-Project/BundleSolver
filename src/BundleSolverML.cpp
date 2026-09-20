@@ -324,7 +324,7 @@ G1Norm = std::sqrt( n2 );
  std::vector< Index > G_names;
  std::vector< std::vector< VarValue > > G_mat;
  for( Index i = 0 ; i < ItemVcblr.size() ; ++i )
-  if( ItemVcblr[ i ].second < vBPar2[ ItemVcblr[ i ].first ] ) {
+  if( is_bundle_item( i ) ) {
    std::vector< VarValue > G( NumVar );
    v_c05f[ ItemVcblr[ i ].first ]->get_linearization_coefficients(
 		    G.data() , Range( 0 , NumVar ) , ItemVcblr[ i ].second );

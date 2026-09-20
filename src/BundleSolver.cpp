@@ -4987,7 +4987,7 @@ void BundleSolver::ResetAlfa( Index k )
  std::vector< VarValue > Alfa( Index( vBPar2.back() ) );
  if( k == NrFi ) {  // all components need be reset
   for( Index i = 0 ; i < get_max_name() ; ++i )
-   if( ItemVcblr[ i ].second < vBPar2[ ItemVcblr[ i ].first ] ) {
+   if( is_bundle_item( i ) ) {
     auto kk = ItemVcblr[ i ].first;
     auto nm = ItemVcblr[ i ].second;
     auto Ai = rs( v_c05f[ kk ]->get_linearization_constant( nm ) );
@@ -8582,7 +8582,7 @@ void BundleSolver::CheckBundle( void )
  // check ItemVcblr against InvItemVcblr and Master
  Subset tmp( NrFi , 0 );
  for( Index i = 0 ; i < get_max_name() ; ++i )
-  if( ItemVcblr[ i ].second < vBPar2[ ItemVcblr[ i ].first ] ) {
+  if( is_bundle_item( i ) ) {
    ++tmp[ ItemVcblr[ i ].first ];
    if( wcomponent_global( i ) != ItemVcblr[ i ].first + 1 ) {
     *wlog << "position " << i << " in the bundle should be of component "
@@ -8661,11 +8661,11 @@ void BundleSolver::CheckBundle( void )
   std::sort( tmp.begin() , tmp.end() );
 
   for( auto i : tmp )
-   if( ItemVcblr[ i ].second < vBPar2[ ItemVcblr[ i ].first ] )
+   if( is_bundle_item( i ) )
     *wlog << "item " << i << " in FreList is not free" << std::endl;
 
   for( Index i = 0 ; i < get_max_name() ; ++i )
-   if( ItemVcblr[ i ].second >= vBPar2[ ItemVcblr[ i ].first ] ) {
+   if( ! is_bundle_item( i ) ) {
     auto it = std::lower_bound( tmp.begin() , tmp.end() , i );
     if( ( it == tmp.end() ) || ( *it != i ) )
      *wlog << "free item " << i << " not in FreList" << std::endl;
@@ -8684,7 +8684,7 @@ void BundleSolver::CheckAlpha( void )
  const double eps = 1e-8;
 
  for( Index i = 0 ; i < get_max_name() ; ++i )
-  if( ItemVcblr[ i ].second < vBPar2[ ItemVcblr[ i ].first ] ) {
+  if( is_bundle_item( i ) ) {
    v_c05f[ ItemVcblr[ i ].first ]->get_linearization_coefficients( G.data() ,
                                                         Range( 0 , NumVar ) ,
                                                      ItemVcblr[ i ].second );
@@ -8765,8 +8765,7 @@ void BundleSolver::PrintBundle( void )
  *wlog << std::endl;
  for( Index i = 0 ; i < get_max_name() ; ++i ) {
   *wlog << i << "\t";
-  if( ItemVcblr[ i ].second >= vBPar2[ ItemVcblr[ i ].first ]
-          || ItemVcblr[ i ].second < 0 ) {
+  if( ! is_bundle_item( i ) ) {
    *wlog << "[empty]" << std::endl;
    continue;
    }

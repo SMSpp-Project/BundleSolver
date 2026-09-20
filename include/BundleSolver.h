@@ -2955,12 +2955,24 @@ public:
  /** Used as the loop upper bound (i.e.
   * `for( i = 0 ; i < get_max_name() ; ++i ) ...`); returns the highest
   * occupied global slot index plus one, always <= ItemVcblr.size() ==
-  * vBPar2.back(). The loop body still has to filter
-  * `ItemVcblr[ i ].second < vBPar2[ ItemVcblr[ i ].first ]` to skip
-  * empty entries. */
+  * vBPar2.back(). The loop body still has to filter the empty entries out
+  * with is_bundle_item(). */
 
  Index get_max_name( void ) const {
   return( f_max_name );
+  }
+
+/*--------------------------------------------------------------------------*/
+ /// true if an item of the bundle occupies the global name \p name
+ /** An entry of ItemVcblr that no item occupies is { InINF , InINF }, so the
+  * component has to be looked at before it is used to index vBPar2: reading
+  * vBPar2[ InINF ] is out of bounds, and it answers whatever happens to be
+  * at that address. */
+
+ bool is_bundle_item( Index name ) const {
+  const auto & loc = ItemVcblr[ name ];
+  return( ( loc.first < vBPar2.size() ) &&
+	  ( loc.second < vBPar2[ loc.first ] ) );
   }
 
 /*--------------------------------------------------------------------------*/
