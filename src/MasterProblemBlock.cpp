@@ -183,6 +183,17 @@ void MasterProblemBlock::clear()
  Var_s_minus.clear();
  slot_to_local.clear();
 
+ /* The containers are empty now, but the Block still has a group registered
+  * for each of them, and those groups view storage that is not there any
+  * more. They go too: generate_abstract_variables() and its two fellows
+  * register them anew when the master is built again. Without this the
+  * groups pile up, one set per rebuild, and what the inner Solver is handed
+  * grows a copy of itself every time. */
+ reset_static_constraints();
+ reset_static_variables();
+ reset_dynamic_constraints();
+ reset_dynamic_variables();
+
  }  // end( MasterProblemBlock::clear )
 
 /*--------------------------------------------------------------------------*/
