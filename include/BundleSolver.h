@@ -837,11 +837,12 @@ public:
   *   following values:
   *
   *    bit 4: 1 (+16) if the "endgame" t-strategy is used, where if 
-  *           D*_1( -z* ) is "small" (~ 1/10 of the current absolute epsilon)
-  *           t is decreased no matter what the other strategies dictated.
+  *           D*_t*( -z* ) = ( | t* | / 2 ) || z* ||^2 is "small" (~ 1/10 of
+  *           the current absolute epsilon) t is decreased no matter what the
+  *           other strategies dictated.
   *           The rationale is that we are "towards the end" of the
   *           optimization and here t needs decrease. However, note that
-  *           having D*_1( -z* ) "small" is no guarantee that we actually
+  *           having D*_t*( -z* ) "small" is no guarantee that we actually
   *           are at the end, especially if the oracle dynamically
   *           generates its variables, so use with caution
   *
