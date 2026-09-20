@@ -1,4 +1,4 @@
-/*--------------------------------------------------------------------------*/
+﻿/*--------------------------------------------------------------------------*/
 /*--------------------- File BundleSolverML.h ------------------------------*/
 /*--------------------------------------------------------------------------*/
 /** @file
@@ -358,6 +358,7 @@ class BundleSolverML : public BundleSolver
   w_vecs.clear();
   coeff_vecs.clear();
   Gs.clear();
+  Es.clear();
   Gs_aggreg.clear();
   Qs.clear();
   alphaS.clear();
@@ -629,7 +630,10 @@ class BundleSolverML : public BundleSolver
  std::vector< torch::Tensor > phi_vecs;    ///< feature tensors (net inputs)
  std::vector< torch::Tensor > w_vecs;      ///< search direction tensors w
  std::vector< torch::Tensor > coeff_vecs;  ///< step-type signs: +1 SS, -1 NS
- std::vector< torch::Tensor > Gs;          ///< subgradient matrices G
+ std::vector< torch::Tensor > Gs;
+ std::vector< torch::Tensor > Es;          ///< convexity-constraint
+                                           ///< indicators, one row per
+                                           ///< component          ///< subgradient matrices G
  std::vector< torch::Tensor > Gs_aggreg;   ///< aggregated subgradient vectors
  std::vector< torch::Tensor > Qs;          ///< Gram matrices Q = G G^T
  std::vector< torch::Tensor > alphaS;      ///< linearization error vectors

@@ -129,9 +129,9 @@ struct BundleSolverML_W
  static torch::Tensor forward( torch::autograd::AutogradContext * ctx ,
 			       torch::Tensor w , torch::Tensor G ,
 			       torch::Tensor Q , torch::Tensor alpha ,
-			       double ts ) {
+			       torch::Tensor E , double ts ) {
   torch::Tensor ts_tensor = torch::tensor( ts , Q.options() );
-  ctx->save_for_backward( { G , Q , alpha , ts_tensor } );
+  ctx->save_for_backward( { G , Q , alpha , E , ts_tensor } );
   return( w.sum() );
   }
 
@@ -142,7 +142,8 @@ struct BundleSolverML_W
   torch::Tensor G = saved[ 0 ];
   torch::Tensor Q = saved[ 1 ];
   torch::Tensor alpha = saved[ 2 ];
-  torch::Tensor ts = saved[ 3 ];
+  torch::Tensor E = saved[ 3 ];
+  torch::Tensor ts = saved[ 4 ];
   torch::Tensor grad_out = grad_outputs[ 0 ];
 
   // regularize Q and compute its inverse via Cholesky factorization
@@ -152,12 +153,15 @@ struct BundleSolverML_W
   auto Qinv = torch::cholesky_inverse( L );
 
   // KKT projection: lambda* = ( e^T Q^{-1} alpha ) / ( e^T Q^{-1} e )
-  auto e = torch::ones( { Q.size( 0 ) } , Q.options() );
   auto Qinvalpha = torch::matmul( Qinv , alpha );
-  auto Qinv_e = torch::matmul( Qinv , e );
-  auto num = torch::dot( e , Qinvalpha );
-  auto den = torch::dot( e , Qinv_e );
-  auto proj = ( num / den ) * e - alpha;
+  auto QinvEt = torch::matmul( Qinv , E.t() );
+  auto M = torch::matmul( E , QinvEt );
+  auto Ik = torch::eye( M.size( 0 ) , M.options() );
+  auto Mreg = M + 1e-8 * Ik;
+  auto ek = torch::ones( { M.size( 0 ) } , Q.options() );
+  auto rhs = ek + torch::matmul( E , Qinvalpha );
+  auto lambda = torch::linalg_solve( Mreg , rhs );
+  auto proj = torch::matmul( E.t() , lambda ) - alpha;
 
   // dw / dt = ( 1 / t^2 ) G^T Q^{-1} proj
   double ts_val = ts.item< double >();
@@ -166,7 +170,7 @@ struct BundleSolverML_W
   result = ( 1.0 / ( ts_val * ts_val ) ) * result * grad_out;
 
   return { result , torch::Tensor() , torch::Tensor() , torch::Tensor() ,
-	   torch::Tensor() };
+	   torch::Tensor() , torch::Tensor() };
   }
  };
 
@@ -319,11 +323,21 @@ G1Norm = std::sqrt( n2 );
  auto tZ = MasterPB->get_z_vector();
  w_vecs.push_back( torch::tensor( tZ ).requires_grad_( true ) );
 
+ // how many items the bundle holds now, which is how many rows G has
+ int col_num = 0;
+ for( Index i = 0 ; i < get_max_name() ; ++i )
+  if( is_bundle_item( i ) )
+   col_num++;
+
  // subgradient matrix G, one row for each item in the bundle; the global
  // name of each of them is kept to read its linearization error below
  std::vector< Index > G_names;
  std::vector< std::vector< VarValue > > G_mat;
- for( Index i = 0 ; i < ItemVcblr.size() ; ++i )
+ std::vector< Index > comp_of_row;
+ comp_of_row.reserve( col_num );
+
+ G_mat.reserve( col_num );
+ for( Index i = 0 ; i < get_max_name() ; ++i )
   if( is_bundle_item( i ) ) {
    std::vector< VarValue > G( NumVar );
    v_c05f[ ItemVcblr[ i ].first ]->get_linearization_coefficients(
@@ -332,6 +346,7 @@ G1Norm = std::sqrt( n2 );
     chgsign( G.data() , NumVar );
    G_mat.push_back( std::move( G ) );
    G_names.push_back( i );
+   comp_of_row.push_back( ItemVcblr[ i ].first );
    }
 
  if( G_mat.empty() ) {
@@ -351,6 +366,24 @@ G1Norm = std::sqrt( n2 );
 
  torch::Tensor G_tensor = torch::from_blob( flat.data() , { rows , cols } ,
 					    torch::kDouble ).clone();
+ /* Indicator matrix E of the convexity constraints: one row per component
+  * that the bundle has an item of, compressed over the components actually
+  * present, which is what the projection in the backward pass solves with
+  * [see BundleSolverML_W::backward()]. */
+ std::map< Index , long > comp2row;
+ for( auto c : comp_of_row )
+  if( ! comp2row.count( c ) ) {
+   long next = long( comp2row.size() );
+   comp2row[ c ] = next;
+   }
+
+ auto E_tensor = torch::zeros( { long( comp2row.size() ) , long( rows ) } ,
+			       torch::kDouble );
+ for( size_t r = 0 ; r < comp_of_row.size() ; ++r )
+  E_tensor[ comp2row[ comp_of_row[ r ] ] ][ long( r ) ] = 1.0;
+
+ Es.push_back( E_tensor );
+
  Gs.push_back( G_tensor );
 
  // aggregated subgradient (whisG1 indices)
@@ -396,7 +429,7 @@ G1Norm = std::sqrt( n2 );
 torch::Tensor BundleSolverML::w( size_t f , double t )
 {
  return( BundleSolverML_W::apply( w_vecs[ f ] , Gs[ f ] , Qs[ f ] ,
-				  alphaS[ f ] , t ) );
+				  alphaS[ f ] , Es[ f ] , t ) );
  }
 
 /*--------------------------------------------------------------------------*/
@@ -497,7 +530,7 @@ void BundleSolverML::Backward( void )
      }
 
     auto w_curr = BundleSolverML_W::apply( w_vecs[ f ] , Gs[ f ] , Qs[ f ] ,
-					   alphaS[ f ] ,
+					   alphaS[ f ] , Es[ f ] ,
 					   nn_out.item< double >() );
 
     double discount = std::pow( 0.9 ,
