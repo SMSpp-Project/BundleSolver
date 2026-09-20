@@ -2795,6 +2795,19 @@ class FakeFiOracle : public FiOracle
  virtual bool NeedsG1( void );
 
 /*--------------------------------------------------------------------------*/
+ /// true if an item of the bundle occupies the position \p name
+ /** A position of ItemVcblr that no item occupies holds { INF , INF }, so
+  * the component has to be looked at before it is used to index vBPar2:
+  * reading vBPar2[ INF ] is out of bounds, and it answers whatever happens
+  * to be at that address. */
+
+ bool is_bundle_item( Index name ) const {
+  const auto & loc = ItemVcblr[ name ];
+  return( ( loc.first < vBPar2.size() ) &&
+	  ( loc.second < vBPar2[ loc.first ] ) );
+  }
+
+/*--------------------------------------------------------------------------*/
 /*---------------------------- PROTECTED FIELDS  ---------------------------*/
 /*--------------------------------------------------------------------------*/
 

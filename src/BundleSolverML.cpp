@@ -333,7 +333,7 @@ G1Norm = std::sqrt( n2 );
  // subgradient matrix G
  int col_num = 0;
  for( Index i = 0 ; i < Master->MaxName() ; ++i )
-  if( ItemVcblr[ i ].second < vBPar2[ ItemVcblr[ i ].first ] )
+  if( is_bundle_item( i ) )
    col_num++;
 
  std::vector< std::vector< VarValue > > G_mat;
@@ -342,7 +342,7 @@ G1Norm = std::sqrt( n2 );
 
  G_mat.reserve( col_num );
  for( Index i = 0 ; i < Master->MaxName() ; ++i )
-  if( ItemVcblr[ i ].second < vBPar2[ ItemVcblr[ i ].first ] ) {
+  if( is_bundle_item( i ) ) {
    std::vector< VarValue > G( NumVar );
    v_c05f[ ItemVcblr[ i ].first ]->get_linearization_coefficients(
 		    G.data() , Range( 0 , NumVar ) , ItemVcblr[ i ].second );
