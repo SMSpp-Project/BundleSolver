@@ -1257,17 +1257,17 @@ void BundleSolver::set_Block( Block * block )
     throw( std::logic_error( "nephew are not allowed" ) );
 
    // Variable not allowed - - - - - - - - - - - - - - - - - - - - - - - - - -
-   if( sb[ i ]->get_static_variables().size() )
+   if( sb[ i ]->get_static_variable_groups().size() )
     throw( std::logic_error( "static Variable are not allowed" ) );
 
-   if( sb[ i ]->get_dynamic_variables().size() )
+   if( sb[ i ]->get_dynamic_variable_groups().size() )
     throw( std::logic_error( "dynamic Variable are not allowed" ) );
 
    // neither are Constraint - - - - - - - - - - - - - - - - - - - - - - - - -
-   if( sb[ i ]->get_static_constraints().size() )
+   if( sb[ i ]->get_static_constraint_groups().size() )
     throw( std::logic_error( "static Constraint are not allowed" ) );
 
-   if( sb[ i ]->get_dynamic_constraints().size() )
+   if( sb[ i ]->get_dynamic_constraint_groups().size() )
     throw( std::logic_error( "dynamic Constraint are not allowed" ) );
    }  // end( for each sub-Block )
   }  // end( there are sub-Block )
