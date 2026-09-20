@@ -214,7 +214,10 @@ BundleSolver::Index ParallelBundleSolver::InnerLoop( bool extrastep )
 	    << it - EvalV.begin() << " has status " << FiStatus[ wFi ] );
 
   // if an unrecoverable error happens, immediately start the ramp-down - - -
-  if( ( FiStatus[ wFi ] <= kUnEval ) || ( FiStatus[ wFi ] >= kError ) ) {
+  // kLowPrecision is not one of them [see BundleSolver::InnerLoop()]
+  if( ( FiStatus[ wFi ] <= kUnEval ) ||
+      ( ( FiStatus[ wFi ] >= kError ) &&
+	( FiStatus[ wFi ] != kLowPrecision ) ) ) {
    BLOG( 1 , std::endl << "            Component " << wFi
 	     << " evaluated: Error, status " << FiStatus[ wFi ] );
    Result = kError;
@@ -370,7 +373,10 @@ BundleSolver::Index ParallelBundleSolver::InnerLoop( bool extrastep )
  	    << it - EvalV.begin() << " has status " << FiStatus[ wFi ] );
 
   // if an unrecoverable error happens, do nothing else - - - - - - - - - - -
-  if( ( FiStatus[ wFi ] <= kUnEval ) || ( FiStatus[ wFi ] >= kError ) ) {
+  // kLowPrecision is not one of them [see BundleSolver::InnerLoop()]
+  if( ( FiStatus[ wFi ] <= kUnEval ) ||
+      ( ( FiStatus[ wFi ] >= kError ) &&
+	( FiStatus[ wFi ] != kLowPrecision ) ) ) {
    if( f_log && ( LogVerb > 0 ) )
     *f_log << std::endl << "            Component " << wFi
 	   << " evaluated: Error, status " << FiStatus[ wFi ];
@@ -555,7 +561,10 @@ BundleSolver::Index ParallelBundleSolver::InnerLoopOrdered( bool extrastep ,
 	    << FiStatus[ wFi ] );
 
   // unrecoverable error: stop, the whole compute() aborts- - - - - - - - - -
-  if( ( FiStatus[ wFi ] <= kUnEval ) || ( FiStatus[ wFi ] >= kError ) ) {
+  // kLowPrecision is not one of them [see BundleSolver::InnerLoop()]
+  if( ( FiStatus[ wFi ] <= kUnEval ) ||
+      ( ( FiStatus[ wFi ] >= kError ) &&
+	( FiStatus[ wFi ] != kLowPrecision ) ) ) {
    BLOG( 1 , std::endl << "            Component " << wFi
 	     << " evaluated: Error, status " << FiStatus[ wFi ] );
    Result = kError;
