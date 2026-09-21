@@ -3272,6 +3272,46 @@ public:
 
  double CmpAggr;       ///< share of the components each aggregated one holds
 
+ /// the Observer through which the sums of components speak to this solver
+ /** A \ref C05SumFunction reports what happens to it to its Observer, and the
+  * sums this solver builds out of the components have no Block of their own:
+  * this is the Observer they are given, and all it does is to put what they
+  * say in the queue where the Modification coming from the Block are put. */
+
+ class GroupObserver : public Observer
+ {
+  public:
+
+  explicit GroupObserver( BundleSolver * slvr ) : f_slvr( slvr ) {}
+
+  [[nodiscard]] Block * get_Block( void ) const override {
+   return( f_slvr->f_Block );
+   }
+
+  [[nodiscard]] bool anyone_there( void ) const override { return( true ); }
+
+  void add_Modification( sp_Mod mod , ChnlName chnl = 0 ) override {
+   f_slvr->Solver::add_Modification( mod );
+   }
+
+  ChnlName open_channel( ChnlName chnl = 0 ,
+                         GroupModification * gmpmod = nullptr ) override {
+   return( 0 );
+   }
+
+  void close_channel( ChnlName chnl , bool force = false ) override {}
+
+  void set_default_channel( ChnlName chnl = 0 ) override {}
+
+  private:
+
+  BundleSolver * f_slvr;   ///< the solver the sums speak to
+
+  };  // end( class( GroupObserver ) )
+
+ GroupObserver f_grp_obs{ this };
+ ///< what the sums of components report to [see GroupObserver]
+
  std::vector< std::unique_ptr< C05SumFunction > > v_groups;
  ///< the aggregated components, if any, which v_c05f points to
 
@@ -3595,11 +3635,6 @@ public:
   const auto fit = std::find( v_c05f.begin() , v_c05f.end() , f );
   if( fit != v_c05f.end() )
    return( std::distance( v_c05f.begin() , fit ) );
-
-  // a member of an aggregated component speaks for its group
-  const auto mit = f_member2cmp.find( f );
-  if( mit != f_member2cmp.end() )
-   return( mit->second );
 
   return( Inf< Index >() );
   }

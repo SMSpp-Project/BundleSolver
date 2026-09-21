@@ -6150,8 +6150,8 @@ void BundleSolver::aggregate_components( void )
    f_member2cmp.emplace( m , n_c05f.size() );
 
   v_groups.push_back( std::make_unique< C05SumFunction >(
-                            std::move( members ) , std::move( vars ) ,
-                            false ) );
+                            std::move( members ) , std::move( vars ) ) );
+  v_groups.back()->register_Observer( & f_grp_obs );
   n_c05f.push_back( v_groups.back().get() );
   n_IsEasy.push_back( false );
   n_vBPar2.push_back( gps );
@@ -6898,34 +6898,18 @@ void BundleSolver::process_outstanding_Modification( void )
 
  f_mod_lock.clear( std::memory_order_release );  // release lock
 
- // the linearizations a member of an aggregated component removes from its
- // global pool are removed from those of all the members, which keeps the
- // global pool of the group what the Modification say it is. also, a changed
- // member may have changed its global bound, which makes stale the horizontal
- // linearizations its group records for it: they are dealt with as removed
- // from the global pool of the group
- if( ! v_groups.empty() ) {
-  Lst_sp_Mod stale;
-  for( const auto & mod : v_mod_tmp ) {
+ /* What happens to a member of an aggregated component arrives here twice:
+  * once from the member itself, which speaks to the Observer it had and
+  * therefore to its Block, and once from the sum that observes it, already
+  * said of the component this solver knows. The one of the member is dropped,
+  * the sum having reported for it, and with it the bookkeeping of the global
+  * pool, which is now the sum's. */
+
+ if( ! f_member2cmp.empty() )
+  v_mod_tmp.remove_if( [ this ]( const sp_Mod & mod ) {
    const auto fmod = std::dynamic_pointer_cast< FunctionMod >( mod );
-   if( ! fmod )
-    continue;
-   const auto it = f_member2cmp.find( fmod->function() );
-   if( it == f_member2cmp.end() )
-    continue;
-   const auto group = static_cast< C05SumFunction * >( v_c05f[ it->second ] );
-   if( const auto cmod = std::dynamic_pointer_cast< C05FunctionMod >( fmod ) )
-    if( cmod->type() == C05FunctionMod::GlobalPoolRemoved )
-     group->delete_linearizations( Subset( cmod->which() ) , true , eNoMod );
-   auto which = group->remove_stale_flat_linearizations(
-                         static_cast< const C05Function * >( fmod->function() ) );
-   if( ! which.empty() )
-    stale.push_back( std::make_shared< C05FunctionMod >( group ,
-                                          C05FunctionMod::GlobalPoolRemoved ,
-                                          std::move( which ) , 0 ) );
-   }
-  v_mod_tmp.splice( v_mod_tmp.end() , stale );
-  }
+   return( fmod && ( f_member2cmp.count( fmod->function() ) > 0 ) );
+   } );
 
   #ifndef NDEBUG
   // high-verbosity diagnostic (LogVerb >= 7): account for every time the
