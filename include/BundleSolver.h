@@ -557,7 +557,7 @@ public:
   CmptdinL( false ) , UpFiBest( INFshift ) , UpFiLmb1def( 0 ) ,
   LwFiLmb1def( 0 ) , UpFiLmbdef( 0 ) , LwFiLmbdef( 0 ) , Fi0Lmb( 0 ) ,
   Fi0Lmb1( 0 ) , DST( 0 ) , NrmD( 0 ) , NrmZ( 0 ) , NrmZFctr( 1 ) ,
-  c_start() , aBP3( 0 ) , LevelNRCntr( 0 )
+  c_start() , aBP3( 0 ) , LevelNRCntr( 0 ) , LevelStagCntr( 0 )
  {
   // ensure all parameters are properly given their default value
   MaxIter = CDASolver::get_dflt_int_par( intMaxIter );
@@ -3334,6 +3334,8 @@ public:
  Index CNSCntr;        ///< counter of consecutive NS
 
  Index LevelNRCntr;    ///< counter of consecutive level NR steps
+
+ Index LevelStagCntr;  ///< persistent counter of tiny pure-level steps
 
  Subset vBPar2;        ///< size of the global pools of each component
 

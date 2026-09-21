@@ -2973,6 +2973,7 @@ void BundleSolver::reset_level_stabilization( void )
  // target being reset here, so it goes with it: keeping it would have the
  // next call stop at its first null step
  LevelNRCntr = 0;
+ LevelStagCntr = 0;
  f_level_Delta = 0;
  f_level_value = INFshift;
  f_level_LB = -INFshift;
@@ -3087,6 +3088,97 @@ void BundleSolver::update_level_after_step( bool serious_step ,
   f_level_LB = lb;
   f_level_reliable_LB = true;
   }
+
+ // Long-term pure-level stagnation escape.
+ //
+ // The usual level updates are driven by consecutive SS/NS counters.  A
+ // difficult unbounded model can instead alternate tiny serious and null
+ // steps: both counters are then repeatedly reset, Delta never grows enough
+ // to expose the recession direction, and the method can spend all its
+ // iterations around the same centre.  This is the level counterpart of the
+ // hard long-term t-strategy: a direction which is tiny compared with the
+ // aggregate certificate error is not evidence of convergence while the full
+ // DSTS + Sigma residual is still larger than the requested accuracy.
+ //
+ // With a reliable lower bound the same escape is safe provided that the
+ // enlarged Delta is capped at the certified gap.
+ if( UsesPureLevelStabilization() ) {
+  const auto err = max_error();
+  const auto d_one = read_DStart( 1 );
+  const auto certificate_error = std::max( DSTS + Sigma , VarValue( 0 ) );
+  const bool significant_certificate_error =
+   ( err < INFshift ) && ( certificate_error > err );
+  const bool tiny_direction = significant_certificate_error &&
+   ( d_one <= LStabSmall * std::max( certificate_error , err ) );
+  // Use both the stopping tolerance and the requested level displacement as
+  // scales.  At a stalled level the trial-point variation can be several
+  // accuracy units and still be negligible compared with Delta; treating
+  // that as meaningful progress lets the ordinary NS rule immediately undo
+  // every long-term increase.
+  const auto accuracy_progress = err < INFshift ? 10 * err : VarValue( 0 );
+  const auto progress_scale = std::max( accuracy_progress ,
+                                        LStabSmall * f_level_Delta );
+  const bool tiny_progress = ( err < INFshift ) &&
+   ( std::abs( DeltaFi ) <= progress_scale );
+  const bool has_reliable_lb = lb > -INFshift;
+  const bool usable_stagnation_sample =
+   ( ! has_reliable_lb ) || serious_step;
+
+  if( usable_stagnation_sample && tiny_direction && tiny_progress )
+   ++LevelStagCntr;
+  else if( has_reliable_lb && ( ! serious_step ) )
+   LevelStagCntr = 0;
+  else if( ( ! significant_certificate_error ) ||
+           ( ( err < INFshift ) &&
+             ( std::abs( DeltaFi ) > 10 * progress_scale ) ) )
+   LevelStagCntr = 0;
+
+  const auto stagnation_limit = std::max< Index >( 3 , MnNSC );
+  if( LevelStagCntr >= stagnation_limit ) {
+   // A single ordinary increase was insufficient on the cycling cases that
+   // motivate this rule.  Take two geometric level increases at once, while
+   // guarding the arithmetic used to form the absolute target.
+   const auto increase = LStabIncr * LStabIncr;
+   const auto max_delta = std::numeric_limits< VarValue >::max() / 4;
+   if( f_level_Delta <= 0 )
+    f_level_Delta = LStabDlt *
+                    std::max( std::abs( UpFiLmb.back() ) , VarValue( 1 ) );
+   if( f_level_Delta >= max_delta / increase )
+    f_level_Delta = max_delta;
+   else
+    f_level_Delta *= increase;
+
+   if( has_reliable_lb ) {
+    const auto gap = UpFiLmb.back() - lb;
+    if( gap > 0 ) {
+     // A tiny multiplicative change is immediately undone by the NS rule and
+     // returns to the same local cycle.  Probe a genuinely different scale,
+     // then let ordinary null-step relaxation search back from it.
+     f_level_Delta = std::max( f_level_Delta , LStabDlt * gap );
+     f_level_Delta = std::min( f_level_Delta ,
+                               ( 1.0 - LStabM ) * gap );
+     }
+    else {
+     LevelStagCntr = 0;
+     return;
+     }
+    }
+
+   BLOG( 1 , " ~ level LT: tiny direction (D*_1 = " << shrt << d_one
+           << ", Sigma = " << Sigma << "), Delta increased to "
+           << f_level_Delta << std::endl );
+
+   LevelStagCntr = 0;
+   LevelNRCntr = 0;
+   CSSCntr = 0;
+   CNSCntr = 0;
+   f_level_value = UpFiLmb.back() - f_level_Delta;
+   install_level_stabilization();
+   return;
+   }
+  }
+ else
+  LevelStagCntr = 0;
 
  // Pure-level safeguard:
  // If this is a null step but the master problem has not actually changed,
@@ -3723,8 +3815,20 @@ void BundleSolver::FormD( void )
  // conservative stance where the final reported LB is the one of the
  // stopping iteration: since the UB is "that one + v^*" and v^* is negative,
  // this ensures that UB >= LB
+ // In pure-level mode the aggregate is obtained by dividing the master
+ // multipliers by the level multiplier.  With a very aggressive target this
+ // can make NrmZ numerically tiny while DSTS + Sigma still proves that the
+ // aggregate is far from an optimality certificate.  Promoting that vector to
+ // a global LB makes the level gap-driven, collapses Delta, and recreates the
+ // tiny-step cycle.  Require the complete certificate error to be accurate
+ // before treating an approximately-zero pure-level vector as a reliable
+ // bound.
+ const bool accurate_level_aggregate =
+  ( ! UsesPureLevelStabilization() ) ||
+  ( DSTS + Sigma <= max_error() );
  if( ( UpFiLmb.back() < INFshift ) && ( vStar.back() < INFshift ) &&
-     ( NrmZFctr < INFshift ) && ( NrmZ <= NrmZFctr * NZEps ) ) {
+     ( NrmZFctr < INFshift ) && ( NrmZ <= NrmZFctr * NZEps ) &&
+     accurate_level_aggregate ) {
   f_global_LB = UpFiLmb.back() + vStar.back();
   refresh_level_after_master();
  }
