@@ -1,0 +1,96 @@
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - -  LPPar_inner.txt  - - - - - - - - - - - - - -
+#
+# A txt description of a BlockSolverConfig for the inner Block of each
+# BendersBFunction of the multicommodity tester, i.e., the LP of one
+# commodity; this being a simple one-level LP (with no sub-Block), a
+# :MILPSolver
+#
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+BlockSolverConfig     # exact type of the Configuration object
+
+1  # the BlockSolverConfig is a "differential" one
+
+1  # number of (the names of) Solver in this BlockSolverConfig
+# now all the names of the Solver - - - - - - - - - - - - - - - - - - - - - -
+#CPXMILPSolver   # name of Solver
+GRBMILPSolver    # name of Solver
+#SCIPMILPSolver  # name of Solver
+#HiGHSMILPSolver # name of Solver
+
+1  # number of ComputeConfig in this BlockSolverConfig
+
+# now all the ComputeConfig
+# 1st ComputeConfig - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+ComputeConfig # exact type of the ComputeConfig object
+
+1  # f_diff == 0 ==> all non-provided parameters are set to the default value
+   # f_diff == 1 ==> all non-provided parameters are not changed
+
+3  # number of integer parameters
+
+# now all the integer parameters
+intLogVerb 0 # LogVerb, log verbosity of the MILPSolver
+Presolve   0 # disable presolve so row/bound infeasibility yields a Farkas ray
+Method     1 # dual simplex: basic (extreme-point) duals for the Benders cuts
+
+## All specific CPLEX parameter (uncomment based on Solver)
+#CPXPARAM_Preprocessing_Presolve  0  # 0 = off, 1 = on (default)
+                                    # disable presolve for reproducibility
+#CPXPARAM_LPMethod               2  # 0 = auto (default), 1 = primal, 2 =
+                                    # dual, 3 = network, 4 = barrier, 5 =
+                                    # sifting, 6 = concurrent
+
+# All specific GUROBI parameter (uncomment based on Solver)
+#Method              1    # -1 = auto (default), 0 = primal, 1 = dual, 2 =
+                          # barrier,
+             # 3 = barrier + crossover, 4 = network
+#Presolve            0    # 0 = off, 1 = conservative, 2 = aggressive
+                          # (default -1)
+
+0 # number of double parameters
+
+# now all the double parameters
+
+## All specific CPLEX parameter (uncomment based on Solver)
+#CPXPARAM_Simplex_Tolerances_Feasibility      1.0e-15
+#CPXPARAM_Simplex_Tolerances_Optimality       1.0e-15
+
+0 # number of string parameters
+
+# now all the string parameters
+# [none]
+
+# All specific HiGHS parameter (uncomment based on Solver)
+#presolve  off
+#solver    ipm
+             # (ipm = interior point: converges to analytic center, unique x*)
+
+0 # number of vector-of-int parameters
+
+# now all the vector-of-int parameters
+# [none]
+
+0 # number of vector-of-double parameters
+
+# now all the vector-of-double parameters
+# [none]
+
+0 # number of vector-of-string parameters
+
+# now all the vector-of-string parameters
+# [none]
+
+# pointer to the "extra" Configuration
+* # [none]
+
+# end of 1st ComputeConfig- - - - - - - - - - - - - - - - - - - - - - - - - -
+
+# end of BlockSolverConfig- - - - - - - - - - - - - - - - - - - - - - - - - -
+
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# - - -  - - - - - - - - - - END LPPar_innerBlock.txt - - - - - - - - - - - -
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -

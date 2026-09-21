@@ -97,3 +97,6 @@ if (TARGET SMS++::MILPSolver)
              COMMAND zeroth_quadratic_e2e_test
              WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 endif ()
+
+# the multicommodity instances of OSBDO, see osbdo/README.md
+add_subdirectory(osbdo)
