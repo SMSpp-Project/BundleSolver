@@ -98,5 +98,8 @@ if (TARGET SMS++::MILPSolver)
              WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 endif ()
 
-# the multicommodity instances of OSBDO, see osbdo/README.md
+# the examples of OSBDO, see osbdo/README.md
 add_subdirectory(osbdo)
+
+# the large-scale functions of Karmitsa, Bagirov and Makela, see kbm/README.md
+add_subdirectory(kbm)

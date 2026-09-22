@@ -4436,21 +4436,37 @@ int MasterProblemBlock::solve_master( void )
 
  refresh_primal_objective();
 
- const int rc = slv->compute();
+ int rc = slv->compute();
+
+ // a status that promises a solution, possibly an inexact one, may still
+ // come with none (e.g., a solver giving up for numerical reasons after
+ // having found nothing): then the master problem has failed, and reading
+ // the solution would throw
+ if( ( rc == Solver::kOK || rc == Solver::kLowPrecision ) &&
+     ( ! slv->has_var_solution() ) )
+  rc = Solver::kError;
 
  // SMS++ pattern: compute() only writes the solution to the Solver's internal
  // buffers; the ColVariable on the Block stay at their stale values until
  // get_var_solution() is called. Without this push, the driver
  // would read d* / z* / theta as zeros after every master solve
  if( rc == Solver::kOK || rc == Solver::kLowPrecision ) {
-  slv->get_var_solution( nullptr );
-  // In the primal linearized PFB representation the bundle multipliers are
-  // the dual values of the cut constraints, rather than explicit theta
-  // variables. Bundle management and aggregation therefore need both sides
-  // of the QP solution.
-  if( IsPrimal )
-   if( auto * cda = dynamic_cast< CDASolver * >( slv ) )
-    cda->get_dual_solution( nullptr );
+  // a Solver that cannot hand over the solution it says it has is a failed
+  // master problem, which the caller knows how to deal with, and not a
+  // reason to terminate the whole run
+  try {
+   slv->get_var_solution( nullptr );
+   // In the primal linearized PFB representation the bundle multipliers are
+   // the dual values of the cut constraints, rather than explicit theta
+   // variables. Bundle management and aggregation therefore need both sides
+   // of the QP solution.
+   if( IsPrimal )
+    if( auto * cda = dynamic_cast< CDASolver * >( slv ) )
+     cda->get_dual_solution( nullptr );
+   }
+  catch( const std::runtime_error & ) {
+   return( Solver::kError );
+   }
 
   if( std::getenv( "BS_PRINT_MULTIPLIERS" ) ) {
    std::cerr << "MPB_MULT lambda=" << get_lambda()

@@ -196,6 +196,8 @@ static constexpr Index tSPHMsk2 = 768;  // mask for heuristics: bits 7 and 8
 static constexpr unsigned char RstAlg = 1;  // don't reset algorithmic params
 static constexpr unsigned char RstCrr = 2;  // don't reset current point to
                                             // all-0, use Variable value()
+static constexpr unsigned char RstCmp = 4;  // empty the bundle and reset t at
+                                            // every call of compute()
 
 static constexpr auto InINF = SMSpp_di_unipi_it::Inf< Index >();
 
@@ -603,6 +605,17 @@ int BundleSolver::compute( bool changedvars )
  double lastETT = 0;  // last "time" eEveryTTime events have been called
  ParIter = 0;         // number of iterations in this call
  ++SCalls;            // one more call
+
+ // every call discovers t anew [see intTDisc]
+ f_tdisc_done = false;
+ v_tdisc.clear();
+
+ // each call starts from an empty bundle and the algorithm reset as at the
+ // first call if so asked, i.e., the problem is solved from scratch
+ if( ( RstAlgPrm & RstCmp ) && ( SCalls > 1 ) ) {
+  reset_bundle();
+  ReSetAlg( RstAlgPrm );
+  }
  RifeqFi = ( UpRifFi == UpFiLmb );  // true if the reference values are right
 
  if( NeedsG1() )
@@ -646,7 +659,13 @@ int BundleSolver::compute( bool changedvars )
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
   //!! PrintBundle();
 
-  FormD();
+  {
+   const auto mp0 = std::chrono::steady_clock::now();
+   FormD();
+   const double dt = std::chrono::duration< double >(
+                            std::chrono::steady_clock::now() - mp0 ).count();
+   f_mp_ema = ( f_mp_ema < 0 ) ? dt : 0.9 * f_mp_ema + 0.1 * dt;
+   }
 
   // some log - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -766,7 +785,7 @@ int BundleSolver::compute( bool changedvars )
   // Save only a successfully solved master's multiplier, before any
   // bundle/oracle/centre update can invalidate it. mu = 1 + lambda_level.
   const bool doubly_stabilized =
-   MPStbl == MasterProblemBlock::kDoublyStabilized;
+   ( MPStbl == MasterProblemBlock::kDoublyStabilized ) && ( ! f_tdisc_done );
   const auto ds_level_multiplier = doubly_stabilized
                                     ? MasterPB->get_level_multiplier() : 0.0;
   const auto ds_mu = 1.0 + ds_level_multiplier;
@@ -1226,6 +1245,24 @@ int BundleSolver::compute( bool changedvars )
     }
    else            // else
     tt = t;        // keep it as it is
+
+  // the discovery of t: the values t * mu the doubly stabilized iterations
+  // have implicitly used are recorded, and after TDisc of them the level row
+  // is switched off and t is their geometric mean over the last 5
+  if( doubly_stabilized && ( TDisc > 0 ) ) {
+   v_tdisc.push_back( t * ds_mu );
+   if( ParIter >= Index( TDisc ) ) {
+    const Index n = std::min( Index( 5 ) , Index( v_tdisc.size() ) );
+    double lg = 0;
+    for( Index i = v_tdisc.size() - n ; i < v_tdisc.size() ; ++i )
+     lg += std::log( v_tdisc[ i ] );
+    tt = std::max( tMinor , std::min( tMaior , std::exp( lg / n ) ) );
+    f_tdisc_done = true;
+    reset_level_stabilization();
+    MasterPB->set_f_lev( INFshift );
+    BLOG( 1 , " ~ discovery of t over: t = " << def << tt << std::endl );
+    }
+   }
 
   if( ( tHasChgd = ( t != tt ) ) )
    t = tt;
@@ -2230,6 +2267,18 @@ void BundleSolver::set_par( idx_type par , int value )
    break;
   case( intMaxLevelNR ): MaxLevelNR = value; break;
   case( intCmpAggrSeed ): CmpAggrSeed = value; break;
+  case( intCmpAggrRule ):
+   if( ( value < 0 ) || ( value > 3 ) )
+    throw( std::invalid_argument(
+               "BundleSolver::set_par: CmpAggrRule must be in [0, 3]" ) );
+   CmpAggrRule = value;
+   break;
+  case( intTDisc ):
+   if( value < 0 )
+    throw( std::invalid_argument(
+                        "BundleSolver::set_par: TDisc must be >= 0" ) );
+   TDisc = value;
+   break;
   default: CDASolver::set_par( par , value );
   }
  }  // end( BundleSolver::set_par( int ) )
@@ -2384,6 +2433,12 @@ void BundleSolver::set_par( idx_type par , double value )
     throw( std::invalid_argument(
                "BundleSolver::set_par: CmpAggr must be in [0, 1]" ) );
    CmpAggr = value;
+   break;
+  case( dblIncrCost ):
+   if( value < 0 )
+    throw( std::invalid_argument(
+               "BundleSolver::set_par: IncrCost must be >= 0" ) );
+   IncrCost = value;
    break;
   default:
    CDASolver::set_par( par , value );
@@ -2676,6 +2731,8 @@ int BundleSolver::get_int_par( idx_type par ) const
   case( intMPHScaling ): return( MPHScaling );
   case( intMaxLevelNR ): return( MaxLevelNR );
   case( intCmpAggrSeed ): return( CmpAggrSeed );
+  case( intCmpAggrRule ): return( CmpAggrRule );
+  case( intTDisc ):     return( TDisc );
   default:              return( CDASolver::get_int_par( par ) );
   }
  }  // end( BundleSolver::get_int_par )
@@ -2710,6 +2767,7 @@ double BundleSolver::get_dbl_par( idx_type par ) const
   case( dblLStabIncr ):  return( LStabIncr );
   case( dblLStabSmall ): return( LStabSmall );
   case( dblCmpAggr ):    return( CmpAggr );
+  case( dblIncrCost ):   return( IncrCost );
   default:               return( CDASolver::get_dbl_par( par ) );
   }
  }  // end( BundleSolver::get_dbl_par )
@@ -3489,7 +3547,7 @@ void BundleSolver::FormD( void )
  // invoking the pure-level objective-removal machinery. A reset after model
  // modifications may require a new probe; a reliable LB takes precedence.
  const bool doubly_level_probe = MasterPB &&
-  ( MPStbl == MasterProblemBlock::kDoublyStabilized ) &&
+  ( MPStbl == MasterProblemBlock::kDoublyStabilized ) && ( ! f_tdisc_done ) &&
   ( ! f_level_initialized ) && ( ! empty_bundle ) &&
   ( reliable_level_LB() <= -INFshift ) &&
   ( UpFiLmbdef == NrFi + 1 );
@@ -4135,8 +4193,12 @@ BundleSolver::Index BundleSolver::InnerLoop( bool extrastep )
    break;               // anyway, nothing else to do but stop
    }
 
+  const auto ev0 = std::chrono::steady_clock::now();
   if( FiAndGi( f_wFi , ! extrastep ) )
    insrtd = true;
+  const double evdt = std::chrono::duration< double >(
+                            std::chrono::steady_clock::now() - ev0 ).count();
+  f_ev_ema = ( f_ev_ema < 0 ) ? evdt : 0.9 * f_ev_ema + 0.1 * evdt;
 
   // return if an unrecoverable error happens; kLowPrecision is not one: it
   // comes after kError among the codes, but it only says that the component
@@ -4194,8 +4256,18 @@ BundleSolver::Index BundleSolver::InnerLoop( bool extrastep )
   if( ( ceval < minceval ) || extrastep )  // too few components compute()-d
    continue;               // do not stop regardless of MPchgs
 
-  if( MPchgs )             // the MP is guaranteed to change
+  if( MPchgs ) {           // the MP is guaranteed to change
+   // a null step shown on part of the components is deferred if the ones
+   // not yet evaluated cost little with respect to a master problem, since
+   // the whole evaluation might make it a serious step [see dblIncrCost]
+   if( ( IncrCost > 0 ) && ( UpFiLmb1.back() >= UpTrgt ) &&
+       ( f_ev_ema >= 0 ) && ( f_mp_ema >= 0 ) ) {
+    const Index left = ( NrFi - NrEasy ) - ceval;
+    if( ( left > 0 ) && ( left * f_ev_ema <= IncrCost * f_mp_ema ) )
+     continue;
+    }
    break;                  // happily stop
+   }
 
   }  // end( for( functions evaluation loop ) )
 
@@ -6231,10 +6303,6 @@ void BundleSolver::aggregate_components( void )
  if( ng >= nh )  // every group would be a single component
   return;
 
- // the assignment is random, but the same seed gives the same groups
- std::mt19937 rg( CmpAggrSeed );
- std::shuffle( hard.begin() , hard.end() , rg );
-
  // the position of each Variable in LamVcblr, which orders those of a group
  std::unordered_map< const ColVariable * , Index > pos;
  pos.reserve( LamVcblr.size() );
@@ -6247,6 +6315,67 @@ void BundleSolver::aggregate_components( void )
    p[ i ] = pos.at( static_cast< ColVariable * >( f->get_active_var( i ) ) );
   return( p );
   };
+
+ // the order of the components, which consecutive ones go together unless
+ // they are dealt in turn; the random one is repeatable with the same seed
+ switch( CmpAggrRule ) {
+  case( 1 ): {  // by the norm of the linearization at the current point
+   std::vector< double > nrm( NrFi , 0 );
+   for( auto k : hard ) {
+    auto f = v_c05f[ k ];
+    const auto st = f->compute( true );
+    if( ( st < Function::kOK ) || ( st >= Function::kError ) ||
+        ( ! f->has_linearization( true ) ) )
+     continue;  // no linearization: it goes first, with norm 0
+    std::vector< Function::FunctionValue > g( f->get_num_active_var() );
+    f->get_linearization_coefficients( g.data() );
+    double n2 = 0;
+    for( auto gi : g )
+     n2 += gi * gi;
+    nrm[ k ] = std::sqrt( n2 );
+    }
+   std::stable_sort( hard.begin() , hard.end() ,
+                     [ & ]( Index a , Index b ) {
+                      return( nrm[ a ] < nrm[ b ] ); } );
+   break;
+   }
+  case( 2 ):
+  case( 3 ): {  // by the ordered set of the active Variable
+   std::vector< std::vector< Index > > sup( NrFi );
+   for( auto k : hard ) {
+    sup[ k ] = positions_of( v_c05f[ k ] );
+    std::sort( sup[ k ].begin() , sup[ k ].end() );
+    }
+   std::stable_sort( hard.begin() , hard.end() ,
+                     [ & ]( Index a , Index b ) {
+                      return( sup[ a ] < sup[ b ] ); } );
+   break;
+   }
+  default: {
+   std::mt19937 rg( CmpAggrSeed );
+   std::shuffle( hard.begin() , hard.end() , rg );
+   }
+  }
+
+ // dealing in turn is the same as taking consecutive ones in this order
+ if( CmpAggrRule == 3 ) {
+  // each group has the size it has below, and the next component goes to
+  // the next group in turn that still has room
+  std::vector< std::vector< Index > > grp( ng );
+  std::vector< Index > room( ng );
+  for( Index g = 0 ; g < ng ; ++g )
+   room[ g ] = ( ( g + 1 ) * nh ) / ng - ( g * nh ) / ng;
+  Index g = 0;
+  for( auto k : hard ) {
+   while( grp[ g ].size() == room[ g ] )
+    g = ( g + 1 ) % ng;
+   grp[ g ].push_back( k );
+   g = ( g + 1 ) % ng;
+   }
+  hard.clear();
+  for( auto & gr : grp )
+   hard.insert( hard.end() , gr.begin() , gr.end() );
+  }
 
  std::vector< C05Function * > n_c05f;
  std::vector< bool > n_IsEasy;

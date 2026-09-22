@@ -401,6 +401,10 @@ public:
 
  intCmpAggrSeed ,  ///< seed of the assignment to the aggregated components
 
+ intCmpAggrRule ,  ///< how the components are assigned to the aggregated ones
+
+ intTDisc ,        ///< iterations of the discovery of t, doubly stabilized
+
  intLastBndSlvPar  ///< first allowed new int parameter for derived classes
                    /**< Convenience value for easily allow derived classes
                     * to extend the set of int algorithmic parameters. */
@@ -457,6 +461,8 @@ public:
   dblLStabSmall , ///< small model-error threshold for level Delta increases
 
   dblCmpAggr ,    ///< share of the components each aggregated one holds
+
+  dblIncrCost ,   ///< how much evaluation a null step may defer, in masters
 
   dblLastBndSlvPar ///< first allowed new double parameter for derived classes
                    /**< Convenience value for easily allow derived classes
@@ -611,7 +617,10 @@ public:
   LStabSmall = get_dflt_dbl_par( dblLStabSmall );
   MaxLevelNR = get_dflt_int_par( intMaxLevelNR );
   CmpAggrSeed = get_dflt_int_par( intCmpAggrSeed );
+  CmpAggrRule = get_dflt_int_par( intCmpAggrRule );
+  TDisc = get_dflt_int_par( intTDisc );
   CmpAggr = get_dflt_dbl_par( dblCmpAggr );
+  IncrCost = get_dflt_dbl_par( dblIncrCost );
 
   v_events.resize( max_event_number() );
   }
@@ -1050,6 +1059,18 @@ public:
   *                  0 bit == 1 -> don't reset algorithmic parameters
   *                  1 bit == 1 -> set current point to using current values
   *                                of the Variable (otherwise reset to all-0)
+  *                  2 bit == 1 -> at every call of compute() after the first
+  *                                one the bundle is emptied and the
+  *                                algorithm is reset as at the first call,
+  *                                according to bits 0 and 1 (in particular
+  *                                with bit 1 == 1 the current point is taken
+  *                                from the Variable, which after a compute()
+  *                                hold the last stability center), so that
+  *                                each call solves the problem from
+  *                                scratch; this is not
+  *                                meant for production, where keeping the
+  *                                bundle across calls is what re-optimization
+  *                                is, but to measure what it is worth
   *
   * - intMPV2Form [0]: storage frame used by the dual Master Problem:
   *                    0 selects the displacement form, while 1 selects the
@@ -1067,7 +1088,38 @@ public:
   *
   * - intCmpAggrSeed [42]: the seed of the random generator that assigns the
   *                       components to the aggregated ones the master
-  *   problem sees [see dblCmpAggr]; the same seed gives the same groups. */
+  *   problem sees [see dblCmpAggr]; the same seed gives the same groups.
+  *
+  * - intCmpAggrRule [0]: how the non-easy components are assigned to the
+  *                      aggregated ones [see dblCmpAggr]:
+  *
+  *   0 = at random, with the seed intCmpAggrSeed;
+  *
+  *   1 = by scale: every component is computed once at the current point
+  *       when the Block is set, the components are sorted by the norm of
+  *       their linearization there, and each group takes consecutive ones,
+  *       so that the members of a group have similar scale;
+  *
+  *   2 = similar supports: the components are sorted by the (ordered) set
+  *       of their active Variable, and each group takes consecutive ones,
+  *       so that the members of a group share as many Variable as possible;
+  *
+  *   3 = spread supports: the same order as 2, but the components are dealt
+  *       to the groups in turn, so that the members of a group share as few
+  *       Variable as possible.
+  *
+  *   Ties (e.g., all the supports equal) keep the original order of the
+  *   components.
+  *
+  * - intTDisc [0]: if positive and intMPStbl == 2 (doubly stabilized), the
+  *                first intTDisc iterations of every call of compute() are
+  *   doubly stabilized, and they are used to discover the proximal parameter:
+  *   after them the level row is switched off for the rest of the call, and
+  *   t is set to the geometric mean of the last 5 values of t * ( 1 +
+  *   lambda ), lambda being the multiplier of the level row, i.e., of the
+  *   proximal parameters the level steps have implicitly used; from there on
+  *   the method is proximal, with the usual rules for t. With 0 the doubly
+  *   stabilized method is used throughout. */
 
  void set_par( idx_type par , int value ) override;
 
@@ -1429,14 +1481,29 @@ public:
   *   a single one, and with a value x in between each component of the
   *   master problem is the sum of about a fraction x of them, i.e., there are
   *   round( 1 / x ) of them (but no more than the non-easy components). The
-  *   components are assigned to the groups at random, with the seed
-  *   intCmpAggrSeed, and the groups are as large as possible to each other.
+  *   components are assigned to the groups as intCmpAggrRule says (by
+  *   default at random, with the seed intCmpAggrSeed), and the groups are
+  *   as large as possible to each other.
   *   A group is a C05SumFunction: it is computed by computing all its
   *   members, and its linearizations are sums of theirs, stored under the
   *   same name in their global pools. Fewer components make a smaller master
   *   problem and a coarser model, i.e., cheaper iterations but typically more
   *   of them. The parameter is read when the Block is set, as the
-  *   components are. */
+  *   components are.
+  *
+  * - dblIncrCost [0]: when the incremental evaluation of the components
+  *                   (dblMinNrEvls not -1) has already shown that the step
+  *   is a null one, the components not yet evaluated are evaluated anyway if
+  *   what they are expected to cost is at most dblIncrCost times what a
+  *   master problem is expected to cost, since a null step decided on part
+  *   of the components may discard a point that the whole evaluation would
+  *   have made a serious step. Both costs are exponential averages of the
+  *   times measured in the current run (an evaluation of one component, a
+  *   solution of the master problem), and the rule starts working once both
+  *   have been measured. With 0 the null step is taken as soon as it is
+  *   shown, as the incremental evaluation always did; a very large value
+  *   evaluates every component whenever a null step is shown. Only the
+  *   sequential inner loop applies it. */
 
  void set_par( idx_type par , double value ) override;
 
@@ -2078,7 +2145,7 @@ public:
 /*--------------------------------------------------------------------------*/
 
  [[nodiscard]] int get_dflt_int_par( idx_type par ) const override {
-  static const std::array< int , 21 > dflt_int_par = {
+  static const std::array< int , 23 > dflt_int_par = {
     10 ,  // intBPar1
    100 ,  // intBPar2
      1 ,  // intBPar3
@@ -2101,7 +2168,9 @@ public:
      0 ,  // intMPV2Form (default value is displacement form)
      0 ,  // intMPHScaling (default value is no hard-component scaling)
      5 ,  // intMaxLevelNR
-    42    // intCmpAggrSeed
+    42 ,  // intCmpAggrSeed
+     0 ,  // intCmpAggrRule (default value is random)
+     0    // intTDisc (default value is no discovery of t)
      };
 
   if( ( par >= intLastParCDAS ) && ( par < intLastBndSlvPar ) )
@@ -2113,7 +2182,7 @@ public:
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
  [[nodiscard]] double get_dflt_dbl_par( idx_type par ) const override {
-  static const std::array< double , 21 > dflt_dbl_par = {
+  static const std::array< double , 22 > dflt_dbl_par = {
    0 ,      // dblNZEps
    1e+2 ,   // dbltStar
    0 ,      // dblMinNrEvls
@@ -2134,7 +2203,8 @@ public:
    0.1 ,    // dblLStabDlt
    2.0 ,    // dblLStabIncr
    1e-2 ,   // dblLStabSmall
-   0        // dblCmpAggr
+   0 ,      // dblCmpAggr
+   0        // dblIncrCost
    };
 
   if( ( par >= dblLastParCDAS ) && ( par < dblLastBndSlvPar ) )
@@ -2229,7 +2299,9 @@ public:
    { "intMPV2Form" , BundleSolver::intMPV2Form } ,
    { "intMPHScaling" , BundleSolver::intMPHScaling } ,
    { "intMaxLevelNR" , BundleSolver::intMaxLevelNR } ,
-   { "intCmpAggrSeed" , BundleSolver::intCmpAggrSeed }
+   { "intCmpAggrSeed" , BundleSolver::intCmpAggrSeed } ,
+   { "intCmpAggrRule" , BundleSolver::intCmpAggrRule } ,
+   { "intTDisc" , BundleSolver::intTDisc }
    };
 
   const auto it = int_pars_map.find( name );
@@ -2264,7 +2336,8 @@ public:
    { "dblLStabDlt" , BundleSolver::dblLStabDlt } ,
    { "dblLStabIncr" , BundleSolver::dblLStabIncr } ,
    { "dblLStabSmall" , BundleSolver::dblLStabSmall } ,
-   { "dblCmpAggr" , BundleSolver::dblCmpAggr }
+   { "dblCmpAggr" , BundleSolver::dblCmpAggr } ,
+   { "dblIncrCost" , BundleSolver::dblIncrCost }
    };
 
   const auto it = dbl_pars_map.find( name );
@@ -2322,12 +2395,13 @@ public:
 
  [[nodiscard]] const std::string & int_par_idx2str( idx_type idx )
   const override {
-  static const std::array< std::string , 21 > int_pars_str = {
+  static const std::array< std::string , 23 > int_pars_str = {
    "intBPar1" , "intBPar2" , "intBPar3" , "intBPar4" , "intBPar6" ,
    "intBPar7" , "intMnSSC" , "intMnNSC" , "inttSPar1" , "intMaxNrEvls" ,
    "intDoEasy" , "intWZNorm" , "intFrcLstSS" , "intTrgtMng" ,
    "intMPStbl" , "intMPPrimal" , "intRstAlg" , "intMPV2Form" ,
-   "intMPHScaling" , "intMaxLevelNR" , "intCmpAggrSeed" };
+   "intMPHScaling" , "intMaxLevelNR" , "intCmpAggrSeed" , "intCmpAggrRule" ,
+   "intTDisc" };
 
   if( ( idx >= intLastParCDAS ) && ( idx < intLastBndSlvPar ) )
    return( int_pars_str[ idx - intBPar1 ] );
@@ -2339,12 +2413,12 @@ public:
 
  [[nodiscard]] const std::string & dbl_par_idx2str( idx_type idx )
   const override {
-  static const std::array< std::string , 21 > dbl_pars_str = {
+  static const std::array< std::string , 22 > dbl_pars_str = {
    "dblNZEps" , "dbltStar" , "dblMinNrEvls" , "dblBPar5" , "dblm1" ,
    "dblm2" , "dblm3" , "dblmxIncr" , "dblmnIncr" , "dblmxDecr" ,
    "dblmnDecr" , "dbltMaior" , "dbltMinor" , "dbltInit" , "dbltSPar2" ,
    "dbltSPar3" , "dblLStabM" , "dblLStabDlt" , "dblLStabIncr" ,
-   "dblLStabSmall" , "dblCmpAggr" };
+   "dblLStabSmall" , "dblCmpAggr" , "dblIncrCost" };
 
  if( ( idx >= dblLastParCDAS ) && ( idx < dblLastBndSlvPar ) )
    return( dbl_pars_str[ idx - dblLastParCDAS ] );
@@ -2602,7 +2676,8 @@ public:
 
  bool UsesLevelStabilization( void ) const {
   return( MPStbl == MasterProblemBlock::kLevel ||
-          MPStbl == MasterProblemBlock::kDoublyStabilized );
+          ( MPStbl == MasterProblemBlock::kDoublyStabilized &&
+            ! f_tdisc_done ) );
   }
 
  /*--------------------------------------------------------------------------*/
@@ -3270,7 +3345,21 @@ public:
 
  int CmpAggrSeed;      ///< seed of the assignment to the aggregated components
 
+ int CmpAggrRule;      ///< how the components go to the aggregated ones
+
+ int TDisc;            ///< iterations of the discovery of t [see intTDisc]
+
+ bool f_tdisc_done = false;  ///< the discovery of t is over in this call
+
+ std::vector< double > v_tdisc;  ///< the t * ( 1 + lambda ) seen so far
+
  double CmpAggr;       ///< share of the components each aggregated one holds
+
+ double IncrCost;      ///< deferral of null steps [see dblIncrCost]
+
+ double f_ev_ema = -1;  ///< average seconds of an evaluation of a component
+
+ double f_mp_ema = -1;  ///< average seconds of a master problem
 
  /// the Observer through which the sums of components speak to this solver
  /** A \ref C05SumFunction reports what happens to it to its Observer, and the
@@ -3600,10 +3689,10 @@ public:
       untouched;
 
     - bit 1: if 0 the current point is reset to the all-0 vector, while if
-      1 it is left untouched;
+      1 it is set to the value currently in the active Variable of the
+      C05Function.
 
-    - bit 2: if 0, the current point is reset to the value currently in the
-      active Variable of the C05Function, while if 1 it is left untouched. */
+    The other bits of intRstAlg are not used here. */
 
 /*--------------------------------------------------------------------------*/
 
@@ -3620,8 +3709,8 @@ public:
 /*--------------------------------------------------------------------------*/
 
  /* Replaces the non-easy components in v_c05f with C05SumFunction, each
-  * summing about a share CmpAggr of them chosen at random with the seed
-  * CmpAggrSeed [see dblCmpAggr]; the groups come first in v_c05f and the
+  * summing about a share CmpAggr of them chosen as CmpAggrRule says [see
+  * dblCmpAggr and intCmpAggrRule]; the groups come first in v_c05f and the
   * easy components follow in their order. Called at the end of set_Block(),
   * it rebuilds what set_Block() had computed per component (the sizes of the
   * global pools, the maps of the active Variable and the dense / sparse
