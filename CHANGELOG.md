@@ -20,6 +20,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- the part of an easy component in the solution of a LagrangianDualSolver
+  was whatever its inner Block held when the solution was asked for: the
+  Solver of the master writes there after each solve, but the inner Block
+  is a Block of the model, which any other Solver may write into after it,
+  so that the solution could mix the multipliers of the master for the hard
+  components with the solution of another Solver for the easy ones. The
+  master now saves what it writes there, and `get_dual_solution()` writes
+  it back [see `MasterProblemBlock::restore_easy_primal()`]
+
 - a variable change of one component that is not wrapped in a
   `GroupModification` (a "naked" `FunctionModVars`) threw when there were
   more components, and the throw only hid what went wrong behind it. It is

@@ -131,6 +131,7 @@
 #include "Block.h"
 #include "C05Function.h"
 #include "ColVariable.h"
+#include "ColVariableSolution.h"
 #include "FRowConstraint.h"
 #include "LinearFunction.h"
 #include "OneVarConstraint.h"
@@ -139,6 +140,7 @@
 #include <numeric>
 #include <iosfwd>
 #include <list>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <unordered_set>
@@ -674,6 +676,19 @@ class MasterProblemBlock : public Block {
   * [0, EasyCmps.size()), or nullptr if it has not been registered yet. */
 
  [[nodiscard]] Block * get_easy_component( int k ) const;
+
+/*--------------------------------------------------------------------------*/
+ /// writes back into the k-th easy component the last solution of the MP
+ /** The sub-Block of an easy component is a Block of the model, which the
+  * Solver of the MP writes its solution into after each solve, but which
+  * anybody else may write into afterwards. The values its ColVariable take
+  * at each solve are therefore saved, and this writes back those of the
+  * last one, i.e., the part of the easy component in the solution of the
+  * MP whose multipliers give the important linearizations of the hard
+  * ones. Returns false if there is no solve of the MP whose solution has
+  * been saved, true otherwise. */
+
+ bool restore_easy_primal( int k );
 
 /*--------------------------------------------------------------------------*/
  /// returns ||z*||^2, the squared 2-norm of the aggregate subgradient
@@ -1681,6 +1696,10 @@ class MasterProblemBlock : public Block {
  ///< and remain owned by the corresponding Function Block in EasyCmps_Owner
 
  std::vector< Block * > HardCmps;  ///< sub-Blocks of the "hard" components
+
+ std::vector< std::unique_ptr< ColVariableSolution > > EasyPrimal;
+ ///< the values of the ColVariable of each easy component at the last
+ ///< solve of the MP [see restore_easy_primal()]
 
  /// metadata of one absorbed BendersBFunction row in the primal MP
  /** When absorb_BBF_into_primal_MP() processes the i-th mapping row of a

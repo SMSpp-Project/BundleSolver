@@ -125,6 +125,7 @@ void MasterProblemBlock::clear()
  EasyCmps.clear();
  EasyCmps_Owner.clear();
  EasyCmps_SB.clear();
+ EasyPrimal.clear();
  EasyObjVars.clear();
  EasyObjCoeffs.clear();
  HardCmps.clear();
@@ -1853,6 +1854,16 @@ Block * MasterProblemBlock::get_easy_component( int k ) const
  if( k < 0 || k >= int( EasyCmps_SB.size() ) )
   return( nullptr );
  return( EasyCmps_SB[ k ] );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+bool MasterProblemBlock::restore_easy_primal( int k )
+{
+ if( ( k < 0 ) || ( k >= int( EasyPrimal.size() ) ) || ( ! EasyPrimal[ k ] ) )
+  return( false );
+ EasyPrimal[ k ]->write( EasyCmps_SB[ k ] );
+ return( true );
  }
 
 /*--------------------------------------------------------------------------*/
@@ -4456,6 +4467,15 @@ int MasterProblemBlock::solve_master( void )
   // reason to terminate the whole run
   try {
    slv->get_var_solution( nullptr );
+   // the easy components are Blocks of the model, which others may write
+   // into before the solution is asked for: what the MP has written there
+   // is saved [see restore_easy_primal()]
+   EasyPrimal.resize( EasyCmps_SB.size() );
+   for( std::size_t k = 0 ; k < EasyCmps_SB.size() ; ++k ) {
+    if( ! EasyPrimal[ k ] )
+     EasyPrimal[ k ] = std::make_unique< ColVariableSolution >();
+    EasyPrimal[ k ]->read( EasyCmps_SB[ k ] );
+    }
    // In the primal linearized PFB representation the bundle multipliers are
    // the dual values of the cut constraints, rather than explicit theta
    // variables. Bundle management and aggregation therefore need both sides

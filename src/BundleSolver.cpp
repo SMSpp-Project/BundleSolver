@@ -2644,16 +2644,19 @@ void BundleSolver::get_dual_solution( Configuration * solc )
 void BundleSolver::get_dual_solution_easy( Index k )
 {
  // The optimal primal u^k of the k-th easy component is the primal
- // solution of the easy sub-Block registered into MasterPB; since that
- // sub-Block is the very same inner Block exposed by
- // v_c05f[ k ]->build_easy_master_block(), the ColVariable values are
- // already in place after the master Solver has solve()d.
+ // solution of the easy sub-Block registered into MasterPB, which is the
+ // very same inner Block exposed by v_c05f[ k ]->build_easy_master_block():
+ // the Solver of the master writes it there, but so may any other Solver
+ // of the model after it, hence the one of the last solve of the master is
+ // written back.
 
  if( ! MasterPB || ! MasterPB->get_easy_component( easy_k( k ) ) )
   throw( std::logic_error(
        "BundleSolver::get_dual_solution_easy: "
        "easy component " + std::to_string( k ) + " not registered "
        "in MasterProblemBlock" ) );
+
+ MasterPB->restore_easy_primal( easy_k( k ) );
 
  }  // end( BundleSolver::get_dual_solution_easy() )
 
