@@ -18,7 +18,6 @@ include(CMakeFindDependencyMacro)
 
 # ----- Requirements -------------------------------------------------------- #
 find_dependency(MILPSolver)
-find_dependency(NDOFiOracle)
 
 if (@Torch_FOUND@)
     find_dependency(Torch HINTS @Torch_DIR@)
