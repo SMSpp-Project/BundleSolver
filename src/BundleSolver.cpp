@@ -3032,7 +3032,35 @@ bool BundleSolver::refresh_level_after_master( bool force )
   return( false );
   }
 
- const auto lb = reliable_level_LB();
+ auto lb = reliable_level_LB();
+
+ /* An empty level normally certifies a lower bound.  With a primal
+  * displacement master, feasibility tolerances can occasionally classify a
+  * level as empty even though the resulting algorithmic bound lies above the
+  * already evaluated centre.  Keeping that bound makes gap = value - lb
+  * negative, collapses Delta to zero and causes every forced refresh to
+  * reproduce the same target.  Discard only the algorithmic bound (never a
+  * user-provided true bound) and restart from the usual scale-based Delta. */
+ if( std::isfinite( lb ) && std::isfinite( UpFiLmb.back() ) ) {
+  const auto tolerance = max_error( UpFiLmb.back() , RelAcc );
+  if( lb > UpFiLmb.back() + tolerance ) {
+   BLOG( 1 , " ~ inconsistent level LB " << def << lb
+           << " above centre " << UpFiLmb.back()
+           << ": restarting target" << std::endl );
+
+   if( ( ! TrueLB ) || ( LowerBound.back() <= UpFiLmb.back() + tolerance ) )
+    f_global_LB = -INFshift;
+
+   lb = reliable_level_LB();
+   if( lb > UpFiLmb.back() + tolerance )
+    lb = -INFshift;  // preserve, but do not drive this refresh from it
+
+   f_level_LB = -INFshift;
+   f_level_reliable_LB = false;
+   f_level_Delta = 0;
+   }
+  }
+
  if( lb > -INFshift ) {
   if( force || ( ! f_level_initialized ) || ( ! f_level_reliable_LB ) ||
       ( lb > f_level_LB ) ) {
