@@ -3623,6 +3623,10 @@ void BundleSolver::FormD( void )
     }
   }
 
+ // true if the master has already been tried again with t as it was
+ // before the empty bundle brought it down to its minimum
+ bool t_restored = false;
+
  for( ; ; )  // error-handling loop - - - - - - - - - - - - - - - - - - - - - -
  {           // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -3761,6 +3765,22 @@ void BundleSolver::FormD( void )
      }
 
   if( i == InINF ) {  // there are no removable items at all - - - - - - - -
+   // with an empty bundle t has been brought down to its minimum [see
+   // above], which leaves the master of a Bundle with easy components a
+   // badly scaled problem, the quadratic term vanishing against their
+   // data: before giving up, t goes back where it was and the master is
+   // solved once more
+   if( ( ! t_restored ) && ( Prevt < INFshift ) ) {
+    t_restored = true;
+    t = Prevt;
+    Prevt = INFshift;
+    if( MasterPB )
+     MasterPB->set_t( t );
+    BLOG( 2 , std::endl << "Bundle::FormD: MP failure with t at its "
+                           "minimum, solving again with t = " << t );
+    continue;
+    }
+
    BLOG( 1 , std::endl << "Bundle::FormD: unrecoverable MP failure." );
    Result = kError;
    return;

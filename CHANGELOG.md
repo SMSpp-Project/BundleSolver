@@ -20,6 +20,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- a master that the Solver could not solve, and whose bundle held no item
+  to remove, was the end of the run: it is now solved once more with t as
+  it was before the empty bundle brought it down to its minimum, where the
+  quadratic term vanishes against the data of the easy components and
+  leaves the master a badly scaled problem
+
 - the part of an easy component in the solution of a LagrangianDualSolver
   was whatever its inner Block held when the solution was asked for: the
   Solver of the master writes there after each solve, but the inner Block
