@@ -1077,12 +1077,16 @@ public:
   *                    iterate form. The parameter has no effect on the primal
   *                    Master Problem.
   *
-  * - intMPHScaling [0]: bit-wise numerical scaling of the
+  * - intMPHScaling [1]: bit-wise numerical scaling of the
   *                     PolyhedralFunctionBlock representing each hard
   *                     component in the Master Problem:
   *                     bit 0 enables local row scaling, bit 1 enables global
   *                     epigraph scaling. Hence 0 = none, 1 = local only,
-  *                     2 = global only, 3 = both.
+  *                     2 = global only, 3 = both. The default is the local
+  *   row scaling, which costs nothing where it is not needed (the times of
+  *   the instances that are well conditioned change by less than the noise)
+  *   and rescues the instances whose rows differ by orders of magnitude,
+  *   e.g., those written with a sentinel instead of a bound.
   *
   * - intMaxLevelNR [5]: TBD (max steps of NR for level method allowed)
   *
@@ -2166,7 +2170,7 @@ public:
           // RstAlg = 0  -  reset algorithmic parameters
           // RstCrr = 1  -  set current point to using values of the Variable
      0 ,  // intMPV2Form (default value is displacement form)
-     0 ,  // intMPHScaling (default value is no hard-component scaling)
+     1 ,  // intMPHScaling (default value is the local row scaling)
      5 ,  // intMaxLevelNR
     42 ,  // intCmpAggrSeed
      0 ,  // intCmpAggrRule (default value is random)
