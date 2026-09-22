@@ -621,6 +621,30 @@ class MasterProblemBlock : public Block {
                                            Index local_i ) const;
 
 /*--------------------------------------------------------------------------*/
+ /// the easy component easy_id no longer depends on the global Variable j
+ /** Called when the easy LagBFunction easy_id has lost the Lagrangian term
+  * of the global coordinate j while the coordinate stays in the master,
+  * other components still depending on it. The terms of that component in
+  * CouplingCns[ j ], i.e., those whose Variable belong to its inner Block,
+  * are given a 0 coefficient, which leaves the positions of all the terms
+  * of the row where they are; in the displacement form the x_bar_j part of
+  * the Objective coefficients of the same Variable goes as well. The map of
+  * the component [see set_easy_local2global()] is the caller's to update. */
+
+ void drop_easy_coupling( Index easy_id , Index j );
+
+/*--------------------------------------------------------------------------*/
+ /// replaces the local-to-global maps of the easy components
+ /** \p maps has one entry per easy component, in the order in which they
+  * were passed to configure(), each as the map easy_local_to_global() reads;
+  * an empty \p maps means that all of them are the identity (dense case). */
+
+ void set_easy_local2global(
+                  const std::vector< std::vector< Index > > & maps ) {
+  EasyLocal2Global = maps;
+  }
+
+/*--------------------------------------------------------------------------*/
  /// hand the abstract representation of the MP to the registered Solver
  /** load_problem() iterates over the Solver registered to
   * MasterProblemBlock and instructs each of them to (re-)load the abstract

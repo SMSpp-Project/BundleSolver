@@ -20,6 +20,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- a variable change of one component that is not wrapped in a
+  `GroupModification` (a "naked" `FunctionModVars`) threw when there were
+  more components, and the throw only hid what went wrong behind it. It is
+  now processed per component, and three things it needs have been put
+  right: (i) with the sparse representation of the Variable the
+  linearizations reloaded into the master were read as dense, which put
+  their coefficients on the wrong global Variable; (ii) a component that
+  stops depending on some of its Variable, while the others still do, has
+  its linearizations reloaded from its global pool (a reset of that
+  component only, the others being no longer reset), and its value in the
+  stability centre is marked unknown if one of those Variable is not 0
+  there; (iii) an easy component has its Lagrangian terms dropped from the
+  coupling rows of the Variable it no longer has, through the new
+  `MasterProblemBlock::drop_easy_coupling()`, and the master is given the
+  new local-to-global maps of the easy components
+
+- a Modification changing the linearizations of a component without
+  changing its Variable only asked the Solver of the master to read the
+  subgradients again, but the master holds copies of them and so gave back
+  the stale ones; the component is now reset, which reloads its
+  linearizations from its global pool as they are
+
 - when a component had used up its share of the bundle with constraints
   (vertical linearizations, which are never removed), a new one was still
   put in a free spot elsewhere in the bundle, beyond the global pool of the

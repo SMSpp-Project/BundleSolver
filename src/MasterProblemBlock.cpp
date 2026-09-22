@@ -1755,6 +1755,66 @@ void MasterProblemBlock::add_LBF_to_coupling_rows(
 
 /*--------------------------------------------------------------------------*/
 
+void MasterProblemBlock::drop_easy_coupling( Index easy_id , Index j )
+{
+ if( easy_id >= EasyCmps.size() )
+  throw( std::logic_error( "MasterProblemBlock::drop_easy_coupling: invalid "
+                           "easy component index" ) );
+ if( j >= CouplingCns.size() )
+  throw( std::logic_error( "MasterProblemBlock::drop_easy_coupling: global "
+                           "index outside master dimension" ) );
+
+ // true if var belongs to the inner Block of the easy component
+ const Block * inner = EasyCmps[ easy_id ]->get_inner_block();
+ const auto of_the_component = [ inner ]( const Variable * var ) {
+  for( auto b = var->get_Block() ; b ; b = b->get_f_Block() )
+   if( b == inner )
+    return( true );
+  return( false );
+  };
+
+ // zero the terms of the component in the coupling row of j
+ auto row = std::next( CouplingCns.begin() , j );
+ auto lf = static_cast< LinearFunction * >( row->get_function() );
+ Subset idx;
+ for( Index h = 0 ; h < lf->get_num_active_var() ; ++h )
+  if( ( lf->get_coefficient( h ) != 0 ) &&
+      of_the_component( lf->get_active_var( h ) ) )
+   idx.push_back( h );
+ if( ! idx.empty() ) {
+  LinearFunction::Vec_FunctionValue zeros( idx.size() , 0.0 );
+  lf->modify_coefficients( std::move( zeros ) , std::move( idx ) , true );
+  }
+
+ // in the displacement form, drop j from the Objective coefficients of the
+ // same Variable, and write them again with the current x_bar
+ if( ( f_v2_form == 0 ) && ( easy_obj_idx >= 0 ) ) {
+  auto obj = get_objective< FRealObjective >();
+  auto dqf = obj ? dynamic_cast< DQuadFunction * >( obj->get_function() )
+                 : nullptr;
+  for( std::size_t h = 0 ; h < EasyObjVars.size() ; ++h ) {
+   if( ! of_the_component( EasyObjVars[ h ] ) )
+    continue;
+   auto & coeffs = EasyObjCoeffs[ h ];
+   const auto sz = coeffs.size();
+   coeffs.erase( std::remove_if( coeffs.begin() , coeffs.end() ,
+                                 [ j ]( const auto & el ) {
+                                  return( el.first == j ); } ) ,
+                 coeffs.end() );
+   if( dqf && ( coeffs.size() != sz ) ) {
+    double coeff = 0.0;
+    for( const auto & [ jj , a ] : coeffs )
+     if( jj < f_x_bar.size() )
+      coeff += f_x_bar[ jj ] * a;
+    dqf->modify_term( DQuadFunction::Index( easy_obj_idx + int( h ) ) ,
+                      coeff , 0.0 );
+    }
+   }
+  }
+ }
+
+/*--------------------------------------------------------------------------*/
+
 Index MasterProblemBlock::easy_local_to_global(
     Index easy_id,
     Index local_i ) const

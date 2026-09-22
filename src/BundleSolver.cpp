@@ -5350,11 +5350,20 @@ void BundleSolver::compute_NrmZFctr( void )
    while( InvItemVcblr[ k ][ i ] == InINF )
     ++i;
 
-   v_c05f[ k ]->get_linearization_coefficients( tg1.data() ,
-                                                Range( 0 , NumVar ) , i );
-
-   std::transform( tg.begin() , tg.end() , tg1.begin() , tg.begin() ,
-                   std::plus< VarValue >() );
+   if( f_sparse_lambda ) {  // local coefficients, scattered to global
+    const Index loc_NV = v_c05f[ k ]->get_num_active_var();
+    v_c05f[ k ]->get_linearization_coefficients( tg1.data() ,
+                                                 Range( 0 , loc_NV ) , i );
+    const auto & m = v_local2global[ k ];
+    for( Index li = 0 ; li < loc_NV ; ++li )
+     tg[ m[ li ] ] += tg1[ li ];
+    }
+   else {
+    v_c05f[ k ]->get_linearization_coefficients( tg1.data() ,
+                                                 Range( 0 , NumVar ) , i );
+    std::transform( tg.begin() , tg.end() , tg1.begin() , tg.begin() ,
+                    std::plus< VarValue >() );
+    }
    }
   }
 
@@ -6846,12 +6855,22 @@ void BundleSolver::add_to_bundle( Index k , Index i )
  else                          // the item is there already
   remove_cut_global( wh );       // remove it so that it can be replaced
 
- // local buffer for the new linearization coefficients
+ // the linearization in the global Variable: in sparse mode the C05Function
+ // gives its coefficients in its own Variable, which are scattered to their
+ // global slots through v_local2global[ k ]
  std::vector< double > G1( NumVar , 0.0 );
-
- // recover the linearization from the C05Function
- v_c05f[ k ]->get_linearization_coefficients( G1.data() ,
-                                              Range( 0 , NumVar ) , i );
+ if( f_sparse_lambda ) {
+  const Index loc_NV = v_c05f[ k ]->get_num_active_var();
+  std::vector< double > Gk( loc_NV );
+  v_c05f[ k ]->get_linearization_coefficients( Gk.data() ,
+                                               Range( 0 , loc_NV ) , i );
+  const auto & m = v_local2global[ k ];
+  for( Index li = 0 ; li < loc_NV ; ++li )
+   G1[ m[ li ] ] = Gk[ li ];
+  }
+ else
+  v_c05f[ k ]->get_linearization_coefficients( G1.data() ,
+                                               Range( 0 , NumVar ) , i );
  if( ! f_convex )
   chgsign( G1.data() , NumVar );
 
@@ -7268,19 +7287,17 @@ void BundleSolver::process_outstanding_Modification( void )
 
    }  // end( if( tmod == FunctionMod ) )
 
-  // a "naked" FunctionModVars is only allowed if there is only one
-  // component (comprised the linear one). if it is allowed, it is
-  // of no consequence here, except for the possible effect on the
-  // function values, if it is a C05FunctionModVars*, meaning that it
-  // represents a strongly quasi-additive variable change. if not, the
-  // variable change also implies a reset
-  // in no case, however, the Modification is removed from the list
+  // a "naked" FunctionModVars (a variable change of one component, not
+  // wrapped in a lockstep GroupModification) is processed per component:
+  // the sparse Lambda path, and the dense -> sparse promotion in the 4th
+  // loop below, handle a variable change of a single Function. it is of no
+  // consequence here, except for the possible effect on the function
+  // values: if it is a C05FunctionModVars*, meaning that it represents a
+  // strongly quasi-additive variable change, the bounds of that component
+  // are refreshed; if not, the variable change also implies a "hard" reset
+  // of that component. in no case the Modification is removed from the
+  // list, the 4th loop doing the actual addition and removal of variables
   if( const auto tmod = std::dynamic_pointer_cast< FunctionModVars >( mod ) ) {
-   if( ( NrFi > 1 ) || zeroth_component() )
-    throw( std::invalid_argument(
-               "BundleSolver::process_outstanding_Modification: "
-               "naked FunctionModVars not allowed" ) );
-
    auto wFi = get_index_of_component( tmod->function() );
 
    FModChg( tmod->shift() , wFi );  // change/reset upper/lower values
@@ -7860,6 +7877,40 @@ void BundleSolver::process_outstanding_Modification( void )
  // the master rows.
  std::vector< Index > globally_to_remove;
 
+ // what a component that stops depending on some of its Variable, while
+ // the others still do, implies: the linearizations of that component in
+ // the master still carry the coefficients of the global Variable it no
+ // longer has, which the linearizations it gives now do not, so they are
+ // reloaded from its global pool through the new local-to-global map (a
+ // reset, which also recomputes their constants); and if any of those
+ // Variable is not 0 in the stability centre the value of the component
+ // there is no longer known, the new function being the old one with those
+ // Variable at 0 [see FunctionModVars::shift()]
+ //
+ // an easy component has no linearizations but is in the master as its
+ // inner Block plus its Lagrangian terms in the coupling rows of the global
+ // Variable, from which the terms of the ones it no longer has are dropped
+ const auto drop_local_vars = [ & ]( Index h , bool nonzero ,
+                                     const std::vector< Index > & globals ) {
+  if( NrEasy && IsEasy[ h ] ) {
+   if( MasterPB ) {
+    Index easy_id = 0;  // the position of h among the easy components
+    for( Index k = 0 ; k < h ; ++k )
+     if( IsEasy[ k ] )
+      ++easy_id;
+    for( auto g : globals )
+     MasterPB->drop_easy_coupling( easy_id , g );
+    }
+   }
+  else {
+   if( ! reset[ h ] )
+    ++cntreset;
+   reset[ h ] = AlphaC[ h ] = true;
+   }
+  if( nonzero )
+   FModChg( FunctionMod::NaNshift , h );
+  };
+
  for( auto imod = v_mod_tmp.begin() ; imod != v_mod_tmp.end() ;
       // note the iterator_expression of the for() obtained by defining
       // a lambda and then immediately applying it to imod
@@ -8011,14 +8062,19 @@ void BundleSolver::process_outstanding_Modification( void )
       const Index loc_NV = m.size() - 1;
       const Index r0 = std::min( ttmod->range().first , loc_NV );
       const Index r1 = std::min( ttmod->range().second , loc_NV );
+      bool nonzero = false;
+      std::vector< Index > globals;
       for( Index l = r0 ; l < r1 ; ++l ) {
        const Index g = m[ l ];
+       globals.push_back( g );
        if( std::abs( Lambda[ g ] ) > 1e-12 )
-        std::fill( AlphaC.begin() , AlphaC.end() , true );
+        nonzero = true;
        if( --v_ref_count[ g ] == 0 )
         globally_to_remove.push_back( g );
        }
       m.erase( m.begin() + r0 , m.begin() + r1 );
+      if( r1 > r0 )
+       drop_local_vars( h , nonzero , globals );
       rmvd_vars = true;
       continue;
       }
@@ -8097,14 +8153,19 @@ void BundleSolver::process_outstanding_Modification( void )
 
       if( sbst.empty() ) {
        // deleting *all* of v_c05f[ h ]'s local Lambda
+       bool nonzero = false;
+       std::vector< Index > globals;
        for( Index l = 0 ; l < loc_NV ; ++l ) {
         const Index g = m[ l ];
+        globals.push_back( g );
         if( std::abs( Lambda[ g ] ) > 1e-12 )
-         std::fill( AlphaC.begin() , AlphaC.end() , true );
+         nonzero = true;
         if( --v_ref_count[ g ] == 0 )
          globally_to_remove.push_back( g );
         }
        m.assign( { Inf< Index >() } );  // keep only the terminator
+       if( loc_NV )
+        drop_local_vars( h , nonzero , globals );
        rmvd_vars = true;
        continue;
        }
@@ -8119,13 +8180,17 @@ void BundleSolver::process_outstanding_Modification( void )
        rmvd_vars = true;
        continue;
        }
+      bool nonzero = false;
+      std::vector< Index > globals;
       for( auto l : effective ) {
        const Index g = m[ l ];
+       globals.push_back( g );
        if( std::abs( Lambda[ g ] ) > 1e-12 )
-        std::fill( AlphaC.begin() , AlphaC.end() , true );
+        nonzero = true;
        if( --v_ref_count[ g ] == 0 )
         globally_to_remove.push_back( g );
        }
+      drop_local_vars( h , nonzero , globals );
       // erase effective[] from m in descending order so earlier erases
       // don't invalidate later positions (effective is ordered ascending
       // per the FunctionModVarsSbst contract).
@@ -8302,6 +8367,17 @@ void BundleSolver::process_outstanding_Modification( void )
   globally_to_remove.clear();
   }
 
+ // the Master reads the local-to-global maps of the easy components, which
+ // the removals above may have changed, and which it believes the identity
+ // until the representation has become sparse
+ if( f_sparse_lambda && NrEasy && MasterPB && rmvd_vars ) {
+  std::vector< std::vector< Index > > easy_local2global;
+  for( Index k = 0 ; k < NrFi ; ++k )
+   if( IsEasy[ k ] )
+    easy_local2global.push_back( v_local2global[ k ] );
+  MasterPB->set_easy_local2global( easy_local2global );
+  }
+
  // at this point, the set of Variable in the BundleSolver/Master Problem
  // coincides with the set of Variable in the C05Function(s), save for the
  // Variable to be added: in other words, the positions from 0 no NumVar - 1
@@ -8459,9 +8535,16 @@ void BundleSolver::process_outstanding_Modification( void )
     }
    }
 
-  // now actually do it
-  if( MasterPB )
-   MasterPB->invalidate_subgradients( hard_k( wFi ) );
+  // now actually do it: the master holds copies of the linearizations, so
+  // telling its Solver to read them again would give back the stale ones;
+  // the linearizations of the component are rather reloaded from its global
+  // pool as they are now, which is a reset (an easy component has none, and
+  // is in the master through its inner Block)
+  if( ! ( NrEasy && IsEasy[ wFi ] ) ) {
+   if( ! reset[ wFi ] )
+    ++cntreset;
+   reset[ wFi ] = AlphaC[ wFi ] = true;
+   }
 
   }  // end( 5th loop, forward )
 
