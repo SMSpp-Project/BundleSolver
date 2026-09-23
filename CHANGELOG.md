@@ -9,8 +9,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `test/osbdo`, the multicommodity instances of OSBDO solved in the same
+  resource-directive form, with a `BendersBFunction` per commodity and the
+  coupling as an easy `LagBFunction`, against the whole problem as one LP;
+  the generator is the one of OSBDO and a script runs OSBDO on the same
+  instance, so that the two are compared on what they both solve
 ### Changed
 
+- the makefile asks for `-O3 -DNDEBUG` and nothing else, the macro of the
+  patch for `boost::any` on macOS having no reason to be there since there is
+  no `boost::any` left in the core
+- whoever links the module keeps it: the classes of a module register
+  themselves in the factory from a static initialiser, and a linker that
+  drops what looks unused takes the registration away with it, so the target
+  now tells whoever links it to keep the symbol that forces the module in,
+  and on ELF, where naming the symbol is not enough, the library as a whole
+- the master of the tests asks Gurobi for its least numerical care and not
+  for none of it, and declares the residual zero on the scale of the model:
+  the extra care is paid at every one of the thousands of solves of a run
+- the tests of the ML variant link `SMS++::BundleSolverML`, which is where
+  `BundleSolverML` now lives
+- the configuration that is installed no longer looks for NDOSolver/FiOracle,
+  which the library does not link any more
+- the three places where the parallel loop names a failing component write
+  the log at the same verbosity, and the log says which status the component
+  that stopped the loop returned, a stop with no reason having left whoever
+  read it to guess among the components
+- `ParallelBundleSolver` keeps its threads alive and wakes up when an
+  evaluation ends, rather than starting and joining a thread per component at
+  every iteration, and never lets a thread wait on one that has already
+  finished
+- the master problem is a `MasterProblemBlock`, i.e., a Block of the model
+  solved by whichever Solver is attached to it, in place of the `MPSolver`
+  hierarchy of the previous versions: what the bundle asks of it is said
+  through the abstract representation and the Modification, so that the
+  master is built, solved and changed as any other Block, and the parameters
+  that only the old hierarchy understood are refused where they no longer
+  mean anything
 - the groups of components take the threads they spend on their members from
   the pool of the parallel solver driving them, through
   `C05SumFunction::set_submitter()`, instead of starting one per member: a
@@ -29,8 +64,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   active Variable", into a range that nothing read: an assumption that no
   longer holds when the Lambda is sparse, in sixty lines whose only effect
   was to decide whether the component is reloaded at all
-
-
 
 - BundleSolverML is a library of its own, SMS++::BundleSolverML: Torch is
   some hundreds of megabytes of shared objects, and a program linking
