@@ -266,8 +266,7 @@ Several major improvements:
 
 [Unreleased]: https://gitlab.com/smspp/bundlesolver/-/compare/0.5.0...develop
 [0.5.0]: https://gitlab.com/smspp/bundlesolver/-/compare/0.4.5...0.5.0
-[0.4.5]: https://gitlab.com/smspp/bundlesolver/-/compare/0.4.4.1...0.4.5
-[0.4.4.1]: https://gitlab.com/smspp/bundlesolver/-/compare/0.4.4...0.4.4.1
+[0.4.5]: https://gitlab.com/smspp/bundlesolver/-/compare/0.4.4...0.4.5
 [0.4.4]: https://gitlab.com/smspp/bundlesolver/-/compare/0.4.3...0.4.4
 [0.4.3]: https://gitlab.com/smspp/bundlesolver/-/compare/0.4.2...0.4.3
 [0.4.2]: https://gitlab.com/smspp/bundlesolver/-/compare/0.4.1...0.4.2
