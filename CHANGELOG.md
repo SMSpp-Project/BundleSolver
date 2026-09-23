@@ -11,6 +11,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- the groups of components take the threads they spend on their members from
+  the pool of the parallel solver driving them, through
+  `C05SumFunction::set_submitter()`, instead of starting one per member: a
+  thread costs of the order of 100 microseconds to start and the members of
+  the instances of interest cost less than that, which is why the hand-down
+  was worth it only above a threshold. The two levels share one pool, sized
+  for both, and a group evaluates one of its members in the thread that is
+  waiting for the others anyway, so that no thread of the pool is ever held
+  doing nothing and the members cannot be starved by the components
+
+- the fifth loop of `process_outstanding_Modification()` asks whether any of
+  the Variable a Modification speaks of is still "active" in the component it
+  comes from, that component being reloaded from its global pool whatever has
+  changed. It used to actualise the names against the first component, "which
+  is fairly taken as a representative since all the C05Function have the same
+  active Variable", into a range that nothing read: an assumption that no
+  longer holds when the Lambda is sparse, in sixty lines whose only effect
+  was to decide whether the component is reloaded at all
+
+
+
 - BundleSolverML is a library of its own, SMS++::BundleSolverML: Torch is
   some hundreds of megabytes of shared objects, and a program linking
   BundleSolver paid the loading of every one of them at each start, 0.2 s per
