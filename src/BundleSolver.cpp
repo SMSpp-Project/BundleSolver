@@ -7595,14 +7595,14 @@ void BundleSolver::process_outstanding_Modification( void )
  // consider changes of Lambda due to the removal of variables; additions
  // never create problems since new variables are always initialized to 0, and
  // therefore they never change the existing linearization error. in fact, not
- // all changes of g necessarily change the linearization error: if a
+  // all changes of g necessarily change the linearization error: if a
  // component g_i changes such that Lambda_i == 0, this has no impact. however,
  // in this reverse loop the map between the Lambda[] vector and the indices
  // in the Modification is nontrivial (if additions/removals happened), which
- // makes checking this too complicated. anyway, the issue will go away in the
- // version of BundleSolver that does not use MPSolver since there the
- // linearizations will (likely) be represented by means of their "naked"
- // constant \alpha rather than by their linearization error
+ // makes checking this too complicated. note that the master holds the raw
+ // constant \alpha and rebuilds the linearization error out of it at every
+ // set_reference(), so that what is conservative here is the re-reading of
+ // the linearizations and not the constants
  //
  // note that Modification changing the linearizations happening *after* a
  // "soft" reset of the global pool (meaning it is found *before* in the
@@ -7808,11 +7808,11 @@ void BundleSolver::process_outstanding_Modification( void )
  // - linearizations that need be added
  // - linearizations that need be changed
  // - constants that need be changed
- // Note that:
- // - due to limitations in the MPSolver interface, changing a linearization
- //   implies changing its constant; therefore, Cchg[] contains changes in
- //   the constants only and nothing else, which means that has empty
- //   intersection with all other three sets
+  // Note that:
+ // - a change of a linearization is pushed to the master as the pair (g,
+ //   constant), the master taking one for the other; therefore, Cchg[]
+ //   contains changes in the constants only and nothing else, which means
+ //   that has empty intersection with all other three sets
  // - if a linearization that is added/changed is later removed, it is no
  //   longer added/changed
  // - if a linearization that is removed/changed is later added it is no
@@ -7821,13 +7821,14 @@ void BundleSolver::process_outstanding_Modification( void )
  // - thus, Addd[], Rmvd[], Chgd[] and Cchg[] all have empty intersection
  // - linearization changes to a reset component can be ignored
  // - constant changes when all constants change can be ignored
- // - due to limitations in the MPSolver interface, "horizontal" changes (of
- //   a given range/subset of entries) to a subset of linearizations are
- //   not supported. these must be either mapped in "horizontal" changes to
- //   *all* linearizations (of a given component), or to "vertical" changes
- //   of all components to a subset of linearization. somewhat arbitrarily,
- //   the second option is chosen here. as a consequence, C05FunctionModRngd
- //   and C05FunctionModSbst are considered C05FunctionMod. note that
+  // - "horizontal" changes (of a given range/subset of entries) to a subset
+ //   of linearizations are not dealt with as such: the master rewrites a
+ //   linearization whole, so they must be either mapped in "horizontal"
+ //   changes to *all* linearizations (of a given component), or to
+ //   "vertical" changes of all components to a subset of linearization.
+ //   somewhat arbitrarily, the second option is chosen here. as a
+ //   consequence, C05FunctionModRngd and C05FunctionModSbst are considered
+ //   C05FunctionMod. note that
  //   C05FunctionMod* with which().empty() still remain untreated, as well
  //   as C05FunctionModLinRngd and C05FunctionModLinSbst (that by definition
  //   always concern all the linearizations), while C05FunctionModLin have
@@ -8017,8 +8018,7 @@ void BundleSolver::process_outstanding_Modification( void )
  // done. this is all the more important since variables are removed in
  // parallel for all components, hence if a variable with Lambda_i != 0 is
  // removed then all the linearization errors must be reset
- Index to_add = 0;
- bool addd_vars = false;  // if any Variable has ever been added
+  Index to_add = 0;
  bool rmvd_vars = false;  // if any Variable has ever been removed
 
  // Sparse mode bookkeeping: list of LamVcblr global indices whose
@@ -8137,10 +8137,8 @@ void BundleSolver::process_outstanding_Modification( void )
       }
      }
 
-    if( const auto ttmod =
+        if( const auto ttmod =
         std::dynamic_pointer_cast< FunctionModVarsAddd >( tmod ) ) {
-     addd_vars = true;
-
      if( f_sparse_lambda ) {
       // Sparse Lambda Addd: ttmod->first() is local (= loc_NV[ h ] at
       // the time the Mod was issued) and ttmod->vars() is the subset
@@ -8537,10 +8535,10 @@ void BundleSolver::process_outstanding_Modification( void )
 
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // 5th loop: handle "horizontal" changes, i.e., changes of a given range
- // (subset) of entries in all the linearizations, i.e., C05FunctionMod* and
- // C05FunctionModLin* with which().empty(). note that due to limitations
- // of the MPSolver interface, subsets are anyway translated to a range,
- // thereby possibly requiring also entries that have not changed. if
+  // (subset) of entries in all the linearizations, i.e., C05FunctionMod* and
+ // C05FunctionModLin* with which().empty(). the component is reloaded from
+ // its global pool whatever entries have changed, the master holding copies
+ // of the linearizations that a subset would not refresh. if
  // Variable have been removed the original indices in the Modification need
  // be translated, and in fact if Variable in the range have been removed
  // the range can be shrank, up to disappearing altogether. the mapping is
@@ -8556,9 +8554,7 @@ void BundleSolver::process_outstanding_Modification( void )
  for( ; ! v_mod_tmp.empty() ; v_mod_tmp.pop_front() ) {
   auto mod = v_mod_tmp.front();  // pick the first Modification
 
-  Index wFi;                     // the affected component
-  Range range( NumVar , 0 );     // an empty range
-  c_Subset * subset = nullptr;   // an empty subset
+    Index wFi;                     // the affected component
   c_Vec_p_Var * vars;            // the affected Variable
 
   // patiently sift through the possible Modification types to find what mod
@@ -8572,9 +8568,8 @@ void BundleSolver::process_outstanding_Modification( void )
                "BundleSolver::process_outstanding_Modification: "
                "unexpected nonempty C05FunctionModRngd" ) );
 
-   wFi = get_index_of_component( tmod->function() );
+      wFi = get_index_of_component( tmod->function() );
    vars = & tmod->vars();
-   range = tmod->range();
    goto done;
    }
 
@@ -8586,9 +8581,8 @@ void BundleSolver::process_outstanding_Modification( void )
                "BundleSolver::process_outstanding_Modification: "
                "unexpected nonempty C05FunctionModSbst" ) );
 
-   wFi = get_index_of_component( tmod->function() );
+      wFi = get_index_of_component( tmod->function() );
    vars = & tmod->vars();
-   subset = & tmod->subset();
    goto done;
    }
 
@@ -8598,7 +8592,6 @@ void BundleSolver::process_outstanding_Modification( void )
       std::dynamic_pointer_cast< C05FunctionModLinRngd >( mod ) ) {
    wFi = get_index_of_component( tmod->function() );
    vars = & tmod->vars();
-   range = tmod->range();
    goto done;
    }
 
@@ -8608,7 +8601,6 @@ void BundleSolver::process_outstanding_Modification( void )
            std::dynamic_pointer_cast< C05FunctionModLinSbst >( mod ) ) {
    wFi = get_index_of_component( tmod->function() );
    vars = & tmod->vars();
-   subset = & tmod->subset();
    goto done;
    }
 
@@ -8617,74 +8609,25 @@ void BundleSolver::process_outstanding_Modification( void )
              "BundleSolver::process_outstanding_Modification: "
              "unexpected Modification slipped in" ) );
 
-  // the range/subset (and component) have been identified: check if the
-  // need to be translated due to addition/removals, and in case do it
-  done:if( ! rmvd_vars ) {
-   // Variable have never been removed, hence the names can be used directly
-   if( subset ) {  // turn the subset into a range
-    range.first = subset->front();
-    range.second = subset->back() + 1;
-    }
-   }
-  else {
-   // Variable have been removed, and hence names need be actualised
-   // this is done by directly checking vars() against the "active"
-   // Variable of v_c05f[ 0 ], which is fairly taken as a representative
-   // since all the C05Function have the same "active" Variable
-   if( ! addd_vars ) {
-    // ... but never added: names can have only decreased, but even more
-    // importantly must have remained ordered, i.e., the first "active"
-    // Variable in vars() is the first variable of the range, the last
-    // "active" Variable vars() is the last variable of the range
-    // note that we do not use subset and range here, as the range is
-    // reconstructed from scratch using vars
-    auto lit = vars->begin();
-    for( ; lit != vars->end() ; ++lit ) {
-     range.first = v_c05f[ 0 ]->is_active( *lit );
-     if( range.first < v_c05f[ 0 ]->get_num_active_var() )
-      break;
-     }
-    if( lit == vars->end() )  // no Variable in vars is still "active"
-     continue;                // nothing else to do
-    // since we know that here are some "active" Variable in vars(), this
-    // second loop will necessarily end
-     for( auto rit = vars->rbegin() ; ; ++rit ) {
-      range.second = v_c05f[ 0 ]->is_active( *lit );
-      if( range.second < v_c05f[ 0 ]->get_num_active_var() )
-       break;
-      }
-     ++range.second;  // the range is [ first , second )
-     }
-   else {
-    // the complicated case: Variable have both been removed and added
-    // names can have changed in an almost arbitrary way, except that if
-    // a name has increased then the Variable has been deleted and re-added
-    // and therefore need not be included
-    Subset newnames( vars->size() );
-    auto lit = vars->begin();
-    auto nni = newnames.begin();
-    if( subset ) {
-     auto sit = subset->begin();
-     for( ; lit != vars->end() ; ++lit , ++sit ) {
-      auto i = v_c05f[ 0 ]->is_active( *lit );
-      if( ( i <= *sit ) && ( i < v_c05f[ 0 ]->get_num_active_var() ) )
-       *(nni++) = i;
-      }
-     }
-    else {
-     for( ; lit != vars->end() ; ++lit , ++range.first ) {
-      auto i = v_c05f[ 0 ]->is_active( *lit );
-      if( ( i <= range.first ) && ( i < v_c05f[ 0 ]->get_num_active_var() ) )
-       *(nni++) = i;
-      }
-     }
-    if( nni == newnames.begin() )  // no Variable in vars is still "active"
-     continue;                     // nothing else to do
-    newnames.resize( std::distance( newnames.begin() , nni ) );
-    range.first = newnames.front();
-    range.second = newnames.back();
-    ++range.second;  // the range is [ first , second )
-    }
+  /* The component and the Variable the Modification speaks of have been
+   * identified. The only thing done with them is the reset of the component
+   * below, the master holding copies of the linearizations that have to be
+   * reloaded whatever entries of them have changed; hence the names need
+   * not be actualised against the additions and the removals, and the one
+   * question left is whether any of those Variable is still "active" in
+   * that component, since if none is there is nothing to reload. The
+   * question is asked of the component the Modification comes from, each of
+   * them having its own "active" Variable when the Lambda is sparse. */
+
+  done:if( rmvd_vars ) {
+   auto cf = v_c05f[ wFi ];
+   auto vit = std::find_if( vars->begin() , vars->end() ,
+                            [ cf ]( auto v ) {
+                             return( cf->is_active( v ) <
+                                     cf->get_num_active_var() );
+                             } );
+   if( vit == vars->end() )  // no Variable of the Modification is "active"
+    continue;                // any more: there is nothing to reload
    }
 
   // now actually do it: the master holds copies of the linearizations, so
@@ -8725,9 +8668,9 @@ void BundleSolver::process_outstanding_Modification( void )
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // if there are linearization to add/change, do it now in one blow
  //
- // note that due to limitations in the MPSolver interface, changing a
- // linearization is identical to adding one, even if the change was limited
- // to a range/subset of the entries
+  // note that changing a linearization is identical to adding one, even if
+ // the change was limited to a range/subset of the entries: the master takes
+ // a linearization whole, and modify_cut() rewrites the pair (g, constant)
  //
  // yet, handling of additions and changes differs depending on BPar7.
  // in particular, if ( BPar7 & 4 ), then additions to the global pool
@@ -8827,10 +8770,10 @@ void BundleSolver::process_outstanding_Modification( void )
 
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // if there are constants to change entirely, do it now in one blow
- // note: in case of a full reset, get_linearization_coefficients() is
+  // note: in case of a full reset, get_linearization_coefficients() is
  //       called twice, once in ChgSubG() (via GetGi()) and once in the
- //       loop below. this has the potential to be horribly inefficient,
- //       but the only clean way out is to do away with MPSolver entirely
+ //       loop below; this has the potential to be horribly inefficient
+ //       whenever a component is expensive to ask for its coefficients
 
  if( std::find( AlphaC.begin() , AlphaC.end() , false ) == AlphaC.end() ) {
   for( auto & cchk : Cchg )  // all components have been reset
