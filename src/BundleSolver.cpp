@@ -2572,15 +2572,18 @@ void BundleSolver::get_var_solution_easy_pi( Index k )
        "intDoEasy & 12 == 12 required to get easy components pi" ) );
 
  // The k-th easy sub-Block registered into MasterPB is the very same
- // inner Block exposed by v_c05f[ k ]->build_easy_master_block(); when
- // the master Solver computes(), the dual values of its RowConstraint
- // are written back in place, so there is nothing to copy here.
+ // inner Block exposed by v_c05f[ k ]->build_easy_master_block(): the
+ // Solver of the master writes the dual values of its RowConstraint there
+ // at each solve, but so may any other Solver of the model afterwards,
+ // hence the ones of the last solve of the master are written back.
 
  if( ! MasterPB || ! MasterPB->get_easy_component( easy_k( k ) ) )
   throw( std::logic_error(
        "BundleSolver::get_var_solution_easy_pi: "
        "easy component " + std::to_string( k ) + " not registered "
        "in MasterProblemBlock" ) );
+
+ MasterPB->restore_easy_dual( easy_k( k ) );
 
  }  // end( BundleSolver::get_var_solution_easy_pi() )
 
@@ -2594,14 +2597,17 @@ void BundleSolver::get_var_solution_easy_rc( Index k )
        "intDoEasy & 8 required to get easy components rc" ) );
 
  // Same observation as in get_var_solution_easy_pi: the reduced costs of
- // the easy sub-Block ColVariable are produced in place by the master
- // Solver, no explicit propagation is needed.
+ // the easy sub-Block ColVariable are the duals of the rows that fence
+ // them, which the master wrote at its last solve and which are written
+ // back here, anybody having been free to write over them since.
 
  if( ! MasterPB || ! MasterPB->get_easy_component( easy_k( k ) ) )
   throw( std::logic_error(
        "BundleSolver::get_var_solution_easy_rc: "
        "easy component " + std::to_string( k ) + " not registered "
        "in MasterProblemBlock" ) );
+
+ MasterPB->restore_easy_dual( easy_k( k ) );
 
  }  // end( BundleSolver::get_var_solution_easy_rc() )
 
@@ -5856,6 +5862,10 @@ void BundleSolver::InitMPB( void )
                       IsEasy ,
                       MPHScaling ,
                       easy_local2global );
+
+ // the duals of the easy components are saved at each solve of the master
+ // only if they are going to be asked for [see intDoEasy]
+ MasterPB->keep_easy_duals( ( DoEasy & 8 ) || ( ( DoEasy & 12 ) == 12 ) );
 
  // The storage frame has already been selected before configure(): 0 is the
  // translated/displacement form, 1 the raw/iterate form.

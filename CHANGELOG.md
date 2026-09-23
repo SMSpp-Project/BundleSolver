@@ -74,6 +74,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- the duals of an easy component, and the reduced costs of its columns, are
+  the ones of the last solve of the master: the sub-Block of an easy
+  component is a Block of the model, which any Solver may write into between
+  that solve and the question, so what it held when asked was not what the
+  master had left there, as was already the case for its primal. They are
+  saved only when `intDoEasy` says that they will be asked for
+
 - a master that the Solver could not solve, and whose bundle held no item
   to remove, was the end of the run: it is now solved once more with t as
   it was before the empty bundle brought it down to its minimum, where the
