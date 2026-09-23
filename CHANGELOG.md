@@ -106,7 +106,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - allow to terminate in exactly one iteration 
 
-
 ## [0.4.4] - 2024-02-27
 
 ### Changed
@@ -190,8 +189,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - fixed several flaws
 
 - improved namespace handling and similar stuff
-
-### Changed
 
 ## [0.4.0] - 2021-05-02
 
