@@ -34,13 +34,11 @@
 # macros to be exported - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 BNDSLVOBJ = $(BNDSLVSDR)/obj/ParallelBundleSolver.o \
-	$(BNDSLVSDR)/obj/MasterProblemBlock.o \
 	$(BNDSLVSDR)/obj/BundleSolver.o
 
 BNDSLVINC = -I$(BNDSLVSDR)/include
 
 BNDSLVH   = $(BNDSLVSDR)/include/ParallelBundleSolver.h \
-	$(BNDSLVSDR)/include/MasterProblemBlock.h \
 	$(BNDSLVSDR)/include/BundleSolver.h
 
 # BundleSolverML requires Torch: it is only compiled if $(BNDSLVML) is
@@ -63,14 +61,8 @@ $(BNDSLVSDR)/obj/ParallelBundleSolver.o: $(BNDSLVSDR)/src/ParallelBundleSolver.c
 	$(CC) -c $(BNDSLVSDR)/src/ParallelBundleSolver.cpp -o $@ \
 	$(BNDSLVINC) $(SMS++INC) $(MILPSINC) $(SW)
 
-$(BNDSLVSDR)/obj/MasterProblemBlock.o: $(BNDSLVSDR)/src/MasterProblemBlock.cpp \
-	$(BNDSLVSDR)/include/MasterProblemBlock.h $(SMS++OBJ)
-	$(CC) -c $(BNDSLVSDR)/src/MasterProblemBlock.cpp -o $@ \
-	$(BNDSLVINC) $(SMS++INC) $(SW)
-
 $(BNDSLVSDR)/obj/BundleSolver.o: $(BNDSLVSDR)/src/BundleSolver.cpp \
-	$(BNDSLVSDR)/include/BundleSolver.h \
-	$(BNDSLVSDR)/include/MasterProblemBlock.h $(SMS++OBJ) $(MILPSH)
+	$(BNDSLVSDR)/include/BundleSolver.h $(SMS++OBJ) $(MILPSH)
 	$(CC) -c $(BNDSLVSDR)/src/BundleSolver.cpp -o $@ \
 	$(BNDSLVINC) $(SMS++INC) $(MILPSINC) $(SW)
 
