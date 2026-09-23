@@ -143,12 +143,30 @@ BundleSolver::Index ParallelBundleSolver::InnerLoop( bool extrastep )
   * case, where the outer loop has nothing to spend the threads on and they
   * are all the group's, which is why this comes before the check below. */
 
- if( MaxThread && ( ! v_groups.empty() ) ) {
+  if( MaxThread && ( ! v_groups.empty() ) ) {
   const Index at_once = std::max( std::min( MaxThread , NrFi - NrEasy ) ,
                                   Index( 1 ) );
   const int each = int( MaxThread / at_once );
-  for( auto & group : v_groups )
+
+  /* The two levels run on the same threads. The pool is sized for both,
+   * i.e. for the components evaluated at once times the members each of
+   * them may evaluate at once, which is MaxThread by construction; a group
+   * runs one of its members in the thread that is waiting for them anyway,
+   * so that no thread of the pool is ever held doing nothing and the
+   * members cannot be starved by the components. */
+
+  if( each > 1 )
+   get_pool( MaxThread );
+
+  for( auto & group : v_groups ) {
    group->set_members_at_once( each );
+   if( each > 1 )
+    group->set_submitter( [ this ]( ThinComputeInterface * f , bool cv ) {
+                           return( f_pool->submit( f , cv , InINF ) );
+                           } );
+   else
+    group->set_submitter();
+   }
   }
 
  // if there is nothing to parallelize here, call the base class version - - -
