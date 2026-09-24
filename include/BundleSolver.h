@@ -713,7 +713,7 @@ public:
   *   stop if less than BPar4 are given. In BundleSolver,
   *   the number
   *
-  *      EpsU = Sigma + D_{tStar}*( z* ) / max( | FiVal | , 1 ) ,
+  *      EpsU = ( Sigma + D_{tStar}*( z* ) ) / max( | FiVal | , 1 ) ,
   *
   *   where Sigma = \sum_i Fi[ i ]_{B,Lambda}*( z[ i ]* ) + \sigma_L( w ) and
   *   z* = - Sum_i z[ i ]* is the optimal solution of the stabilized Dual
@@ -1199,7 +1199,8 @@ public:
   *   reliability (not stopping too far from the true optimum) and efficiency
   *   is
   *
-  *     tStar * || z* ||^2_2 + Sigma* <= min( dblAbsAcc , dblRelAcc * | Fi | )
+  *     ( | tStar | / 2 ) * || z* ||^2_2 + Sigma*
+  *                   <= min( dblAbsAcc , dblRelAcc * max( | Fi | , 1 ) )
   *
   *   where Fi is the current estimate of the optimal solution value (the
   *   value of the objective at the current stability center), tStar is an
@@ -1228,7 +1229,7 @@ public:
   *   come up with a direct estimate of "when the norm is small enough"; see
   *   dblNZEps and intWZNorm. Thus, the alternative stopping criterion
   *
-  *        Sigma* <= min( dblAbsAcc , dblRelAcc * | Fi | )
+  *        Sigma* <= min( dblAbsAcc , dblRelAcc * max( | Fi | , 1 ) )
   *
   *        || z* || <= dblNZEps * < scaling factor >
   *
@@ -2053,7 +2054,8 @@ public:
  /** Returns the current best estimate of how far from optimality the current
   *  point is, i.e.,
   *
-  *    EpsU = Sigma + D_{tStar}*( z* ) / max( | current value of Fi | , 1 )
+  *    EpsU = ( Sigma + D_{tStar}*( z* ) )
+  *           / max( | current value of Fi | , 1 )
   *
   *  (see get_Sigma() and get_DSTS()). tStar is a proper upper bound on the
   *  maximum possible step that one could ever take in direction -z* in order
