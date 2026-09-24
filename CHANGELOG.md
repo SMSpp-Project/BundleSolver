@@ -17,6 +17,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- the noise reduction has a global memory: it sets t to dblmxIncr times the
+  largest among t and the values it has set since the last serious step,
+  and it stops the solver when that value is already dbltMaior, so that the
+  decreases of t in a sequence of null steps can no longer undo it and let
+  it happen forever; the two noise reductions, before the stopping test and
+  after an evaluation that gives neither a serious nor a null step, are one
+  method
+
 - the makefile asks for `-O3 -DNDEBUG` and nothing else, the macro of the
   patch for `boost::any` on macOS having no reason to be there since there is
   no `boost::any` left in the core

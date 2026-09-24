@@ -563,7 +563,8 @@ public:
   CmptdinL( false ) , UpFiBest( INFshift ) , UpFiLmb1def( 0 ) ,
   LwFiLmb1def( 0 ) , UpFiLmbdef( 0 ) , LwFiLmbdef( 0 ) , Fi0Lmb( 0 ) ,
   Fi0Lmb1( 0 ) , DST( 0 ) , NrmD( 0 ) , NrmZ( 0 ) , NrmZFctr( 1 ) ,
-  c_start() , aBP3( 0 ) , LevelNRCntr( 0 ) , LevelStagCntr( 0 )
+  c_start() , aBP3( 0 ) , LevelNRCntr( 0 ) , NRtMax( 0 ) ,
+  LevelStagCntr( 0 )
  {
   // ensure all parameters are properly given their default value
   MaxIter = CDASolver::get_dflt_int_par( intMaxIter );
@@ -2766,6 +2767,16 @@ public:
  void record_level_lower_bound( VarValue lb );
 
 /*--------------------------------------------------------------------------*/
+ /* Performs a noise reduction step: t is set to dblmxIncr times the largest
+  * among its current value and the largest value set by a noise reduction
+  * since the last serious step, capped at dbltMaior (the "global memory" of
+  * [van Ackooij, Frangioni, SIAM J. Optim. 28 (2018), p. 400]). Returns
+  * false, and changes nothing, if either value has already reached
+  * dbltMaior, in which case the noise cannot be reduced any further. */
+
+ bool noise_reduction( void );
+
+/*--------------------------------------------------------------------------*/
  // Updates the out-of-base counters for all items in the Bundle.
 
  void UpdtCntrs( void );
@@ -3429,6 +3440,8 @@ public:
  Index CNSCntr;        ///< counter of consecutive NS
 
  Index LevelNRCntr;    ///< counter of consecutive level NR steps
+
+ VarValue NRtMax;      ///< largest t set by a NR since the last SS
 
  Index LevelStagCntr;  ///< persistent counter of tiny pure-level steps
 

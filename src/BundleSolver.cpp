@@ -508,6 +508,7 @@ int BundleSolver::compute( bool changedvars )
   }
 
  Result = kStillRunning;    // still working
+ NRtMax = 0;                // no noise reduction yet in this call
 
  // start timer now (so that processing Modification is included) - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -821,15 +822,13 @@ int BundleSolver::compute( bool changedvars )
       RifeqFi && ( vStar.back() < INFshift ) &&
       ( Sigma < - max_error( UpRifFi.back() , RelAcc ) ) &&
       ( Sigma <= - m3 * DST ) ) {
-   if( t >= tMaior ) {
+   if( ! noise_reduction() ) {
     BLOG( 1 , " ~ stop: NR required but t maximum" << std::endl );
     Result = kLowPrecision;
     break;
     }
 
-   t = std::min( t * mxIncr , tMaior );
    BLOG( 2 , " ~ NR: t increased to " << shrt << t << std::endl );
-   tHasChgd = true;
    continue;
    }
 
@@ -1052,14 +1051,12 @@ int BundleSolver::compute( bool changedvars )
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
   if( ( ! MPchgs ) && ( ! UsesPureLevelStabilization() ) ) {
-   if( t >= tMaior ) {
+   if( ! noise_reduction() ) {
     BLOG( 1 , "            stop: NR required but t maximum" << std::endl );
     Result = kLowPrecision;
     break;
     }
-   t = std::min( t * mxIncr , tMaior );
    BLOG( 1 , "            NR: t increased to " << shrt << t << std::endl );
-   tHasChgd = true;
    continue;
    }
 
@@ -5105,6 +5102,26 @@ bool BundleSolver::GetGi( Index wFi )
 
 /*--------------------------------------------------------------------------*/
 
+bool BundleSolver::noise_reduction( void )
+{
+ // with the "global memory", within a sequence of null steps the values of t
+ // set by noise reduction grow geometrically, whatever decreases of t happen
+ // in between, so only finitely many noise reductions can happen before the
+ // maximum is reached: this is rule (4.ii) of the generalized bundle theory
+ // (finitely many increases of t in a sequence of null steps), which a plain
+ // t *= mxIncr would not ensure when decreases interleave with it
+ if( std::max( t , NRtMax ) >= tMaior )
+  return( false );
+
+ t = std::min( std::max( t , NRtMax ) * mxIncr , tMaior );
+ NRtMax = t;
+ tHasChgd = true;
+ return( true );
+
+ }  // end( BundleSolver::noise_reduction )
+
+/*--------------------------------------------------------------------------*/
+
 void BundleSolver::GotoLambda1( void )
 {
  // compute DeltaFi - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -5129,6 +5146,7 @@ void BundleSolver::GotoLambda1( void )
 
  Lambda.swap( Lambda1 );
  UpFiLmb.swap( UpFiLmb1 );
+ NRtMax = 0;  // the memory of the noise reduction spans a sequence of NS
  LwFiLmb.swap( LwFiLmb1 );
  UpRifFi = UpFiLmb;
  RifeqFi = true;
