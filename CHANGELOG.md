@@ -104,7 +104,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   easy components making it so was not properly recognised
   as being so
 
-- allow to terminate in exactly one iteration 
+- allow to terminate in exactly one iteration
 
 ## [0.4.4] - 2024-02-27
 
