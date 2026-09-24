@@ -182,6 +182,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.4.1] - 2021-12-07
 
+### Changed
+
 - improved Modification handling (no over-reacting to easy ones, important bugfix)
 
 - better log, printing times for each component in verbosity 4 and higher
