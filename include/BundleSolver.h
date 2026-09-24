@@ -2611,10 +2611,11 @@ public:
 
  bool is_subgradient_global( Index name ) const {
   if( MasterPB && name < ItemVcblr.size() ) {
+   // the master indexes a row by the hard component and by the global
+   // bundle name it was add_cut()-ed with [see read_alpha_global()]
    const auto & loc = ItemVcblr[ name ];
    if( loc.second < Inf< Index >() )
-    return( MasterPB->is_subgradient( int( loc.first ) ,
-                                      int( loc.second ) ) );
+    return( MasterPB->is_subgradient( hard_k( loc.first ) , int( name ) ) );
    }
   return( false );
   }

@@ -102,6 +102,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- the combination of linearizations given back to a component when its
+  bundle is full is divided by the mass its diagonal rows carry, lambda
+  minus the share of its individual lower bound, rather than by 1 - r, so
+  that it is a convex combination also with a level row or an individual
+  lower bound; with all the mass on the lower bounds the item is replaced
+  without any aggregation
+- a full bundle frees an item in base that is a vertical row only when fewer
+  than two diagonal ones are in base, the aggregate being made of the
+  diagonal rows alone and the multiplier of the vertical one being otherwise
+  lost
+- `is_subgradient_global()` asks the master by the hard component and the
+  global name of the item, as the other helpers do, rather than by the
+  position in the pool, which with easy components made every row vertical
+
 - the duals of an easy component, and the reduced costs of its columns, are
   the ones of the last solve of the master: the sub-Block of an easy
   component is a Block of the model, which any Solver may write into between

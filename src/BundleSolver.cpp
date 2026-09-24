@@ -5984,6 +5984,29 @@ Index BundleSolver::BStrategy( Index wFi )
 
  if( wh == InINF )         // InvItemVcblr[ wFi ] was empty: nothing to
   return( InINF );         // pick, signal the caller
+
+ // among the items in base, a vertical one is not freed when a diagonal one
+ // can be: the aggregate given back to the component is made of the
+ // diagonal items alone, so the multiplier of a freed vertical item would be
+ // lost from the dual solution, which the aggregation must keep. This needs
+ // two diagonal items in base, one to be freed and one to receive the
+ // aggregate; with fewer, the vertical item is freed as before
+ if( ( OOBase[ wh ] == 0 ) && ( ! is_subgradient_global( wh ) ) ) {
+  Index ndg = 0;
+  Index whd = InINF;
+  double Adg = -Inf< double >();
+  for( auto i : InvItemVcblr[ wFi ] )
+   if( ( OOBase[ i ] == 0 ) && is_subgradient_global( i ) ) {
+    ++ndg;
+    const auto ai = read_alpha_global( i );
+    if( ai > Adg ) {
+     whd = i;
+     Adg = ai;
+     }
+    }
+  if( ndg >= 2 )
+   wh = whd;
+  }
  if( OOBase[ wh ] < 0 )    // all items are non-removable: nothing else to
   return( InINF );         // do (except maybe complaining very loudly)
  else
@@ -6065,17 +6088,24 @@ Index BundleSolver::BStrategy( Index wFi )
    }
   }
 
- // in pure level the multipliers carry the level mass eta, which is what
- // they have to be divided by; otherwise it is the mass the global lower
- // bound leaves, i.e. 1 - r
- const double diag_norm = pure_level_aggregate
-                          ? aggregate_mass
-                          : ( 1 - MasterPB->get_r() );
+ // the diagonal multipliers sum to lambda - gamma_k, lambda = 1 - r + eta
+ // (in pure level they carry the level mass eta, which is lambda there):
+ // the combination is convex only if divided by that mass. Without an
+ // individual lower bound and a level row it is the 1 - r the global lower
+ // bound leaves, which is then used as such
+ const double lambda_mass = pure_level_aggregate
+                            ? aggregate_mass
+                            : ( 1 - MasterPB->get_r() );
+ const double diag_norm =
+  ( std::abs( diag_theta - lambda_mass ) <= aggregate_mass_eps )
+  ? lambda_mass : diag_theta;
 
  const bool vertical_aggregate = ( diag_theta <= aggregate_mass_eps ) ||
                                  ( diag_norm <= aggregate_mass_eps );
  if( vertical_aggregate && ( vert_theta <= aggregate_mass_eps ) )
-  return( InINF );  // nothing in base to aggregate
+  // all the mass is on the lower bounds: the items in base have zero
+  // multiplier, so wh can be replaced without any aggregation
+  return( wh );
 
  LinearCombination coeff = vertical_aggregate ? std::move( vert )
                                               : std::move( diag );
