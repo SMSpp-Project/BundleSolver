@@ -14,38 +14,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   coupling as an easy `LagBFunction`, against the whole problem as one LP;
   the generator is the one of OSBDO and a script runs OSBDO on the same
   instance, so that the two are compared on what they both solve
+
 ### Changed
 
 - the makefile asks for `-O3 -DNDEBUG` and nothing else, the macro of the
   patch for `boost::any` on macOS having no reason to be there since there is
   no `boost::any` left in the core
+
 - whoever links the module keeps it: the classes of a module register
   themselves in the factory from a static initialiser, and a linker that
   drops what looks unused takes the registration away with it, so the target
   now tells whoever links it to keep the symbol that forces the module in,
   and on ELF, where naming the symbol is not enough, the library as a whole
+
 - the master of the tests asks Gurobi for its least numerical care and not
   for none of it, and declares the residual zero on the scale of the model:
   the extra care is paid at every one of the thousands of solves of a run
+
 - the tests of the ML variant link `SMS++::BundleSolverML`, which is where
   `BundleSolverML` now lives
+
 - the configuration that is installed no longer looks for NDOSolver/FiOracle,
   which the library does not link any more
+
 - the three places where the parallel loop names a failing component write
   the log at the same verbosity, and the log says which status the component
   that stopped the loop returned, a stop with no reason having left whoever
   read it to guess among the components
+
 - `ParallelBundleSolver` keeps its threads alive and wakes up when an
   evaluation ends, rather than starting and joining a thread per component at
   every iteration, and never lets a thread wait on one that has already
   finished
+
 - the master problem is a `MasterProblemBlock`, i.e., a Block of the model
   solved by whichever Solver is attached to it, in place of the `MPSolver`
   hierarchy of the previous versions: what the bundle asks of it is said
   through the abstract representation and the Modification, so that the
   master is built, solved and changed as any other Block, and the parameters
   that only the old hierarchy understood are refused where they no longer
-  mean anything
+  mean anything. With the MPSolver hierarchy go the NDOSolver/FiOracle
+  submodule and the Osi and Clp requirements: a BundleSolver needs the core
+  library and MILPSolver, and the Solver of the master is the one the
+  BlockSolverConfig that `strMPBSolverCfg` points at attaches
+
+- the Modification that `MasterProblemBlock` issues in a loop travel in one
+  channel: the shift of the constant of every cut at a move of the reference
+  [see `set_reference()`], the refresh of the box, the linear part of the
+  0-th component and the quadratic term of every z at a change of t. A
+  Solver able to write a whole set of coefficients, or of sides, in one
+  operation then does that instead of one call per cut, per variable or per
+  coupling row
+
 - the groups of components take the threads they spend on their members from
   the pool of the parallel solver driving them, through
   `C05SumFunction::set_submitter()`, instead of starting one per member: a
@@ -112,6 +132,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `MasterProblemBlock::drop_easy_coupling()`, and the master is given the
   new local-to-global maps of the easy components
 
+- the component index passed to `MasterProblemBlock`: it keeps a bundle only
+  for the "hard" components and indexes them by their position among those,
+  while BundleSolver counts the components of Fi globally, the "easy" ones
+  included. With no easy component the two numbers coincide, so the
+  difference showed up only under `intDoEasy`, where it addressed the wrong
+  `PolyhedralFunctionBlock` or ran past the last one; the translation is now
+  made explicit by `hard_k()` and, for the easy components, by `easy_k()`
+
 - a Modification changing the linearizations of a component without
   changing its Variable only asked the Solver of the master to read the
   subgradients again, but the master holds copies of them and so gave back
@@ -144,28 +172,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- BundleSolverML is a library of its own, SMS++::BundleSolverML: Torch is
-  some hundreds of megabytes of shared objects, and a program linking
-  BundleSolver paid the loading of every one of them at each start, 0.2 s per
-  process on our machines, whether or not the ML variant was ever used.
-  Whoever wants that variant links the new library, which brings BundleSolver
-  along with it
-
-- the Modification that MasterProblemBlock issues in a loop travel in one
-  channel: the shift of the constant of every cut at a move of the reference
-  [see set_reference()], the refresh of the box, the linear part of the
-  0-th component and the quadratic term of every z at a change of t. A
-  Solver able to write a whole set of coefficients, or of sides, in one
-  operation then does that instead of one call per cut, per variable or per
-  coupling row
-
-- the master problem is solved only through MasterProblemBlock and a
-  :MILPSolver attached to it, so the bundle over the NDOSolver MPSolver is
-  gone and with it the NDOSolver/FiOracle submodule and the Osi and Clp
-  requirements: a BundleSolver now needs the core library and MILPSolver, and
-  the solver of the master is chosen by the BlockSolverConfig that
-  strMPBSolverCfg points at
-
 - the version of the module is the git tag of its repository, or the
   VERSION.txt of a release tarball, and the shared library carries it: its
   SONAME is major.minor while the major is 0, and it is installed with an
@@ -173,28 +179,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   it is moved
 
 ### Fixed
-
-- when a component had used up its share of the bundle with constraints
-  (vertical linearizations, which are never removed), a new one was still
-  put in a free spot elsewhere in the bundle, beyond the global pool of the
-  component, and the C05Function then refused to store it with "invalid
-  linearization name"; this happens when a Lagrangian subproblem is unbounded
-  over and over, and now the solve ends with kError and says that the bundle
-  of that component is full of constraints
-
-- a component returning kLowPrecision no longer stops the algorithm: that
-  code comes after kError, so the checks on the status of the components
-  took it for an error, while it only says that the required accuracy was
-  not reached; what the component returned is now used as inexact
-  information, as for any other component
-
-- the component index passed to MasterProblemBlock: it keeps a bundle only
-  for the "hard" components and indexes them by their position among those,
-  while BundleSolver counts the components of Fi globally, the "easy" ones
-  included. With no easy component the two numbers coincide, so the
-  difference showed up only under intDoEasy, where it addressed the wrong
-  PolyhedralFunctionBlock or ran past the last one; the translation is now
-  made explicit by hard_k() and, for the easy components, by easy_k()
 
 - the documentation of the int parameters, which did not say that
   intMaxThread is ignored, the implementation being sequential
@@ -323,6 +307,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - fixed get\_dual\_solution() when there is no easy component
 
 ## [0.4.1] - 2021-12-07
+
+### Changed
 
 - improved Modification handling (no over-reacting to easy ones, important bugfix)
 
