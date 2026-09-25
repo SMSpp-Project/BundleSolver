@@ -108,7 +108,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - a problem whose components are all easy is solved instead of being refused:
   the master problem then carries the exact model of each of them, hence it is
-  the problem itself, and one solve of it gives the answer. The rule that
+  the problem itself once the proximal term is out of the way, and one solve of
+  it gives the answer. `t` is therefore taken to its maximum, not to its
+  minimum as it is while the bundle of a hard component is empty: with a finite
+  `t` the master is the stabilized problem and not the problem, and on one of
+  the PyPSA networks it gave a dual value of 3.1e9 against the 2.4e11 of the
+  reference. The rule that
   collapses t while the bundle is empty, the error raised when no component is
   found to evaluate and the norm of the aggregate, which is divided by a mass
   that is then zero, all apply to the components that are hard and are skipped

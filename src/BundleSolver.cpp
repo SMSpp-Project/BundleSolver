@@ -3380,8 +3380,14 @@ void BundleSolver::FormD( void )
  // hard component". Reads is_bundle_empty() from MasterPB.
  // the rule is about the master problem having no subgradient to work with,
  // which cannot happen when every component is easy: the master then carries
- // the exact model of each of them, it is the problem itself, and collapsing
- // t would pin the point to the one the method starts from
+ // the exact model of each of them. It is the problem itself only without the
+ // proximal term, so t is taken to its maximum rather than to its minimum,
+ // and one solve of the master gives the answer
+ if( ( NrEasy == NrFi ) && ( t != tMaior ) ) {
+  t = tMaior;
+  tHasChgd = true;
+  }
+
  const bool empty_bundle = ( NrEasy < NrFi ) &&
                            ( MasterPB ? MasterPB->is_bundle_empty() : true );
  if( empty_bundle ) {
