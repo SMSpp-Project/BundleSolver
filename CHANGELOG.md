@@ -106,6 +106,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- on macOS a program linking the module lost the classes the module
+  registers in the factories when the linker dropped the library, as it
+  does under `-dead_strip_dylibs`, which conda sets: the target now asks the
+  linker for the symbol that forces the module in (`-u`), which ld64,
+  unlike the ELF linker, counts as a use of the library
+
 - the seed of the generator with which a group draws the combinations of
   linearizations it hands out is `intCmpAggrSeed` told apart by the position
   of the group, which the solver now passes to it: the group seeded itself
