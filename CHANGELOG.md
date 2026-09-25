@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- the tests of this directory and of the OSBDO examples carry the label of the
+  module, so that the pipeline, which selects with `ctest -L <module>`, runs
+  them: they were built and never run
+
 - `test/osbdo`, the multicommodity instances of OSBDO solved in the same
   resource-directive form, with a `BendersBFunction` per commodity and the
   coupling as an easy `LagBFunction`, against the whole problem as one LP;

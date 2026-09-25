@@ -40,3 +40,14 @@ if (TARGET SMS++::MILPSolver)
 endif ()
 
 # --------------------------------------------------------------------------- #
+
+# ----- the label of this module's tests ------------------------------------ #
+
+# The label lets the module CI select exactly the tests exercising this module
+# with `ctest -L <module>` (see tests/cmake/TestLabels.cmake in the umbrella
+# for the system-tests counterpart): without it these tests are built and
+# never run.
+get_property(_tests DIRECTORY PROPERTY TESTS)
+if (_tests)
+    set_tests_properties(${_tests} PROPERTIES LABELS "${modName}")
+endif ()
