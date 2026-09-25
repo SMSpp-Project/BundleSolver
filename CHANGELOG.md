@@ -106,6 +106,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- the seed of the generator with which a group draws the combinations of
+  linearizations it hands out is `intCmpAggrSeed` told apart by the position
+  of the group, which the solver now passes to it: the group seeded itself
+  with its own size, so that two groups of the same size, which is what a
+  partition into groups of equal size gives, drew the very same sequence
+
+
 - a problem whose components are all easy is solved instead of being refused:
   the master problem then carries the exact model of each of them, hence it is
   the problem itself once the proximal term is out of the way, and one solve of

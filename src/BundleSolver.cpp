@@ -6526,6 +6526,12 @@ void BundleSolver::aggregate_components( void )
 
   v_groups.push_back( std::make_unique< C05SumFunction >(
                             std::move( members ) , std::move( vars ) ) );
+  // the group draws the combinations of linearizations it hands out from a
+  // generator of its own: the seed is the one of the grouping, told apart by
+  // the position of the group, so that two groups of the same size do not
+  // draw the same sequence
+  v_groups.back()->set_seed( unsigned( CmpAggrSeed ) +
+                             unsigned( v_groups.size() ) );
   v_groups.back()->register_Observer( & f_grp_obs );
   n_c05f.push_back( v_groups.back().get() );
   n_IsEasy.push_back( false );
