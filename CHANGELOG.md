@@ -106,6 +106,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- a problem whose components are all easy is solved instead of being refused:
+  the master problem then carries the exact model of each of them, hence it is
+  the problem itself, and one solve of it gives the answer. The rule that
+  collapses t while the bundle is empty, the error raised when no component is
+  found to evaluate and the norm of the aggregate, which is divided by a mass
+  that is then zero, all apply to the components that are hard and are skipped
+  when there is none
+
 - the combination of linearizations given back to a component when its
   bundle is full is divided by the mass its diagonal rows carry, lambda
   minus the share of its individual lower bound, rather than by 1 - r, so

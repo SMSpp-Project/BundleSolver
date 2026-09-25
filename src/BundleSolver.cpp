@@ -1845,9 +1845,12 @@ void BundleSolver::set_Block( Block * block )
  if( ! NrEasy )
   IsEasy.clear();
  else {
+  // with every component easy the master problem is the problem itself:
+  // there is no bundle to build and no stopping test to pass, so the master
+  // is solved once and its solution is the answer
   if( NrEasy == NrFi )
-   throw( std::logic_error(
-          "BundleSolver: all components are easy, this is no supported" ) );
+   BLOG( 1 , "all the components are easy: the master problem is the problem"
+             << std::endl );
 
  // ComputeConfig-ure the easy components: clone eCC once per component
  // that needs the shared template, except for the last such component
@@ -3375,7 +3378,12 @@ void BundleSolver::FormD( void )
 
  // bundle-is-empty check: "no subgradient cut has been added yet to any
  // hard component". Reads is_bundle_empty() from MasterPB.
- const bool empty_bundle = MasterPB ? MasterPB->is_bundle_empty() : true;
+ // the rule is about the master problem having no subgradient to work with,
+ // which cannot happen when every component is easy: the master then carries
+ // the exact model of each of them, it is the problem itself, and collapsing
+ // t would pin the point to the one the method starts from
+ const bool empty_bundle = ( NrEasy < NrFi ) &&
+                           ( MasterPB ? MasterPB->is_bundle_empty() : true );
  if( empty_bundle ) {
   if( ( t > tMinor ) && ( Prevt == INFshift ) ) {
    Prevt = t;
@@ -3911,6 +3919,13 @@ void BundleSolver::FormD( void )
   NrmZ = ::norm( tZ , WZNorm & 3 );
   }
 
+ // with no hard component there is no aggregate to take the norm of, and
+ // the mass the rows of a component share, which the norm is divided by, is
+ // zero: the master problem is the problem, and the essential subgradient at
+ // its optimum is zero
+ if( NrEasy == NrFi )
+  NrmZ = NrmD = 0;
+
  // if still needed, compute the scaling factor for z*
  if( NrmZFctr == INFshift )
   compute_NrmZFctr();
@@ -4214,8 +4229,11 @@ BundleSolver::Index BundleSolver::InnerLoop( bool extrastep )
  for( bool insrtd = false ; ; ) {
   // round-robin-like loop between the different components
   if( ! FindNext() ) {  // find next component
-   if( ! ceval )        // no component found to evaluate
-    Result = kError;    // this is an error (or is it?)
+   // finding none is an error only if there was something to find: when
+   // every component is easy the master problem has already produced the
+   // exact value of each of them, and there is nothing to evaluate
+   if( ( ! ceval ) && ( NrEasy < NrFi ) )
+    Result = kError;
    break;               // anyway, nothing else to do but stop
    }
 
