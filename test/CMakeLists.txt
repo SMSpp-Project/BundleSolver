@@ -16,14 +16,11 @@ find_package(Torch QUIET HINTS ${Torch_ROOT})
 
 if (Torch_FOUND)
 
-    # Since we are using the block/solver factory, objects from linked
-    # libraries may wrongly appear unused, and by default the linker does not
-    # include them, so we have to force the linking.
-    if (BUILD_SHARED_LIBS)
-        if (UNIX AND (NOT APPLE))
-            add_link_options("-Wl,--no-as-needed")
-        endif ()
-    else ()
+    # The classes of the modules register themselves in the factories from
+    # static objects, which nothing here names: a shared library is kept by
+    # what its module asks of the linker [see the CMakeLists.txt of the
+    # module], while an archive has to be taken whole.
+    if (NOT BUILD_SHARED_LIBS)
         if (MSVC)
             add_link_options("/WHOLEARCHIVE" "/FORCE:MULTIPLE")
         else () # Unix
@@ -88,10 +85,6 @@ if (TARGET SMS++::MILPSolver)
     target_link_libraries(zeroth_quadratic_e2e_test PRIVATE
                           SMS++::BundleSolver
                           SMS++::MILPSolver)
-    if (BUILD_SHARED_LIBS AND UNIX AND (NOT APPLE))
-        target_link_options(zeroth_quadratic_e2e_test PRIVATE
-                            "-Wl,--no-as-needed")
-    endif ()
     # the test reads BSPar-rho.txt and MPBCfg-rho.txt from the working directory
     add_test(NAME zeroth_quadratic_e2e_test
              COMMAND zeroth_quadratic_e2e_test

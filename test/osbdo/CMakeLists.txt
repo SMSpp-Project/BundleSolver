@@ -11,9 +11,6 @@ if (TARGET SMS++::MILPSolver)
         target_link_libraries(osbdo_${ex}_test PRIVATE
                               SMS++::BundleSolver
                               SMS++::MILPSolver)
-        if (BUILD_SHARED_LIBS AND UNIX AND (NOT APPLE))
-            target_link_options(osbdo_${ex}_test PRIVATE "-Wl,--no-as-needed")
-        endif ()
     endforeach ()
 
     # the small instances only: those of the paper are for measurements

@@ -18,9 +18,6 @@ if (KBM_TNSUNC AND TARGET SMS++::MILPSolver)
     target_link_libraries(kbm_test PRIVATE
                           SMS++::BundleSolver
                           SMS++::MILPSolver)
-    if (BUILD_SHARED_LIBS AND UNIX AND (NOT APPLE))
-        target_link_options(kbm_test PRIVATE "-Wl,--no-as-needed")
-    endif ()
 endif ()
 
 # --------------------------------------------------------------------------- #
