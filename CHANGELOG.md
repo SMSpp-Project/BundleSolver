@@ -80,7 +80,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - the groups of components take the threads they spend on their members from
   the pool of the parallel solver driving them, through
-  `C05SumFunction::set_submitter()`, instead of starting one per member: a
+  `C05SumFunction::set_member_runner()`, instead of starting one per member: a
   thread costs of the order of 100 microseconds to start and the members of
   the instances of interest cost less than that, which is why the hand-down
   was worth it only above a threshold. The two levels share one pool, sized

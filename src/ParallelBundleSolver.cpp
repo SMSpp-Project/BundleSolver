@@ -161,11 +161,12 @@ BundleSolver::Index ParallelBundleSolver::InnerLoop( bool extrastep )
   for( auto & group : v_groups ) {
    group->set_members_at_once( each );
    if( each > 1 )
-    group->set_submitter( [ this ]( ThinComputeInterface * f , bool cv ) {
-                           return( f_pool->submit( f , cv , InINF ) );
-                           } );
+    group->set_member_runner( [ this ]( ThinComputeInterface * f ,
+                                       bool cv ) {
+                               return( f_pool->submit( f , cv , InINF ) );
+                               } );
    else
-    group->set_submitter();
+    group->set_member_runner();
    }
   }
 
