@@ -28,7 +28,7 @@ ComputeConfig # exact type of the ComputeConfig object
 1  # f_diff == 0 ==> all non-provided parameters are set to the default value
    # f_diff == 1 ==> all non-provided parameters are not changed
 
-7 # number of integer parameters
+6 # number of integer parameters
 
 # now all the integer parameters
 intMaxIter   1000 # MaxIter, max number of iterations for each call
@@ -37,7 +37,6 @@ intBPar2      100 # max bundle size per component
 intMnSSC        0 # min number of consecutive SS with the same t for a t increase
 intMnNSC        1 # min number of consecutive NS with the same t for a t decrease
 inttSPar1      12 # long-term t-strategy (0 = none, 4 = soft, 8 = hard, 12 = balancing)
-intMPName       0 # MP solver: 0 = QPPenaltyMP
 
 3 # number of double parameters
 
@@ -46,10 +45,10 @@ dblRelAcc    1e-6 # relative accuracy required to solution
 dbltStar     1e+2 # stopping parameter: multiplied to || residual || to estimate gap
 dbltInit        1 # initial value for t
 
-0 # number of string parameters
+1 # number of string parameters
 
 # now all the string parameters
-# [none]
+strMPBSolverCfg MPBCfg.txt # BlockSolverConfig of the Solver of the master
 
 0 # number of vector-of-int parameters
 
