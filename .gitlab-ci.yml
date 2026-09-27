@@ -71,6 +71,9 @@ test:
   retry:
     max: 2
     when: script_failure
+  # the batteries of LagBFunction and PolyhedralFunctionBlock alone take more
+  # than the hour the project gives a job
+  timeout: 24h
   before_script:
     # write the Gurobi WLS license from the masked CI/CD variables, if set
     - |
