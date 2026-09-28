@@ -3516,6 +3516,16 @@ public:
 
  std::vector< Subset > InvItemVcblr;
 
+ /// the change of the linear part of each component, not yet given to the master
+ /** A C05FunctionModLin says that the linear part of a component has changed
+  * by a given delta, which moves every linearization of it by that same
+  * delta and leaves the constants where they are. The deltas that reach the
+  * solver between two solves of the master are summed here, one dense vector
+  * per component, and handed to MasterProblemBlock::shift_cuts() once; an
+  * empty vector means that the component has nothing pending. */
+
+ std::vector< std::vector< double > > v_lin_shift;
+
  /** Highest global slot index occupied in ItemVcblr plus one, i.e. the
   * current upper bound of valid global names. Always in
   * [0, ItemVcblr.size()]; bumped by add_to_global_pool() and trimmed

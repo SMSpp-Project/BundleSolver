@@ -21,6 +21,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- a change of the linear part of a component no longer throws away the rows
+  the master problem holds for it: a `C05FunctionModLin` moves every
+  linearization by the same delta and leaves the constant of each of them
+  where it is, hence the deltas that reach the solver between two solves of
+  the master are summed, one dense vector per component, and handed to
+  `MasterProblemBlock::shift_cuts()` in one call, together with the
+  reference `f_k( x_bar )`, which moves by `delta . x_bar`; a component that
+  is being reset anyway, an easy one, or a delta that speaks of a `Variable`
+  this solver does not know, all fall back to asking the component again.
+  The values of the sequence of re-optimizations of the facility location do
+  not move in any of the four forms of the master problem, primal or dual by
+  iterate or displacement
+
 - the noise reduction has a global memory: it sets t to dblmxIncr times the
   largest among t and the values it has set since the last serious step,
   and it stops the solver when that value is already dbltMaior, so that the

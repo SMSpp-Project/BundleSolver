@@ -1915,6 +1915,7 @@ void BundleSolver::set_Block( Block * block )
 
  vBPar2.resize( NrFi + 1, 0 );
  InvItemVcblr.resize( NrFi );
+ v_lin_shift.assign( NrFi , std::vector< double >() );
 
  // retrieve the ComputeConfig for the non-easy components, if any
  ComputeConfig * hCC = nullptr;
@@ -7877,12 +7878,97 @@ void BundleSolver::process_outstanding_Modification( void )
   if( const auto tmod =
       std::dynamic_pointer_cast< C05FunctionModLin >( mod ) ) {
    auto wFi = get_index_of_component( tmod->function() );
+
+   /* The linear part of the component has changed by delta, which moves
+    * every linearization of it by that same delta and leaves the constant
+    * of each of them where it is: there is nothing to ask the component,
+    * and the rows the master holds need not be thrown away. The delta is
+    * accumulated here, in the space of the master, and given to
+    * MasterProblemBlock::shift_cuts() right after this loop, together with
+    * the reference f_k( x_bar ), which moves by delta . x_bar. A component
+    * that is being reset anyway, an easy one, or a delta that speaks of a
+    * Variable this solver does not know, all fall back to the reset. */
+   if( ( ! reset[ wFi ] ) && MasterPB &&
+       ( ! ( NrEasy && IsEasy[ wFi ] ) ) ) {
+    const auto & mvars = tmod->vars();
+    const auto & mdelta = tmod->delta();
+    std::vector< double > sh( NumVar , 0 );
+    bool known = true;
+    for( Index i = 0 ; i < Index( mvars.size() ) ; ++i ) {
+     auto it = Lambda2Idx.find( static_cast< ColVariable * >( mvars[ i ] ) );
+     if( ( it == Lambda2Idx.end() ) || ( it->second >= NumVar ) ) {
+      known = false;
+      break;
+      }
+     sh[ it->second ] += mdelta[ i ];
+     }
+
+    if( known ) {
+     auto & acc = v_lin_shift[ wFi ];
+     if( acc.empty() )
+      acc.assign( NumVar , 0 );
+     for( Index j = 0 ; j < NumVar ; ++j )
+      acc[ j ] += sh[ j ];
+     to_delete = true;
+     continue;
+     }
+    }
+
    if( ! reset[ wFi ] )
     ++cntreset;
    AlphaC[ wFi ] = reset[ wFi ] = to_delete = true;
 
    }  // end( if( tmod == C05FunctionModLin ) )
   }  // end( 2nd loop, again in reverse )
+
+ // give the master the shifts of the linear parts- - - - - - - - - - - - - -
+ //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // the rows of each component that has one move by its delta, and so does the
+ // reference f_k( x_bar ) of that component, by delta . x_bar; a component
+ // that ended up reset all the same has its rows going anyway, so its shift
+ // is dropped
+
+ {
+  bool any_shift = false;
+  for( Index k = 0 ; k < NrFi ; ++k ) {
+   if( v_lin_shift[ k ].empty() )
+    continue;
+   if( reset[ k ] ) {
+    v_lin_shift[ k ].clear();
+    continue;
+    }
+
+   std::vector< int > slots;
+   slots.reserve( InvItemVcblr[ k ].size() );
+   for( auto nm : InvItemVcblr[ k ] )
+    if( nm < InINF )
+     slots.push_back( int( nm ) );
+
+   if( ! slots.empty() )
+    MasterPB->shift_cuts( int( hard_k( k ) ) , slots , v_lin_shift[ k ] );
+
+   if( UpRifFi[ k ] < INFshift ) {
+    double dx = 0;
+    for( Index j = 0 ; j < NumVar ; ++j )
+     dx += v_lin_shift[ k ][ j ] * Lambda[ j ];
+    UpRifFi[ k ] += dx;
+    any_shift = true;
+    }
+
+   v_lin_shift[ k ].clear();
+   }
+
+  if( any_shift ) {   // the references the master holds are no longer those
+   std::vector< double > F_hard;
+   F_hard.reserve( NrFi );
+   for( Index k = 0 ; k < NrFi ; ++k ) {
+    if( NrEasy && IsEasy[ k ] )
+     continue;
+    F_hard.push_back( UpRifFi[ k ] );
+    }
+   MasterPB->set_reference( Lambda , F_hard );
+   }
+  }
 
  // note that even if there were no more Modification to process we could not
  // stop because this means that reset[ k ] == true and/or AlphaC[ k ] == true
