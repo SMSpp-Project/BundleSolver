@@ -1811,6 +1811,19 @@ void BundleSolver::set_Block( Block * block )
    continue;
   }
 
+  // check if the class of component k is forbidden to be easy: that of the
+  // (first) nested Block of its C05Function if this is a Block with nested
+  // Block (as the inner Block of a LagBFunction), else that of the
+  // C05Function itself if it is a Block
+  if( ! NoEasyCls.empty() )
+   if( auto fb = dynamic_cast< Block * >( v_c05f[ k ] ) ) {
+    const auto cb = fb->get_number_nested_Blocks() ?
+                    fb->get_nested_Block( 0 ) : fb;
+    if( cb && ( std::find( NoEasyCls.begin() , NoEasyCls.end() ,
+			   cb->classname() ) != NoEasyCls.end() ) )
+     continue;
+    }
+
    auto LagB = dynamic_cast< LagBFunction * >( v_c05f[ k ] );
    if( LagB ) {
     auto MILPs = new MILPSolver();
@@ -2490,6 +2503,7 @@ void BundleSolver::set_par( idx_type par ,
                                   break;
   case( vstr_C05_EI_SPAR_Vals ):  v_C05_EI_SPAR_Vals = std::move( value );
                                   break;
+  case( vstrNoEasy ):             NoEasyCls = std::move( value ); break;
   default: CDASolver::set_par( par , std::move( value ) );
   }
  }
@@ -2816,6 +2830,7 @@ const std::vector< std::string > & BundleSolver::get_vstr_par( idx_type par )
   case( vstr_C05_SPAR_Vals ):     return( v_C05_SPAR_Vals );
   case( vstr_C05_EI_SPAR_Names ): return( v_C05_EI_SPAR_Names );
   case( vstr_C05_EI_SPAR_Vals ):  return( v_C05_EI_SPAR_Vals );
+  case( vstrNoEasy ):             return( NoEasyCls );
   }
 
  return( CDASolver::get_vstr_par( par ) );

@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `vstrNoEasy`, the classname() of the components that must never be
+  treated as easy, in addition to those whose index is in `vintNoEasy`: the
+  class of a component is that of the first nested Block of its
+  `C05Function` (the inner Block of a `LagBFunction`), or that of the
+  `C05Function` itself if it is a Block with no nested Block, so that a
+  configuration names the hard components of any instance without knowing
+  their position; which components are easy is a concept of this Solver, and
+  the parameter replaces `vstr_LDSl_NoEasy` of `LagrangianDualSolver`
+
 - the tests of this directory and of the OSBDO examples carry the label of the
   module, so that the pipeline, which selects with `ctest -L <module>`, runs
   them: they were built and never run

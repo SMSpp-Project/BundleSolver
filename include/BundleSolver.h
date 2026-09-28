@@ -538,6 +538,15 @@ public:
   /**< baseline values for string parameters changed at every iteration and
    * call differently to each C05Function */
 
+  vstrNoEasy ,
+  ///< parameter for excluding the components of given classes from "easy"
+  /**< The vector vstrNoEasy is assumed to contain the classname() of the
+   * components of the problem that must not be treated as "easy" even if
+   * they could, in addition to those that vintNoEasy gives by index; see
+   * set_par( std::vector< std::string > ) for what the class of a component
+   * is. This clearly only applies if intDoEasy == 1, for otherwise no
+   * component is ever treated as "easy". */
+
   vstrLastBndSlvPar ///< first allowed new vector-of-string parameter
                     /**< Convenience value for easily allow derived classes
                      * to extend the set of vector-of-string parameters. */
@@ -1570,7 +1579,8 @@ public:
   *   Objective and no sub-Block then that it is component 0, otherwise the
   *   component i corresponds to the (the C05Function found in the
   *   FReal)Objective found in the i-th sub-Block of the Block
-  *   (get_nested_Block( i )). */
+  *   (get_nested_Block( i )). The components can also be named by class,
+  *   with vstrNoEasy [see]. */
 
  void set_par( idx_type par , std::vector< int > && value ) override;
 
@@ -1647,7 +1657,22 @@ public:
   *   exactly "vstr", and as a single string parameter otherwise. This is
   *   geared towards setting different filenames (e.g., log files,
   *   Configuration files, instance files, ...) to each of the compute() of
-  *   each C05Function at every iteration (of every call). */
+  *   each C05Function at every iteration (of every call).
+  *
+  * - vstrNoEasy [empty]: the vector vstrNoEasy is assumed to contain the
+  *                       classname() of the components of the problem that
+  *   must not be treated as "easy" even if they could, in addition to those
+  *   whose index is in vintNoEasy. The class of a component is that of the
+  *   Block its C05Function stands for: if the C05Function is also a Block
+  *   with nested Block, as a LagBFunction is, whose nested Block is the
+  *   inner Block it relaxes, it is the classname() of its first nested
+  *   Block; otherwise, if the C05Function is a Block, it is its own
+  *   classname(); otherwise the component has no class, and vstrNoEasy
+  *   never applies to it. This lets one configuration say which components
+  *   are "hard" for instances whose components are numbered differently.
+  *   As for vintNoEasy, this clearly only applies if intDoEasy == 1, and
+  *   the parameter is read when BundleSolver is register()-ed to the Block
+  *   [see set_Block()]. */
 
  void set_par( idx_type par , std::vector< std::string > && value ) override;
 
@@ -2388,7 +2413,8 @@ public:
    { "vstr_C05_SPAR_Vals" , BundleSolver::vstr_C05_SPAR_Vals } ,
    { "vstr_C05_EI_SPAR_Names" ,
                  BundleSolver::vstr_C05_EI_SPAR_Names } ,
-   { "vstr_C05_EI_SPAR_Vals" , BundleSolver::vstr_C05_EI_SPAR_Vals }
+   { "vstr_C05_EI_SPAR_Vals" , BundleSolver::vstr_C05_EI_SPAR_Vals } ,
+   { "vstrNoEasy" , BundleSolver::vstrNoEasy }
    };
 
   const auto it = vstr_pars_map.find( name );
@@ -2461,9 +2487,9 @@ public:
 
  [[nodiscard]] const std::string & vstr_par_idx2str( idx_type idx )
   const override {
-  static const std::array< std::string , 5 > vstr_pars_str = { "vstrCmpCfg" ,
+  static const std::array< std::string , 6 > vstr_pars_str = { "vstrCmpCfg" ,
    "vstr_C05_SPAR_Names" , "vstr_C05_SPAR_Vals " , "vstr_C05_EI_SPAR_Names" ,
-   "vstr_C05_EI_SPAR_Vals" };
+   "vstr_C05_EI_SPAR_Vals" , "vstrNoEasy" };
 
   if( ( idx >= vstrLastParCDAS ) && ( idx < vstrLastBndSlvPar ) )
    return( vstr_pars_str[ idx - vstrCmpCfg ] );
@@ -3239,6 +3265,9 @@ public:
  ///< filename for the SolverConfig of the Solver to be used in the MPBlock
 
  std::vector< int > NoEasy;  ///< which components never treat as "easy"
+
+ std::vector< std::string > NoEasyCls;
+ ///< the classname() of the components never treated as "easy"
 
  std::vector< std::string > CmpCfg;  ///< individual Configurations
 
