@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- a component that gains an "active" Variable no longer needs the master
+  problem to be built anew: for each cut in the bundle,
+  `process_outstanding_Modification()` asks the component that owns it,
+  with the local indices of that component, for its coefficients on the
+  new coordinates alone, which strong quasi-additivity makes valid, and
+  gives them to `MasterProblemBlock::add_vars()` indexed by bundle slot. A
+  coordinate is born at zero in the stability centre as in the point of
+  every cut, hence nothing of the algorithm is reset. The `BlockModAD` of a
+  dynamic Variable or Constraint added to the Block is dropped, since the
+  change of the components reaches the Solver as a `FunctionModVars`
+
 - `vstrNoEasy`, the classname() of the components that must never be
   treated as easy, in addition to those whose index is in `vintNoEasy`: the
   class of a component is that of the first nested Block of its
@@ -127,6 +138,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   along with it
 
 ### Fixed
+
+- a `FunctionModVars` coming from a Function that is not a component, the
+  linear part being one, no longer reads the arrays that hold one entry per
+  component with the index `Inf< Index >()` that
+  `get_index_of_component()` returns for it: it happened in
+  `process_outstanding_Modification()`, both where the values of the
+  components are refreshed and where the local-to-global map of a sparse
+  Lambda is extended, and either one was a segmentation fault. The linear
+  part is marked out of date instead, so that the master receives its
+  coefficients on the new coordinates
 
 - on macOS a program linking the module lost the classes the module
   registers in the factories when the linker dropped the library, as it

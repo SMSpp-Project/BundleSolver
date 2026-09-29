@@ -7620,6 +7620,20 @@ void BundleSolver::process_outstanding_Modification( void )
   if( const auto tmod = std::dynamic_pointer_cast< FunctionModVars >( mod ) ) {
    auto wFi = get_index_of_component( tmod->function() );
 
+   /* A variable change of a Function that is not a component says nothing
+    * about the value of any of them: it comes from the linear part, or from
+    * a Function this Solver has no business with [see the FunctionMod case
+    * above, which asks the same question]. The Modification stays in the
+    * list all the same, the 4th loop reading the "active" Variable whatever
+    * Function they come from. The linear part now has coefficients on
+    * coordinates the master does not have yet, and compute() hands them
+    * over only when Fi0Lmb says that the linear part is out of date. */
+   if( wFi >= NrFi ) {
+    if( tmod->function() == zeroth_component() )
+     Fi0Lmb = INFshift;
+    continue;
+    }
+
    FModChg( tmod->shift() , wFi );  // change/reset upper/lower values
 
    if( std::dynamic_pointer_cast< C05FunctionModVarsAddd >( tmod ) )
@@ -8413,11 +8427,16 @@ void BundleSolver::process_outstanding_Modification( void )
 
       const auto h = get_index_of_component( ttmod->function() );
 
+      // the Variable can also come from a Function that is not a
+      // component, the linear part being one: they enter the global
+      // vocabulary like all the others, but there is no local-to-global
+      // map of a component to extend
+      auto * mp = ( h < NrFi ) ? & v_local2global[ h ] : nullptr;
+
       // strip the Inf< Index >() terminator before appending; we will
       // re-append it once we're done with this h's add Mod
-      auto & m = v_local2global[ h ];
-      if( ( ! m.empty() ) && ( m.back() == Inf< Index >() ) )
-       m.pop_back();
+      if( mp && ( ! mp->empty() ) && ( mp->back() == Inf< Index >() ) )
+       mp->pop_back();
 
       for( auto v : ttmod->vars() ) {
        const auto p = static_cast< ColVariable * >( v );
@@ -8433,13 +8452,15 @@ void BundleSolver::process_outstanding_Modification( void )
         // slot is now referenced by one more component, which the
         // Rngd / Sbst handlers will decrement back on removal
         ++v_ref_count[ it->second ];
-       m.push_back( it->second );
+       if( mp )
+        mp->push_back( it->second );
        }
 
       // re-append the terminator; the global slot for the new vars is
       // at the end of LamVcblr / v_local2global[ h ], so monotonicity
       // is preserved by construction
-      m.push_back( Inf< Index >() );
+      if( mp )
+       mp->push_back( Inf< Index >() );
       continue;
       }
 
