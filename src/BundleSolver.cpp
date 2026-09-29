@@ -7182,7 +7182,11 @@ void BundleSolver::add_to_bundle( Index k , Index i )
                                                Range( 0 , loc_NV ) , i );
   const auto & m = v_local2global[ k ];
   for( Index li = 0 ; li < loc_NV ; ++li )
-   G1[ m[ li ] ] = Gk[ li ];
+   // New global coordinates are deliberately appended to the master only
+   // after all pending cut additions/replacements. Their coefficients are
+   // installed by append_pending_variables() as PFB columns.
+   if( m[ li ] < NumVar )
+    G1[ m[ li ] ] = Gk[ li ];
   }
  else
   v_c05f[ k ]->get_linearization_coefficients( G1.data() ,
@@ -7681,10 +7685,20 @@ void BundleSolver::process_outstanding_Modification( void )
               "BundleSolver::process_outstanding_Modification: "
               "BlockMod not handled (yet)" ) );
 
-  if( std::dynamic_pointer_cast< BlockModAD >( mod ) )
-   throw( std::invalid_argument(
-              "BundleSolver::process_outstanding_Modification: "
-              "BlockModAD not handled (yet)" ) );
+  if( const auto tmod = std::dynamic_pointer_cast< BlockModAD >( mod ) ) {
+   if( ! tmod->is_added() )
+    throw( std::invalid_argument(
+               "BundleSolver::process_outstanding_Modification: "
+               "dynamic Block removals are not handled yet" ) );
+   /* This is the physical notification that a dynamic Variable/Constraint was
+    * added to the observed Block. Any effect on a component function reaches
+    * BundleSolver separately as a FunctionMod[Vars] and is handled by the
+    * passes below; treating the physical notification again would duplicate
+    * that work. Removals remain deliberately unsupported above until the
+    * symmetric MasterProblemBlock path exists. */
+   to_delete = true;
+   continue;
+   }
 
   // if control reaches here, the Modification is "unknown", probably a
   // "physical" Modification that BundleSolver does not care about
@@ -8429,16 +8443,15 @@ void BundleSolver::process_outstanding_Modification( void )
       continue;
       }
 
-     if( ! to_add ) {
-      // Dense mode: every component sees the same active vars in the
-      // same order, so first() must equal NumVar (the global position
-      // of the next slot) on the very first Mod
-      if( ttmod->first() != NumVar )
-       throw( std::logic_error(
-                  "BundleSolver::process_outstanding_Modification: "
-                  "wrong Variable names in FunctionModVars" ) );
-      }
-
+     // Dense mode: a lockstep group is represented here by its first
+     // FunctionModVarsAddd. The new active Variables are also the new global
+     // Lambda coordinates, in exactly this order.
+     if( ttmod->first() != NumVar + to_add )
+      throw( std::logic_error(
+                 "BundleSolver::process_outstanding_Modification: "
+                 "wrong Variable names in FunctionModVars" ) );
+     for( auto * var : ttmod->vars() )
+      LamVcblr.push_back( static_cast< ColVariable * >( var ) );
      to_add += ttmod->vars().size();
      continue;
 
@@ -8766,16 +8779,118 @@ void BundleSolver::process_outstanding_Modification( void )
   globally_to_remove.clear();
   }
 
- // the Master reads the local-to-global maps of the easy components, which
- // the removals above may have changed, and which it believes the identity
- // until the representation has become sparse
- if( f_sparse_lambda && NrEasy && MasterPB && rmvd_vars ) {
+ // The Master reads the local-to-global maps of the easy components. Publish
+ // them before adding coupling rows, since both removals and additions may
+ // have changed the sparse maps.
+ if( f_sparse_lambda && NrEasy && MasterPB && ( rmvd_vars || to_add ) ) {
   std::vector< std::vector< Index > > easy_local2global;
   for( Index k = 0 ; k < NrFi ; ++k )
    if( IsEasy[ k ] )
     easy_local2global.push_back( v_local2global[ k ] );
   MasterPB->set_easy_local2global( easy_local2global );
   }
+
+ // Build the coefficients of every cut currently stored in the master on a
+ // tail of new global coordinates, then grow BundleSolver and MasterPB in one
+ // operation. MasterPB owns the slot-to-local-row translation; this side owns
+ // the component-local-to-global translation and the global-pool names.
+ const auto append_pending_variables = [ & ]( Index nadd ) {
+  if( nadd == 0 )
+   return;
+
+  const Index first = NumVar;
+  if( LamVcblr.size() != first + nadd )
+   throw( std::logic_error(
+              "BundleSolver::process_outstanding_Modification: "
+              "pending global Variable count is inconsistent" ) );
+  MasterProblemBlock::AddedCutCoefficients coefficients;
+  if( MasterPB ) {
+   coefficients.resize( NrFi - NrEasy );
+
+   std::vector< Subset > local_indices;
+   std::vector< std::vector< Index > > global_offsets;
+   if( f_sparse_lambda ) {
+    local_indices.resize( NrFi );
+    global_offsets.resize( NrFi );
+    for( Index k = 0 ; k < NrFi ; ++k ) {
+     if( NrEasy && IsEasy[ k ] )
+      continue;
+     const Index loc_n = v_c05f[ k ]->get_num_active_var();
+     const auto & map = v_local2global[ k ];
+     if( map.size() < loc_n )
+      throw( std::logic_error(
+                 "BundleSolver::process_outstanding_Modification: "
+                 "inconsistent local-to-global map" ) );
+     std::vector< bool > seen( nadd , false );
+     for( Index li = 0 ; li < loc_n ; ++li ) {
+      const Index global = map[ li ];
+      if( global < first || global >= first + nadd )
+       continue;
+      const Index offset = global - first;
+      if( seen[ offset ] )
+       throw( std::logic_error(
+                  "BundleSolver::process_outstanding_Modification: "
+                  "duplicate global Variable in a component" ) );
+      seen[ offset ] = true;
+      local_indices[ k ].push_back( li );
+      global_offsets[ k ].push_back( offset );
+      }
+     }
+    }
+
+   const Index max_name = get_max_name();
+   for( Index slot = 0 ; slot < max_name ; ++slot ) {
+    if( ! is_bundle_item( slot ) )
+     continue;
+    const auto [ k , pool_name ] = ItemVcblr[ slot ];
+    if( NrEasy && IsEasy[ k ] )
+     throw( std::logic_error(
+                "BundleSolver::process_outstanding_Modification: "
+                "an easy component owns a bundle item" ) );
+
+    const int hk = hard_k( k );
+    if( hk < 0 || hk >= int( coefficients.size() ) )
+     throw( std::logic_error(
+                "BundleSolver::process_outstanding_Modification: "
+                "invalid hard-component index" ) );
+    auto & by_slot = coefficients[ hk ];
+    if( by_slot.size() < max_name )
+     by_slot.resize( max_name );
+    auto & values = by_slot[ slot ];
+    values.assign( nadd , 0.0 );
+
+    if( f_sparse_lambda ) {
+     const auto & subset = local_indices[ k ];
+     if( ! subset.empty() ) {
+      std::vector< double > local( subset.size() );
+      v_c05f[ k ]->get_linearization_coefficients(
+                       local.data() , subset , true , pool_name );
+      for( Index h = 0 ; h < subset.size() ; ++h )
+       values[ global_offsets[ k ][ h ] ] = local[ h ];
+      }
+     }
+    else {
+     if( v_c05f[ k ]->get_num_active_var() < first + nadd )
+      throw( std::logic_error(
+                 "BundleSolver::process_outstanding_Modification: "
+                 "dense component has too few active Variables" ) );
+     v_c05f[ k ]->get_linearization_coefficients(
+                 values.data() , Range( first , first + nadd ) , pool_name );
+     }
+
+    if( ! f_convex )
+     chgsign( values.data() , nadd );
+    }
+   }
+
+  NumVar += nadd;
+  Lambda.resize( NumVar , 0 );
+  Lambda1.resize( NumVar , 0 );
+  if( MaxSol > 1 )
+   LmbdBst.resize( NumVar , 0 );
+  if( MasterPB )
+   MasterPB->add_vars( int( nadd ) , std::move( coefficients ) );
+  };
 
  // at this point, the set of Variable in the BundleSolver/Master Problem
  // coincides with the set of Variable in the C05Function(s), save for the
@@ -8904,13 +9019,7 @@ void BundleSolver::process_outstanding_Modification( void )
                             []( Subset & Ak ) { return( ! Ak.empty() ); }
                             ) != Addd.end();
  if( to_add && ( ! toadd ) ) {
-  NumVar += to_add;
-  Lambda.resize( NumVar , 0 );
-  Lambda1.resize( NumVar , 0 );
-  if( MaxSol > 1 )
-   LmbdBst.resize( NumVar , 0 );
-  if( MasterPB )
-   MasterPB->add_vars( int( to_add ) );
+  append_pending_variables( to_add );
   to_add = 0;  // done already
   }
 
@@ -9081,7 +9190,8 @@ void BundleSolver::process_outstanding_Modification( void )
       if( f_sparse_lambda ) {
        const auto & m = v_local2global[ k ];
        for( Index li = 0 ; li < loc_NV ; ++li )
-        g_master[ m[ li ] ] = Gi[ li ];
+        if( m[ li ] < NumVar )
+         g_master[ m[ li ] ] = Gi[ li ];
        }
       else
        for( Index j = 0 ; j < NumVar ; ++j )
@@ -9098,13 +9208,7 @@ void BundleSolver::process_outstanding_Modification( void )
 
 
  if( to_add ) {
-  NumVar += to_add;
-  Lambda.resize( NumVar , 0 );
-  Lambda1.resize( NumVar , 0 );
-  if( MaxSol > 1 )
-   LmbdBst.resize( NumVar , 0 );
-  if( MasterPB )
-   MasterPB->add_vars( int( to_add ) );
+  append_pending_variables( to_add );
   }
 
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
