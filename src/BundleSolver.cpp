@@ -3044,8 +3044,28 @@ bool BundleSolver::level_gap_closed( void ) const
  const auto tolerance = max_error( value , RelAcc );
  // A bound substantially above the centre is inconsistent, not proof of
  // optimality. Allow only discrepancies within the requested tolerance.
- return( std::isfinite( gap ) && std::isfinite( tolerance ) &&
-         tolerance >= 0 && gap >= - tolerance && gap <= tolerance );
+ const bool closed = std::isfinite( gap ) && std::isfinite( tolerance ) &&
+                     tolerance >= 0 && gap >= - tolerance &&
+                     gap <= tolerance;
+ if( ! closed )
+  return( false );
+
+ /* A primal displacement level can be declared empty when its last feasible
+  * point is extremely close to a translated box boundary.  A lower bound
+  * inferred from that numerical status is not enough to override a clearly
+  * non-stationary aggregate: doing so can stop one master-feasibility
+  * tolerance before the actual boundary.  Require the same complete
+  * certificate used by IsOptimal() when the bound is only algorithmic.
+  * Iterate form is not exposed to the translated-boundary ambiguity, and a
+  * true user-provided bound remains an independent optimality certificate. */
+ if( UsesPrimalMaster() && ( ! MPV2Form ) && ( ! TrueLB ) ) {
+  const auto certificate_error = DSTS + Sigma;
+  if( ( ! std::isfinite( certificate_error ) ) ||
+      ( certificate_error > tolerance ) )
+   return( false );
+  }
+
+ return( true );
  }
 
 /*--------------------------------------------------------------------------*/
@@ -3126,10 +3146,20 @@ bool BundleSolver::refresh_level_after_master( bool force )
   * user-provided true bound) and restart from the usual scale-based Delta. */
  if( std::isfinite( lb ) && std::isfinite( UpFiLmb.back() ) ) {
   const auto tolerance = max_error( UpFiLmb.back() , RelAcc );
-  if( lb > UpFiLmb.back() + tolerance ) {
-   BLOG( 1 , " ~ inconsistent level LB " << def << lb
-           << " above centre " << UpFiLmb.back()
-           << ": restarting target" << std::endl );
+  const auto gap = UpFiLmb.back() - lb;
+  const auto certificate_error = DSTS + Sigma;
+  const bool inconsistent_lb = lb > UpFiLmb.back() + tolerance;
+  const bool unconfirmed_closed_gap =
+   force && UsesPrimalMaster() && ( ! MPV2Form ) && ( ! TrueLB ) &&
+   std::abs( gap ) <= tolerance &&
+   ( ( ! std::isfinite( certificate_error ) ) ||
+     ( certificate_error > tolerance ) );
+
+  if( inconsistent_lb || unconfirmed_closed_gap ) {
+   BLOG( 1 , " ~ "
+           << ( inconsistent_lb ? "inconsistent" : "unconfirmed" )
+           << " level LB " << def << lb << " at centre "
+           << UpFiLmb.back() << ": restarting target" << std::endl );
 
    if( ( ! TrueLB ) || ( LowerBound.back() <= UpFiLmb.back() + tolerance ) )
     f_global_LB = -INFshift;
@@ -3185,7 +3215,7 @@ void BundleSolver::update_level_after_step( bool serious_step ,
  if( ! ( UsesLevelStabilization() && f_level_initialized ) )
   return;
 
- const auto lb = reliable_level_LB();
+ auto lb = reliable_level_LB();
  if( lb > -INFshift ) {
   const auto gap = UpFiLmb.back() - lb;
   const auto from_lb = gap > 0 ? ( 1.0 - LStabM ) * gap : 0.0;
@@ -3227,11 +3257,21 @@ void BundleSolver::update_level_after_step( bool serious_step ,
   // that as meaningful progress lets the ordinary NS rule immediately undo
   // every long-term increase.
   const auto accuracy_progress = err < INFshift ? 10 * err : VarValue( 0 );
-  const auto progress_scale = std::max( accuracy_progress ,
-                                        LStabSmall * f_level_Delta );
+  // On an unbounded recession the method can also make thousands of tiny,
+  // monotone serious steps: each one is larger than the requested accuracy,
+  // yet negligible compared with the still-open aggregate certificate.  Let
+  // that persistent slow drift count as stagnation as well.  The factor 10
+  // leaves ordinary progress alone (with the default LStabSmall this means
+  // less than 10% of the unresolved certificate) and the tiny-direction plus
+  // consecutive-step guards below still have to agree before Delta changes.
+  const auto certificate_progress =
+   10 * LStabSmall * certificate_error;
+  const auto progress_scale = std::max( { accuracy_progress ,
+                                         LStabSmall * f_level_Delta ,
+                                         certificate_progress } );
   const bool tiny_progress = ( err < INFshift ) &&
    ( std::abs( DeltaFi ) <= progress_scale );
-  const bool has_reliable_lb = lb > -INFshift;
+  bool has_reliable_lb = lb > -INFshift;
   const bool usable_stagnation_sample =
    ( ! has_reliable_lb ) || serious_step;
 
@@ -3246,9 +3286,23 @@ void BundleSolver::update_level_after_step( bool serious_step ,
 
   const auto stagnation_limit = std::max< Index >( 3 , MnNSC );
   if( LevelStagCntr >= stagnation_limit ) {
+   /* A bound inferred from previous empty levels or an approximate aggregate
+    * can move with the stalled centre and immediately cap every long-term
+    * Delta increase.  Persistent tiny-direction stagnation is evidence that
+    * this algorithmic bound is not useful for target management.  Discard it
+    * here, but never discard a true bound supplied by the model. */
+   if( ( ! TrueLB ) && ( f_global_LB > -INFshift ) ) {
+    f_global_LB = -INFshift;
+    f_level_LB = -INFshift;
+    f_level_reliable_LB = false;
+    lb = -INFshift;
+    has_reliable_lb = false;
+    }
+
    // A single ordinary increase was insufficient on the cycling cases that
    // motivate this rule.  Take two geometric level increases at once, while
    // guarding the arithmetic used to form the absolute target.
+   const auto old_delta = f_level_Delta;
    const auto increase = LStabIncr * LStabIncr;
    const auto max_delta = std::numeric_limits< VarValue >::max() / 4;
    if( f_level_Delta <= 0 )
@@ -3258,6 +3312,11 @@ void BundleSolver::update_level_after_step( bool serious_step ,
     f_level_Delta = max_delta;
    else
     f_level_Delta *= increase;
+
+   if( ! has_reliable_lb )
+    f_level_Delta = std::max(
+     f_level_Delta , LStabDlt *
+     std::max( std::abs( UpFiLmb.back() ) , VarValue( 1 ) ) );
 
    if( has_reliable_lb ) {
     const auto gap = UpFiLmb.back() - lb;
@@ -3276,8 +3335,9 @@ void BundleSolver::update_level_after_step( bool serious_step ,
     }
 
    BLOG( 1 , " ~ level LT: tiny direction (D*_1 = " << shrt << d_one
-           << ", Sigma = " << Sigma << "), Delta increased to "
-           << f_level_Delta << std::endl );
+           << ", Sigma = " << Sigma << "), Delta " << old_delta
+           << " -> " << f_level_Delta << ", LB = " << lb
+           << ", TrueLB = " << TrueLB << std::endl );
 
    LevelStagCntr = 0;
    LevelNRCntr = 0;
