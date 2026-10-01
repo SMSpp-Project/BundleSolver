@@ -139,6 +139,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- removing coordinates while the algorithm runs works, the master
+  shrinking through `MasterProblemBlock::remove_vars()`: the `BlockModAD` of
+  a removal is dropped as that of an addition, the components reporting the
+  change themselves; in the dense path the removed coordinates leave
+  `LamVcblr`, which kept pointers to destroyed Variable, and when one of
+  them is nonzero at the stability center the values there are declared
+  unknown, the function after the removal being the one before with that
+  coordinate at zero, so that the next finite evaluation becomes the center
+  (the bundle stopped at a wrong value); in the sparse path the linear part
+  losing a Variable is handled through `Lambda2Idx`, and a Variable added
+  and removed in the same batch is no longer passed to the master, which
+  never had it
+
 - a `FunctionModVars` coming from a Function that is not a component, the
   linear part being one, no longer reads the arrays that hold one entry per
   component with the index `Inf< Index >()` that
