@@ -405,6 +405,8 @@ public:
 
  intTDisc ,        ///< iterations of the discovery of t, doubly stabilized
 
+ intIntVars ,      ///< whether the integer Variable are kept integer
+
  intLastBndSlvPar  ///< first allowed new int parameter for derived classes
                    /**< Convenience value for easily allow derived classes
                     * to extend the set of int algorithmic parameters. */
@@ -629,6 +631,7 @@ public:
   CmpAggrSeed = get_dflt_int_par( intCmpAggrSeed );
   CmpAggrRule = get_dflt_int_par( intCmpAggrRule );
   TDisc = get_dflt_int_par( intTDisc );
+  IntVars = get_dflt_int_par( intIntVars );
   CmpAggr = get_dflt_dbl_par( dblCmpAggr );
   IncrCost = get_dflt_dbl_par( dblIncrCost );
 
@@ -1135,7 +1138,27 @@ public:
   *   lambda ), lambda being the multiplier of the level row, i.e., of the
   *   proximal parameters the level steps have implicitly used; from there on
   *   the method is proximal, with the usual rules for t. With 0 the doubly
-  *   stabilized method is used throughout. */
+  *   stabilized method is used throughout.
+  *
+  * - intIntVars [0]: with 0 every Variable of the C05Function is treated as
+  *   continuous, even when ColVariable::is_integer() says otherwise, so that
+  *   what is minimized is the continuous relaxation; with 1 the integer
+  *   Variable are kept integer, i.e., what is minimized is f over the
+  *   integer points of its domain, along the lines of the stabilized
+  *   Benders' methods of van Ackooij, Frangioni and de Oliveira (Comput.
+  *   Optim. Appl. 65, 2016) [see compute_integer()]. The Master Problem must
+  *   then be primal (intMPPrimal == 1), in raw form (intMPV2Form == 1), and
+  *   either proximal (intMPStbl == 0), which makes it a mixed-integer
+  *   quadratic problem, or with the trust region (intMPStbl == 4), which
+  *   makes it a mixed-integer linear one that any :MILPSolver can solve; its
+  *   Solver must keep the integer Variable integer (e.g., a :MILPSolver with
+  *   intRelaxIntVars == 0), and its relative gap has to be tighter than
+  *   dblRelAcc. Otherwise compute() throws std::logic_error, as it does
+  *   with the trust region and no integer Variable; the bundle is never
+  *   cleaned of the linearizations that are not in the optimal base, since
+  *   without the multipliers of a continuous master there is no base, hence
+  *   intBPar2 has to be large enough for all of them. If no Variable is
+  *   integer, 1 is the same as 0. */
 
  void set_par( idx_type par , int value ) override;
 
@@ -2179,7 +2202,7 @@ public:
 /*--------------------------------------------------------------------------*/
 
  [[nodiscard]] int get_dflt_int_par( idx_type par ) const override {
-  static const std::array< int , 23 > dflt_int_par = {
+  static const std::array< int , 24 > dflt_int_par = {
     10 ,  // intBPar1
    100 ,  // intBPar2
      1 ,  // intBPar3
@@ -2204,7 +2227,8 @@ public:
      5 ,  // intMaxLevelNR
     42 ,  // intCmpAggrSeed
      0 ,  // intCmpAggrRule (default value is random)
-     0    // intTDisc (default value is no discovery of t)
+     0 ,  // intTDisc (default value is no discovery of t)
+     0    // intIntVars (default value is integrality ignored)
      };
 
   if( ( par >= intLastParCDAS ) && ( par < intLastBndSlvPar ) )
@@ -2335,7 +2359,8 @@ public:
    { "intMaxLevelNR" , BundleSolver::intMaxLevelNR } ,
    { "intCmpAggrSeed" , BundleSolver::intCmpAggrSeed } ,
    { "intCmpAggrRule" , BundleSolver::intCmpAggrRule } ,
-   { "intTDisc" , BundleSolver::intTDisc }
+   { "intTDisc" , BundleSolver::intTDisc } ,
+   { "intIntVars" , BundleSolver::intIntVars }
    };
 
   const auto it = int_pars_map.find( name );
@@ -2430,13 +2455,13 @@ public:
 
  [[nodiscard]] const std::string & int_par_idx2str( idx_type idx )
   const override {
-  static const std::array< std::string , 23 > int_pars_str = {
+  static const std::array< std::string , 24 > int_pars_str = {
    "intBPar1" , "intBPar2" , "intBPar3" , "intBPar4" , "intBPar6" ,
    "intBPar7" , "intMnSSC" , "intMnNSC" , "inttSPar1" , "intMaxNrEvls" ,
    "intDoEasy" , "intWZNorm" , "intFrcLstSS" , "intTrgtMng" ,
    "intMPStbl" , "intMPPrimal" , "intRstAlg" , "intMPV2Form" ,
    "intMPHScaling" , "intMaxLevelNR" , "intCmpAggrSeed" , "intCmpAggrRule" ,
-   "intTDisc" };
+   "intTDisc" , "intIntVars" };
 
   if( ( idx >= intLastParCDAS ) && ( idx < intLastBndSlvPar ) )
    return( int_pars_str[ idx - intBPar1 ] );
@@ -2707,6 +2732,90 @@ public:
     compute() can stop or handle it. */
 
  void FormD( void );
+
+/*--------------------------------------------------------------------------*/
+ /// the main loop of compute() when some Variable are integer
+ /** The main loop of compute() when intIntVars == 1 and some Variable are
+  * integer, so that what is minimized is
+  * \f[
+  *   F( x ) = f_0( x ) + \sum_k f_k( x ) \; , \qquad x \in X = [ L , U ]
+  *   \, , \; x_j \in \mathbb{Z} \; \forall j \in J \; ,
+  * \f]
+  * J being the set of integer Variable. It is the stabilized cutting-plane
+  * method of van Ackooij, Frangioni and de Oliveira (Comput. Optim. Appl.
+  * 65, 2016), with the proximal stabilization in place of the trust region
+  * of the paper, to which it is closely related, or with the trust region
+  * \f$ \| x - \bar{x} \|_\infty \leq t \f$ in its place (intMPStbl == 4),
+  * as in the paper but with the infinity norm, since the 1-norm of the paper
+  * is the linear local branching constraint only with binary Variable; the
+  * constraints excluding the regions already explored, which the paper adds
+  * optionally and only with binary Variable, are not. With
+  * \f$ \check{F} \f$ the cutting-plane model and \f$ \bar{x} \f$ the
+  * stability centre, which is
+  * the best point found so far, each iteration
+  *
+  * - solves the stabilized master, the proximal one
+  *   \f$ x^p \in \arg\min \{ \check{F}( x ) + \frac{1}{2t} \| x - \bar{x}
+  *   \|^2 : x \in X \, , \, x_J \in \mathbb{Z} \} \f$, a mixed-integer
+  *   quadratic program, or the trust-region one
+  *   \f$ x^p \in \arg\min \{ \check{F}( x ) : x \in X \, , \,
+  *   \| x - \bar{x} \|_\infty \leq t \, , \, x_J \in \mathbb{Z} \} \f$,
+  *   a mixed-integer linear one, whose predicted decrease is
+  *   \f$ v^* = \check{F}( x^p ) - F( \bar{x} ) \f$;
+  *
+  * - if \f$ v^* \geq - \varepsilon \f$, i.e., the stabilized master sees
+  *   nothing better than \f$ \bar{x} \f$ in its neighbourhood, removes the
+  *   stabilization: it solves the cutting-plane master
+  *   \f$ x^c \in \arg\min \{ \check{F}( x ) : x \in X \, , \,
+  *   x_J \in \mathbb{Z} \} \f$, i.e., the same with \f$ t = \infty \f$,
+  *   whose value, less the gap of its Solver, is a lower bound \f$ \ell \f$
+  *   on the minimum of F, since outside the convex case local and global
+  *   optimality are not the same thing. If \f$ F( \bar{x} ) - \ell \leq
+  *   \varepsilon \f$ the method stops, \f$ \bar{x} \f$ being
+  *   \f$ \varepsilon \f$-optimal; otherwise \f$ x^c \f$ is the next trial
+  *   point;
+  *
+  * - otherwise \f$ x^p \f$ is the next trial point;
+  *
+  * - evaluates every hard component at the trial point, adding the
+  *   linearizations to the bundle, and moves \f$ \bar{x} \f$ there if F is
+  *   lower than at \f$ \bar{x} \f$, i.e., with the \f$ \beta = 0 \f$ of the
+  *   experiments of the paper; after a cutting-plane trial point that is not
+  *   lower the method keeps solving the cutting-plane master, the
+  *   stabilization being restored only after the centre has moved, as the
+  *   radius of the trust region of the paper is only reduced then.
+  *
+  * The tolerance \f$ \varepsilon \f$ is max_error(), as for the continuous
+  * method. With only integer Variable and a bounded X the method terminates
+  * finitely: a proximal trial point with \f$ v^* < - \varepsilon \f$ cannot
+  * be one already evaluated, since there the model is exact and the centre
+  * is the best point, and a cutting-plane trial point cannot be either
+  * while \f$ F( \bar{x} ) - \ell > \varepsilon \f$ (Theorem 1 of the
+  * paper), and the integer points of X are finitely many. The bundle is
+  * never cleaned, which the paper allows only finitely often anyway. If the
+  * cutting-plane master is unbounded, as it may be when X is not, t is
+  * increased tenfold and the method goes on with the proximal master. t
+  * is otherwise kept fixed. tot_time and tot_NrEvls are increased by the
+  * time and the number of the evaluations. */
+
+ void compute_integer( double & tot_time , long & tot_NrEvls );
+
+/*--------------------------------------------------------------------------*/
+ /// solve the Master Problem with integer Variable and proximal parameter tm
+ /** Solves the Master Problem of compute_integer() with proximal parameter
+  * \p tm, Inf< double >() giving the cutting-plane master, and on success
+  * reads vStar; returns the status of MasterProblemBlock::solve_master(). */
+
+ int integer_master( double tm );
+
+/*--------------------------------------------------------------------------*/
+ /// move Lambda1 into the Variable and compute the bounds there
+ /** The part of FormLambda1() after Lambda1 has been set: clamps it into
+  * the box, rounds its integer entries [see intIntVars], writes it into the
+  * ColVariable and computes the upper and lower model values and the
+  * targets there. */
+
+ void PrepareLambda1( void );
 
  /*--------------------------------------------------------------------------*/
 
@@ -3398,6 +3507,11 @@ public:
  int CmpAggrRule;      ///< how the components go to the aggregated ones
 
  int TDisc;            ///< iterations of the discovery of t [see intTDisc]
+
+ int IntVars;          ///< integer Variable kept integer [see intIntVars]
+
+ /// which Variable of the C05Function are integer, empty if none is
+ std::vector< bool > f_int_var;
 
  bool f_tdisc_done = false;  ///< the discovery of t is over in this call
 

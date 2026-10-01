@@ -20,6 +20,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   dynamic Variable or Constraint added to the Block is dropped, since the
   change of the components reaches the Solver as a `FunctionModVars`
 
+- `intIntVars`: with 1 the integer Variable of the C05Function are kept
+  integer, i.e., what is minimized is the function over the integer points
+  of its domain, by the stabilized cutting-plane method of van Ackooij,
+  Frangioni and de Oliveira (Comput. Optim. Appl. 65, 2016): a proximal
+  (mixed-integer quadratic) or trust-region (mixed-integer linear) master,
+  and the master without stabilization, whose bound is a global lower bound,
+  when the stabilized one sees nothing better than the stability centre
+  [see `compute_integer()`]; the default 0 keeps the continuous relaxation
+  that was always minimized. The test `integer_test` compares it with the
+  same problem written out as one mixed-integer program
+
 - `vstrNoEasy`, the classname() of the components that must never be
   treated as easy, in addition to those whose index is in `vintNoEasy`: the
   class of a component is that of the first nested Block of its
@@ -168,6 +179,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Lambda is extended, and either one was a segmentation fault. The linear
   part is marked out of date instead, so that the master receives its
   coefficients on the new coordinates
+
+- `BundleSolver::get_var_solution()` read `IsEasy`, which is empty when no
+  component is easy, up to the number of components, hence out of its range
+  whenever the Configuration of the solution (e.g., a `GetInnerVarSolConfig`
+  of the `LagrangianDualSolver`) asked for the easy components of a problem
+  without any; it now finds nothing to give, and an index given explicitly
+  is rejected as that of a component that is not easy
 
 - on macOS a program linking the module lost the classes the module
   registers in the factories when the linker dropped the library, as it
