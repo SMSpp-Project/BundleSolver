@@ -37,8 +37,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Frangioni and de Oliveira (Comput. Optim. Appl. 65, 2016): a proximal
   (mixed-integer quadratic) or trust-region (mixed-integer linear) master,
   and the master without stabilization, whose bound is a global lower bound,
-  when the stabilized one sees nothing better than the stability centre
-  [see `compute_integer()`]; the default 0 keeps the continuous relaxation
+  when the stabilized one sees nothing better than the stability centre,
+  run by the main loop of `compute()` itself, which calls
+  `integer_direction()`, `integer_trial_point()` and `integer_step()` where
+  the continuous method forms the direction, evaluates the trial point and
+  decides the step; the default 0 keeps the continuous relaxation
   that was always minimized. The test `integer_test` compares it with the
   same problem written out as one mixed-integer program
 

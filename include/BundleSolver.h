@@ -1146,7 +1146,7 @@ public:
   *   Variable are kept integer, i.e., what is minimized is f over the
   *   integer points of its domain, along the lines of the stabilized
   *   Benders' methods of van Ackooij, Frangioni and de Oliveira (Comput.
-  *   Optim. Appl. 65, 2016) [see compute_integer()]. The Master Problem must
+  *   Optim. Appl. 65, 2016) [see integer_direction()]. The Master Problem must
   *   then be primal (intMPPrimal == 1), in raw form (intMPV2Form == 1), and
   *   either proximal (intMPStbl == 0), which makes it a mixed-integer
   *   quadratic problem, or with the trust region (intMPStbl == 4), which
@@ -2734,25 +2734,28 @@ public:
  void FormD( void );
 
 /*--------------------------------------------------------------------------*/
- /// the main loop of compute() when some Variable are integer
- /** The main loop of compute() when intIntVars == 1 and some Variable are
-  * integer, so that what is minimized is
+ /// the Master Problem step of compute() when some Variable are integer
+ /** When intIntVars == 1 and some Variable are integer, what is minimized
+  * is
   * \f[
   *   F( x ) = f_0( x ) + \sum_k f_k( x ) \; , \qquad x \in X = [ L , U ]
   *   \, , \; x_j \in \mathbb{Z} \; \forall j \in J \; ,
   * \f]
   * J being the set of integer Variable. It is the stabilized cutting-plane
   * method of van Ackooij, Frangioni and de Oliveira (Comput. Optim. Appl.
-  * 65, 2016), with the proximal stabilization in place of the trust region
-  * of the paper, to which it is closely related, or with the trust region
+  * 65, 2016), run by the main loop of compute() itself, the parts that
+  * differ from the continuous method being integer_direction(),
+  * integer_trial_point() and integer_step(), with the proximal
+  * stabilization in place of the trust region of the paper, to which it is
+  * closely related, or with the trust region
   * \f$ \| x - \bar{x} \|_\infty \leq t \f$ in its place (intMPStbl == 4),
   * as in the paper but with the infinity norm, since the 1-norm of the paper
   * is the linear local branching constraint only with binary Variable; the
   * constraints excluding the regions already explored, which the paper adds
   * optionally and only with binary Variable, are not. With
   * \f$ \check{F} \f$ the cutting-plane model and \f$ \bar{x} \f$ the
-  * stability centre, which is
-  * the best point found so far, each iteration
+  * stability centre, which is the best point found so far [see
+  * integer_start()], each iteration
   *
   * - solves the stabilized master, the proximal one
   *   \f$ x^p \in \arg\min \{ \check{F}( x ) + \frac{1}{2t} \| x - \bar{x}
@@ -2778,12 +2781,14 @@ public:
   * - otherwise \f$ x^p \f$ is the next trial point;
   *
   * - evaluates every hard component at the trial point, adding the
-  *   linearizations to the bundle, and moves \f$ \bar{x} \f$ there if F is
+  *   linearizations to the bundle [see integer_trial_point()], and moves
+  *   \f$ \bar{x} \f$ there if F is
   *   lower than at \f$ \bar{x} \f$, i.e., with the \f$ \beta = 0 \f$ of the
   *   experiments of the paper; after a cutting-plane trial point that is not
   *   lower the method keeps solving the cutting-plane master, the
   *   stabilization being restored only after the centre has moved, as the
-  *   radius of the trust region of the paper is only reduced then.
+  *   radius of the trust region of the paper is only reduced then [see
+  *   integer_step()].
   *
   * The tolerance \f$ \varepsilon \f$ is max_error(), as for the continuous
   * method. With only integer Variable and a bounded X the method terminates
@@ -2795,14 +2800,67 @@ public:
   * never cleaned, which the paper allows only finitely often anyway. If the
   * cutting-plane master is unbounded, as it may be when X is not, t is
   * increased tenfold and the method goes on with the proximal master. t
-  * is otherwise kept fixed. tot_time and tot_NrEvls are increased by the
-  * time and the number of the evaluations. */
+  * is otherwise kept fixed, and the parts of the main loop that need the
+  * multipliers of a continuous master (the noise reduction, the rules for
+  * t, the cleaning of the bundle) are skipped.
+  *
+  * This method solves the master(s) of an iteration; it returns
+  * eIntGoOn if the trial point is the one of the last master,
+  * eIntOptimal if the centre has been certified optimal, eIntRetry if t
+  * has been increased and the master has to be solved again, and
+  * eIntStop if the method has to stop, with Result telling why. */
 
- void compute_integer( double & tot_time , long & tot_NrEvls );
+ int integer_direction( void );
+
+/*--------------------------------------------------------------------------*/
+ /// the outcomes of integer_direction()
+
+ enum int_direction_outcome { eIntGoOn = 0 , eIntOptimal , eIntRetry ,
+                              eIntStop };
+
+/*--------------------------------------------------------------------------*/
+ /// set up the method with integer Variable before the main loop
+ /** Sets up the method of integer_direction() before the main loop: a
+  * stability centre needs a finite value of F there, hence if the current
+  * point has none, it is made integer and evaluated, and taken as the
+  * centre if F is finite there. tot_time and tot_NrEvls are increased by
+  * the time and the number of the evaluations. Returns false if the
+  * evaluation stops the method, with Result telling why. */
+
+ bool integer_start( double & tot_time , long & tot_NrEvls );
+
+/*--------------------------------------------------------------------------*/
+ /// evaluate the point of the last master with integer Variable
+ /** Takes as Lambda1 the point of the last master solved by
+  * integer_direction(), makes it integer [see PrepareLambda1()] and
+  * evaluates every hard component there [see integer_evaluate()]. */
+
+ bool integer_trial_point( double & tot_time , long & tot_NrEvls );
+
+/*--------------------------------------------------------------------------*/
+ /// evaluate every hard component at Lambda1 with integer Variable
+ /** Evaluates every hard component at Lambda1, which PrepareLambda1() has
+  * set up, inserting the linearizations in the bundle. tot_time and
+  * tot_NrEvls are increased by the time and the number of the
+  * evaluations. Returns false if the evaluation stops the method, with
+  * Result telling why (kError, kUnbounded or kStopTime). */
+
+ bool integer_evaluate( double & tot_time , long & tot_NrEvls );
+
+/*--------------------------------------------------------------------------*/
+ /// the serious step / null step of the method with integer Variable
+ /** The serious step / null step decision of integer_direction(): the
+  * centre moves to the trial point if F is lower there, and otherwise the
+  * method stays without stabilization after a cutting-plane trial point.
+  * Returns false if the method has to stop, i.e., if a cutting-plane trial
+  * point is no better than what the master predicted, so that what is left
+  * is the gap of the master Solver, with Result = kLowPrecision. */
+
+ bool integer_step( void );
 
 /*--------------------------------------------------------------------------*/
  /// solve the Master Problem with integer Variable and proximal parameter tm
- /** Solves the Master Problem of compute_integer() with proximal parameter
+ /** Solves the Master Problem of integer_direction() with proximal parameter
   * \p tm, Inf< double >() giving the cutting-plane master, and on success
   * reads vStar; returns the status of MasterProblemBlock::solve_master(). */
 
@@ -3512,6 +3570,16 @@ public:
 
  /// which Variable of the C05Function are integer, empty if none is
  std::vector< bool > f_int_var;
+
+ bool f_int_centre = false;  ///< with integer Variable, there is a centre
+ bool f_int_cp = false;      ///< ... the last master was not stabilized
+ VarValue f_int_model = 0;   ///< ... the model value at the trial point
+ VarValue f_int_c0 = 0;      ///< ... the constant of the 0-th component
+
+ /// with integer Variable, the master is not stabilized: after a
+ /// cutting-plane step that has not improved the centre the method stays
+ /// so until it does, as the trust region is only reduced after a SS
+ bool f_int_global = false;
 
  bool f_tdisc_done = false;  ///< the discovery of t is over in this call
 

@@ -654,10 +654,9 @@ int BundleSolver::compute( bool changedvars )
                            "available with integer Variable" ) );
   }
 
- if( ! f_int_var.empty() ) {
-  compute_integer( tot_time , tot_NrEvls );
+ // with integer Variable the method needs a stability centre, if any
+ if( ( ! f_int_var.empty() ) && ( ! integer_start( tot_time , tot_NrEvls ) ) )
   goto BundleSolver_final_printouts;
-  }
 
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // main cycle starts here- - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -695,25 +694,49 @@ int BundleSolver::compute( bool changedvars )
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
   //!! PrintBundle();
 
-  {
-   const auto mp0 = std::chrono::steady_clock::now();
-   FormD();
-   const double dt = std::chrono::duration< double >(
-                            std::chrono::steady_clock::now() - mp0 ).count();
-   f_mp_ema = ( f_mp_ema < 0 ) ? dt : 0.9 * f_mp_ema + 0.1 * dt;
+  bool level_gap_optimal = false;
+  bool int_optimal = false;
+  int int_dir = eIntGoOn;
+
+  if( f_int_var.empty() ) {
+   {
+    const auto mp0 = std::chrono::steady_clock::now();
+    FormD();
+    const double dt = std::chrono::duration< double >(
+                             std::chrono::steady_clock::now() - mp0 ).count();
+    f_mp_ema = ( f_mp_ema < 0 ) ? dt : 0.9 * f_mp_ema + 0.1 * dt;
+    }
+
+   // some log - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+   // FormD can certify the centre from the level gap without obtaining a
+   // new master solution. Do not log or consume stale master quantities.
+   level_gap_optimal = ( Result == kOK );
+   if( Result == kStillRunning )
+    Log1();
    }
-
-  // some log - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
-  // FormD can certify the centre from the level gap without obtaining a
-  // new master solution. Do not log or consume stale master quantities.
-  bool level_gap_optimal = ( Result == kOK );
-  if( Result == kStillRunning )
-   Log1();
+  else {
+   int_dir = integer_direction();
+   int_optimal = ( int_dir == eIntOptimal );
+   }
 
   // another iteration (master problem solution)- - - - - - - - - - - - - - -
 
   ++ParIter;
+
+  // with integer Variable, the master may have to be solved again or the
+  // method may have to stop
+  if( int_dir == eIntRetry ) {
+   if( ParIter >= MaxIter ) {
+    BLOG( 1 , " ~ stop due to max iter" << std::endl );
+    Result = kStopIter;
+    break;
+    }
+   continue;
+   }
+
+  if( int_dir == eIntStop )
+   break;
 
   // check for "bad" termination- - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -752,7 +775,7 @@ int BundleSolver::compute( bool changedvars )
     }
    else {
     BLOG( 1 , " ~ stop (infeasible)" << std::endl );
-    break;
+      break;
     }
    }
 
@@ -786,7 +809,7 @@ int BundleSolver::compute( bool changedvars )
 
   if( Result >= kError ) {  // problems in the Master Problem solver
    BLOG( 1 , " ~ error in the MPSolver" << std::endl );
-   break;
+    break;
    }
 
   // a stability centre already beyond the conditional lower bound, which
@@ -807,7 +830,8 @@ int BundleSolver::compute( bool changedvars )
   // check for optimality - - - - - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-  if( level_gap_optimal || IsOptimal() ) {  // if optimality is detected
+  if( level_gap_optimal || int_optimal ||
+      ( f_int_var.empty() && IsOptimal() ) ) {  // optimality is detected
    // run optimality events - - - - - - - - - - - - - - - - - - - - - - - - -
    int res = eContinue;
    for( auto & ev : v_events[ eBeforeTermination ] )
@@ -835,7 +859,7 @@ int BundleSolver::compute( bool changedvars )
 
   // Save only a successfully solved master's multiplier, before any
   // bundle/oracle/centre update can invalidate it. mu = 1 + lambda_level.
-  const bool doubly_stabilized =
+  const bool doubly_stabilized = f_int_var.empty() &&
    ( MPStbl == MasterProblemBlock::kDoublyStabilized ) && ( ! f_tdisc_done );
   const auto ds_level_multiplier = doubly_stabilized
                                     ? MasterPB->get_level_multiplier() : 0.0;
@@ -856,132 +880,140 @@ int BundleSolver::compute( bool changedvars )
    break;
    }
 
-  // check if "ex-ante" Noise Reduction is needed - - - - - - - - - - - - - -
-  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-  // ensure that the Sigma* is "not too negative", if it is increase t (if
-  // possible) and re-solve the MP; note that this kind of NR only happens if
-  // the oracle is "unfaithful", i.e., it pretends to provide information with
-  // the required accuracy but in fact it does not
-  //
-  // however, avoid doing any of this if the linearization errors are not
-  // computed w.r.t. the "true" value of UpFiLmb but w.r.t. a "random"
-  // reference value, since then the fact that linearization errors are
-  // negative is not meaningful
+  // the next trial point: the Lagrangian-like one of the convex bundle, or
+  // with integer Variable the point of the master, made integer
+  Index cnt = 0;
+  if( f_int_var.empty() ) {
+   // check if "ex-ante" Noise Reduction is needed - - - - - - - - - - - - - -
+   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+   // ensure that the Sigma* is "not too negative", if it is increase t (if
+   // possible) and re-solve the MP; note that this kind of NR only happens if
+   // the oracle is "unfaithful", i.e., it pretends to provide information with
+   // the required accuracy but in fact it does not
+   //
+   // however, avoid doing any of this if the linearization errors are not
+   // computed w.r.t. the "true" value of UpFiLmb but w.r.t. a "random"
+   // reference value, since then the fact that linearization errors are
+   // negative is not meaningful
 
-  if( ( ! UsesPureLevelStabilization() ) &&
-      RifeqFi && ( vStar.back() < INFshift ) &&
-      ( Sigma < - max_error( UpRifFi.back() , RelAcc ) ) &&
-      ( Sigma <= - m3 * DST ) ) {
-   if( ! noise_reduction() ) {
-    BLOG( 1 , " ~ stop: NR required but t maximum" << std::endl );
-    Result = kLowPrecision;
-    break;
-    }
-
-   BLOG( 2 , " ~ NR: t increased to " << shrt << t << std::endl );
-   continue;
-   }
-
-  // update out-of-base counters- - - - - - - - - - - - - - - - - - - - - - -
-
-  UpdtCntrs();
-
-  // Hard Long-Term t-strategy for quadratic stabilization- - - - - - - - - -
-  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-  // the hard long-term t-strategy requires t to increase if the step is too
-  // small, and therefore has to be checked before the others
-  // however, it is only viable under a quadratic stabilization
-  //
-  // however, avoid doing any of this if the linearization errors are not
-  // computed w.r.t. the "true" value of UpFiLmb (the GBS master is always
-  // a quadratically stabilized MasterProblemBlock, so the test is
-  // unconditional)
-
-  if( ( ! UsesPureLevelStabilization() ) &&
-      ( tStar > 0 ) && ( ( tSPar1 & tSP1Msk ) == kHLTTS ) && RifeqFi ) {
-
-   double AFL = std::abs( UpFiLmb.back() );
-   if( AFL < 1 )
-    AFL = 1;
-
-   if( abs( vStar.back() ) <= tSPar2 * EpsU * AFL ) {
-    BLOG( 1 , "small v => increase t" << std::endl << "           " );
-
-    // collect two numbers vc and vl such that v( tNew ) >= vc + tNew * vl
-    // we require that v( tNew ) >= vc + tNew * vl = tSPar2 * EpsU * AFL
-    // ==> tNew = ( tSPar2 * EpsU * AFL - vc ) / vl
-
-    double vl , vc;
-    if( MasterPB )
-     MasterPB->sensitivity_analysis( vl , vc );
-    else
-     { vl = 0; vc = 0; }
-
-    double tt;
-    if( - vl < 1e-15 )  // v( t ) is [~] constant ==> D*_t [~]= 0
-     tt = tStar;                 // ==> the CP model is [~]bounded
-    else
-     tt = std::min( tStar , ( tSPar2 * EpsU * AFL * Nearly + vc ) /
-                            ( - vl ) );
-
-    if( ( tHasChgd = ( tt != t ) ) ) {
-     t = tt;
-     continue;         // loop only if t changes
+   if( ( ! UsesPureLevelStabilization() ) &&
+       RifeqFi && ( vStar.back() < INFshift ) &&
+       ( Sigma < - max_error( UpRifFi.back() , RelAcc ) ) &&
+       ( Sigma <= - m3 * DST ) ) {
+    if( ! noise_reduction() ) {
+     BLOG( 1 , " ~ stop: NR required but t maximum" << std::endl );
+     Result = kLowPrecision;
+     break;
      }
+
+    BLOG( 2 , " ~ NR: t increased to " << shrt << t << std::endl );
+    continue;
     }
-   }  // end if( Hard t-strategy )  - - - - - - - - - - - - - - - - - - - - -
-      //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-  // compute Lambda1- - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+   // update out-of-base counters- - - - - - - - - - - - - - - - - - - - - - -
 
-  FormLambda1( t );
+   UpdtCntrs();
 
-  // update the number of items to be fetched from the oracle - - - - - - - -
-  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+   // Hard Long-Term t-strategy for quadratic stabilization- - - - - - - - - -
+   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+   // the hard long-term t-strategy requires t to increase if the step is too
+   // small, and therefore has to be checked before the others
+   // however, it is only viable under a quadratic stabilization
+   //
+   // however, avoid doing any of this if the linearization errors are not
+   // computed w.r.t. the "true" value of UpFiLmb (the GBS master is always
+   // a quadratically stabilized MasterProblemBlock, so the test is
+   // unconditional)
 
-  UpdtaBP3();
+   if( ( ! UsesPureLevelStabilization() ) &&
+       ( tStar > 0 ) && ( ( tSPar1 & tSP1Msk ) == kHLTTS ) && RifeqFi ) {
 
-  // eliminate outdated info- - - - - - - - - - - - - - - - - - - - - - - - -
-  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-  // This is done *after* the call to Master->SensitAnals() in the Hard
-  // Long-Term t-strategy and to FormLambda1(), because elimination of items
-  // from the bundle may make the current solution of the master problem
-  // invalid, and therefore all solution information may be lost. In theory
-  // this should not happen, since only items "out of base" are eliminated,
-  // and therefore the solution remains optimal; however, not all MPSolvers
-  // may behave in this respect.
+    double AFL = std::abs( UpFiLmb.back() );
+    if( AFL < 1 )
+     AFL = 1;
 
-  SimpleBStrat();
+    if( abs( vStar.back() ) <= tSPar2 * EpsU * AFL ) {
+     BLOG( 1 , "small v => increase t" << std::endl << "           " );
 
-  // run the inner loop - - - - - - - - - - - - - - - - - - - - - - - - - - -
-  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+     // collect two numbers vc and vl such that v( tNew ) >= vc + tNew * vl
+     // we require that v( tNew ) >= vc + tNew * vl = tSPar2 * EpsU * AFL
+     // ==> tNew = ( tSPar2 * EpsU * AFL - vc ) / vl
 
-  // first some initializations - - - - - - - - - - - - - - - - - - - - - - -
-  // all stuff that must be computed/changed inside InnerLoop()
+     double vl , vc;
+     if( MasterPB )
+      MasterPB->sensitivity_analysis( vl , vc );
+     else
+      { vl = 0; vc = 0; }
 
-  Alfa1 = 0;
-  ScPr1 = NeedsScPr1() ? read_Gid_aggregate() : 0;
-  if( NeedsG1() ) {
-   G1Norm = INFshift;
-   G1.assign( NrFi , double( 0 ) );
+     double tt;
+     if( - vl < 1e-15 )  // v( t ) is [~] constant ==> D*_t [~]= 0
+      tt = tStar;                 // ==> the CP model is [~]bounded
+     else
+      tt = std::min( tStar , ( tSPar2 * EpsU * AFL * Nearly + vc ) /
+                             ( - vl ) );
+
+     if( ( tHasChgd = ( tt != t ) ) ) {
+      t = tt;
+      continue;         // loop only if t changes
+      }
+     }
+    }  // end if( Hard t-strategy )  - - - - - - - - - - - - - - - - - - - - -
+       //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+   // compute Lambda1- - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+   FormLambda1( t );
+
+   // update the number of items to be fetched from the oracle - - - - - - - -
+   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+   UpdtaBP3();
+
+   // eliminate outdated info- - - - - - - - - - - - - - - - - - - - - - - - -
+   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+   // This is done *after* the call to Master->SensitAnals() in the Hard
+   // Long-Term t-strategy and to FormLambda1(), because elimination of items
+   // from the bundle may make the current solution of the master problem
+   // invalid, and therefore all solution information may be lost. In theory
+   // this should not happen, since only items "out of base" are eliminated,
+   // and therefore the solution remains optimal; however, not all MPSolvers
+   // may behave in this respect.
+
+   SimpleBStrat();
+
+   // run the inner loop - - - - - - - - - - - - - - - - - - - - - - - - - - -
+   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+   // first some initializations - - - - - - - - - - - - - - - - - - - - - - -
+   // all stuff that must be computed/changed inside InnerLoop()
+
+   Alfa1 = 0;
+   ScPr1 = NeedsScPr1() ? read_Gid_aggregate() : 0;
+   if( NeedsG1() ) {
+    G1Norm = INFshift;
+    G1.assign( NrFi , double( 0 ) );
+    }
+
+   CurrNrEvls.assign( NrFi , Index( 0 ) );
+   MPchgs = 0;  // != 0 if the MP is guaranteed to change enough after the
+                // insertion of new information to ensure convergence
+
+   auto start = std::chrono::system_clock::now();
+
+   cnt = InnerLoop();
+
+   auto end = std::chrono::system_clock::now();
+   std::chrono::duration< double > elapsed = end - start;
+
+   tot_time += elapsed.count();
+   tot_NrEvls += std::accumulate( CurrNrEvls.begin() , CurrNrEvls.end() , 0 );
+
+   CmptdinL = false;
    }
-
-  CurrNrEvls.assign( NrFi , Index( 0 ) );
-  MPchgs = 0;  // != 0 if the MP is guaranteed to change enough after the
-               // insertion of new information to ensure convergence
-
-  auto start = std::chrono::system_clock::now();
-
-  auto cnt = InnerLoop();
-
-  auto end = std::chrono::system_clock::now();
-  std::chrono::duration< double > elapsed = end - start;
-
-  tot_time += elapsed.count();
-  tot_NrEvls += std::accumulate( CurrNrEvls.begin() , CurrNrEvls.end() , 0 );
-
-  CmptdinL = false;
+  else
+   if( ! integer_trial_point( tot_time , tot_NrEvls ) )
+    break;
 
   // compute DeltaFi- - - - - - - - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1005,12 +1037,14 @@ int BundleSolver::compute( bool changedvars )
 
   // update the "aggregated" Alfa1 and ScPr1- - - - - - - - - - - - - - - - -
 
-  UpdateHeuristicInfo();
+  if( f_int_var.empty() ) {
+   UpdateHeuristicInfo();
 
-  // some log about the newly obtained information- - - - - - - - - - - - - -
-  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+   // some log about the newly obtained information- - - - - - - - - - - - -
+   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-  Log2( tot_time );
+   Log2( tot_time );
+   }
 
   // check whether either any error has occurred or time has expired- - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1051,271 +1085,278 @@ int BundleSolver::compute( bool changedvars )
    break;
    }
 
-  // avoid the t-changing phase if a vertical linearization has been found- -
-  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-  // this is because the vertical linearization making Lambda1 unfeasible,
-  // surely "change enough the master problem already"
-  // yet, one possible t-strategy would be to set t to the largest value
-  // that would have produced a feasible point: t := Alfa1 / ( - ScPr1 )
-  // (with Alfa1 and ScPr1 of that particular constraint, though, not the
-  // "global" ones)
-
-  if( MPchgs > 1 ) {
-   if( ParIter >= MaxIter ) {  // if we have done too many iterations
-    BLOG( 1 , " ~ stop due to max iter" << std::endl );
-    Result = kStopIter;        // stop already
+  // with integer Variable, the step is decided by the integer method
+  if( ! f_int_var.empty() ) {
+   if( ! integer_step() )
     break;
-    }
-   else                        // otherwise
-    continue;                  // go to the next one
    }
+  else {
+   // avoid the t-changing phase if a vertical linearization has been found- -
+   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+   // this is because the vertical linearization making Lambda1 unfeasible,
+   // surely "change enough the master problem already"
+   // yet, one possible t-strategy would be to set t to the largest value
+   // that would have produced a feasible point: t := Alfa1 / ( - ScPr1 )
+   // (with Alfa1 and ScPr1 of that particular constraint, though, not the
+   // "global" ones)
 
-  // avoid the t-changing phase if the linearization errors are not reliable-
-  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-  // this is because we have firmly established one feasible (finite) upper
-  // estimate in Lambda1, which ends the "phase 0" in which the linearization
-  // errors were computed against an arbitrary value and starts the "phase 1"
-  // in which the real optimization takes place
-
-  if( ( ! RifeqFi ) && ( UpFiLmb1.back() < INFshift ) ) {
-   // if we are still in "phase 0", and we just found a point where the
-   // function value is finite, end the "phase 0" by immediately jumping
-   // there. note that one may expect the thing on the function value to be
-   // redundant since any component evaluating to +INF should generate a
-   // vertical linearization and therefore set MPchgs = 2, which is acted
-   // upon right above, but this may not happen. which is a problem if
-   // MPchgs == 0 (but this is acted upon right below) but not otherwise,
-   // since a "normal" NS will be done which is the right thing to do
-   BLOG( 1 , "            Fi1 defined ==> SS " << std::endl );
-   GotoLambda1();              // go to the feasible point
-   if( ParIter >= MaxIter ) {  // if this was the last possible iteration
-    BLOG( 1 , " ~ stop due to max iter" << std::endl );
-    Result = kStopIter;
-    break;                     // main loop ends here
-    }
-   else
-    continue;                  // go start the actual minimization of Fi()
-   }
-
-  // check if noise reduction has to be done- - - - - - - - - - - - - - - - -
-  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
-  if( ( ! MPchgs ) && ( ! UsesPureLevelStabilization() ) ) {
-   if( ! noise_reduction() ) {
-    BLOG( 1 , "            stop: NR required but t maximum" << std::endl );
-    Result = kLowPrecision;
-    break;
-    }
-   BLOG( 1 , "            NR: t increased to " << shrt << t << std::endl );
-   continue;
-   }
-
-  // Check if we exceeded the maximum noise reduction steps for the level
-  if( UsesPureLevelStabilization() && LevelNRCntr >= MaxLevelNR ) {
-   BLOG( 1 , "            stop: NR required but maximum nummber of "
-              "level NR has been reached" << std::endl );
-   Result = kLowPrecision;
-   break;
-  }
-
-  // the NS / SS decision - - - - - - - - - - - - - - - - - - - - - - - - - -
-  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-  // note again the "<" in the SS condition below (which means this is ever
-  // so slightly stronger than it should), which is there to avoid the
-  // condition to fire when UpFiLmb1.back() == INF == UpTrgt
-
-  SSDone = ( UpFiLmb1.back() < UpTrgt ) ? true : false;
-
-  VarValue tt = t , tm = t , tp = t;  // setup for the heuristic t
-
-  if( SSDone ) {  // SS - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
-   BLOG( 1 , std::endl << " SS[" << CSSCntr << "]: DFi = " << shrt );
-   if( f_convex ) {
-    BLOG( 1 , DeltaFi << def << " ~ Up1(" << UpFiLmb1.back()
-              << ") <= UpTrgt(" << UpTrgt << ")" );
-    }
-   else
-    BLOG( 1 , - DeltaFi << def << " ~ Lw1(" << - UpFiLmb1.back()
-              << ") >= LwTrgt(" << - UpTrgt << ")" );
-
-   if( ( ! UsesPureLevelStabilization() ) && ( ! doubly_stabilized ) &&
-       ( tSPar1 & 1 ) ) {
-    tt = Heuristic( tSPar1 >> 6 );
-    BLOG( 1 , " ~ Ht = " << shrt << tt );
-    }
-
-   if( ( ! UsesPureLevelStabilization() ) && ( ! doubly_stabilized ) &&
-       tSPar3 ) {
-    tp *= std::abs( tSPar3 );
-    if( tSPar3 > 0 )
-     tm /= tSPar3;
-    }
-
-   const bool gated_level_update = CSSCntr + 1 > MnSSC;
-   // Keep the counter/reset policy used by level-target management. For
-   // doubly stabilized SS, the t interval computed here is overridden below.
-   if( ( ++CSSCntr > MnSSC ) &&
-       ( ! UsesPureLevelStabilization() ) ) {
-    // due to the fact that the counter has just been increased
-    if( ( ( tSPar1 & tSP1Msk ) == kBLTTS )  &&
-        ( DSTS <= tSPar2 * Sigma ) && ( CSSCntr < 10 ) ) {  //!! 10!
-     // if the "balancing" long-term t-strategy is active and D*_t( 1 )
-     // is small already, inhibit t increases (but not small heuristic
-     // decreases, if active) unless "too many SS happened"
-     BLOG( 1 , " ~ small D*_t( 1 )" );
-     tp = t;
+   if( MPchgs > 1 ) {
+    if( ParIter >= MaxIter ) {  // if we have done too many iterations
+     BLOG( 1 , " ~ stop due to max iter" << std::endl );
+     Result = kStopIter;        // stop already
+     break;
      }
-    else {
-     tm = t * mnIncr;  // minimum significant increase
-     tp = t * mxIncr;  // maximum significant increase
-     CSSCntr = 0;      // a significant increase happened, reset counter
-     }
+    else                        // otherwise
+     continue;                  // go to the next one
     }
 
-   BLOG( 1 , std::endl );
+   // avoid the t-changing phase if the linearization errors are not reliable-
+   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+   // this is because we have firmly established one feasible (finite) upper
+   // estimate in Lambda1, which ends the "phase 0" in which the linearization
+   // errors were computed against an arbitrary value and starts the "phase 1"
+   // in which the real optimization takes place
 
-   // the level test reads the model value at d*, i.e., the value of the
-   // center the step starts from plus v*, which GotoLambda1() moves
-   const auto old_ref = UpRifFi.back();
-   GotoLambda1();
-   update_level_after_step( true , gated_level_update , old_ref );
-   CNSCntr = 0;
-   CmptdinL = ( cnt == NrFi - NrEasy );
-   }
-  else {        // NS - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-   BLOG( 1 , std::endl << " NS[" << CNSCntr << "]: " );
-   BLOG2( 1 , DeltaFi < INFshift , "DFi = " << shrt << rs( DeltaFi )
-              <<  " ~ " << def );
-   if( f_convex ) {
-    BLOG( 1 , "Lw1(" << def << LwFiLmb1.back() << ") >= LwTrgt(" << LwTrgt
-              << ")" );
-    }
-   else
-    BLOG( 1 , "Up1(" << - LwFiLmb1.back() << ") <= UpTrgt(" << - LwTrgt
-              << ")" );
-
-   if( ( ! UsesPureLevelStabilization() ) && ( tSPar1 & 2 ) ) {
-    tt = Heuristic( tSPar1 >> 8 );
-    BLOG( 1 , " ~ Ht = " << shrt << tt );
-    }
-
-   if( ( ! UsesPureLevelStabilization() ) && tSPar3 ) {
-    tm /= std::abs( tSPar3 );
-    if( tSPar3 > 0 )
-     tp *= tSPar3;
-    }
-
-   const bool gated_level_update = CNSCntr + 1 > MnNSC;
-   if( ( ++CNSCntr > MnNSC ) &&
-       ( ! UsesPureLevelStabilization() ) ) {
-    // due to the fact that the counter has just been increased
-    if( ( ( ( tSPar1 & tSP1Msk ) == kSLTTS ) ||
-          ( ( tSPar1 & tSP1Msk ) == kHLTTS ) ) &&
-        ( abs( vStar.back() ) <= tSPar2 * EpsU * max_error() ) ) {
-     // if either the "hard" or the "soft" long-term t-strategy is active
-     // and v* is small already, inhibit t decreases (but not small
-     // heuristic increases, if active)
-     BLOG( 1 , " small v" );
-     tm = t;
+   if( ( ! RifeqFi ) && ( UpFiLmb1.back() < INFshift ) ) {
+    // if we are still in "phase 0", and we just found a point where the
+    // function value is finite, end the "phase 0" by immediately jumping
+    // there. note that one may expect the thing on the function value to be
+    // redundant since any component evaluating to +INF should generate a
+    // vertical linearization and therefore set MPchgs = 2, which is acted
+    // upon right above, but this may not happen. which is a problem if
+    // MPchgs == 0 (but this is acted upon right below) but not otherwise,
+    // since a "normal" NS will be done which is the right thing to do
+    BLOG( 1 , "            Fi1 defined ==> SS " << std::endl );
+    GotoLambda1();              // go to the feasible point
+    if( ParIter >= MaxIter ) {  // if this was the last possible iteration
+     BLOG( 1 , " ~ stop due to max iter" << std::endl );
+     Result = kStopIter;
+     break;                     // main loop ends here
      }
     else
-     if( ( ( tSPar1 & tSP1Msk ) == kBLTTS ) &&
-         ( tSPar2 * DSTS >= abs( Sigma ) ) ) {
+     continue;                  // go start the actual minimization of Fi()
+    }
+
+   // check if noise reduction has to be done- - - - - - - - - - - - - - - - -
+   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+   if( ( ! MPchgs ) && ( ! UsesPureLevelStabilization() ) ) {
+    if( ! noise_reduction() ) {
+     BLOG( 1 , "            stop: NR required but t maximum" << std::endl );
+     Result = kLowPrecision;
+     break;
+     }
+    BLOG( 1 , "            NR: t increased to " << shrt << t << std::endl );
+    continue;
+    }
+
+   // Check if we exceeded the maximum noise reduction steps for the level
+   if( UsesPureLevelStabilization() && LevelNRCntr >= MaxLevelNR ) {
+    BLOG( 1 , "            stop: NR required but maximum nummber of "
+               "level NR has been reached" << std::endl );
+    Result = kLowPrecision;
+    break;
+   }
+
+   // the NS / SS decision - - - - - - - - - - - - - - - - - - - - - - - - - -
+   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+   // note again the "<" in the SS condition below (which means this is ever
+   // so slightly stronger than it should), which is there to avoid the
+   // condition to fire when UpFiLmb1.back() == INF == UpTrgt
+
+   SSDone = ( UpFiLmb1.back() < UpTrgt ) ? true : false;
+
+   VarValue tt = t , tm = t , tp = t;  // setup for the heuristic t
+
+   if( SSDone ) {  // SS - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+    BLOG( 1 , std::endl << " SS[" << CSSCntr << "]: DFi = " << shrt );
+    if( f_convex ) {
+     BLOG( 1 , DeltaFi << def << " ~ Up1(" << UpFiLmb1.back()
+               << ") <= UpTrgt(" << UpTrgt << ")" );
+     }
+    else
+     BLOG( 1 , - DeltaFi << def << " ~ Lw1(" << - UpFiLmb1.back()
+               << ") >= LwTrgt(" << - UpTrgt << ")" );
+
+    if( ( ! UsesPureLevelStabilization() ) && ( ! doubly_stabilized ) &&
+        ( tSPar1 & 1 ) ) {
+     tt = Heuristic( tSPar1 >> 6 );
+     BLOG( 1 , " ~ Ht = " << shrt << tt );
+     }
+
+    if( ( ! UsesPureLevelStabilization() ) && ( ! doubly_stabilized ) &&
+        tSPar3 ) {
+     tp *= std::abs( tSPar3 );
+     if( tSPar3 > 0 )
+      tm /= tSPar3;
+     }
+
+    const bool gated_level_update = CSSCntr + 1 > MnSSC;
+    // Keep the counter/reset policy used by level-target management. For
+    // doubly stabilized SS, the t interval computed here is overridden below.
+    if( ( ++CSSCntr > MnSSC ) &&
+        ( ! UsesPureLevelStabilization() ) ) {
+     // due to the fact that the counter has just been increased
+     if( ( ( tSPar1 & tSP1Msk ) == kBLTTS )  &&
+         ( DSTS <= tSPar2 * Sigma ) && ( CSSCntr < 10 ) ) {  //!! 10!
       // if the "balancing" long-term t-strategy is active and D*_t( 1 )
-      // is large already, inhibit t decreases (but not small heuristic
-      // increases, if active); note that one may add the clause "unless
-      // too many NS happened", i.e., "&& ( CNSCntr < 20 )": this version
-      // avoids problems which may occur with ill-set tStar or tSPar2, but
-      // it may give worse performances with "difficult" problems
-      // also note the "abs( Sigma )": Sigma should be positive, but in
-      // case it is not the control would always be true irrespectively of
-      // the magnitude of tSPar2 and tStar just because of the sign
-      BLOG( 1 , " ~ large D*_t( 1 )" );
-      tm = t;
+      // is small already, inhibit t increases (but not small heuristic
+      // decreases, if active) unless "too many SS happened"
+      BLOG( 1 , " ~ small D*_t( 1 )" );
+      tp = t;
       }
      else {
-      tm = t * mxDecr;  // maximum significant decrease
-      tp = t * mnDecr;  // minimum significant decrease
-      CNSCntr = 0;      // a significant decrease happened, reset counter
+      tm = t * mnIncr;  // minimum significant increase
+      tp = t * mxIncr;  // maximum significant increase
+      CSSCntr = 0;      // a significant increase happened, reset counter
       }
+     }
+
+    BLOG( 1 , std::endl );
+
+    // the level test reads the model value at d*, i.e., the value of the
+    // center the step starts from plus v*, which GotoLambda1() moves
+    const auto old_ref = UpRifFi.back();
+    GotoLambda1();
+    update_level_after_step( true , gated_level_update , old_ref );
+    CNSCntr = 0;
+    CmptdinL = ( cnt == NrFi - NrEasy );
+    }
+   else {        // NS - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    BLOG( 1 , std::endl << " NS[" << CNSCntr << "]: " );
+    BLOG2( 1 , DeltaFi < INFshift , "DFi = " << shrt << rs( DeltaFi )
+               <<  " ~ " << def );
+    if( f_convex ) {
+     BLOG( 1 , "Lw1(" << def << LwFiLmb1.back() << ") >= LwTrgt(" << LwTrgt
+               << ")" );
+     }
+    else
+     BLOG( 1 , "Up1(" << - LwFiLmb1.back() << ") <= UpTrgt(" << - LwTrgt
+               << ")" );
+
+    if( ( ! UsesPureLevelStabilization() ) && ( tSPar1 & 2 ) ) {
+     tt = Heuristic( tSPar1 >> 8 );
+     BLOG( 1 , " ~ Ht = " << shrt << tt );
+     }
+
+    if( ( ! UsesPureLevelStabilization() ) && tSPar3 ) {
+     tm /= std::abs( tSPar3 );
+     if( tSPar3 > 0 )
+      tp *= tSPar3;
+     }
+
+    const bool gated_level_update = CNSCntr + 1 > MnNSC;
+    if( ( ++CNSCntr > MnNSC ) &&
+        ( ! UsesPureLevelStabilization() ) ) {
+     // due to the fact that the counter has just been increased
+     if( ( ( ( tSPar1 & tSP1Msk ) == kSLTTS ) ||
+           ( ( tSPar1 & tSP1Msk ) == kHLTTS ) ) &&
+         ( abs( vStar.back() ) <= tSPar2 * EpsU * max_error() ) ) {
+      // if either the "hard" or the "soft" long-term t-strategy is active
+      // and v* is small already, inhibit t decreases (but not small
+      // heuristic increases, if active)
+      BLOG( 1 , " small v" );
+      tm = t;
+      }
+     else
+      if( ( ( tSPar1 & tSP1Msk ) == kBLTTS ) &&
+          ( tSPar2 * DSTS >= abs( Sigma ) ) ) {
+       // if the "balancing" long-term t-strategy is active and D*_t( 1 )
+       // is large already, inhibit t decreases (but not small heuristic
+       // increases, if active); note that one may add the clause "unless
+       // too many NS happened", i.e., "&& ( CNSCntr < 20 )": this version
+       // avoids problems which may occur with ill-set tStar or tSPar2, but
+       // it may give worse performances with "difficult" problems
+       // also note the "abs( Sigma )": Sigma should be positive, but in
+       // case it is not the control would always be true irrespectively of
+       // the magnitude of tSPar2 and tStar just because of the sign
+       BLOG( 1 , " ~ large D*_t( 1 )" );
+       tm = t;
+       }
+      else {
+       tm = t * mxDecr;  // maximum significant decrease
+       tp = t * mnDecr;  // minimum significant decrease
+       CNSCntr = 0;      // a significant decrease happened, reset counter
+       }
+     }
+
+
+    BLOG( 1 , std::endl );
+    // Combine our consecutive-NS gate with de Oliveira--Solodov's
+    // level-iterate test (mu > 1). Use the saved solve multiplier, since
+    // the oracle/bundle updates may already have invalidated the solution.
+    const bool relax_level = gated_level_update &&
+     ( ! doubly_stabilized || ds_level_multiplier > kLevelMultiplierTol );
+    const auto old_level_delta = f_level_Delta;
+    update_level_after_step( false , relax_level );
+    if( doubly_stabilized )
+     BLOG( 2 , " ~ DS null step: gate = " << gated_level_update
+               << ", level_multiplier = " << def << ds_level_multiplier
+               << ", relax = " << relax_level
+               << ", Delta = " << old_level_delta
+               << ", Delta_new = " << f_level_Delta << std::endl );
+    CSSCntr = 0;
+
+    }   // end else( NS )- - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+   // actually update t- - - - - - - - - - - - - - - - - - - - - - - - - - - -
+   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+   // De Oliveira--Solodov, Algorithm 2.4, Step 5.1: every doubly
+   // stabilized serious step uses t_new = t * mu. Keep the configured
+   // absolute bounds, but bypass the heuristic, consecutive-SS and endgame
+   // rules: in particular, an inactive level (mu = 1) leaves t unchanged.
+   if( SSDone && doubly_stabilized ) {
+    tt = std::max( tMinor , std::min( tMaior , t * ds_mu ) );
+    BLOG( 1 , " ~ DS serious step: t = " << def << t
+              << ", mu = " << ds_mu << ", t_new = " << tt << std::endl );
+    }
+   // if the endgame t-strategy fires (note the "/ 10"!!), the regular
+   // t-updating mechanism is superseeded
+   else if( ( ! UsesPureLevelStabilization() ) &&
+       ( tSPar1 & kEGTTS ) &&
+       ( UpFiLmb.back() < INFshift ) &&
+       ( DSTS < max_error() / 10 ) ) {
+     tt = std::max( t * ( mxDecr + mnDecr ) / 2 , tMinor );
+     BLOG( 1 , " ~ endgame, t = " << shrt << tt );
+     //!! the reverse should also be done: if sigma is small and D*( t* ) is
+     //!! large, t should be increased --> but this would happen surely at
+     //!! the beginning, it should be done only near the end
+     }
+   else             // regular update mechanism
+    if( tm != tp )  {  // if t can change, select it in [ tm , tp ]
+     /*!!
+     tt = std::min( std::min( tMaior , tp ) ,
+ 		   std::max( std::max( tMinor , tm ) , tt ) );
+       !!*/
+     tt = std::max( std::min( tp , tt ) , tm );
+     tt = std::max( std::min( tMaior , tt ) , tMinor );
+     }
+    else            // else
+     tt = t;        // keep it as it is
+
+   // the discovery of t: the values t * mu the doubly stabilized iterations
+   // have implicitly used are recorded, and after TDisc of them the level row
+   // is switched off and t is their geometric mean over the last 5
+   if( doubly_stabilized && ( TDisc > 0 ) ) {
+    v_tdisc.push_back( t * ds_mu );
+    if( ParIter >= Index( TDisc ) ) {
+     const Index n = std::min( Index( 5 ) , Index( v_tdisc.size() ) );
+     double lg = 0;
+     for( Index i = v_tdisc.size() - n ; i < v_tdisc.size() ; ++i )
+      lg += std::log( v_tdisc[ i ] );
+     tt = std::max( tMinor , std::min( tMaior , std::exp( lg / n ) ) );
+     f_tdisc_done = true;
+     reset_level_stabilization();
+     MasterPB->set_f_lev( INFshift );
+     BLOG( 1 , " ~ discovery of t over: t = " << def << tt << std::endl );
+     }
     }
 
-
-   BLOG( 1 , std::endl );
-   // Combine our consecutive-NS gate with de Oliveira--Solodov's
-   // level-iterate test (mu > 1). Use the saved solve multiplier, since
-   // the oracle/bundle updates may already have invalidated the solution.
-   const bool relax_level = gated_level_update &&
-    ( ! doubly_stabilized || ds_level_multiplier > kLevelMultiplierTol );
-   const auto old_level_delta = f_level_Delta;
-   update_level_after_step( false , relax_level );
-   if( doubly_stabilized )
-    BLOG( 2 , " ~ DS null step: gate = " << gated_level_update
-              << ", level_multiplier = " << def << ds_level_multiplier
-              << ", relax = " << relax_level
-              << ", Delta = " << old_level_delta
-              << ", Delta_new = " << f_level_Delta << std::endl );
-   CSSCntr = 0;
-
-   }   // end else( NS )- - - - - - - - - - - - - - - - - - - - - - - - - - -
-
-  // actually update t- - - - - - - - - - - - - - - - - - - - - - - - - - - -
-  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
-  // De Oliveira--Solodov, Algorithm 2.4, Step 5.1: every doubly
-  // stabilized serious step uses t_new = t * mu. Keep the configured
-  // absolute bounds, but bypass the heuristic, consecutive-SS and endgame
-  // rules: in particular, an inactive level (mu = 1) leaves t unchanged.
-  if( SSDone && doubly_stabilized ) {
-   tt = std::max( tMinor , std::min( tMaior , t * ds_mu ) );
-   BLOG( 1 , " ~ DS serious step: t = " << def << t
-             << ", mu = " << ds_mu << ", t_new = " << tt << std::endl );
-   }
-  // if the endgame t-strategy fires (note the "/ 10"!!), the regular
-  // t-updating mechanism is superseeded
-  else if( ( ! UsesPureLevelStabilization() ) &&
-      ( tSPar1 & kEGTTS ) &&
-      ( UpFiLmb.back() < INFshift ) &&
-      ( DSTS < max_error() / 10 ) ) {
-    tt = std::max( t * ( mxDecr + mnDecr ) / 2 , tMinor );
-    BLOG( 1 , " ~ endgame, t = " << shrt << tt );
-    //!! the reverse should also be done: if sigma is small and D*( t* ) is
-    //!! large, t should be increased --> but this would happen surely at
-    //!! the beginning, it should be done only near the end
-    }
-  else             // regular update mechanism
-   if( tm != tp )  {  // if t can change, select it in [ tm , tp ]
-    /*!!
-    tt = std::min( std::min( tMaior , tp ) ,
-		   std::max( std::max( tMinor , tm ) , tt ) );
-      !!*/
-    tt = std::max( std::min( tp , tt ) , tm );
-    tt = std::max( std::min( tMaior , tt ) , tMinor );
-    }
-   else            // else
-    tt = t;        // keep it as it is
-
-  // the discovery of t: the values t * mu the doubly stabilized iterations
-  // have implicitly used are recorded, and after TDisc of them the level row
-  // is switched off and t is their geometric mean over the last 5
-  if( doubly_stabilized && ( TDisc > 0 ) ) {
-   v_tdisc.push_back( t * ds_mu );
-   if( ParIter >= Index( TDisc ) ) {
-    const Index n = std::min( Index( 5 ) , Index( v_tdisc.size() ) );
-    double lg = 0;
-    for( Index i = v_tdisc.size() - n ; i < v_tdisc.size() ; ++i )
-     lg += std::log( v_tdisc[ i ] );
-    tt = std::max( tMinor , std::min( tMaior , std::exp( lg / n ) ) );
-    f_tdisc_done = true;
-    reset_level_stabilization();
-    MasterPB->set_f_lev( INFshift );
-    BLOG( 1 , " ~ discovery of t over: t = " << def << tt << std::endl );
-    }
-   }
-
-  if( ( tHasChgd = ( t != tt ) ) )
-   t = tt;
+   if( ( tHasChgd = ( t != tt ) ) )
+    t = tt;
+   }  // end else( no integer Variable )
 
   // check max number of iterations - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1334,7 +1375,11 @@ int BundleSolver::compute( bool changedvars )
  // if necessary, force one last SS to the stability center - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- if( ( FrcLstSS & 1 ) && ( ! CmptdinL ) &&
+ // with integer Variable, the master goes back to the t of the method
+ if( ! f_int_var.empty() )
+  MasterPB->set_t( t );
+
+ if( f_int_var.empty() && ( FrcLstSS & 1 ) && ( ! CmptdinL ) &&
      ( ( Result == kOK ) || ( Result == kStopIter ) ||
        ( Result == kLowPrecision ) ) ) {
   BLOG( 1 , "            Recomputing the current point" << std::endl );
@@ -4167,208 +4212,202 @@ int BundleSolver::integer_master( double tm )
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::compute_integer( double & tot_time , long & tot_NrEvls )
+bool BundleSolver::integer_evaluate( double & tot_time , long & tot_NrEvls )
 {
- // evaluate every hard component at Lambda1, which PrepareLambda1() has set
- // up, inserting the linearizations; false if this stops the method
- auto evaluate = [ & ]( void ) -> bool {
-  CurrNrEvls.assign( NrFi , Index( 0 ) );
-  MPchgs = 0;
-  bool go_on = true;
+ CurrNrEvls.assign( NrFi , Index( 0 ) );
+ MPchgs = 0;
+ bool go_on = true;
 
-  const auto start = std::chrono::system_clock::now();
-  while( FindNext() ) {
-   FiAndGi( f_wFi , true );
+ const auto start = std::chrono::system_clock::now();
+ while( FindNext() ) {
+  FiAndGi( f_wFi , true );
 
-   // kLowPrecision is not an error [see InnerLoop()]
-   if( ( FiStatus[ f_wFi ] <= kUnEval ) ||
-       ( ( FiStatus[ f_wFi ] >= kError ) &&
-	 ( FiStatus[ f_wFi ] != kLowPrecision ) ) ) {
-    Result = kError;
-    go_on = false;
-    break;
-    }
-
-   ++CurrNrEvls[ f_wFi ];
-
-   // a component that is -INF somewhere is -INF everywhere [see InnerLoop()]
-   if( UpFiLmb1[ f_wFi ] == -INFshift ) {
-    Result = kUnbounded;
-    go_on = false;
-    break;
-    }
-
-   if( ( MaxTime < INFshift ) && ( get_elapsed_time() > MaxTime ) ) {
-    Result = kStopTime;
-    go_on = false;
-    break;
-    }
+  // kLowPrecision is not an error [see InnerLoop()]
+  if( ( FiStatus[ f_wFi ] <= kUnEval ) ||
+      ( ( FiStatus[ f_wFi ] >= kError ) &&
+	( FiStatus[ f_wFi ] != kLowPrecision ) ) ) {
+   Result = kError;
+   go_on = false;
+   break;
    }
 
-  const std::chrono::duration< double > elapsed =
-                                   std::chrono::system_clock::now() - start;
-  tot_time += elapsed.count();
-  tot_NrEvls += std::accumulate( CurrNrEvls.begin() , CurrNrEvls.end() , 0 );
+  ++CurrNrEvls[ f_wFi ];
 
-  return( go_on );
-  };
+  // a component that is -INF somewhere is -INF everywhere [see InnerLoop()]
+  if( UpFiLmb1[ f_wFi ] == -INFshift ) {
+   Result = kUnbounded;
+   go_on = false;
+   break;
+   }
 
- // the point the master has found, made integer and evaluated
- auto master_point = [ & ]( void ) -> bool {
-  const auto d = MasterPB->get_d_vector();
-  const auto & x_bar = MasterPB->get_x_bar();
-  for( Index i = 0 ; i < NumVar ; ++i )
-   Lambda1[ i ] = ( i < d.size() ? d[ i ] : 0.0 ) +
-                  ( i < x_bar.size() ? x_bar[ i ] : 0.0 );
-  PrepareLambda1();
-  return( evaluate() );
-  };
-
- // the master leaves out the constant of the 0-th component
- const VarValue c0 = zeroth_component() ?
-                     rs( zeroth_component()->get_constant_term() ) : 0;
-
- // a stability centre needs a finite value of F there
- bool centre = RifeqFi && ( UpFiLmb.back() < INFshift );
-
- if( ! centre ) {  // start from the current point, made integer
-  Lambda1 = Lambda;
-  vStar.assign( NrFi + 1 , INFshift );
-  PrepareLambda1();
-  if( ! evaluate() )
-   return;
-
-  if( UpFiLmb1.back() < INFshift ) {
-   GotoLambda1();
-   centre = true;
+  if( ( MaxTime < INFshift ) && ( get_elapsed_time() > MaxTime ) ) {
+   Result = kStopTime;
+   go_on = false;
+   break;
    }
   }
 
- CmptdinL = centre;
+ const std::chrono::duration< double > elapsed =
+                                  std::chrono::system_clock::now() - start;
+ tot_time += elapsed.count();
+ tot_NrEvls += std::accumulate( CurrNrEvls.begin() , CurrNrEvls.end() , 0 );
 
- // after a cutting-plane step that has not improved the centre the method
- // stays without stabilization until it does, as the trust region of the
- // paper is only reduced after a serious step
- bool global = false;
+ return( go_on );
 
- for( ; ; ) {
-  if( ( MaxTime < INFshift ) && ( get_elapsed_time() > MaxTime ) ) {
-   BLOG( 1 , " ~ stop due to max time" << std::endl );
-   Result = kStopTime;
-   break;
-   }
+ }  // end( BundleSolver::integer_evaluate )
 
-  if( ParIter >= MaxIter ) {
-   BLOG( 1 , " ~ stop due to max iter" << std::endl );
-   Result = kStopIter;
-   break;
-   }
+/*--------------------------------------------------------------------------*/
 
-  ++ParIter;
+bool BundleSolver::integer_start( double & tot_time , long & tot_NrEvls )
+{
+ // the master leaves out the constant of the 0-th component
+ f_int_c0 = zeroth_component() ?
+            rs( zeroth_component()->get_constant_term() ) : 0;
 
-  // the proximal master, if there is a centre, otherwise or if it sees
-  // nothing better than the centre the cutting-plane one
-  int rc = Solver::kOK;
-  bool cutting_plane = ( ! centre ) || global;
-  if( ! cutting_plane ) {
-   rc = integer_master( t );
-   if( ( rc == Solver::kOK ) || ( rc == Solver::kLowPrecision ) )
-    cutting_plane = ( vStar.back() >= - max_error() );
-   }
+ // a stability centre needs a finite value of F there
+ f_int_centre = RifeqFi && ( UpFiLmb.back() < INFshift );
+ f_int_global = false;
 
-  if( ( ( rc == Solver::kOK ) || ( rc == Solver::kLowPrecision ) ) &&
-      cutting_plane ) {
-   rc = integer_master( Inf< double >() );
+ if( ! f_int_centre ) {  // start from the current point, made integer
+  Lambda1 = Lambda;
+  vStar.assign( NrFi + 1 , INFshift );
+  PrepareLambda1();
+  if( ! integer_evaluate( tot_time , tot_NrEvls ) )
+   return( false );
 
-   if( rc == Solver::kUnbounded ) {  // X is not bounded
-    if( ! centre ) {
-     BLOG( 1 , " ~ unbounded cutting-plane master with no centre"
-               << std::endl );
-     Result = kError;
-     break;
-     }
-    t *= 10;
-    BLOG( 2 , " ~ unbounded cutting-plane master, t = " << t << std::endl );
-    continue;
-    }
-
-   if( ( rc == Solver::kOK ) || ( rc == Solver::kLowPrecision ) ) {
-    // without the stabilization the master value is a global lower bound
-    const VarValue lb = c0 + MasterPB->get_master_bound();
-    if( lb > f_global_LB )
-     f_global_LB = lb;
-
-    if( centre && ( UpRifFi.back() - f_global_LB <= max_error() ) ) {
-     BLOG( 1 , " ~ optimal" << std::endl );
-     Result = kOK;
-     break;
-     }
-    }
-   }
-
-  if( rc == Solver::kInfeasible ) {  // no integer point is feasible
-   Result = kInfeasible;
-   break;
-   }
-
-  if( rc == Solver::kStopTime ) {
-   Result = kStopTime;
-   break;
-   }
-
-  if( ( rc != Solver::kOK ) && ( rc != Solver::kLowPrecision ) ) {
-   Result = kError;
-   break;
-   }
-
-  // with no centre the model values have nothing to be translated against
-  if( ! centre )
-   vStar.assign( NrFi + 1 , INFshift );
-
-  // the model value at the point of the cutting-plane master
-  const VarValue model = ( cutting_plane && centre ) ?
-   UpRifFi.back() + vStar.back() : VarValue( INFshift );
-
-  if( ! master_point() )
-   break;
-
-  const bool better = UpFiLmb1.back() <
-                      ( centre ? UpRifFi.back() : VarValue( INFshift ) );
-
-  if( f_log && ( LogVerb > 1 ) ) {
-   *f_log << std::endl << def << ParIter
-          << ( cutting_plane ? " cp" : " st" ) << " ~ F = ";
-   pval( *f_log , rs( UpFiLmb1.back() ) );
-   *f_log << " ~ Fbar = ";
-   pval( *f_log , centre ? rs( UpRifFi.back() ) : VarValue( INFshift ) );
-   *f_log << " ~ LB = ";
-   pval( *f_log , rs( f_global_LB ) );
-   *f_log << ( better ? " ~ SS" : " ~ NS" ) << std::endl;
-   }
-
-  if( better ) {  // the new best point is the new centre
+  if( UpFiLmb1.back() < INFshift ) {
    GotoLambda1();
-   centre = true;
-   CmptdinL = true;
-   global = false;
+   f_int_centre = true;
    }
-  else {
-   global = cutting_plane;
-   // the model is exact at the minimum of the cutting-plane master, which
-   // is then no better than the centre: the gap left can only be that of
-   // the master Solver, which has to be tighter than RelAcc
-   if( cutting_plane && ( UpFiLmb1.back() <= model + max_error() ) ) {
-    BLOG( 1 , " ~ stop due to the gap of the master" << std::endl );
-    Result = kLowPrecision;
-    break;
+  }
+
+ CmptdinL = f_int_centre;
+ return( true );
+
+ }  // end( BundleSolver::integer_start )
+
+/*--------------------------------------------------------------------------*/
+
+int BundleSolver::integer_direction( void )
+{
+ // the proximal master, if there is a centre, otherwise or if it sees
+ // nothing better than the centre the cutting-plane one
+ int rc = Solver::kOK;
+ f_int_cp = ( ! f_int_centre ) || f_int_global;
+ if( ! f_int_cp ) {
+  rc = integer_master( t );
+  if( ( rc == Solver::kOK ) || ( rc == Solver::kLowPrecision ) )
+   f_int_cp = ( vStar.back() >= - max_error() );
+  }
+
+ if( ( ( rc == Solver::kOK ) || ( rc == Solver::kLowPrecision ) ) &&
+     f_int_cp ) {
+  rc = integer_master( Inf< double >() );
+
+  if( rc == Solver::kUnbounded ) {  // X is not bounded
+   if( ! f_int_centre ) {
+    BLOG( 1 , " ~ unbounded cutting-plane master with no centre"
+              << std::endl );
+    Result = kError;
+    return( eIntStop );
     }
+   t *= 10;
+   BLOG( 2 , " ~ unbounded cutting-plane master, t = " << t << std::endl );
+   return( eIntRetry );
    }
-  }  // end( main loop )
 
- // the master goes back to the t of the method
- MasterPB->set_t( t );
+  if( ( rc == Solver::kOK ) || ( rc == Solver::kLowPrecision ) ) {
+   // without the stabilization the master value is a global lower bound
+   const VarValue lb = f_int_c0 + MasterPB->get_master_bound();
+   if( lb > f_global_LB )
+    f_global_LB = lb;
 
- }  // end( BundleSolver::compute_integer )
+   if( f_int_centre && ( UpRifFi.back() - f_global_LB <= max_error() ) )
+    return( eIntOptimal );
+   }
+  }
+
+ if( rc == Solver::kInfeasible ) {  // no integer point is feasible
+  Result = kInfeasible;
+  return( eIntStop );
+  }
+
+ if( rc == Solver::kStopTime ) {
+  Result = kStopTime;
+  return( eIntStop );
+  }
+
+ if( ( rc != Solver::kOK ) && ( rc != Solver::kLowPrecision ) ) {
+  Result = kError;
+  return( eIntStop );
+  }
+
+ // with no centre the model values have nothing to be translated against
+ if( ! f_int_centre )
+  vStar.assign( NrFi + 1 , INFshift );
+
+ // the model value at the point of the cutting-plane master
+ f_int_model = ( f_int_cp && f_int_centre ) ?
+               UpRifFi.back() + vStar.back() : VarValue( INFshift );
+
+ return( eIntGoOn );
+
+ }  // end( BundleSolver::integer_direction )
+
+/*--------------------------------------------------------------------------*/
+
+bool BundleSolver::integer_trial_point( double & tot_time , long & tot_NrEvls )
+{
+ // the point the master has found, made integer and evaluated
+ const auto d = MasterPB->get_d_vector();
+ const auto & x_bar = MasterPB->get_x_bar();
+ for( Index i = 0 ; i < NumVar ; ++i )
+  Lambda1[ i ] = ( i < d.size() ? d[ i ] : 0.0 ) +
+                 ( i < x_bar.size() ? x_bar[ i ] : 0.0 );
+ PrepareLambda1();
+ return( integer_evaluate( tot_time , tot_NrEvls ) );
+
+ }  // end( BundleSolver::integer_trial_point )
+
+/*--------------------------------------------------------------------------*/
+
+bool BundleSolver::integer_step( void )
+{
+ const bool better = UpFiLmb1.back() <
+                     ( f_int_centre ? UpRifFi.back() : VarValue( INFshift ) );
+
+ if( f_log && ( LogVerb > 1 ) ) {
+  *f_log << std::endl << def << ParIter
+         << ( f_int_cp ? " cp" : " st" ) << " ~ F = ";
+  pval( *f_log , rs( UpFiLmb1.back() ) );
+  *f_log << " ~ Fbar = ";
+  pval( *f_log , f_int_centre ? rs( UpRifFi.back() ) : VarValue( INFshift ) );
+  *f_log << " ~ LB = ";
+  pval( *f_log , rs( f_global_LB ) );
+  *f_log << ( better ? " ~ SS" : " ~ NS" ) << std::endl;
+  }
+
+ if( better ) {  // the new best point is the new centre
+  GotoLambda1();
+  f_int_centre = true;
+  CmptdinL = true;
+  f_int_global = false;
+  return( true );
+  }
+
+ f_int_global = f_int_cp;
+ // the model is exact at the minimum of the cutting-plane master, which is
+ // then no better than the centre: the gap left can only be that of the
+ // master Solver, which has to be tighter than RelAcc
+ if( f_int_cp && ( UpFiLmb1.back() <= f_int_model + max_error() ) ) {
+  BLOG( 1 , " ~ stop due to the gap of the master" << std::endl );
+  Result = kLowPrecision;
+  return( false );
+  }
+
+ return( true );
+
+ }  // end( BundleSolver::integer_step )
 
 /*--------------------------------------------------------------------------*/
 
