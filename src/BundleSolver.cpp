@@ -789,6 +789,21 @@ int BundleSolver::compute( bool changedvars )
    break;
    }
 
+  // a stability centre already beyond the conditional lower bound, which
+  // happens when a previous call has stopped as unbounded there and nothing
+  // has changed since, would otherwise be found optimal at once
+  if( ( ! TrueLB ) && ( UpFiLmb.back() < INFshift ) &&
+      ( UpFiLmb.back() <= LowerBound.back() *
+                    ( 1 - ( LowerBound.back() > 0 ? RelAcc : - RelAcc ) ) )
+      ) {
+   BLOG( 1 , " ~ stop (Fi at the centre " );
+   BLOG2( 1 , f_convex , "< conditional LB" );
+   BLOG2( 1 , ! f_convex , "> conditional UB" );
+   BLOG( 1 , ": unbounded)" << std::endl );
+   Result = kUnbounded;
+   break;
+   }
+
   // check for optimality - - - - - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -8601,6 +8616,7 @@ void BundleSolver::process_outstanding_Modification( void )
  // removed then all the linearization errors must be reset
   Index to_add = 0;
  bool rmvd_vars = false;  // if any Variable has ever been removed
+ bool gnd_vars = false;   // if a component has got a Variable already there
 
  // Sparse mode bookkeeping: list of LamVcblr global indices whose
  // v_ref_count reached 0 during this Modification batch (FunctionMod
@@ -8632,7 +8648,8 @@ void BundleSolver::process_outstanding_Modification( void )
      if( IsEasy[ k ] )
       ++easy_id;
     for( auto g : globals )
-     MasterPB->drop_easy_coupling( easy_id , g );
+     if( g < NumVar )  // a pending one has no coupling row in the master yet
+      MasterPB->drop_easy_coupling( easy_id , g );
     }
    }
   else {
@@ -8641,6 +8658,33 @@ void BundleSolver::process_outstanding_Modification( void )
    reset[ h ] = AlphaC[ h ] = true;
    }
   if( nonzero )
+   FModChg( FunctionMod::NaNshift , h );
+  };
+
+ // what a component that starts depending on a global Variable already in the
+ // master implies: the reverse of drop_local_vars(); its linearizations in
+ // the master have a 0 coefficient for that Variable, which those it gives
+ // now do not, so they are reloaded from its global pool through the new
+ // local-to-global map; an easy component gets its terms in the coupling row
+ // of the Variable, which is done at the end of the batch [see easy_gains];
+ // and if the Variable is not 0 in the stability centre the value of the
+ // component there is no longer known
+ //
+ // the easy components that have got a Variable already in the master; their
+ // terms go in its coupling row after the 4th loop, with the local index the
+ // Variable has in the component at that point, since a later Modification
+ // of the same batch may have removed it again or moved it
+ std::vector< std::pair< Index , ColVariable * > > easy_gains;
+
+ const auto gain_local_var = [ & ]( Index h , Index g , ColVariable * p ) {
+  if( NrEasy && IsEasy[ h ] )
+   easy_gains.emplace_back( h , p );
+  else {
+   if( ! reset[ h ] )
+    ++cntreset;
+   reset[ h ] = AlphaC[ h ] = true;
+   }
+  if( std::abs( Lambda[ g ] ) > 1e-12 )
    FModChg( FunctionMod::NaNshift , h );
   };
 
@@ -8763,11 +8807,16 @@ void BundleSolver::process_outstanding_Modification( void )
         v_ref_count.push_back( 1 );
         ++to_add;  // a genuinely new global variable was added
         }
-       else
+       else {
         // v_c05f[ h ] picks up an already-existing global; the global
         // slot is now referenced by one more component, which the
         // Rngd / Sbst handlers will decrement back on removal
-        ++v_ref_count[ it->second ];
+        const Index g = it->second;
+        ++v_ref_count[ g ];
+        if( mp && ( g < NumVar ) )
+         gain_local_var( h , g , p );
+        gnd_vars = true;
+        }
        if( mp )
         mp->push_back( it->second );
        }
@@ -9090,6 +9139,15 @@ void BundleSolver::process_outstanding_Modification( void )
                                           globally_to_remove.end() ) ,
                             globally_to_remove.end() );
 
+  // a Variable removed and then added back in the same batch is referenced
+  // again by the component that took it back, and it stays
+  globally_to_remove.erase( std::remove_if( globally_to_remove.begin() ,
+                                            globally_to_remove.end() ,
+                                            [ & ]( Index g ) {
+                                             return( v_ref_count[ g ] > 0 );
+                                             } ) ,
+                            globally_to_remove.end() );
+
   // a Variable added and removed in the same batch is past NumVar: it
   // leaves LamVcblr below like the others, but the master never had it, and
   // it is no longer one of those still to be added
@@ -9182,12 +9240,33 @@ void BundleSolver::process_outstanding_Modification( void )
  // The Master reads the local-to-global maps of the easy components. Publish
  // them before adding coupling rows, since both removals and additions may
  // have changed the sparse maps.
- if( f_sparse_lambda && NrEasy && MasterPB && ( rmvd_vars || to_add ) ) {
+ if( f_sparse_lambda && NrEasy && MasterPB &&
+     ( rmvd_vars || gnd_vars || to_add ) ) {
   std::vector< std::vector< Index > > easy_local2global;
   for( Index k = 0 ; k < NrFi ; ++k )
    if( IsEasy[ k ] )
     easy_local2global.push_back( v_local2global[ k ] );
   MasterPB->set_easy_local2global( easy_local2global );
+  }
+
+ // the easy components that have got a Variable already in the master, and
+ // still have it, get their terms in its coupling row [see easy_gains]
+ if( MasterPB && ( ! easy_gains.empty() ) ) {
+  std::sort( easy_gains.begin() , easy_gains.end() );
+  easy_gains.erase( std::unique( easy_gains.begin() , easy_gains.end() ) ,
+                    easy_gains.end() );
+  for( const auto & [ h , p ] : easy_gains ) {
+   const auto li = v_c05f[ h ]->is_active( p );
+   const auto it = Lambda2Idx.find( p );
+   if( ( li >= v_c05f[ h ]->get_num_active_var() ) ||
+       ( it == Lambda2Idx.end() ) || ( it->second >= NumVar ) )
+    continue;
+   Index easy_id = 0;  // the position of h among the easy components
+   for( Index k = 0 ; k < h ; ++k )
+    if( IsEasy[ k ] )
+     ++easy_id;
+   MasterPB->add_easy_coupling( easy_id , it->second , li );
+   }
   }
 
  // Build the coefficients of every cut currently stored in the master on a

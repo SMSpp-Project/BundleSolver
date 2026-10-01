@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- a component that gains an "active" Variable the master already has, e.g.,
+  a `LagBFunction` given the dual pair of a multiplier that other
+  components also have, keeps the master right: a hard component is reset,
+  so that its cuts are reloaded from its global pool through the new
+  local-to-global map, which gives them their coefficient on that
+  coordinate, and an easy one gets its terms in the coupling row of the
+  coordinate [see `MasterProblemBlock::add_easy_coupling()`], with the
+  local index the Variable has at the end of the batch; if the coordinate
+  is nonzero in the stability centre, the value of the component there is
+  declared unknown, as for a removal
+
 - a component that gains an "active" Variable no longer needs the master
   problem to be built anew: for each cut in the bundle,
   `process_outstanding_Modification()` asks the component that owns it,
@@ -149,6 +160,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   along with it
 
 ### Fixed
+
+- a Variable removed from a component and given back to it in the same
+  batch stays in the master: its global index was still queued for removal
+  although its reference count was positive again, so that the
+  local-to-global map pointed to another Variable ("duplicate global
+  Variable in a component", or a corrupted heap)
+
+- an easy component that loses a coordinate added in the same batch, not
+  yet in the master, no longer asks the master to drop its terms from a
+  coupling row that does not exist; and the local-to-global maps of the easy
+  components are given to the master also when a component has only gained
+  a coordinate it already had
+
+- a stability centre already beyond the conditional lower bound, as left by
+  a previous call that stopped there as unbounded, is reported unbounded
+  rather than optimal when nothing has changed in between: the test of the
+  conditional bound came after that of optimality, which with exact easy
+  components fires at the first iteration
 
 - the test of pure level stabilization that enlarges the expected decrease
   without a reliable lower bound measures the error of the model, as the
