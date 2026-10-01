@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `intIntVars`: with 1 the integer Variable of the C05Function are kept
+  integer, i.e., what is minimized is the function over the integer points
+  of its domain, by the stabilized cutting-plane method of van Ackooij,
+  Frangioni and de Oliveira (Comput. Optim. Appl. 65, 2016): a proximal
+  (mixed-integer quadratic) or trust-region (mixed-integer linear) master,
+  and the master without stabilization, whose bound is a global lower bound,
+  when the stabilized one sees nothing better than the stability centre
+  [see `compute_integer()`]; the default 0 keeps the continuous relaxation
+  that was always minimized. The test `integer_test` compares it with the
+  same problem written out as one mixed-integer program
+
 - `vstrNoEasy`, the classname() of the components that must never be
   treated as easy, in addition to those whose index is in `vintNoEasy`: the
   class of a component is that of the first nested Block of its

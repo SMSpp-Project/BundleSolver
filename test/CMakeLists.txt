@@ -91,6 +91,21 @@ if (TARGET SMS++::MILPSolver)
              WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 endif ()
 
+# ----- the integer Variable [see intIntVars] ------------------------------- #
+# The bundle with a mixed-integer master against the same problem written out
+# as one mixed-integer program, both solved by HiGHS
+if (TARGET SMS++::MILPSolver)
+    add_executable(integer_test test_integer.cpp)
+    target_link_libraries(integer_test PRIVATE
+                          SMS++::BundleSolver
+                          SMS++::MILPSolver)
+    # the test reads BSPar-int.txt, BSPar-relax.txt, BSCfg-int.txt and
+    # MPBCfg-int.txt from the working directory
+    add_test(NAME integer_test
+             COMMAND integer_test
+             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+endif ()
+
 # the examples of OSBDO, see osbdo/README.md
 add_subdirectory(osbdo)
 

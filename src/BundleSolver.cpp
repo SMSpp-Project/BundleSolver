@@ -624,6 +624,41 @@ int BundleSolver::compute( bool changedvars )
  else
   G1.clear();
 
+ // the integer Variable, if they are to be kept integer [see intIntVars]
+ f_int_var.clear();
+ if( IntVars && MasterPB ) {
+  std::vector< bool > iv( NumVar , false );
+  for( Index i = 0 ; i < NumVar ; ++i )
+   iv[ i ] = LamVcblr[ i ]->is_integer();
+  if( std::find( iv.begin() , iv.end() , true ) != iv.end() ) {
+   if( ( ! UsesPrimalMaster() ) || ( ! MPV2Form ) ||
+       ( ( MPStbl != MasterProblemBlock::kProximal ) &&
+         ( MPStbl != MasterProblemBlock::kTrustRegion ) ) ) {
+    Result = kError;
+    unlock();
+    throw( std::logic_error( "BundleSolver::compute: integer Variable need "
+                             "a primal proximal or trust-region Master "
+                             "Problem in raw form" ) );
+    }
+   f_int_var = std::move( iv );
+   }
+  }
+ if( MasterPB )
+  MasterPB->set_integer( f_int_var );
+
+ // the trust region gives no multipliers for the main loop to use
+ if( ( MPStbl == MasterProblemBlock::kTrustRegion ) && f_int_var.empty() ) {
+  Result = kError;
+  unlock();
+  throw( std::logic_error( "BundleSolver::compute: the trust region is only "
+                           "available with integer Variable" ) );
+  }
+
+ if( ! f_int_var.empty() ) {
+  compute_integer( tot_time , tot_NrEvls );
+  goto BundleSolver_final_printouts;
+  }
+
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // main cycle starts here- - - - - - - - - - - - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1320,6 +1355,8 @@ int BundleSolver::compute( bool changedvars )
 
  // final printouts - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+ BundleSolver_final_printouts:
 
  if( f_log && ( LogVerb >= 1 ) ) {
   *f_log << std::endl << "Call " << SCalls << ": "  << fixd << ParIter
@@ -2293,6 +2330,12 @@ void BundleSolver::set_par( idx_type par , int value )
                         "BundleSolver::set_par: TDisc must be >= 0" ) );
    TDisc = value;
    break;
+  case( intIntVars ):
+   if( ( value < 0 ) || ( value > 1 ) )
+    throw( std::invalid_argument(
+                     "BundleSolver::set_par: IntVars must be 0 or 1" ) );
+   IntVars = value;
+   break;
   default: CDASolver::set_par( par , value );
   }
  }  // end( BundleSolver::set_par( int ) )
@@ -2757,6 +2800,7 @@ int BundleSolver::get_int_par( idx_type par ) const
   case( intCmpAggrSeed ): return( CmpAggrSeed );
   case( intCmpAggrRule ): return( CmpAggrRule );
   case( intTDisc ):     return( TDisc );
+  case( intIntVars ):   return( IntVars );
   default:              return( CDASolver::get_int_par( par ) );
   }
  }  // end( BundleSolver::get_int_par )
@@ -4070,6 +4114,241 @@ void BundleSolver::FormD( void )
 
 /*--------------------------------------------------------------------------*/
 
+int BundleSolver::integer_master( double tm )
+{
+ MasterPB->set_t( tm );
+
+ // ensure the master Solver will not take too much time
+ if( MaxTime < INFshift )
+  MasterPB->set_max_time( MaxTime - get_elapsed_time() );
+
+ std::vector< double > Lbox( NumVar ) , Ubox( NumVar );
+ for( Index i = 0 ; i < NumVar ; ++i ) {
+  const auto bounds = effective_bounds( LamVcblr[ i ] );
+  Lbox[ i ] = bounds.first;
+  Ubox[ i ] = bounds.second;
+  }
+ MasterPB->set_box( Lbox , Ubox );
+
+ const auto rc = MasterPB->solve_master();
+
+ if( ( rc == Solver::kOK ) || ( rc == Solver::kLowPrecision ) ) {
+  vStar.back() = MasterPB->get_FiBLambda();
+  for( Index k = 0 ; k < NrFi ; ++k )
+   vStar[ k ] = MasterPB->get_FiBLambda( int( k ) );
+  }
+
+ return( rc );
+
+ }  // end( BundleSolver::integer_master )
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::compute_integer( double & tot_time , long & tot_NrEvls )
+{
+ // evaluate every hard component at Lambda1, which PrepareLambda1() has set
+ // up, inserting the linearizations; false if this stops the method
+ auto evaluate = [ & ]( void ) -> bool {
+  CurrNrEvls.assign( NrFi , Index( 0 ) );
+  MPchgs = 0;
+  bool go_on = true;
+
+  const auto start = std::chrono::system_clock::now();
+  while( FindNext() ) {
+   FiAndGi( f_wFi , true );
+
+   // kLowPrecision is not an error [see InnerLoop()]
+   if( ( FiStatus[ f_wFi ] <= kUnEval ) ||
+       ( ( FiStatus[ f_wFi ] >= kError ) &&
+	 ( FiStatus[ f_wFi ] != kLowPrecision ) ) ) {
+    Result = kError;
+    go_on = false;
+    break;
+    }
+
+   ++CurrNrEvls[ f_wFi ];
+
+   // a component that is -INF somewhere is -INF everywhere [see InnerLoop()]
+   if( UpFiLmb1[ f_wFi ] == -INFshift ) {
+    Result = kUnbounded;
+    go_on = false;
+    break;
+    }
+
+   if( ( MaxTime < INFshift ) && ( get_elapsed_time() > MaxTime ) ) {
+    Result = kStopTime;
+    go_on = false;
+    break;
+    }
+   }
+
+  const std::chrono::duration< double > elapsed =
+                                   std::chrono::system_clock::now() - start;
+  tot_time += elapsed.count();
+  tot_NrEvls += std::accumulate( CurrNrEvls.begin() , CurrNrEvls.end() , 0 );
+
+  return( go_on );
+  };
+
+ // the point the master has found, made integer and evaluated
+ auto master_point = [ & ]( void ) -> bool {
+  const auto d = MasterPB->get_d_vector();
+  const auto & x_bar = MasterPB->get_x_bar();
+  for( Index i = 0 ; i < NumVar ; ++i )
+   Lambda1[ i ] = ( i < d.size() ? d[ i ] : 0.0 ) +
+                  ( i < x_bar.size() ? x_bar[ i ] : 0.0 );
+  PrepareLambda1();
+  return( evaluate() );
+  };
+
+ // the master leaves out the constant of the 0-th component
+ const VarValue c0 = zeroth_component() ?
+                     rs( zeroth_component()->get_constant_term() ) : 0;
+
+ // a stability centre needs a finite value of F there
+ bool centre = RifeqFi && ( UpFiLmb.back() < INFshift );
+
+ if( ! centre ) {  // start from the current point, made integer
+  Lambda1 = Lambda;
+  vStar.assign( NrFi + 1 , INFshift );
+  PrepareLambda1();
+  if( ! evaluate() )
+   return;
+
+  if( UpFiLmb1.back() < INFshift ) {
+   GotoLambda1();
+   centre = true;
+   }
+  }
+
+ CmptdinL = centre;
+
+ // after a cutting-plane step that has not improved the centre the method
+ // stays without stabilization until it does, as the trust region of the
+ // paper is only reduced after a serious step
+ bool global = false;
+
+ for( ; ; ) {
+  if( ( MaxTime < INFshift ) && ( get_elapsed_time() > MaxTime ) ) {
+   BLOG( 1 , " ~ stop due to max time" << std::endl );
+   Result = kStopTime;
+   break;
+   }
+
+  if( ParIter >= MaxIter ) {
+   BLOG( 1 , " ~ stop due to max iter" << std::endl );
+   Result = kStopIter;
+   break;
+   }
+
+  ++ParIter;
+
+  // the proximal master, if there is a centre, otherwise or if it sees
+  // nothing better than the centre the cutting-plane one
+  int rc = Solver::kOK;
+  bool cutting_plane = ( ! centre ) || global;
+  if( ! cutting_plane ) {
+   rc = integer_master( t );
+   if( ( rc == Solver::kOK ) || ( rc == Solver::kLowPrecision ) )
+    cutting_plane = ( vStar.back() >= - max_error() );
+   }
+
+  if( ( ( rc == Solver::kOK ) || ( rc == Solver::kLowPrecision ) ) &&
+      cutting_plane ) {
+   rc = integer_master( Inf< double >() );
+
+   if( rc == Solver::kUnbounded ) {  // X is not bounded
+    if( ! centre ) {
+     BLOG( 1 , " ~ unbounded cutting-plane master with no centre"
+               << std::endl );
+     Result = kError;
+     break;
+     }
+    t *= 10;
+    BLOG( 2 , " ~ unbounded cutting-plane master, t = " << t << std::endl );
+    continue;
+    }
+
+   if( ( rc == Solver::kOK ) || ( rc == Solver::kLowPrecision ) ) {
+    // without the stabilization the master value is a global lower bound
+    const VarValue lb = c0 + MasterPB->get_master_bound();
+    if( lb > f_global_LB )
+     f_global_LB = lb;
+
+    if( centre && ( UpRifFi.back() - f_global_LB <= max_error() ) ) {
+     BLOG( 1 , " ~ optimal" << std::endl );
+     Result = kOK;
+     break;
+     }
+    }
+   }
+
+  if( rc == Solver::kInfeasible ) {  // no integer point is feasible
+   Result = kInfeasible;
+   break;
+   }
+
+  if( rc == Solver::kStopTime ) {
+   Result = kStopTime;
+   break;
+   }
+
+  if( ( rc != Solver::kOK ) && ( rc != Solver::kLowPrecision ) ) {
+   Result = kError;
+   break;
+   }
+
+  // with no centre the model values have nothing to be translated against
+  if( ! centre )
+   vStar.assign( NrFi + 1 , INFshift );
+
+  // the model value at the point of the cutting-plane master
+  const VarValue model = ( cutting_plane && centre ) ?
+   UpRifFi.back() + vStar.back() : VarValue( INFshift );
+
+  if( ! master_point() )
+   break;
+
+  const bool better = UpFiLmb1.back() <
+                      ( centre ? UpRifFi.back() : VarValue( INFshift ) );
+
+  if( f_log && ( LogVerb > 1 ) ) {
+   *f_log << std::endl << def << ParIter
+          << ( cutting_plane ? " cp" : " st" ) << " ~ F = ";
+   pval( *f_log , rs( UpFiLmb1.back() ) );
+   *f_log << " ~ Fbar = ";
+   pval( *f_log , centre ? rs( UpRifFi.back() ) : VarValue( INFshift ) );
+   *f_log << " ~ LB = ";
+   pval( *f_log , rs( f_global_LB ) );
+   *f_log << ( better ? " ~ SS" : " ~ NS" ) << std::endl;
+   }
+
+  if( better ) {  // the new best point is the new centre
+   GotoLambda1();
+   centre = true;
+   CmptdinL = true;
+   global = false;
+   }
+  else {
+   global = cutting_plane;
+   // the model is exact at the minimum of the cutting-plane master, which
+   // is then no better than the centre: the gap left can only be that of
+   // the master Solver, which has to be tighter than RelAcc
+   if( cutting_plane && ( UpFiLmb1.back() <= model + max_error() ) ) {
+    BLOG( 1 , " ~ stop due to the gap of the master" << std::endl );
+    Result = kLowPrecision;
+    break;
+    }
+   }
+  }  // end( main loop )
+
+ // the master goes back to the t of the method
+ MasterPB->set_t( t );
+
+ }  // end( BundleSolver::compute_integer )
+
+/*--------------------------------------------------------------------------*/
+
 void BundleSolver::UpdtCntrs( void )
 {
  // increase all the OOBase[] counters but those == +/-Inf< SIndex >() - - - -
@@ -4163,6 +4442,14 @@ void BundleSolver::FormLambda1( double Tau )
    Lambda1[ i ] = Lambda[ i ] + scale * ( i < d.size() ? d[ i ] : 0.0 );
   }
 
+ PrepareLambda1();
+
+ }  // end( BundleSolver::FormLambda1 )
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::PrepareLambda1( void )
+{
  // walk LamVcblr to clamp Lambda1[ i ] into the effective [ lb , ub ]:
  // ColVariable bounds combined with any supported active bound constraint
  if( MasterPB )
@@ -4172,6 +4459,18 @@ void BundleSolver::FormLambda1( double Tau )
     Lambda1[ i ] = bounds.first;
    if( Lambda1[ i ] > bounds.second )
     Lambda1[ i ] = bounds.second;
+   }
+
+ // the integer Variable [see intIntVars] get the integer value the master
+ // gives them up to its tolerance
+ for( Index i = 0 ; i < f_int_var.size() ; ++i )
+  if( f_int_var[ i ] ) {
+   const auto bounds = effective_bounds( LamVcblr[ i ] );
+   Lambda1[ i ] = std::round( Lambda1[ i ] );
+   if( Lambda1[ i ] < bounds.first )
+    Lambda1[ i ] = std::ceil( bounds.first );
+   if( Lambda1[ i ] > bounds.second )
+    Lambda1[ i ] = std::floor( bounds.second );
    }
 
  // move the value from Lambda1 to the ColVariable - - - - - - - - - - - - - -
@@ -4293,7 +4592,7 @@ void BundleSolver::FormLambda1( double Tau )
      pval( *f_log , - UpFiLmb1[ k ] );
     }
   }
- }  // end( BundleSolver::FormLambda1 )
+ }  // end( BundleSolver::PrepareLambda1 )
 
 /*--------------------------------------------------------------------------*/
 
