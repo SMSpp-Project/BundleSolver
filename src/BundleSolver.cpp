@@ -7699,17 +7699,14 @@ void BundleSolver::process_outstanding_Modification( void )
               "BundleSolver::process_outstanding_Modification: "
               "BlockMod not handled (yet)" ) );
 
-  if( const auto tmod = std::dynamic_pointer_cast< BlockModAD >( mod ) ) {
-   if( ! tmod->is_added() )
-    throw( std::invalid_argument(
-               "BundleSolver::process_outstanding_Modification: "
-               "dynamic Block removals are not handled yet" ) );
-   /* This is the physical notification that a dynamic Variable/Constraint was
-    * added to the observed Block. Any effect on a component function reaches
-    * BundleSolver separately as a FunctionMod[Vars] and is handled by the
-    * passes below; treating the physical notification again would duplicate
-    * that work. Removals remain deliberately unsupported above until the
-    * symmetric MasterProblemBlock path exists. */
+  if( std::dynamic_pointer_cast< BlockModAD >( mod ) ) {
+   /* This is the physical notification that a dynamic Variable/Constraint
+    * was added to, or removed from, the observed Block. Any effect on a
+    * component function reaches BundleSolver separately as a
+    * FunctionMod[Vars] and is handled by the passes below, which grow or
+    * shrink the master problem [see MasterProblemBlock::add_vars() and
+    * MasterProblemBlock::remove_vars()]; treating the physical notification
+    * again would duplicate that work. */
    to_delete = true;
    continue;
    }
