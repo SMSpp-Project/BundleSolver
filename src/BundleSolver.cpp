@@ -8513,15 +8513,31 @@ void BundleSolver::process_outstanding_Modification( void )
      Range rng = ttmod->range();
 
      // if any of the deleted Variable is nonzero, the linearization errors
-     // will have to be recomputed for all components
+     // will have to be recomputed for all components, and the value of each
+     // of them at the stability center is no longer known: the function
+     // after the removal is the one before with that Variable at zero, the
+     // shift of 0 the components report holding only where it is so [see
+     // drop_local_vars() for the sparse path, which does the same]
      for( Index i = std::min( rng.first , NumVar ) ;
           i < std::min( rng.second , NumVar ) ; ++i )
       if( std::abs( Lambda[ i ] ) > 1e-12 ) {
        std::fill( AlphaC.begin() , AlphaC.end() , true );
+       for( Index k = 0 ; k < NrFi ; ++k )
+        FModChg( FunctionMod::NaNshift , k );
        break;
        }
 
      if( ( rng.first == 0 ) && ( rng.second >= NumVar ) ) {
+      for( auto & el : Lambda )
+       if( std::abs( el ) > 1e-12 ) {
+        for( Index k = 0 ; k < NrFi ; ++k )
+         FModChg( FunctionMod::NaNshift , k );
+        break;
+        }
+      // the vocabulary loses the existing Variable, not the pending ones
+      LamVcblr.erase( LamVcblr.begin() ,
+                      LamVcblr.begin() + std::min( Index( LamVcblr.size() ) ,
+                                                   NumVar ) );
       NumVar = 0;                      // deleting *all* Variable
       Lambda.clear();
       Lambda1.clear();
@@ -8530,6 +8546,13 @@ void BundleSolver::process_outstanding_Modification( void )
        MasterPB->remove_vars( nullptr , 0 );  // remove from MP
       continue;                        // nothing else to do
       }
+
+     // in the dense path the position in LamVcblr is the global one, the
+     // pending Variable included, and the range names them all
+     LamVcblr.erase( LamVcblr.begin() +
+                      std::min( Index( LamVcblr.size() ) , rng.first ) ,
+                     LamVcblr.begin() +
+                      std::min( Index( LamVcblr.size() ) , rng.second ) );
 
      if( rng.first >= NumVar ) {  // all the Variable are deleted already
       auto nr = rng.second - rng.first;
@@ -8638,9 +8661,15 @@ void BundleSolver::process_outstanding_Modification( void )
       for( auto & el : Lambda )
        if( std::abs( el ) > 1e-12 ) {
         std::fill( AlphaC.begin() , AlphaC.end() , true );
+        for( Index k = 0 ; k < NrFi ; ++k )
+         FModChg( FunctionMod::NaNshift , k );
         break;
         }
 
+      // the vocabulary loses the existing Variable, not the pending ones
+      LamVcblr.erase( LamVcblr.begin() ,
+                      LamVcblr.begin() + std::min( Index( LamVcblr.size() ) ,
+                                                   NumVar ) );
       NumVar = 0;
       Lambda.clear();
       Lambda1.clear();
@@ -8649,6 +8678,13 @@ void BundleSolver::process_outstanding_Modification( void )
        MasterPB->remove_vars( nullptr , 0 );  // remove from MP
       continue;                        // nothing else to do
       }
+
+     // as in the Rngd case, the subset names positions of LamVcblr, the
+     // pending Variable included; it is ordered, hence erased backwards
+     for( auto it = ttmod->subset().rbegin() ; it != ttmod->subset().rend() ;
+          ++it )
+      if( *it < LamVcblr.size() )
+       LamVcblr.erase( LamVcblr.begin() + *it );
 
      if( ttmod->subset().front() >= NumVar ) {
       // all the Variable are deleted already
@@ -8661,13 +8697,16 @@ void BundleSolver::process_outstanding_Modification( void )
       }
 
      // if any of the deleted Variable is nonzero, the linearization errors
-     // will have to be recomputed for all components
+     // will have to be recomputed for all components, and the values at the
+     // stability center are no longer known [see the Rngd case above]
      for( auto el : ttmod->subset() ) {
       if( el >= NumVar )
        break;
 
       if( std::abs( Lambda[ el ] ) > 1e-12 ) {
        std::fill( AlphaC.begin() , AlphaC.end() , true );
+       for( Index k = 0 ; k < NrFi ; ++k )
+        FModChg( FunctionMod::NaNshift , k );
        break;
        }
       }
