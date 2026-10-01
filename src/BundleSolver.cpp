@@ -8783,6 +8783,20 @@ void BundleSolver::process_outstanding_Modification( void )
                                           globally_to_remove.end() ) ,
                             globally_to_remove.end() );
 
+  // a Variable added and removed in the same batch is past NumVar: it
+  // leaves LamVcblr below like the others, but the master never had it, and
+  // it is no longer one of those still to be added
+  const Index nold = Index( std::lower_bound( globally_to_remove.begin() ,
+                                              globally_to_remove.end() ,
+                                              NumVar ) -
+                            globally_to_remove.begin() );
+  const Index npend = Index( globally_to_remove.size() ) - nold;
+  if( npend > to_add )
+   throw( std::logic_error(
+              "BundleSolver::process_outstanding_Modification: "
+              "removing non-existing Variable" ) );
+  to_add -= npend;
+
   // compact LamVcblr / v_ref_count in place; LamVcblr may have been
   // extended past NumVar by sparse FunctionModVarsAddd, those extra
   // entries (new vars, with positive refcount) survive and shift down
@@ -8806,8 +8820,8 @@ void BundleSolver::process_outstanding_Modification( void )
   // compact Lambda / Lambda1 / LmbdBst (sized to old NumVar pre-Adds;
   // only positions [ 0 , NumVar ) are affected — the new vars from
   // sparse Adds aren't in Lambda yet, they'll be appended by the
-  // post-loop add_vars). globally_to_remove entries are all in
-  // [ 0 , NumVar ) by construction.
+  // post-loop add_vars). Only the first nold entries of
+  // globally_to_remove are in [ 0 , NumVar ), the others being pending.
   Index lw = 0;
   Index lg = 0;
   for( Index i = 0 ; i < NumVar ; ++i ) {
@@ -8849,11 +8863,11 @@ void BundleSolver::process_outstanding_Modification( void )
    Lambda2Idx.emplace( LamVcblr[ i ] , i );
 
   // tell the Master to drop the old global names (the Master still sees
-  // the pre-compaction index space)
-  if( MasterPB )
+  // the pre-compaction index space), the pending ones excluded
+  if( MasterPB && nold )
    MasterPB->remove_vars(
               reinterpret_cast< const int * >( globally_to_remove.data() ) ,
-              int( globally_to_remove.size() ) );
+              int( nold ) );
 
   globally_to_remove.clear();
   }
