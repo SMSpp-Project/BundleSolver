@@ -4268,6 +4268,19 @@ bool BundleSolver::integer_start( double & tot_time , long & tot_NrEvls )
  f_int_centre = RifeqFi && ( UpFiLmb.back() < INFshift );
  f_int_global = false;
 
+ // the value of t from which on the stabilization no longer restricts
+ // anything: with the trust region, the largest width of the box, with the
+ // proximal term, the largest t allowed
+ f_int_tfull = tMaior;
+ if( MPStbl == MasterProblemBlock::kTrustRegion ) {
+  double w = 0;
+  for( Index i = 0 ; i < NumVar ; ++i ) {
+   const auto bounds = effective_bounds( LamVcblr[ i ] );
+   w = std::max( w , bounds.second - bounds.first );
+   }
+  f_int_tfull = std::min( f_int_tfull , w );
+  }
+
  if( ! f_int_centre ) {  // start from the current point, made integer
   Lambda1 = Lambda;
   vStar.assign( NrFi + 1 , INFshift );
@@ -4293,11 +4306,21 @@ int BundleSolver::integer_direction( void )
  // the proximal master, if there is a centre, otherwise or if it sees
  // nothing better than the centre the cutting-plane one
  int rc = Solver::kOK;
- f_int_cp = ( ! f_int_centre ) || f_int_global;
+ f_int_cp = ( ! f_int_centre ) || f_int_global || ( t >= f_int_tfull );
  if( ! f_int_cp ) {
   rc = integer_master( t );
-  if( ( rc == Solver::kOK ) || ( rc == Solver::kLowPrecision ) )
-   f_int_cp = ( vStar.back() >= - max_error() );
+  if( ( ( rc == Solver::kOK ) || ( rc == Solver::kLowPrecision ) ) &&
+      ( vStar.back() >= - max_error() ) ) {
+   // the centre is optimal in the region the stabilization allows: the
+   // region is enlarged by degrees, and the master is solved without the
+   // stabilization only when the region cannot grow any more
+   if( t * mxIncr < f_int_tfull ) {
+    t *= mxIncr;
+    BLOG( 2 , " ~ centre optimal in the region, t = " << t << std::endl );
+    return( eIntRetry );
+    }
+   f_int_cp = true;
+   }
   }
 
  if( ( ( rc == Solver::kOK ) || ( rc == Solver::kLowPrecision ) ) &&
@@ -4311,7 +4334,9 @@ int BundleSolver::integer_direction( void )
     Result = kError;
     return( eIntStop );
     }
+   // the stabilization can no longer be dropped, however large t is
    t *= 10;
+   f_int_tfull = Inf< double >();
    BLOG( 2 , " ~ unbounded cutting-plane master, t = " << t << std::endl );
    return( eIntRetry );
    }

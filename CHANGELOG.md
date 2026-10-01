@@ -37,8 +37,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Frangioni and de Oliveira (Comput. Optim. Appl. 65, 2016): a proximal
   (mixed-integer quadratic) or trust-region (mixed-integer linear) master,
   and the master without stabilization, whose bound is a global lower bound,
-  when the stabilized one sees nothing better than the stability centre,
-  run by the main loop of `compute()` itself, which calls
+  when the stabilized one sees nothing better than the stability centre
+  even after its region has been enlarged by degrees, t being multiplied by
+  `dblmxIncr` until the stabilization cuts nothing (the width of the box
+  with the trust region, `dbltMaior` with the proximal term), as in the
+  stabilized Benders' method of Baena, Castro and Frangioni (Manag. Sci. 66,
+  2020), run by the main loop of `compute()` itself, which calls
   `integer_direction()`, `integer_trial_point()` and `integer_step()` where
   the continuous method forms the direction, evaluates the trial point and
   decides the step; the default 0 keeps the continuous relaxation

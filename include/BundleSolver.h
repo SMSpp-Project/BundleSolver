@@ -2767,8 +2767,14 @@ public:
   *   \f$ v^* = \check{F}( x^p ) - F( \bar{x} ) \f$;
   *
   * - if \f$ v^* \geq - \varepsilon \f$, i.e., the stabilized master sees
-  *   nothing better than \f$ \bar{x} \f$ in its neighbourhood, removes the
-  *   stabilization: it solves the cutting-plane master
+  *   nothing better than \f$ \bar{x} \f$ in its neighbourhood, relaxes the
+  *   stabilization by degrees, as in the stabilized Benders' method of
+  *   Baena, Castro and Frangioni (Manag. Sci. 66, 2020): t is multiplied by
+  *   dblmxIncr and the stabilized master is solved again, until t reaches
+  *   the value from which on the stabilization cuts nothing, i.e., the
+  *   largest width of the box X with the trust region and dbltMaior with
+  *   the proximal term; then it removes the stabilization altogether, and
+  *   solves the cutting-plane master
   *   \f$ x^c \in \arg\min \{ \check{F}( x ) : x \in X \, , \,
   *   x_J \in \mathbb{Z} \} \f$, i.e., the same with \f$ t = \infty \f$,
   *   whose value, less the gap of its Solver, is a lower bound \f$ \ell \f$
@@ -2799,8 +2805,10 @@ public:
   * paper), and the integer points of X are finitely many. The bundle is
   * never cleaned, which the paper allows only finitely often anyway. If the
   * cutting-plane master is unbounded, as it may be when X is not, t is
-  * increased tenfold and the method goes on with the proximal master. t
-  * is otherwise kept fixed, and the parts of the main loop that need the
+  * increased tenfold and the method goes on with the stabilized master,
+  * which is then never removed. t is never decreased, as in the paper the
+  * radius is not reset after the centre has moved, and the parts of the
+  * main loop that need the
   * multipliers of a continuous master (the noise reduction, the rules for
   * t, the cleaning of the bundle) are skipped.
   *
@@ -3575,6 +3583,7 @@ public:
  bool f_int_cp = false;      ///< ... the last master was not stabilized
  VarValue f_int_model = 0;   ///< ... the model value at the trial point
  VarValue f_int_c0 = 0;      ///< ... the constant of the 0-th component
+ double f_int_tfull = 0;     ///< ... the t from which on nothing is cut
 
  /// with integer Variable, the master is not stabilized: after a
  /// cutting-plane step that has not improved the centre the method stays
