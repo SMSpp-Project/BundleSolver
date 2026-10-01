@@ -8337,6 +8337,18 @@ void BundleSolver::process_outstanding_Modification( void )
    FModChg( FunctionMod::NaNshift , h );
   };
 
+ // the linear part has no local-to-global map: the global coordinate of each
+ // Variable it loses is found through Lambda2Idx, and it is queued for the
+ // global removal when no Function refers to it any longer; its value is
+ // recomputed anyway, Fi0Lmb having been reset in the 1st loop
+ const auto drop_zeroth_vars = [ & ]( const auto & vars ) {
+  for( auto v : vars ) {
+   const auto it = Lambda2Idx.find( static_cast< ColVariable * >( v ) );
+   if( ( it != Lambda2Idx.end() ) && ( --v_ref_count[ it->second ] == 0 ) )
+    globally_to_remove.push_back( it->second );
+   }
+  };
+
  for( auto imod = v_mod_tmp.begin() ; imod != v_mod_tmp.end() ;
       // note the iterator_expression of the for() obtained by defining
       // a lambda and then immediately applying it to imod
@@ -8486,6 +8498,11 @@ void BundleSolver::process_outstanding_Modification( void )
       // after the 4th loop. Also invalidate linearization errors on
       // any nonzero Lambda removed.
       const auto h = get_index_of_component( ttmod->function() );
+      if( h >= NrFi ) {  // the linear part, which is not a component
+       drop_zeroth_vars( ttmod->vars() );
+       rmvd_vars = true;
+       continue;
+       }
       auto & m = v_local2global[ h ];
       // m has size loc_NV + 1 with trailing Inf< Index >(); the valid
       // range is [ 0 , loc_NV ).
@@ -8600,6 +8617,11 @@ void BundleSolver::process_outstanding_Modification( void )
       // mirror the Rngd path — drop them from v_local2global[ h ],
       // decrement refcounts, queue globally-dead slots for compaction.
       const auto h = get_index_of_component( ttmod->function() );
+      if( h >= NrFi ) {  // the linear part [see the Rngd case]
+       drop_zeroth_vars( ttmod->vars() );
+       rmvd_vars = true;
+       continue;
+       }
       auto & m = v_local2global[ h ];
       const Index loc_NV = m.size() - 1;  // exclude trailing Inf< Index >()
       const auto & sbst = ttmod->subset();
