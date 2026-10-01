@@ -139,6 +139,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `BundleSolver::get_var_solution()` read `IsEasy`, which is empty when no
+  component is easy, up to the number of components, hence out of its range
+  whenever the Configuration of the solution (e.g., a `GetInnerVarSolConfig`
+  of the `LagrangianDualSolver`) asked for the easy components of a problem
+  without any; it now finds nothing to give, and an index given explicitly
+  is rejected as that of a component that is not easy
+
 - on macOS a program linking the module lost the classes the module
   registers in the factories when the linker dropped the library, as it
   does under `-dead_strip_dylibs`, which conda sets: the target now asks the

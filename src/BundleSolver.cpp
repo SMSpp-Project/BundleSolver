@@ -2587,7 +2587,8 @@ void BundleSolver::get_var_solution( Configuration *solc )
     throw( std::invalid_argument(
                "BundleSolver::get_var_solution: invalid index " +
                std::to_string( p.first ) ) );
-   if( ! IsEasy[ p.first ] )
+   // IsEasy is empty if no component is easy
+   if( ( Index( p.first ) >= IsEasy.size() ) || ( ! IsEasy[ p.first ] ) )
     throw( std::invalid_argument(
                "BundleSolver::get_var_solution: component " +
                std::to_string( p.first ) + " is not easy" ) );
@@ -2607,7 +2608,8 @@ void BundleSolver::get_var_solution( Configuration *solc )
   if( ! ( h & 3 ) )  // it'd be funny, but ...
    return;
 
-  for( Index i = 0 ; i < NrFi ; ++i )
+  // IsEasy is empty if no component is easy, and then there is nothing
+  for( Index i = 0 ; i < IsEasy.size() ; ++i )
    if( IsEasy[ i ] ) {
     if( h & 1 )
      get_var_solution_easy_pi( i );
