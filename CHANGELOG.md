@@ -139,6 +139,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- the test of pure level stabilization that enlarges the expected decrease
+  without a reliable lower bound measures the error of the model, as the
+  documentation of `dblLStabSmall` says: it was computed after
+  `GotoLambda1()` had moved the reference to the new center, so that it
+  compared the predicted decrease instead; the value of the center the step
+  starts from is now passed to `update_level_after_step()`
+
 - removing coordinates while the algorithm runs works, the master
   shrinking through `MasterProblemBlock::remove_vars()`: the `BlockModAD` of
   a removal is dropped as that of an addition, the components reporting the

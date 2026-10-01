@@ -2789,7 +2789,8 @@ public:
 
  /*--------------------------------------------------------------------------*/
 
- void update_level_after_step( bool serious_step , bool gated_update );
+ void update_level_after_step( bool serious_step , bool gated_update ,
+                               VarValue old_ref = INFshift );
 
  /*--------------------------------------------------------------------------*/
 

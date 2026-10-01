@@ -1125,8 +1125,11 @@ int BundleSolver::compute( bool changedvars )
 
    BLOG( 1 , std::endl );
 
+   // the level test reads the model value at d*, i.e., the value of the
+   // center the step starts from plus v*, which GotoLambda1() moves
+   const auto old_ref = UpRifFi.back();
    GotoLambda1();
-   update_level_after_step( true , gated_level_update );
+   update_level_after_step( true , gated_level_update , old_ref );
    CNSCntr = 0;
    CmptdinL = ( cnt == NrFi - NrEasy );
    }
@@ -3210,7 +3213,8 @@ bool BundleSolver::refresh_level_after_master( bool force )
 /*--------------------------------------------------------------------------*/
 
 void BundleSolver::update_level_after_step( bool serious_step ,
-                                           bool gated_update )
+                                           bool gated_update ,
+                                           VarValue old_ref )
 {
  if( ! ( UsesLevelStabilization() && f_level_initialized ) )
   return;
@@ -3395,9 +3399,11 @@ void BundleSolver::update_level_after_step( bool serious_step ,
 
  if( serious_step && gated_update && UsesPureLevelStabilization() &&
      ( lb <= -INFshift ) && ( ! f_level_reliable_LB ) &&
-     ( UpFiLmb.back() < INFshift ) && ( UpRifFi.back() < INFshift ) &&
+     ( UpFiLmb.back() < INFshift ) && ( old_ref < INFshift ) &&
      ( vStar.back() < INFshift ) ) {
-  const auto level_model_value = UpRifFi.back() + vStar.back();
+  // the model value at d*: v* is relative to the center the step started
+  // from, which old_ref holds, UpRifFi being already the new one
+  const auto level_model_value = old_ref + vStar.back();
   const auto level_model_gap =
    std::max( UpFiLmb.back() - level_model_value , VarValue( 0 ) );
   const auto level_model_ratio =
