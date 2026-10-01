@@ -393,7 +393,7 @@ public:
 
  intRstAlg ,  ///< reset parameter
 
- intMPV2Form ,  ///< dual MP storage frame: displacement or iterate form
+ intMPV2Form ,  ///< MP storage frame: displacement or iterate form
 
  intMPHScaling ,  ///< bit-wise scaling of hard-component PFBs
 
@@ -1082,10 +1082,12 @@ public:
   *                                bundle across calls is what re-optimization
   *                                is, but to measure what it is worth
   *
-  * - intMPV2Form [0]: storage frame used by the dual Master Problem:
-  *                    0 selects the displacement form, while 1 selects the
-  *                    iterate form. The parameter has no effect on the primal
-  *                    Master Problem.
+  * - intMPV2Form [0]: storage frame of the Master Problem, in both its
+  *                    primal and its dual form: 0 selects the displacement
+  *                    form, while 1 selects the iterate form, where the
+  *                    primal variables are the absolute point x and the
+  *                    constants of the primal cuts are raw [see
+  *                    MasterProblemBlock::set_v2_form()].
   *
   * - intMPHScaling [1]: bit-wise numerical scaling of the
   *                     PolyhedralFunctionBlock representing each hard
