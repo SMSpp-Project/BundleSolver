@@ -32,30 +32,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   change of the components reaches the Solver as a `FunctionModVars`
 
 - `intIntVars`: with 1 the integer Variable of the C05Function are kept
-  integer, i.e., what is minimized is the function over the integer points
-  of its domain, by the stabilized cutting-plane method of van Ackooij,
-  Frangioni and de Oliveira (Comput. Optim. Appl. 65, 2016): a proximal
-  (mixed-integer quadratic) or trust-region (mixed-integer linear) master,
-  and the master without stabilization, whose bound is a global lower bound,
-  when the stabilized one sees nothing better than the stability centre
-  even after its region has been enlarged by degrees, t being multiplied by
-  `dblmxIncr` until the stabilization cuts nothing (the width of the box
-  with the trust region, `dbltMaior` with the proximal term), as in the
-  stabilized Benders' method of Baena, Castro and Frangioni (Manag. Sci. 66,
-  2020); with the trust region the binary Variable, the integer ones with
-  box [ 0 , 1 ], get in place of it the local branching constraint [see
-  `MasterProblemBlock::set_local_branching()`], whose radius is a fraction
-  of their number, `dblIntLBRad` at first and then multiplied by
-  `dblmxIncr` with t, and a region in which the centre is optimal is
-  excluded with the reverse constraint whenever the trust region has not
-  restricted the other Variable while exploring it; `integer_test` has instances with all, half
-  and a third of the Variable binary. The method is run by the main loop of
-  `compute()` itself, which calls `integer_direction()`,
-  `integer_trial_point()` and `integer_step()` where the continuous method
-  calls `FormD()`, `continuous_trial_point()` and `continuous_step()`; the
-  default 0 keeps the continuous relaxation that was always minimized. The
-  test `integer_test` compares it with the same problem written out as one
-  mixed-integer program
+  integer, i.e., what is minimized is the function over the integer points of
+  its domain, by the stabilized cutting-plane method of van Ackooij, Frangioni
+  and de Oliveira (Comput. Optim. Appl. 65, 2016): a proximal (mixed-integer
+  quadratic) or trust-region (mixed-integer linear) master, and the master
+  without stabilization, whose bound is a global lower bound, when the
+  stabilized one sees nothing better than the stability centre even after its
+  region has been enlarged by degrees, t being multiplied by `dblmxIncr` until
+  the stabilization cuts nothing (the width of the box with the trust region,
+  `dbltMaior` with the proximal term), as in the stabilized Benders' method of
+  Baena, Castro and Frangioni (Manag. Sci. 66, 2020); with the trust region the
+  binary Variable, the integer ones with box [ 0 , 1 ], get in place of it the
+  local branching constraint [see `MasterProblemBlock::set_local_branching()`],
+  whose radius is a fraction of their number, `dblIntLBRad` at first and then
+  multiplied by `dblmxIncr` with t, and a region in which the centre is optimal
+  is excluded with the reverse constraint whenever the trust region has not
+  restricted the other Variable while exploring it; `integer_test` has
+  instances with all, half and a third of the Variable binary. The method is
+  run by the main loop of `compute()` itself, which calls
+  `integer_direction()`, `integer_trial_point()` and `integer_step()` where the
+  continuous method calls `FormD()`, `continuous_trial_point()` and
+  `continuous_step()`; the default 0 keeps the continuous relaxation that was
+  always minimized. The test `integer_test` compares it with the same problem
+  written out as one mixed-integer program
 
 - `vstrNoEasy`, the classname() of the components that must never be
   treated as easy, in addition to those whose index is in `vintNoEasy`: the
