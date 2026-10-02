@@ -46,9 +46,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   box [ 0 , 1 ], get in place of it the local branching constraint [see
   `MasterProblemBlock::set_local_branching()`], whose radius is a fraction
   of their number, `dblIntLBRad` at first and then multiplied by
-  `dblmxIncr` with t, and a region in which the centre is optimal is excluded with the reverse
-  constraint whenever the trust region has not restricted the other
-  Variable while exploring it; `integer_test` has instances with all, half
+  `dblmxIncr` with t, and a region in which the centre is optimal is
+  excluded with the reverse constraint whenever the trust region has not
+  restricted the other Variable while exploring it; `integer_test` has instances with all, half
   and a third of the Variable binary. The method is run by the main loop of
   `compute()` itself, which calls `integer_direction()`,
   `integer_trial_point()` and `integer_step()` where the continuous method
