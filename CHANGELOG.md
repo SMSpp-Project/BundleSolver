@@ -52,8 +52,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `compute()` itself, which calls `integer_direction()`,
   `integer_trial_point()` and `integer_step()` where the continuous method
   forms the direction, evaluates the trial point and decides the step; the
-  default 0 keeps the continuous relaxation that was always minimized. The test `integer_test` compares it with the
-  same problem written out as one mixed-integer program
+  default 0 keeps the continuous relaxation that was always minimized. The
+  test `integer_test` compares it with the same problem written out as one
+  mixed-integer program
 
 - `vstrNoEasy`, the classname() of the components that must never be
   treated as easy, in addition to those whose index is in `vintNoEasy`: the
