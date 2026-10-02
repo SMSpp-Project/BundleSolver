@@ -3804,6 +3804,10 @@ void BundleSolver::FormD( void )
  // before the empty bundle brought it down to its minimum
  bool t_restored = false;
 
+ // true if the master Solver has already failed on a numerical error in
+ // this call: what it says afterwards is not taken at face value
+ bool mp_failed = false;
+
  for( ; ; )  // error-handling loop - - - - - - - - - - - - - - - - - - - - - -
  {           // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -3892,7 +3896,8 @@ void BundleSolver::FormD( void )
                                 : ( mps == Solver::kInfeasible );
 
   if( primal_empty ) {                // the MP is (primal) empty
-   if( ! get_bc_size() )              // there are no vertical linearizations
+   if( ( ! get_bc_size() ) ||         // there are no vertical linearizations
+       mp_failed )                    // or the MP Solver has already failed
     mps = Solver::kError;             // it must be a numerical error
    else {                             // there are vertical linearizations
     Result = kInfeasible;             // the MP can really be infeasible
@@ -3901,7 +3906,8 @@ void BundleSolver::FormD( void )
    }
 
   if( primal_unbounded ) {            // the MP is (primal) unbounded
-   if( ! NrEasy )                     // there are no easy components
+   if( ( ! NrEasy ) ||                // there are no easy components
+       mp_failed )                    // or the MP Solver has already failed
     mps = Solver::kError;             // it must be a numerical error
    else {                             // there are easy components
     Result = kUnbounded;              // the MP can really be unbounded
@@ -3916,7 +3922,11 @@ void BundleSolver::FormD( void )
 
   // mps == Solver::kError, i.e., there has been a numerical problem in
   // the inner Solver; it's not yet time to despair, as by eliminating
-  // items it may be possible to solve the problem.
+  // items it may be possible to solve the problem. An empty or unbounded
+  // master after that is rather the same trouble in disguise (a Solver that
+  // recovers badly from it may well say "infeasible or unbounded"), and it
+  // is handled as an error as well [see above]
+  mp_failed = true;
 
   BLOG( 2 , std::endl << "Bundle::FormD: error in MP, emergency delete" );
 
