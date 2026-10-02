@@ -9,7 +9,12 @@
  *   \min_x \; b^\top x + \max_{i} \{ a_i^\top x + c_i \} \; , \qquad
  *   x \in [ -R , R ]^n \, , \; x_j \in \mathbb{Z} \; \forall j \in J \; ,
  * \f]
- * with J either all the coordinates or half of them. It is solved twice: by
+ * with J either all the coordinates or half of them, and with the box of
+ * some integer coordinates [ 0 , 1 ] in place of [ -R , R ], so that they
+ * are binary and the trust region leaves them to the local branching [see
+ * MasterProblemBlock::set_local_branching()]: all of them, half of them, or
+ * a third of them with a third general integer and a third continuous. It
+ * is solved twice: by
  * the bundle, whose master is then a mixed-integer linear problem
  * [see BSPar-int.txt], and as one mixed-integer program in ( x , v ) with
  * the epigraph constraints written out. The two optimal values have to
@@ -133,9 +138,12 @@ static void make_instance( Index n , Index m , unsigned seed )
 /*--------------------------------------------------------------------------*/
 
 /// the Variable x, integer where integer[ j ] is, in the box [ -R , R ]^n
+/// save where binary[ j ] is, where the box is [ 0 , 1 ]
 
-static std::vector< ColVariable > * add_x( AbstractBlock * blk ,
-                                           const std::vector< bool > & integer )
+static std::vector< ColVariable > * add_x(
+                                     AbstractBlock * blk ,
+                                     const std::vector< bool > & integer ,
+                                     const std::vector< bool > & binary )
 {
  const Index n = integer.size();
 
@@ -150,8 +158,9 @@ static std::vector< ColVariable > * add_x( AbstractBlock * blk ,
  auto box = new std::vector< BoxConstraint >( n );
  for( Index j = 0 ; j < n ; ++j ) {
   (*box)[ j ].set_variable( &(*x)[ j ] , eNoMod );
-  (*box)[ j ].set_lhs( - R , eNoMod );
-  (*box)[ j ].set_rhs( R , eNoMod );
+  const bool bin = ( j < binary.size() ) && binary[ j ];
+  (*box)[ j ].set_lhs( bin ? 0 : - R , eNoMod );
+  (*box)[ j ].set_rhs( bin ? 1 : R , eNoMod );
   }
  blk->add_static_constraint( *box , "box" );
 
@@ -164,12 +173,13 @@ static std::vector< ColVariable > * add_x( AbstractBlock * blk ,
 /// Objective of the root, the polyhedral one in a sub-Block
 
 static double solve_with_bundle( const std::vector< bool > & integer ,
-                                 const char * bsc_fn )
+                                 const char * bsc_fn ,
+                                 const std::vector< bool > & binary = {} )
 {
  const Index n = integer.size();
 
  auto root = new AbstractBlock();
- auto x = add_x( root , integer );
+ auto x = add_x( root , integer , binary );
 
  LinearFunction::v_coeff_pair cf;
  cf.reserve( n );
@@ -210,13 +220,14 @@ static double solve_with_bundle( const std::vector< bool > & integer ,
 /// the same problem written out as one mixed-integer program in ( x , v )
 
 static double solve_monolithic( const std::vector< bool > & integer ,
-                                const char * bsc_fn )
+                                const char * bsc_fn ,
+                                const std::vector< bool > & binary = {} )
 {
  const Index n = integer.size();
  const Index m = A.size();
 
  auto blk = new AbstractBlock();
- auto x = add_x( blk , integer );
+ auto x = add_x( blk , integer , binary );
 
  auto v = new ColVariable();
  v->is_unitary( false , eNoMod );
@@ -276,6 +287,15 @@ int main( int argc , char ** argv )
   half[ j ] = true;
  const std::vector< bool > none( n , false );
 
+ // binary coordinates: all, the even ones, and a third of them with a
+ // third general integer and a third continuous
+ std::vector< bool > third_int( n , true );
+ std::vector< bool > third_bin( n , false );
+ for( Index j = 0 ; j < n ; ++j ) {
+  third_int[ j ] = ( j % 3 != 2 );
+  third_bin[ j ] = ( j % 3 == 0 );
+  }
+
  for( unsigned s = seed ; s < seed + 3 ; ++s ) {
   make_instance( n , m , s );
   const auto sd = " (seed " + std::to_string( s ) + ")";
@@ -287,6 +307,18 @@ int main( int argc , char ** argv )
   check_close( solve_with_bundle( half , "BSPar-int.txt" ) ,
                solve_monolithic( half , "MPBCfg-int.txt" ) , 1e-6 ,
                "half integer" + sd );
+
+  check_close( solve_with_bundle( all , "BSPar-int.txt" , all ) ,
+               solve_monolithic( all , "MPBCfg-int.txt" , all ) , 1e-6 ,
+               "all binary" + sd );
+
+  check_close( solve_with_bundle( all , "BSPar-int.txt" , half ) ,
+               solve_monolithic( all , "MPBCfg-int.txt" , half ) , 1e-6 ,
+               "half binary" + sd );
+
+  check_close( solve_with_bundle( third_int , "BSPar-int.txt" , third_bin ) ,
+               solve_monolithic( third_int , "MPBCfg-int.txt" , third_bin ) ,
+               1e-6 , "a third binary" + sd );
 
   // with intIntVars == 0 the integrality is ignored
   check_close( solve_with_bundle( all , "BSPar-relax.txt" ) ,

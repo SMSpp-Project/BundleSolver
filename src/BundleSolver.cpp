@@ -4186,6 +4186,11 @@ int BundleSolver::integer_master( double tm )
 {
  MasterPB->set_t( tm );
 
+ // the local branching on the binary Variable has the same radius, and
+ // the cutting-plane master has none
+ if( f_int_lbranch )
+  MasterPB->set_local_branching( tm );
+
  // ensure the master Solver will not take too much time
  if( MaxTime < INFshift )
   MasterPB->set_max_time( MaxTime - get_elapsed_time() );
@@ -4272,13 +4277,25 @@ bool BundleSolver::integer_start( double & tot_time , long & tot_NrEvls )
  // anything: with the trust region, the largest width of the box, with the
  // proximal term, the largest t allowed
  f_int_tfull = tMaior;
+ f_int_lbranch = false;
+ f_int_wnb = 0;
  if( MPStbl == MasterProblemBlock::kTrustRegion ) {
-  double w = 0;
+  // with the trust region, the binary Variable get the local branching of
+  // radius t in place of it [see MasterProblemBlock::set_local_branching()],
+  // which cuts nothing from t = their number on, and the other ones the
+  // trust region, which cuts nothing from t = the width of their box on
+  Index nb = 0;
   for( Index i = 0 ; i < NumVar ; ++i ) {
    const auto bounds = effective_bounds( LamVcblr[ i ] );
-   w = std::max( w , bounds.second - bounds.first );
+   if( ( i < f_int_var.size() ) && f_int_var[ i ] &&
+       ( bounds.first == 0 ) && ( bounds.second == 1 ) )
+    ++nb;
+   else
+    f_int_wnb = std::max( f_int_wnb , bounds.second - bounds.first );
    }
-  f_int_tfull = std::min( f_int_tfull , w );
+  f_int_lbranch = ( nb > 0 );
+  f_int_tfull = std::min( f_int_tfull ,
+                          std::max( f_int_wnb , double( nb ) ) );
   }
 
  if( ! f_int_centre ) {  // start from the current point, made integer
@@ -4309,11 +4326,27 @@ int BundleSolver::integer_direction( void )
  f_int_cp = ( ! f_int_centre ) || f_int_global || ( t >= f_int_tfull );
  if( ! f_int_cp ) {
   rc = integer_master( t );
-  if( ( ( rc == Solver::kOK ) || ( rc == Solver::kLowPrecision ) ) &&
-      ( vStar.back() >= - max_error() ) ) {
-   // the centre is optimal in the region the stabilization allows: the
-   // region is enlarged by degrees, and the master is solved without the
-   // stabilization only when the region cannot grow any more
+
+  // the stabilized master can be empty only because the reverse local
+  // branching constraints have excluded all its region, which has then
+  // been explored already
+  const bool explored = ( rc == Solver::kInfeasible ) &&
+                       ( MasterPB->get_num_reverse_local_branching() > 0 );
+
+  if( explored ||
+      ( ( ( rc == Solver::kOK ) || ( rc == Solver::kLowPrecision ) ) &&
+        ( vStar.back() >= - max_error() ) ) ) {
+   // the centre is optimal in the region the stabilization allows, which
+   // the reverse local branching constraint excludes from now on, provided
+   // the trust region has not restricted the Variable that are not binary
+   if( f_int_lbranch && ( ! explored ) && ( t >= f_int_wnb ) ) {
+    MasterPB->add_reverse_local_branching();
+    BLOG( 2 , " ~ region of radius " << t << " excluded" << std::endl );
+    }
+
+   // the region is enlarged by degrees, and the master is solved without
+   // the stabilization only when the region cannot grow any more
+   rc = Solver::kOK;
    if( t * mxIncr < f_int_tfull ) {
     t *= mxIncr;
     BLOG( 2 , " ~ centre optimal in the region, t = " << t << std::endl );
@@ -4341,9 +4374,22 @@ int BundleSolver::integer_direction( void )
    return( eIntRetry );
    }
 
+  // the regions the reverse local branching constraints exclude have been
+  // explored, and nothing there is better than the centre: if they are all
+  // that is left, the centre is optimal
+  if( ( rc == Solver::kInfeasible ) && f_int_centre &&
+      ( MasterPB->get_num_reverse_local_branching() > 0 ) ) {
+   f_global_LB = std::max( f_global_LB , UpRifFi.back() );
+   return( eIntOptimal );
+   }
+
   if( ( rc == Solver::kOK ) || ( rc == Solver::kLowPrecision ) ) {
    // without the stabilization the master value is a global lower bound
-   const VarValue lb = f_int_c0 + MasterPB->get_master_bound();
+   // outside of the regions the reverse local branching constraints
+   // exclude, where nothing is better than the centre
+   VarValue lb = f_int_c0 + MasterPB->get_master_bound();
+   if( f_int_centre && ( MasterPB->get_num_reverse_local_branching() > 0 ) )
+    lb = std::min( lb , UpRifFi.back() );
    if( lb > f_global_LB )
     f_global_LB = lb;
 

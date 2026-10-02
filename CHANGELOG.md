@@ -42,11 +42,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `dblmxIncr` until the stabilization cuts nothing (the width of the box
   with the trust region, `dbltMaior` with the proximal term), as in the
   stabilized Benders' method of Baena, Castro and Frangioni (Manag. Sci. 66,
-  2020), run by the main loop of `compute()` itself, which calls
-  `integer_direction()`, `integer_trial_point()` and `integer_step()` where
-  the continuous method forms the direction, evaluates the trial point and
-  decides the step; the default 0 keeps the continuous relaxation
-  that was always minimized. The test `integer_test` compares it with the
+  2020); with the trust region the binary Variable, the integer ones with
+  box [ 0 , 1 ], get in place of it the local branching constraint of the
+  same radius [see `MasterProblemBlock::set_local_branching()`], and a
+  region in which the centre is optimal is excluded with the reverse
+  constraint whenever the trust region has not restricted the other
+  Variable while exploring it; `integer_test` has instances with all, half
+  and a third of the Variable binary. The method is run by the main loop of
+  `compute()` itself, which calls `integer_direction()`,
+  `integer_trial_point()` and `integer_step()` where the continuous method
+  forms the direction, evaluates the trial point and decides the step; the
+  default 0 keeps the continuous relaxation that was always minimized. The test `integer_test` compares it with the
   same problem written out as one mixed-integer program
 
 - `vstrNoEasy`, the classname() of the components that must never be

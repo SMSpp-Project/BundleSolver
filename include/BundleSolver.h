@@ -3584,6 +3584,8 @@ public:
  VarValue f_int_model = 0;   ///< ... the model value at the trial point
  VarValue f_int_c0 = 0;      ///< ... the constant of the 0-th component
  double f_int_tfull = 0;     ///< ... the t from which on nothing is cut
+ double f_int_wnb = 0;       ///< ... the width of the non-binary ones
+ bool f_int_lbranch = false; ///< ... the binary ones have local branching
 
  /// with integer Variable, the master is not stabilized: after a
  /// cutting-plane step that has not improved the centre the method stays
