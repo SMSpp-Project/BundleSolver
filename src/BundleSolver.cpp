@@ -4540,6 +4540,27 @@ int BundleSolver::integer_level_direction( void )
   BLOG( 2 , " ~ level " << f_int_vlev << " empty" << std::endl );
   if( UpRifFi.back() - f_global_LB <= max_error() )
    return( eIntOptimal );
+
+  // an empty level only proves that the optimal value is above it, and
+  // the gap would shrink by a factor at each one: the cutting-plane master,
+  // whose bound is exact, is solved then, which is the hybrid variant of
+  // the level method of the paper
+  MasterPB->restore_initial_level_objective();
+  MasterPB->set_f_lev( INFshift );
+  const int crc = integer_master( Inf< double >() );
+  if( ( crc == Solver::kOK ) || ( crc == Solver::kLowPrecision ) ) {
+   const VarValue lb = f_int_c0 + MasterPB->get_master_bound();
+   if( lb > f_global_LB )
+    f_global_LB = lb;
+   BLOG( 2 , " ~ cutting-plane bound " << lb << std::endl );
+   if( UpRifFi.back() - f_global_LB <= max_error() )
+    return( eIntOptimal );
+   }
+  else
+   if( crc == Solver::kStopTime ) {
+    Result = kStopTime;
+    return( eIntStop );
+    }
   return( eIntRetry );
   }
 

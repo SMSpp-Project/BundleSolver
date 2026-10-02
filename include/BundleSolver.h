@@ -2861,10 +2861,15 @@ public:
   * since a level can never prove that it is the optimal value. Since each
   * empty level set only shrinks the gap by the factor \f$ 1 - m_l \f$, and
   * there may be many points within a level set before it is empty, with a
-  * small \f$ \varepsilon \f$ the method can reach intMaxIter with the
-  * right value but the gap still open; the variant of the paper that solves
-  * the cutting-plane master from time to time, whose bound is exact, is not
-  * there yet. Returns as integer_direction(). */
+  * small \f$ \varepsilon \f$ the gap would close only after many
+  * iterations: as in the hybrid variant of the paper, each time a level set
+  * is empty the cutting-plane master is solved as well, whose bound is
+  * exact. This makes the method finite when all the Variable are integer
+  * and X is bounded, which is the case the paper analyses; with continuous
+  * Variable as well the cutting-plane model need not become exact in
+  * finitely many steps, and the method may reach intMaxIter with the right
+  * value and the gap still open, which the trust region does not.
+  * Returns as integer_direction(). */
 
  int integer_level_direction( void );
 

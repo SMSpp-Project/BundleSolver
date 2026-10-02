@@ -53,10 +53,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `integer_direction()`, `integer_trial_point()` and `integer_step()` where the
   continuous method calls `FormD()`, `continuous_trial_point()` and
   `continuous_step()`; with the level (`intMPStbl` 1) it is the level method of
-  the same paper, whose levels follow its rule (19) with `dblLStabM` [see
-  `integer_level_direction()`]; the default 0 keeps the continuous relaxation
-  that was always minimized. The test `integer_test` compares it with the same
-  problem written out as one mixed-integer program
+  the same paper, whose levels follow its rule (19) with `dblLStabM` and which
+  solves the cutting-plane master each time a level set is empty, whose bound
+  is exact (the hybrid variant of the paper) [see `integer_level_direction()`];
+  the default 0 keeps the continuous relaxation that was always minimized. The
+  test `integer_test` compares it with the same problem written out as one
+  mixed-integer program
 
 - `vstrNoEasy`, the classname() of the components that must never be
   treated as easy, in addition to those whose index is in `vintNoEasy`: the
