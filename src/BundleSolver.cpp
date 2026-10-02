@@ -3122,8 +3122,14 @@ bool BundleSolver::level_gap_closed( void ) const
   * tolerance before the actual boundary.  Require the same complete
   * certificate used by IsOptimal() when the bound is only algorithmic.
   * Iterate form is not exposed to the translated-boundary ambiguity, and a
-  * true user-provided bound remains an independent optimality certificate. */
- if( UsesPrimalMaster() && ( ! MPV2Form ) && ( ! TrueLB ) ) {
+  * true user-provided bound remains an independent optimality certificate.
+  * The gap that closes again at a centre where it has already restarted the
+  * target from the scale-based Delta [see refresh_level_after_master()] is
+  * accepted: a second sequence of empty levels converging to the same value
+  * from far below is no longer a boundary effect, and refusing it would
+  * restart the target for ever. */
+ if( UsesPrimalMaster() && ( ! MPV2Form ) && ( ! TrueLB ) &&
+     ( f_level_restart_centre != value ) ) {
   const auto certificate_error = DSTS + Sigma;
   if( ( ! std::isfinite( certificate_error ) ) ||
       ( certificate_error > tolerance ) )
@@ -3147,6 +3153,7 @@ void BundleSolver::reset_level_stabilization( void )
  f_level_LB = -INFshift;
  f_level_reliable_LB = false;
  f_level_initialized = false;
+ f_level_restart_centre = INFshift;
  if( MasterPB && UsesLevelStabilization() )
   MasterPB->set_f_lev( INFshift );
  }
@@ -3214,8 +3221,10 @@ bool BundleSolver::refresh_level_after_master( bool force )
   const auto gap = UpFiLmb.back() - lb;
   const auto certificate_error = DSTS + Sigma;
   const bool inconsistent_lb = lb > UpFiLmb.back() + tolerance;
+  // at most once per centre [see level_gap_closed()]
   const bool unconfirmed_closed_gap =
    force && UsesPrimalMaster() && ( ! MPV2Form ) && ( ! TrueLB ) &&
+   ( f_level_restart_centre != UpFiLmb.back() ) &&
    std::abs( gap ) <= tolerance &&
    ( ( ! std::isfinite( certificate_error ) ) ||
      ( certificate_error > tolerance ) );
@@ -3225,6 +3234,9 @@ bool BundleSolver::refresh_level_after_master( bool force )
            << ( inconsistent_lb ? "inconsistent" : "unconfirmed" )
            << " level LB " << def << lb << " at centre "
            << UpFiLmb.back() << ": restarting target" << std::endl );
+
+   if( unconfirmed_closed_gap )
+    f_level_restart_centre = UpFiLmb.back();
 
    if( ( ! TrueLB ) || ( LowerBound.back() <= UpFiLmb.back() + tolerance ) )
     f_global_LB = -INFshift;

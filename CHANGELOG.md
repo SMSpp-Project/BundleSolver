@@ -170,6 +170,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- the level and doubly stabilized methods with the primal master in the
+  displacement form no longer restart the target for ever: a gap closed by
+  empty levels whose aggregate certificate is not yet within the tolerance
+  restarts the target from the scale-based Delta, which can close it again
+  at the same centre, and so on; the restart happens at most once per
+  centre, and the gap that closes again there is accepted, a second
+  sequence of empty levels converging to the same value from far below being
+  no longer a boundary effect
+
 - the aggregate subgradient `G1` has one entry per Variable rather than one
   per component: it was sized with the number of components, so that with
   the sparse Lambda the sum of the subgradients wrote past its end and

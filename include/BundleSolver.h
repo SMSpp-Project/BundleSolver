@@ -3503,6 +3503,10 @@ public:
  bool f_level_initialized = false;
  ///< true after the first level target has been installed
 
+ VarValue f_level_restart_centre = INFshift;
+ ///< value of the centre at which a closed but unconfirmed level gap has
+ ///< restarted the target, INFshift if none [see level_gap_closed()]
+
  VarValue LStabM;      ///< m_l parameter for level stabilization
 
  VarValue LStabDlt;    ///< initial exogenous Delta fraction, level stab.
