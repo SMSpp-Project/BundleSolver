@@ -466,6 +466,8 @@ public:
 
   dblIncrCost ,   ///< how much evaluation a null step may defer, in masters
 
+  dblIntLBRad ,   ///< radius of the local branching, as a fraction
+
   dblLastBndSlvPar ///< first allowed new double parameter for derived classes
                    /**< Convenience value for easily allow derived classes
                     * to extend the set of double algorithmic parameters. */
@@ -634,6 +636,7 @@ public:
   IntVars = get_dflt_int_par( intIntVars );
   CmpAggr = get_dflt_dbl_par( dblCmpAggr );
   IncrCost = get_dflt_dbl_par( dblIncrCost );
+  IntLBRad = get_dflt_dbl_par( dblIntLBRad );
 
   v_events.resize( max_event_number() );
   }
@@ -1543,7 +1546,14 @@ public:
   *   have been measured. With 0 the null step is taken as soon as it is
   *   shown, as the incremental evaluation always did; a very large value
   *   evaluates every component whenever a null step is shown. Only the
-  *   sequential inner loop applies it. */
+  *   sequential inner loop applies it.
+  *
+  * - dblIntLBRad [0.01]: with integer Variable and the trust region
+  *                      [see intIntVars], the initial radius of the local
+  *   branching on the binary Variable, as a fraction of their number: the
+  *   radius is the larger of 1 and this fraction of it, and each time the
+  *   region is enlarged the fraction is multiplied by dblmxIncr, up to 1,
+  *   which is the whole set of binary Variable. It must be in ( 0 , 1 ]. */
 
  void set_par( idx_type par , double value ) override;
 
@@ -2240,7 +2250,7 @@ public:
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
  [[nodiscard]] double get_dflt_dbl_par( idx_type par ) const override {
-  static const std::array< double , 22 > dflt_dbl_par = {
+  static const std::array< double , 23 > dflt_dbl_par = {
    0 ,      // dblNZEps
    1e+2 ,   // dbltStar
    0 ,      // dblMinNrEvls
@@ -2262,7 +2272,8 @@ public:
    2.0 ,    // dblLStabIncr
    1e-2 ,   // dblLStabSmall
    0 ,      // dblCmpAggr
-   0        // dblIncrCost
+   0 ,      // dblIncrCost
+   0.01     // dblIntLBRad
    };
 
   if( ( par >= dblLastParCDAS ) && ( par < dblLastBndSlvPar ) )
@@ -2396,7 +2407,8 @@ public:
    { "dblLStabIncr" , BundleSolver::dblLStabIncr } ,
    { "dblLStabSmall" , BundleSolver::dblLStabSmall } ,
    { "dblCmpAggr" , BundleSolver::dblCmpAggr } ,
-   { "dblIncrCost" , BundleSolver::dblIncrCost }
+   { "dblIncrCost" , BundleSolver::dblIncrCost } ,
+   { "dblIntLBRad" , BundleSolver::dblIntLBRad }
    };
 
   const auto it = dbl_pars_map.find( name );
@@ -2473,12 +2485,12 @@ public:
 
  [[nodiscard]] const std::string & dbl_par_idx2str( idx_type idx )
   const override {
-  static const std::array< std::string , 22 > dbl_pars_str = {
+  static const std::array< std::string , 23 > dbl_pars_str = {
    "dblNZEps" , "dbltStar" , "dblMinNrEvls" , "dblBPar5" , "dblm1" ,
    "dblm2" , "dblm3" , "dblmxIncr" , "dblmnIncr" , "dblmxDecr" ,
    "dblmnDecr" , "dbltMaior" , "dbltMinor" , "dbltInit" , "dbltSPar2" ,
    "dbltSPar3" , "dblLStabM" , "dblLStabDlt" , "dblLStabIncr" ,
-   "dblLStabSmall" , "dblCmpAggr" , "dblIncrCost" };
+   "dblLStabSmall" , "dblCmpAggr" , "dblIncrCost" , "dblIntLBRad" };
 
  if( ( idx >= dblLastParCDAS ) && ( idx < dblLastBndSlvPar ) )
    return( dbl_pars_str[ idx - dblLastParCDAS ] );
@@ -2773,7 +2785,10 @@ public:
   *   dblmxIncr and the stabilized master is solved again, until t reaches
   *   the value from which on the stabilization cuts nothing, i.e., the
   *   largest width of the box X with the trust region and dbltMaior with
-  *   the proximal term; then it removes the stabilization altogether, and
+  *   the proximal term; with the trust region the binary Variable have the
+  *   local branching in its place, whose radius is a fraction of their
+  *   number [see dblIntLBRad] that is multiplied by dblmxIncr as well, up
+  *   to all of them. Then it removes the stabilization altogether, and
   *   solves the cutting-plane master
   *   \f$ x^c \in \arg\min \{ \check{F}( x ) : x \in X \, , \,
   *   x_J \in \mathbb{Z} \} \f$, i.e., the same with \f$ t = \infty \f$,
@@ -2821,6 +2836,40 @@ public:
  int integer_direction( void );
 
 /*--------------------------------------------------------------------------*/
+ /// what the main loop of compute() does after a step of it
+
+ enum loop_action { eLoopGoOn = 0 , eLoopNext , eLoopStop };
+
+/*--------------------------------------------------------------------------*/
+ /// the trial point of the main loop of compute() without integer Variable
+ /** The part of the main loop of compute() that, without integer Variable,
+  * goes from the direction to the evaluation of the trial point: the
+  * "ex-ante" noise reduction, the hard long-term t-strategy, the trial
+  * point Lambda1, the cleaning of the bundle and the inner loop that
+  * evaluates the components there, whose count it writes in \p cnt.
+  * tot_time and tot_NrEvls are increased by the time and the number of the
+  * evaluations. Returns eLoopNext if the master has to be solved again,
+  * eLoopStop if the method has to stop, with Result telling why, and
+  * eLoopGoOn otherwise. */
+
+ int continuous_trial_point( double & tot_time , long & tot_NrEvls ,
+                             Index & cnt );
+
+/*--------------------------------------------------------------------------*/
+ /// the step of the main loop of compute() without integer Variable
+ /** The part of the main loop of compute() that, without integer Variable,
+  * decides the step after the trial point has been evaluated: the cases of
+  * a vertical linearization, of the "phase 0" and of the noise reduction,
+  * the serious step / null step decision and the update of t. \p cnt is
+  * the count of the inner loop [see continuous_trial_point()], and the
+  * other arguments the multiplier of the level row of a doubly stabilized
+  * master, read before the bundle changed. Returns the same as
+  * continuous_trial_point(). */
+
+ int continuous_step( Index cnt , bool doubly_stabilized ,
+                      double ds_level_multiplier , double ds_mu );
+
+/*--------------------------------------------------------------------------*/
  /// the outcomes of integer_direction()
 
  enum int_direction_outcome { eIntGoOn = 0 , eIntOptimal , eIntRetry ,
@@ -2865,6 +2914,22 @@ public:
   * is the gap of the master Solver, with Result = kLowPrecision. */
 
  bool integer_step( void );
+
+/*--------------------------------------------------------------------------*/
+ /// whether the stabilization cuts nothing any more with integer Variable
+ /** True if the trust region (or the proximal term) of radius t cuts nothing
+  * from the Variable that are not binary and the local branching allows all
+  * the binary ones to change, so that the stabilized master is the
+  * cutting-plane one [see integer_direction()]. */
+
+ [[nodiscard]] bool integer_region_full( void ) const;
+
+/*--------------------------------------------------------------------------*/
+ /// the radius of the local branching on the binary Variable
+ /** The radius of the local branching on the binary Variable, the larger of
+  * 1 and the current fraction of their number [see dblIntLBRad]. */
+
+ [[nodiscard]] double integer_kappa( void ) const;
 
 /*--------------------------------------------------------------------------*/
  /// solve the Master Problem with integer Variable and proximal parameter tm
@@ -3586,6 +3651,8 @@ public:
  double f_int_tfull = 0;     ///< ... the t from which on nothing is cut
  double f_int_wnb = 0;       ///< ... the width of the non-binary ones
  bool f_int_lbranch = false; ///< ... the binary ones have local branching
+ Index f_int_nb = 0;         ///< ... the number of the binary ones
+ double f_int_frac = 0;      ///< ... their fraction the radius allows
 
  /// with integer Variable, the master is not stabilized: after a
  /// cutting-plane step that has not improved the centre the method stays
@@ -3599,6 +3666,8 @@ public:
  double CmpAggr;       ///< share of the components each aggregated one holds
 
  double IncrCost;      ///< deferral of null steps [see dblIncrCost]
+
+ double IntLBRad;      ///< radius of the local branching [see dblIntLBRad]
 
  double f_ev_ema = -1;  ///< average seconds of an evaluation of a component
 
