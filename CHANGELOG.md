@@ -161,6 +161,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- after a numerical error of the Solver of the master problem, `FormD()`
+  takes an empty or unbounded master as the same error in disguise rather
+  than as an answer, also when vertical linearizations or easy components
+  would make it possible: with easy components, a master that Gurobi called
+  unbounded after failing on numerical difficulties made the Lagrangian dual
+  of pHydro_4 report the problem infeasible
+
 - a Variable removed from a component and given back to it in the same
   batch stays in the master: its global index was still queued for removal
   although its reference count was positive again, so that the
