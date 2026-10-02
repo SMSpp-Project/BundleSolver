@@ -191,7 +191,12 @@ class BundleSolverML : public BundleSolver
   * it; the feature vector is sized to the input dimension of Net. */
 
  BundleSolverML( void ) : BundleSolver() {
-  f_owned_net = std::make_shared< Net >( NetOptions() );
+  {
+  NetOptions o;
+  o.model_type  = f_ML_model;
+  o.hidden_size = f_ML_hidden;
+  f_owned_net = std::make_shared< Net >( o );
+  }
   nn = f_owned_net.get();         // point to the private network by default
   size_features = 20;
   features.resize( size_features );
@@ -426,6 +431,8 @@ class BundleSolverML : public BundleSolver
   intMLIterFirst ,   ///< first iteration recorded for training [0]
   intMLIterLast ,    ///< last iteration recorded for training [INF]
   intMLWindow ,      ///< length of each backward window [INF]
+  intMLModel ,       ///< 0 = MLP, 1 = RNN, 2 = GRU, 3 = LSTM [0]
+  intMLHidden ,      ///< hidden size of the recurrent core [16]
   intLastBndSlvMLPar ///< first allowed new int parameter for derived classes
   };
 
@@ -448,6 +455,8 @@ class BundleSolverML : public BundleSolver
    case( intMLIterLast ):    return( f_ML_iter_last );
    case( intMLWindow ):      return( f_ML_window );
    case( intMaxThread ):     return( f_max_thread );
+   case( intMLModel ):       return( f_ML_model );
+   case( intMLHidden ):      return( f_ML_hidden );
    default:                  return( BundleSolver::get_int_par( par ) );
   }
 }
@@ -494,6 +503,19 @@ class BundleSolverML : public BundleSolver
      throw( std::invalid_argument(
                    "BundleSolverML::set_par: intMaxThread must be >= 0" ) );
     f_max_thread = value;
+   case( intMLModel ):
+    if( ( value < 0 ) || ( value > 3 ) )
+     throw( std::invalid_argument(
+      "BundleSolverML::set_par: intMLModel must be in [ 0 , 3 ]" ) );
+    f_ML_model = value;
+    reset_net();
+    return;
+   case( intMLHidden ):
+    if( value < 1 )
+     throw( std::invalid_argument(
+      "BundleSolverML::set_par: intMLHidden must be >= 1" ) );
+    f_ML_hidden = value;
+    reset_net();
     return;
     default:
     BundleSolver::set_par( par , value );
@@ -512,6 +534,8 @@ class BundleSolverML : public BundleSolver
   if( name == "intMLIterFirst" )   return( intMLIterFirst );
   if( name == "intMLIterLast" )    return( intMLIterLast );
   if( name == "intMLWindow" )      return( intMLWindow );
+  if( name == "intMLModel" )       return( intMLModel );
+  if( name == "intMLHidden" )      return( intMLHidden );
 
   return( BundleSolver::int_par_str2idx( name ) );
   }
@@ -521,8 +545,8 @@ class BundleSolverML : public BundleSolver
 
  [[nodiscard]] const std::string & int_par_idx2str( idx_type idx )
   const override {
-  static const std::array< std::string , 6 > int_pars_str_ML = {
-   "intMLTrainOnline" , "intMLSeed" , "intNTrainRounds","intMLIterFirst" , "intMLIterLast" , "intMLWindow" };
+  static const std::array< std::string , 8 > int_pars_str_ML = {
+   "intMLTrainOnline" , "intMLSeed" , "intNTrainRounds","intMLIterFirst" , "intMLIterLast" , "intMLWindow" , "intMLModel" , "intMLHidden" };
 
   if( ( idx >= intLastBndSlvPar ) && ( idx < intLastBndSlvMLPar ) )
    return( int_pars_str_ML[ idx - intLastBndSlvPar ] );
@@ -554,13 +578,15 @@ class BundleSolverML : public BundleSolver
   if( ( par == intMnSSC ) || ( par == intMnNSC ) )
    return( 0 );
 
-  static const std::array< int , 6 > dflt_int_par_ML = {
+  static const std::array< int , 8 > dflt_int_par_ML = {
    0 ,    // intMLTrainOnline
    -1 ,   // intMLSeed
    1 ,    // intNTrainRounds
    0 ,    // intMLIterFirst
    INT_MAX ,  // intMLIterLast
-   INT_MAX    // intMLWindow
+   INT_MAX ,  // intMLWindow
+   0 ,        // intMLModel
+   16         // intMLHidden
    };
 
   if( ( par >= intLastBndSlvPar ) && ( par < intLastBndSlvMLPar ) )
@@ -663,6 +689,8 @@ class BundleSolverML : public BundleSolver
  int f_ML_iter_last = INT_MAX;   ///< value of intMLIterLast [INT_MAX]
  int f_ML_window = INT_MAX;      ///< value of intMLWindow [INT_MAX]
  int f_max_thread = 0;           ///< value of intMaxThread [0]
+ int f_ML_model = 0;             ///< value of intMLModel [0]
+ int f_ML_hidden = 16;           ///< value of intMLHidden [16]
  int f_ML_iter = 0;              ///< iteration counter within a solve
 
 /*--------------------------------------------------------------------------*/
@@ -679,7 +707,12 @@ class BundleSolverML : public BundleSolver
  void reset_net( void ) {
   if( f_shared_net )  // shared net is externally managed: do not touch it
    return;
-  f_owned_net = std::make_shared< Net >( NetOptions() );
+  {
+  NetOptions o;
+  o.model_type  = f_ML_model;
+  o.hidden_size = f_ML_hidden;
+  f_owned_net = std::make_shared< Net >( o );
+  }
   nn = f_owned_net.get();
   f_optimizer.reset();
   }
