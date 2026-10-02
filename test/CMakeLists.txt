@@ -109,8 +109,6 @@ endif ()
 # the examples of OSBDO, see osbdo/README.md
 add_subdirectory(osbdo)
 
-# the large-scale functions of Karmitsa, Bagirov and Makela, see kbm/README.md
-add_subdirectory(kbm)
 
 # ----- the label of this module's tests ------------------------------------ #
 

@@ -159,6 +159,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Whoever wants that variant links the new library, which brings BundleSolver
   along with it
 
+### Removed
+
+- the tester of the large-scale functions of Karmitsa, Bagirov and Makela
+  (`test/kbm`), the scripts that run OSBDO and compute the reference of the
+  federated learning example, and the multicommodity instance of the paper
+  (`test/osbdo`): they are measurements of a paper and not checks, and
+  they live with its other experiments; the testers of the OSBDO examples
+  and their small instances stay, as the checks `ctest` runs
+
 ### Fixed
 
 - the aggregate subgradient `G1` has one entry per Variable rather than one

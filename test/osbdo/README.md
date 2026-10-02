@@ -7,8 +7,7 @@ The examples of
 > Engineering*, 2023
 
 and of its code OSBDO (<https://github.com/cvxgrp/OSBDO>), solved by
-`BundleSolver` in the same form, so that the two methods can be compared on
-the same problems. Each example has a generator that is a verbatim copy of the
+`BundleSolver` in the same form. Each example has a generator that is a verbatim copy of the
 one of OSBDO, with the same seed, so that the instances are the same, and a
 tester that solves the instance with `BundleSolver` and checks the value
 against a reference.
@@ -59,9 +58,8 @@ against a reference.
   logistic loss of its samples, a `LogisticFunction` (a `C05Function` with the
   closed form of value and gradient and a global pool) on shared master
   variables; the regularization `lambda || x ||_1` is an easy `LagBFunction`
-  with multipliers in `[ -1 , 1 ]`. There is no LP to compare with:
-  `ref_fl.py` computes the reference with CVXPY, and the tester takes it as an
-  optional argument.
+  with multipliers in `[ -1 , 1 ]`. There is no LP to compare with, so the
+  tester takes the reference, computed with CVXPY, as an optional argument.
 
 The fourth example of the paper, the allocation of resources, is not here:
 its agents are geometric means, which no `:MILPSolver` represents.
@@ -80,21 +78,12 @@ relative to `max( 1 , | ref | )`.
 - `gen_*.py` write the instances; with the default arguments they write the
   instances of the paper (of the notebooks of OSBDO for the intersection of
   convex sets), and the format is described at the top of each of them.
-- `run_osbdo_mcf.py` and `run_osbdo.py` (supply chain, intersection of convex
-  sets, federated learning) run OSBDO on an instance as in the notebooks of
-  its examples, after checking that the instance its own generator builds is
-  the one in the file, and print the bounds at every iteration with the time
-  elapsed.
 - `mcf-20-100-3.txt`, `sc-5.txt`, `ics-20-30-4.txt` and `fl-400-20-4.txt`
-  are the instances `ctest` runs; `mcf-100-1000-10.txt` is the multicommodity
-  instance of the paper, and the others are written by the generators.
+  are the instances `ctest` runs.
 - `BSPar.txt` (`BundleSolver`, default parameters), `MPBCfg.txt` (the Solver
   of its master problem), `LPPar_inner.txt` (the subproblems) and `LPPar.txt`
   (the reference LP or QP).
 
-The current `main` of OSBDO does not import: `osbdo/__init__.py` still
-imports `osbdo/quasi_newton.py`, which a later commit removed. Restoring it
-from the commit that added it, `git show 007b65c:osbdo/quasi_newton.py >
-osbdo/quasi_newton.py`, is enough, since the bundle method does not use it.
-With numpy 2 OSBDO also calls `np.product`, which no longer exists:
-`run_osbdo.py` aliases it to `np.prod`.
+The comparison with OSBDO on the larger instances of the paper, which runs
+OSBDO itself and measures both methods, is not part of these tests, which
+only check `BundleSolver` on the small instances.
