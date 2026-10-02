@@ -2181,11 +2181,11 @@ void BundleSolver::set_par( idx_type par , double value )
                "BundleSolver::set_par: IncrCost must be >= 0" ) );
    IncrCost = value;
    break;
-  case( dblIntLBRad ):
+  case( dblIntRad ):
    if( ( value <= 0 ) || ( value > 1 ) )
     throw( std::invalid_argument(
-               "BundleSolver::set_par: IntLBRad must be in ( 0 , 1 ]" ) );
-   IntLBRad = value;
+               "BundleSolver::set_par: IntRad must be in ( 0 , 1 ]" ) );
+   IntRad = value;
    break;
   default:
    CDASolver::set_par( par , value );
@@ -2528,7 +2528,7 @@ double BundleSolver::get_dbl_par( idx_type par ) const
   case( dblLStabSmall ): return( LStabSmall );
   case( dblCmpAggr ):    return( CmpAggr );
   case( dblIncrCost ):   return( IncrCost );
-  case( dblIntLBRad ):   return( IntLBRad );
+  case( dblIntRad ):   return( IntRad );
   default:               return( CDASolver::get_dbl_par( par ) );
   }
  }  // end( BundleSolver::get_dbl_par )
@@ -4223,7 +4223,10 @@ int BundleSolver::continuous_step( Index cnt , bool doubly_stabilized ,
 
 int BundleSolver::integer_master( double tm )
 {
- MasterPB->set_t( tm );
+ // with the trust region its radius is written in the box below, one per
+ // coordinate, and the master has none of its own
+ const bool tr = ( MPStbl == MasterProblemBlock::kTrustRegion );
+ MasterPB->set_t( tr ? Inf< double >() : tm );
 
  // the local branching on the binary Variable has its own radius, and the
  // cutting-plane master has none
@@ -4240,6 +4243,20 @@ int BundleSolver::integer_master( double tm )
   const auto bounds = effective_bounds( LamVcblr[ i ] );
   Lbox[ i ] = bounds.first;
   Ubox[ i ] = bounds.second;
+
+  // the trust region around the centre: the fraction of the region of the
+  // width of the box, or t if the box is not finite, and at least 1 if the
+  // Variable is integer [see dblIntRad]; the binary Variable have the
+  // local branching in its place
+  if( tr && ( tm < Inf< double >() ) &&
+      ( ( i >= f_int_bin.size() ) || ( ! f_int_bin[ i ] ) ) ) {
+   const double w = bounds.second - bounds.first;
+   double r = std::isfinite( w ) ? f_int_frac * w : t;
+   if( ( i < f_int_var.size() ) && f_int_var[ i ] )
+    r = std::max( r , 1.0 );
+   Lbox[ i ] = std::max( Lbox[ i ] , Lambda[ i ] - r );
+   Ubox[ i ] = std::min( Ubox[ i ] , Lambda[ i ] + r );
+   }
   }
  MasterPB->set_box( Lbox , Ubox );
 
@@ -4259,8 +4276,10 @@ int BundleSolver::integer_master( double tm )
 
 bool BundleSolver::integer_region_full( void ) const
 {
- return( ( t >= f_int_tfull ) &&
-         ( ( ! f_int_lbranch ) || ( f_int_frac >= 1 ) ) );
+ if( MPStbl == MasterProblemBlock::kTrustRegion )
+  return( ( f_int_frac >= 1 ) && ( ! f_int_nofull ) );
+
+ return( t >= f_int_tfull );
  }
 
 /*--------------------------------------------------------------------------*/
@@ -4338,31 +4357,29 @@ bool BundleSolver::integer_start( double & tot_time , long & tot_NrEvls )
   MasterPB->set_f_lev( INFshift );
   }
 
- // the value of t from which on the stabilization no longer restricts
- // anything: with the trust region, the largest width of the box, with the
- // proximal term, the largest t allowed
+ // with the proximal term the stabilization cuts nothing from t = tMaior
+ // on; with the trust region the region is a fraction of the whole one,
+ // which grows by dblIntRad at each enlargement until it is the whole one
  f_int_tfull = tMaior;
+ f_int_nofull = false;
  f_int_lbranch = false;
- f_int_wnb = 0;
+ f_int_frac = IntRad;
+ f_int_nb = f_int_nnb = 0;
+ f_int_bin.assign( NumVar , false );
  if( MPStbl == MasterProblemBlock::kTrustRegion ) {
-  // with the trust region, the binary Variable get the local branching in
-  // place of it [see MasterProblemBlock::set_local_branching()], whose
-  // radius is a fraction of their number [see dblIntLBRad], and the other
-  // ones the trust region, which cuts nothing from t = the width of their
-  // box on
-  Index nb = 0;
+  // the binary Variable get the local branching in place of the trust
+  // region [see MasterProblemBlock::set_local_branching()]
   for( Index i = 0 ; i < NumVar ; ++i ) {
    const auto bounds = effective_bounds( LamVcblr[ i ] );
    if( ( i < f_int_var.size() ) && f_int_var[ i ] &&
-       ( bounds.first == 0 ) && ( bounds.second == 1 ) )
-    ++nb;
+       ( bounds.first == 0 ) && ( bounds.second == 1 ) ) {
+    f_int_bin[ i ] = true;
+    ++f_int_nb;
+    }
    else
-    f_int_wnb = std::max( f_int_wnb , bounds.second - bounds.first );
+    ++f_int_nnb;
    }
-  f_int_lbranch = ( nb > 0 );
-  f_int_nb = nb;
-  f_int_frac = IntLBRad;
-  f_int_tfull = std::min( f_int_tfull , f_int_wnb );
+  f_int_lbranch = ( f_int_nb > 0 );
   }
 
  if( ! f_int_centre ) {  // start from the current point, made integer
@@ -4410,8 +4427,9 @@ int BundleSolver::integer_direction( void )
         ( vStar.back() >= - max_error() ) ) ) {
    // the centre is optimal in the region the stabilization allows, which
    // the reverse local branching constraint excludes from now on, provided
-   // the trust region has not restricted the Variable that are not binary
-   if( f_int_lbranch && ( ! explored ) && ( t >= f_int_wnb ) ) {
+   // there are no Variable that are not binary, which the trust region
+   // would have restricted
+   if( f_int_lbranch && ( ! explored ) && ( f_int_nnb == 0 ) ) {
     MasterPB->add_reverse_local_branching();
     BLOG( 2 , " ~ region of radius " << MasterPB->get_local_branching()
               << " excluded" << std::endl );
@@ -4422,12 +4440,25 @@ int BundleSolver::integer_direction( void )
    rc = Solver::kOK;
    const auto ot = t;
    const auto ofrac = f_int_frac;
-   if( t < f_int_tfull )
-    t *= mxIncr;
-   if( f_int_lbranch )
-    f_int_frac = std::min( f_int_frac * mxIncr , 1.0 );
+   if( MPStbl == MasterProblemBlock::kTrustRegion ) {
+    // the fraction grows by dblIntRad, and t, the radius of the Variable
+    // with no finite box, by dblmxIncr within [ dbltMinor , dbltMaior ]
+    f_int_frac = std::min( f_int_frac + IntRad , 1.0 );
+    t = std::max( tMinor , std::min( t * mxIncr , tMaior ) );
+    }
+   else
+    if( t < f_int_tfull )
+     t *= mxIncr;
    if( ! integer_region_full() ) {
-    BLOG( 2 , " ~ centre optimal in the region, t = " << t );
+    if( ( t == ot ) && ( f_int_frac == ofrac ) ) {
+     // the region cannot grow any more, and the stabilization cannot be
+     // removed either, X not being bounded
+     BLOG( 1 , " ~ stop: the region cannot be enlarged" << std::endl );
+     Result = kLowPrecision;
+     return( eIntStop );
+     }
+    BLOG( 2 , " ~ centre optimal in the region, fraction = " << f_int_frac
+              << ", t = " << t );
     BLOG2( 2 , f_int_lbranch , ", kappa = " << integer_kappa() );
     BLOG( 2 , std::endl );
     return( eIntRetry );
@@ -4452,6 +4483,7 @@ int BundleSolver::integer_direction( void )
    // the stabilization can no longer be dropped, however large t is
    t *= 10;
    f_int_tfull = Inf< double >();
+   f_int_nofull = true;
    BLOG( 2 , " ~ unbounded cutting-plane master, t = " << t << std::endl );
    return( eIntRetry );
    }

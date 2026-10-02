@@ -466,7 +466,7 @@ public:
 
   dblIncrCost ,   ///< how much evaluation a null step may defer, in masters
 
-  dblIntLBRad ,   ///< radius of the local branching, as a fraction
+  dblIntRad ,     ///< growth of the region of the integer method
 
   dblLastBndSlvPar ///< first allowed new double parameter for derived classes
                    /**< Convenience value for easily allow derived classes
@@ -636,7 +636,7 @@ public:
   IntVars = get_dflt_int_par( intIntVars );
   CmpAggr = get_dflt_dbl_par( dblCmpAggr );
   IncrCost = get_dflt_dbl_par( dblIncrCost );
-  IntLBRad = get_dflt_dbl_par( dblIntLBRad );
+  IntRad = get_dflt_dbl_par( dblIntRad );
 
   v_events.resize( max_event_number() );
   }
@@ -1552,12 +1552,16 @@ public:
   *   evaluates every component whenever a null step is shown. Only the
   *   sequential inner loop applies it.
   *
-  * - dblIntLBRad [0.01]: with integer Variable and the trust region
-  *                      [see intIntVars], the initial radius of the local
-  *   branching on the binary Variable, as a fraction of their number: the
-  *   radius is the larger of 1 and this fraction of it, and each time the
-  *   region is enlarged the fraction is multiplied by dblmxIncr, up to 1,
-  *   which is the whole set of binary Variable. It must be in ( 0 , 1 ]. */
+  * - dblIntRad [0.1]: with integer Variable and the trust region [see
+  *                    intIntVars], the fraction p of the whole region by
+  *   which the region of the stabilized master grows each time the centre
+  *   is optimal in it: the k-th region lets min( 1 , k p ) of the binary
+  *   Variable change (the local branching, at least 1 of them) and every
+  *   other Variable with a finite box move by min( 1 , k p ) of its width
+  *   (at least 1 if it is integer), while those with no finite box move by
+  *   t, multiplied by dblmxIncr at each enlargement within [ dbltMinor ,
+  *   dbltMaior ]; after ceil( 1 / p ) enlargements the stabilization is
+  *   removed altogether. It must be in ( 0 , 1 ]. */
 
  void set_par( idx_type par , double value ) override;
 
@@ -2277,7 +2281,7 @@ public:
    1e-2 ,   // dblLStabSmall
    0 ,      // dblCmpAggr
    0 ,      // dblIncrCost
-   0.01     // dblIntLBRad
+   0.1      // dblIntRad
    };
 
   if( ( par >= dblLastParCDAS ) && ( par < dblLastBndSlvPar ) )
@@ -2412,7 +2416,7 @@ public:
    { "dblLStabSmall" , BundleSolver::dblLStabSmall } ,
    { "dblCmpAggr" , BundleSolver::dblCmpAggr } ,
    { "dblIncrCost" , BundleSolver::dblIncrCost } ,
-   { "dblIntLBRad" , BundleSolver::dblIntLBRad }
+   { "dblIntRad" , BundleSolver::dblIntRad }
    };
 
   const auto it = dbl_pars_map.find( name );
@@ -2494,7 +2498,7 @@ public:
    "dblm2" , "dblm3" , "dblmxIncr" , "dblmnIncr" , "dblmxDecr" ,
    "dblmnDecr" , "dbltMaior" , "dbltMinor" , "dbltInit" , "dbltSPar2" ,
    "dbltSPar3" , "dblLStabM" , "dblLStabDlt" , "dblLStabIncr" ,
-   "dblLStabSmall" , "dblCmpAggr" , "dblIncrCost" , "dblIntLBRad" };
+   "dblLStabSmall" , "dblCmpAggr" , "dblIncrCost" , "dblIntRad" };
 
  if( ( idx >= dblLastParCDAS ) && ( idx < dblLastBndSlvPar ) )
    return( dbl_pars_str[ idx - dblLastParCDAS ] );
@@ -2787,13 +2791,12 @@ public:
   *   stabilization by degrees, as in the stabilized Benders' method of
   *   Baena, Castro and Frangioni (Manag. Sci. 66, 2020): t is multiplied by
   *   dblmxIncr and the stabilized master is solved again, until t reaches
-  *   the value from which on the stabilization cuts nothing, i.e., the
-  *   largest width of the box X with the trust region and dbltMaior with
-  *   the proximal term; with the trust region the binary Variable have the
-  *   local branching in its place, whose radius is a fraction of their
-  *   number [see dblIntLBRad] that is multiplied by dblmxIncr as well, up
-  *   to all of them. Then it removes the stabilization altogether, and
-  *   solves the cutting-plane master
+  *   dbltMaior, from which on the proximal term cuts nothing; with the trust
+  *   region the region grows instead by the fraction dblIntRad of the
+  *   whole one, the binary Variable having the local branching in its
+  *   place, so that after ceil( 1 / dblIntRad ) enlargements it is the
+  *   whole one. Then it removes the stabilization altogether, and solves
+  *   the cutting-plane master
   *   \f$ x^c \in \arg\min \{ \check{F}( x ) : x \in X \, , \,
   *   x_J \in \mathbb{Z} \} \f$, i.e., the same with \f$ t = \infty \f$,
   *   whose value, less the gap of its Solver, is a lower bound \f$ \ell \f$
@@ -2954,18 +2957,19 @@ public:
  bool integer_step( void );
 
 /*--------------------------------------------------------------------------*/
- /// whether the stabilization cuts nothing any more with integer Variable
- /** True if the trust region (or the proximal term) of radius t cuts nothing
-  * from the Variable that are not binary and the local branching allows all
-  * the binary ones to change, so that the stabilized master is the
-  * cutting-plane one [see integer_direction()]. */
+ /// whether the stabilization can be removed with integer Variable
+ /** True if the region of the trust region is the whole one [see dblIntRad],
+  * or the proximal term has reached dbltMaior, so that the master is solved
+  * without stabilization [see integer_direction()]; never true once the
+  * cutting-plane master has been found unbounded. */
 
  [[nodiscard]] bool integer_region_full( void ) const;
 
 /*--------------------------------------------------------------------------*/
  /// the radius of the local branching on the binary Variable
  /** The radius of the local branching on the binary Variable, the larger of
-  * 1 and the current fraction of their number [see dblIntLBRad]. */
+  * 1 and the current fraction of the region of their number [see
+  * dblIntRad]. */
 
  [[nodiscard]] double integer_kappa( void ) const;
 
@@ -3687,14 +3691,16 @@ public:
  VarValue f_int_model = 0;   ///< ... the model value at the trial point
  VarValue f_int_c0 = 0;      ///< ... the constant of the 0-th component
  double f_int_tfull = 0;     ///< ... the t from which on nothing is cut
- double f_int_wnb = 0;       ///< ... the width of the non-binary ones
+ Index f_int_nnb = 0;        ///< ... the number of the non-binary ones
+ bool f_int_nofull = false;  ///< ... the stabilization stays [see above]
+ std::vector< bool > f_int_bin;  ///< ... which are binary
  bool f_int_lbranch = false; ///< ... the binary ones have local branching
  bool f_int_level = false;   ///< ... the master is the level one
  VarValue f_int_vlev = 0;    ///< ... the current level
  VarValue f_int_vup_lev = 0; ///< ... the upper bound when it was set
  bool f_int_lev_empty = false;  ///< ... the last level set was empty
  Index f_int_nb = 0;         ///< ... the number of the binary ones
- double f_int_frac = 0;      ///< ... their fraction the radius allows
+ double f_int_frac = 0;      ///< ... the fraction of the region
 
  /// with integer Variable, the master is not stabilized: after a
  /// cutting-plane step that has not improved the centre the method stays
@@ -3709,7 +3715,7 @@ public:
 
  double IncrCost;      ///< deferral of null steps [see dblIncrCost]
 
- double IntLBRad;      ///< radius of the local branching [see dblIntLBRad]
+ double IntRad;      ///< radius of the local branching [see dblIntRad]
 
  double f_ev_ema = -1;  ///< average seconds of an evaluation of a component
 

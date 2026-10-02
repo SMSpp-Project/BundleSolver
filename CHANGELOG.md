@@ -38,15 +38,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   quadratic) or trust-region (mixed-integer linear) master, and the master
   without stabilization, whose bound is a global lower bound, when the
   stabilized one sees nothing better than the stability centre even after its
-  region has been enlarged by degrees, t being multiplied by `dblmxIncr` until
-  the stabilization cuts nothing (the width of the box with the trust region,
-  `dbltMaior` with the proximal term), as in the stabilized Benders' method of
-  Baena, Castro and Frangioni (Manag. Sci. 66, 2020); with the trust region the
-  binary Variable, the integer ones with box [ 0 , 1 ], get in place of it the
-  local branching constraint [see `MasterProblemBlock::set_local_branching()`],
-  whose radius is a fraction of their number, `dblIntLBRad` at first and then
-  multiplied by `dblmxIncr` with t, and a region in which the centre is optimal
-  is excluded with the reverse constraint whenever the trust region has not
+  region has been enlarged by degrees: with the proximal term t is multiplied
+  by `dblmxIncr` up to `dbltMaior`, with the trust region the region grows by
+  the fraction `dblIntRad` of the whole one, every Variable with a finite box
+  moving by that fraction of its width and the others by t, until after ceil( 1
+  / `dblIntRad` ) enlargements it is the whole one, as in the stabilized
+  Benders' method of Baena, Castro and Frangioni (Manag. Sci. 66, 2020); with
+  the trust region the binary Variable, the integer ones with box [ 0 , 1 ],
+  get in place of it the local branching constraint [see
+  `MasterProblemBlock::set_local_branching()`], whose radius is the same
+  fraction of their number, and a region in which the centre is optimal is
+  excluded with the reverse constraint whenever the trust region has not
   restricted the other Variable while exploring it; `integer_test` has
   instances with all, half and a third of the Variable binary. The method is
   run by the main loop of `compute()` itself, which calls
