@@ -633,12 +633,13 @@ int BundleSolver::compute( bool changedvars )
   if( std::find( iv.begin() , iv.end() , true ) != iv.end() ) {
    if( ( ! UsesPrimalMaster() ) || ( ! MPV2Form ) ||
        ( ( MPStbl != MasterProblemBlock::kProximal ) &&
-         ( MPStbl != MasterProblemBlock::kTrustRegion ) ) ) {
+         ( MPStbl != MasterProblemBlock::kTrustRegion ) &&
+         ( MPStbl != MasterProblemBlock::kLevel ) ) ) {
     Result = kError;
     unlock();
     throw( std::logic_error( "BundleSolver::compute: integer Variable need "
-                             "a primal proximal or trust-region Master "
-                             "Problem in raw form" ) );
+                             "a primal proximal, trust-region or level "
+                             "Master Problem in raw form" ) );
     }
    f_int_var = std::move( iv );
    }
@@ -4327,6 +4328,16 @@ bool BundleSolver::integer_start( double & tot_time , long & tot_NrEvls )
  f_int_centre = RifeqFi && ( UpFiLmb.back() < INFshift );
  f_int_global = false;
 
+ // the level starts from the cutting-plane master [see integer_direction()]
+ f_int_level = ( MPStbl == MasterProblemBlock::kLevel );
+ f_int_vlev = INFshift;
+ f_int_vup_lev = INFshift;
+ f_int_lev_empty = false;
+ if( f_int_level ) {
+  MasterPB->restore_initial_level_objective();
+  MasterPB->set_f_lev( INFshift );
+  }
+
  // the value of t from which on the stabilization no longer restricts
  // anything: with the trust region, the largest width of the box, with the
  // proximal term, the largest t allowed
@@ -4376,10 +4387,15 @@ bool BundleSolver::integer_start( double & tot_time , long & tot_NrEvls )
 
 int BundleSolver::integer_direction( void )
 {
+ if( f_int_level && f_int_centre && ( f_global_LB > -INFshift ) )
+  return( integer_level_direction() );
+
  // the proximal master, if there is a centre, otherwise or if it sees
  // nothing better than the centre the cutting-plane one
  int rc = Solver::kOK;
- f_int_cp = ( ! f_int_centre ) || f_int_global || integer_region_full();
+ // with the level, the cutting-plane master gives the first lower bound
+ f_int_cp = f_int_level || ( ! f_int_centre ) || f_int_global ||
+            integer_region_full();
  if( ! f_int_cp ) {
   rc = integer_master( t );
 
@@ -4490,6 +4506,60 @@ int BundleSolver::integer_direction( void )
  return( eIntGoOn );
 
  }  // end( BundleSolver::integer_direction )
+
+/*--------------------------------------------------------------------------*/
+
+int BundleSolver::integer_level_direction( void )
+{
+ // from now on the master is the level one
+ if( MasterPB->has_initial_level_objective() )
+  MasterPB->remove_initial_level_objective();
+
+ const VarValue vup = UpRifFi.back();
+ const VarValue gap = vup - f_global_LB;
+ if( gap <= max_error() )
+  return( eIntOptimal );
+
+ // the level is moved only if the upper bound has decreased significantly
+ // or the last level set was empty, (19) of the paper
+ if( ( f_int_vlev >= INFshift ) || f_int_lev_empty ||
+     ( vup < f_int_vup_lev - max_error() ) ) {
+  f_int_vlev = vup - std::max( max_error() , LStabM * gap );
+  f_int_vup_lev = vup;
+  }
+ f_int_lev_empty = false;
+
+ // the master leaves out the constant of the 0-th component
+ MasterPB->set_f_lev( f_int_vlev - f_int_c0 );
+ const int rc = integer_master( t );
+
+ if( rc == Solver::kInfeasible ) {  // the level set is empty
+  f_int_lev_empty = true;
+  if( f_int_vlev > f_global_LB )
+   f_global_LB = f_int_vlev;
+  BLOG( 2 , " ~ level " << f_int_vlev << " empty" << std::endl );
+  if( UpRifFi.back() - f_global_LB <= max_error() )
+   return( eIntOptimal );
+  return( eIntRetry );
+  }
+
+ if( rc == Solver::kStopTime ) {
+  Result = kStopTime;
+  return( eIntStop );
+  }
+
+ if( ( rc != Solver::kOK ) && ( rc != Solver::kLowPrecision ) ) {
+  Result = kError;
+  return( eIntStop );
+  }
+
+ // the point of the level master is the next trial point, and the master
+ // says nothing on the model value there
+ f_int_cp = false;
+ f_int_model = INFshift;
+ return( eIntGoOn );
+
+ }  // end( BundleSolver::integer_level_direction )
 
 /*--------------------------------------------------------------------------*/
 

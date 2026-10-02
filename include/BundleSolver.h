@@ -1151,12 +1151,16 @@ public:
   *   Benders' methods of van Ackooij, Frangioni and de Oliveira (Comput.
   *   Optim. Appl. 65, 2016) [see integer_direction()]. The Master Problem must
   *   then be primal (intMPPrimal == 1), in raw form (intMPV2Form == 1), and
-  *   either proximal (intMPStbl == 0), which makes it a mixed-integer
-  *   quadratic problem, or with the trust region (intMPStbl == 4), which
-  *   makes it a mixed-integer linear one that any :MILPSolver can solve; its
-  *   Solver must keep the integer Variable integer (e.g., a :MILPSolver with
-  *   intRelaxIntVars == 0), and its relative gap has to be tighter than
-  *   dblRelAcc. Otherwise compute() throws std::logic_error, as it does
+  *   either proximal (intMPStbl == 0) or level (intMPStbl == 1), which
+  *   make it a mixed-integer quadratic problem [see
+  *   integer_level_direction()], or with the trust region (intMPStbl == 4),
+  *   which makes it a mixed-integer linear one that any :MILPSolver can
+  *   solve; its Solver must keep the integer Variable integer (e.g., a
+  *   :MILPSolver with intRelaxIntVars == 0) with an integrality tolerance of
+  *   0, or as small as it allows, since the point of the master is rounded
+  *   before it is evaluated and the linearization there may not cut away the
+  *   point of the master otherwise, and its relative gap has to be tighter
+  *   than dblRelAcc. Otherwise compute() throws std::logic_error, as it does
   *   with the trust region and no integer Variable; the bundle is never
   *   cleaned of the linearizations that are not in the optimal base, since
   *   without the multipliers of a continuous master there is no base, hence
@@ -2836,6 +2840,35 @@ public:
  int integer_direction( void );
 
 /*--------------------------------------------------------------------------*/
+ /// the Master Problem step of compute() with integer Variable and level
+ /** With the level stabilization [see intMPStbl] and integer Variable the
+  * method is the level one of van Ackooij, Frangioni and de Oliveira
+  * (Comput. Optim. Appl. 65, 2016, Algorithm 4): integer_direction() solves
+  * the cutting-plane master until there is a stability centre and a lower
+  * bound, then this method solves the level master
+  * \f[
+  *   \min \{ \frac{1}{2} \| x - \bar{x} \|^2 : \check{F}( x ) \leq
+  *   F^{lev} \, , \, x \in X \, , \, x_J \in \mathbb{Z} \} \; ,
+  * \f]
+  * whose point is the next trial point. The level is
+  * \f$ F^{lev} = F( \bar{x} ) - \max \{ \varepsilon , m_l \Delta \} \f$,
+  * with \f$ \Delta \f$ the gap between \f$ F( \bar{x} ) \f$ and the lower
+  * bound and \f$ m_l \f$ = dblLStabM, and it is moved only when the upper
+  * bound decreases by more than \f$ \varepsilon \f$ or the last level
+  * set was empty, as in (19) of the paper; an empty level set makes
+  * \f$ F^{lev} \f$ the new lower bound, and the method stops when the gap
+  * is at most \f$ \varepsilon \f$ = max_error(), which has to be positive
+  * since a level can never prove that it is the optimal value. Since each
+  * empty level set only shrinks the gap by the factor \f$ 1 - m_l \f$, and
+  * there may be many points within a level set before it is empty, with a
+  * small \f$ \varepsilon \f$ the method can reach intMaxIter with the
+  * right value but the gap still open; the variant of the paper that solves
+  * the cutting-plane master from time to time, whose bound is exact, is not
+  * there yet. Returns as integer_direction(). */
+
+ int integer_level_direction( void );
+
+/*--------------------------------------------------------------------------*/
  /// what the main loop of compute() does after a step of it
 
  enum loop_action { eLoopGoOn = 0 , eLoopNext , eLoopStop };
@@ -3651,6 +3684,10 @@ public:
  double f_int_tfull = 0;     ///< ... the t from which on nothing is cut
  double f_int_wnb = 0;       ///< ... the width of the non-binary ones
  bool f_int_lbranch = false; ///< ... the binary ones have local branching
+ bool f_int_level = false;   ///< ... the master is the level one
+ VarValue f_int_vlev = 0;    ///< ... the current level
+ VarValue f_int_vup_lev = 0; ///< ... the upper bound when it was set
+ bool f_int_lev_empty = false;  ///< ... the last level set was empty
  Index f_int_nb = 0;         ///< ... the number of the binary ones
  double f_int_frac = 0;      ///< ... their fraction the radius allows
 
