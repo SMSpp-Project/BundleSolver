@@ -1500,10 +1500,16 @@ public:
   * - dblLStabIncr [2.0]: multiplicative factor used only by pure level
   *   stabilization while no reliable lower bound is known. If too many
   *   consecutive Serious Steps have been performed, i.e., the intMnSSC gate is
-  *   open, and the model is accurate enough according to dblLStabSmall, the
+  *   open, the last one has decreased Fi by at least Delta / dblLStabIncr,
+  *   and the model is accurate enough according to dblLStabSmall, the
   *   exogenous expected decrease is enlarged as
   *
   *        Delta <- dblLStabIncr * Delta .
+  *
+  *   The condition on the decrease keeps Delta within a factor dblLStabIncr
+  *   of the decrease that the steps actually obtain: without it Delta grows
+  *   at every opening of the gate, the level target soon becomes
+  *   unattainable, and the level constraint no longer stabilizes the master.
   *
   *   The consecutive-SS counter is reset when this significant level update is
   *   performed.

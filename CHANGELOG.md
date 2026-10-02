@@ -170,6 +170,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- the pure level stabilization with no reliable lower bound enlarges the
+  expected decrease Delta only after a Serious Step that has decreased Fi
+  by at least Delta / dblLStabIncr; before, Delta was doubled at every
+  opening of the intMnSSC gate, and on the supply chain example of OSBDO
+  it reached 1e74, so that the level constraint did not stabilize the
+  master for most of the run
+
 - the level and doubly stabilized methods with the primal master in the
   displacement form no longer restart the target for ever: a gap closed by
   empty levels whose aggregate certificate is not yet within the tolerance

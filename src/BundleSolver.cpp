@@ -3474,7 +3474,8 @@ void BundleSolver::update_level_after_step( bool serious_step ,
  if( serious_step && gated_update && UsesPureLevelStabilization() &&
      ( lb <= -INFshift ) && ( ! f_level_reliable_LB ) &&
      ( UpFiLmb.back() < INFshift ) && ( old_ref < INFshift ) &&
-     ( vStar.back() < INFshift ) ) {
+     ( vStar.back() < INFshift ) &&
+     ( old_ref - UpFiLmb.back() >= f_level_Delta / LStabIncr ) ) {
   // the model value at d*: v* is relative to the center the step started
   // from, which old_ref holds, UpRifFi being already the new one
   const auto level_model_value = old_ref + vStar.back();
