@@ -506,7 +506,7 @@ public:
    * 0, ..., total number of components - 1, ordered in increasing sense and
    * therefore not repeated) of the components of the problem that must not be
    * treated as "easy" even if they could. This clearly only applies if
-   * intDoEasy == 1, for otherwise no component is ever treated as "easy".
+   * intDoEasy != 0, for otherwise no component is ever treated as "easy".
    */
 
   vintLastBndSlvPar ///< first allowed new vector-of-int parameter
@@ -546,7 +546,7 @@ public:
    * components of the problem that must not be treated as "easy" even if
    * they could, in addition to those that vintNoEasy gives by index; see
    * set_par( std::vector< std::string > ) for what the class of a component
-   * is. This clearly only applies if intDoEasy == 1, for otherwise no
+   * is. This clearly only applies if intDoEasy != 0, for otherwise no
    * component is ever treated as "easy". */
 
   vstrLastBndSlvPar ///< first allowed new vector-of-string parameter
@@ -924,19 +924,28 @@ public:
   *   is the limit on how many times this will be attempted (for each
   *   non-easy C05Function) before giving up for good
   *
-  * - intDoEasy [1]: this boolean parameter controls whether
-  *                  BundleSolver uses the "easy components"
-  *   approach on components that allow it (LagBFunction with linear
-  *   constraints, objective and continuous variables only).
+  * - intDoEasy [1]: bit-wise encoding of whether BundleSolver uses the
+  *                  "easy components" approach on the components that
+  *   allow it (LagBFunction with linear constraints, objective and
+  *   continuous variables only), and of which of their dual values it keeps:
   *
-  *   If it is 0, then all components are treated as "hard" even if
-  *   they could be treated as "easy". If it is 1, then all "easy"
-  *   components are treated as such.
+  *   - with 0 all components are treated as "hard" even if they could be
+  *     treated as "easy", and with any nonzero value all the "easy"
+  *     components are treated as such;
   *
-  *   NOTE: In a previous version intDoEasy controlled also which structures
-  *   were allowed to change in an esy component. With the use of MPBlock
-  *   this is not necessary anymore, as the latter allows for changes in
-  *   any part of the structure of easy components.
+  *   - bit 3 (+8): the dual values of the easy components are saved at each
+  *     solution of the Master Problem, so that get_var_solution() can write
+  *     back into the easy sub-Block the reduced costs of their ColVariable;
+  *
+  *   - bits 2 and 3 together (+12): the same holds for the dual values of
+  *     their RowConstraint.
+  *
+  *   Hence 1 treats the easy components as such without keeping any of
+  *   their dual values, and 13 also keeps all of them, as needed by whoever
+  *   reads the dual solution of the easy components [see
+  *   get_var_solution()], which throws if asked for dual values that have
+  *   not been kept. The structure of an easy component can change in any of
+  *   its parts, which the MasterProblemBlock handles.
   *
   * - intWZNorm [2]: Proving that some point Lambda is epsilon-optimal for a
   *                  NonDifferentiable Optimization problem involves finding
@@ -1063,7 +1072,7 @@ public:
   * - intMPPrimal [0]: tells which formulation should be used for the Master
   *                    Problem. If 1 then the primal version of the MP will be
   *                    initialized, otherwise MasterProblemBlock will use the
-  *                    dual one. Note that if the parameter DoEasy is set to 1
+  *                    dual one. Note that if intDoEasy is not 0
   *                    and there are easy components, then the only possibility
   *                    is to solve the dual representation.
   *
@@ -1598,7 +1607,7 @@ public:
   *                       indices (numbers in 0, ..., total number of
   *   components - 1, ordered in increasing sense and therefore not repeated)
   *   of the components of the problem that must not be treated as "easy"
-  *   even if they could. This clearly only applies if intDoEasy == 1,
+  *   even if they could. This clearly only applies if intDoEasy != 0,
   *   for otherwise no component is ever treated as "easy". The ordering of
   *   the components is as follows: if the Block only has a C05Function as
   *   Objective and no sub-Block then that it is component 0, otherwise the
@@ -1695,7 +1704,7 @@ public:
   *   classname(); otherwise the component has no class, and vstrNoEasy
   *   never applies to it. This lets one configuration say which components
   *   are "hard" for instances whose components are numbered differently.
-  *   As for vintNoEasy, this clearly only applies if intDoEasy == 1, and
+  *   As for vintNoEasy, this clearly only applies if intDoEasy != 0, and
   *   the parameter is read when BundleSolver is register()-ed to the Block
   *   [see set_Block()]. */
 
