@@ -161,6 +161,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- the aggregate subgradient `G1` has one entry per Variable rather than one
+  per component: it was sized with the number of components, so that with
+  the sparse Lambda the sum of the subgradients wrote past its end and
+  corrupted the heap whenever it is needed, which with `BundleSolverML`
+  (whose `NeedsG1()` is always true) is always; with the dense Lambda it
+  was only truncated, and its norm, a feature of the network, was wrong
+
 - a Variable removed from a component and given back to it in the same
   batch stays in the master: its global index was still queued for removal
   although its reference count was positive again, so that the

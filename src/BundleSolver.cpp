@@ -619,8 +619,9 @@ int BundleSolver::compute( bool changedvars )
   }
  RifeqFi = ( UpRifFi == UpFiLmb );  // true if the reference values are right
 
+ // G1 is a subgradient, i.e., it lives in the space of the Variable
  if( NeedsG1() )
-  G1.resize( NrFi );
+  G1.resize( NumVar );
  else
   G1.clear();
 
@@ -964,7 +965,7 @@ int BundleSolver::compute( bool changedvars )
   ScPr1 = NeedsScPr1() ? read_Gid_aggregate() : 0;
   if( NeedsG1() ) {
    G1Norm = INFshift;
-   G1.assign( NrFi , double( 0 ) );
+   G1.assign( NumVar , double( 0 ) );
    }
 
   CurrNrEvls.assign( NrFi , Index( 0 ) );
