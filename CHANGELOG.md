@@ -170,6 +170,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `intDoEasy` keeps all its bits: it was stored in a `bool`, so that the
+  dual values and reduced costs of the easy components (bits 4 and 8) were
+  never kept and `get_var_solution()` always refused to give them; also,
+  setting it after the Block, as a BlockSolverConfig does, now decides
+  whether those of the next solves of the master are kept
+
 - the level and doubly stabilized methods with the primal master in the
   displacement form no longer restart the target for ever: a gap closed by
   empty levels whose aggregate certificate is not yet within the tolerance
