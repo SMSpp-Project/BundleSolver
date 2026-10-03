@@ -2000,7 +2000,14 @@ void BundleSolver::set_par( idx_type par , int value )
   case( intMnNSC ): MnNSC = value; break;
   case( inttSPar1 ): tSPar1 = value; break;
   case( intMaxNrEvls ): MaxNrEvls = value; break;
-  case( intDoEasy ): DoEasy = value; break;
+  case( intDoEasy ):
+   DoEasy = value;
+   // which components are easy is decided by set_Block(), but whether
+   // their duals are kept can change at any time [see InitMPB()]
+   if( MasterPB )
+    MasterPB->keep_easy_duals( ( DoEasy & 8 ) ||
+			       ( ( DoEasy & 12 ) == 12 ) );
+   break;
   case( intWZNorm ):
    if( WZNorm != char( value ) ) {
     WZNorm = char( value );

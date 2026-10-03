@@ -3592,7 +3592,7 @@ public:
  double tSPar2;     ///< double parameter for long-term t-strategy
  double tSPar3;     ///< double parameter for small heuristic t changes
 
- bool DoEasy;       ///< if "easy" components are managed
+ int DoEasy;        ///< how "easy" components are managed [see intDoEasy]
 
  char WZNorm;       ///< how to compute the norm of z*
 
