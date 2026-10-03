@@ -8636,8 +8636,7 @@ void BundleSolver::process_outstanding_Modification( void )
  // v_ref_count reached 0 during this Modification batch (FunctionMod
  // VarsRngd / VarsSbst handlers append here). After the 4th loop, we
  // compact LamVcblr / Lambda* / each v_c05f's global-index map /
- // Lambda2Idx and call MasterPB->remove_vars on this set to reclaim
- // the master rows.
+ // Lambda2Idx. Only the old part of this set has rows in MasterPB.
  std::vector< Index > globally_to_remove;
 
  // what a component that stops depending on some of its Variable, while
@@ -8884,7 +8883,7 @@ void BundleSolver::process_outstanding_Modification( void )
       for( Index l = r0 ; l < r1 ; ++l ) {
        const Index g = m[ l ];
        globals.push_back( g );
-       if( std::abs( Lambda[ g ] ) > 1e-12 )
+       if( g < NumVar && std::abs( Lambda[ g ] ) > 1e-12 )
         nonzero = true;
        if( --v_ref_count[ g ] == 0 )
         globally_to_remove.push_back( g );
@@ -9003,7 +9002,7 @@ void BundleSolver::process_outstanding_Modification( void )
        for( Index l = 0 ; l < loc_NV ; ++l ) {
         const Index g = m[ l ];
         globals.push_back( g );
-        if( std::abs( Lambda[ g ] ) > 1e-12 )
+        if( g < NumVar && std::abs( Lambda[ g ] ) > 1e-12 )
          nonzero = true;
         if( --v_ref_count[ g ] == 0 )
          globally_to_remove.push_back( g );
@@ -9030,7 +9029,7 @@ void BundleSolver::process_outstanding_Modification( void )
       for( auto l : effective ) {
        const Index g = m[ l ];
        globals.push_back( g );
-       if( std::abs( Lambda[ g ] ) > 1e-12 )
+       if( g < NumVar && std::abs( Lambda[ g ] ) > 1e-12 )
         nonzero = true;
        if( --v_ref_count[ g ] == 0 )
         globally_to_remove.push_back( g );
@@ -9143,8 +9142,9 @@ void BundleSolver::process_outstanding_Modification( void )
    }  // end FunctionModVars
   }  // end( 4th loop, forward )
 
- // sparse-mode compaction: any LamVcblr slot whose refcount fell to 0
- // during the 4th loop is now truly dead and can be reclaimed.
+ // Sparse-mode compaction: old slots are removed from both BundleSolver and
+ // the master; pending additions were never installed in either one and are
+ // only discarded from LamVcblr and the local-to-global maps.
  if( f_sparse_lambda && ( ! globally_to_remove.empty() ) ) {
   // sort + dedup (defensive — a slot can in principle be queued multiple
   // times if two h's removed their last reference)
@@ -9152,6 +9152,11 @@ void BundleSolver::process_outstanding_Modification( void )
   globally_to_remove.erase( std::unique( globally_to_remove.begin() ,
                                           globally_to_remove.end() ) ,
                             globally_to_remove.end() );
+  for( auto g : globally_to_remove )
+   if( g >= v_ref_count.size() )
+    throw( std::logic_error(
+               "BundleSolver::process_outstanding_Modification: "
+               "invalid global Variable removal index" ) );
 
   // a Variable removed and then added back in the same batch is referenced
   // again by the component that took it back, and it stays
