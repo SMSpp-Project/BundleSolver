@@ -91,6 +91,20 @@ if (TARGET SMS++::MILPSolver)
              WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 endif ()
 
+# ----- a BundleSolver moved from Block to Block ---------------------------- #
+# One BundleSolver carried across Block with different 0-th components, each
+# value against that of a BundleSolver attached to that Block only
+if (TARGET SMS++::MILPSolver)
+    add_executable(reattach_test test_reattach.cpp)
+    target_link_libraries(reattach_test PRIVATE
+                          SMS++::BundleSolver
+                          SMS++::MILPSolver)
+    # it reads BSPar-rho.txt and MPBCfg-rho.txt from the working directory
+    add_test(NAME reattach_test
+             COMMAND reattach_test
+             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+endif ()
+
 # ----- the integer Variable [see intIntVars] ------------------------------- #
 # The bundle with a mixed-integer master against the same problem written out
 # as one mixed-integer program, both solved by HiGHS

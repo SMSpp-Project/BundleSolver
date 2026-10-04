@@ -170,6 +170,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- a BundleSolver detached from a Block and attached to another one, or to
+  the same one again, gives the linear part of the 0-th component to its
+  new master problem: the flag telling that the master already had it
+  survived the change of Block, so that the new master was left without
+  it, which gave wrong directions and a wrong bound; a
+  `LagrangianDualSolver` moved to another Block, which carries its inner
+  Solver along, ended its next `compute()` for an inexact oracle
+
+- a linear 0-th component after a quadratic one in the master problem the
+  BundleSolver recycles across Block [see `CreateMPB()`] no longer keeps
+  the rho of the previous Block, which `MasterProblemBlock::clear()` does
+  not forget: the linear one now tells the master that it has no
+  quadratic term
+
 - the pure level stabilization with no reliable lower bound enlarges the
   expected decrease Delta only after a Serious Step that has decreased Fi
   by at least Delta / dblLStabIncr; before, Delta was doubled at every

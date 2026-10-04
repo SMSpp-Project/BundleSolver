@@ -578,6 +578,9 @@ int BundleSolver::compute( bool changedvars )
    const auto & cf = f_lf->get_v_var();
    for( Index i = 0 ; i < cf.size() && i < NumVar ; ++i )
     b[ i ] = f_convex ? cf[ i ].second : - cf[ i ].second;
+   // no quadratic term: the master may be recycled from a Block that had
+   // one [see CreateMPB()], and clear() does not forget it
+   MasterPB->set_zeroth_quadratic( {} );
    }
   else {
    /* The quadratic 0-th component gives the master its linear part and its
@@ -6801,6 +6804,9 @@ void BundleSolver::guts_of_destructor( void )
 
  f_member2cmp.clear();
  v_groups.clear();  // the members are not owned, the groups are
+
+ // the master problem of the next Block has not got its linear part yet
+ f_linear_part_set = false;
 
  }  // end( BundleSolver:guts_of_destructor )
 
