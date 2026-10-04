@@ -748,7 +748,11 @@ int BundleSolver::compute( bool changedvars )
      if( ! refresh_level_after_master( true ) ) {
       BLOG( 1 , " ~ stop (empty level refresh made no progress)"
                 << std::endl );
-      Result = get_bc_size() ? kInfeasible : kLowPrecision;
+      // the domain is empty: because of the vertical linearizations, or of
+      // the easy components at the first master after they changed [see
+      // easy_says_it()]
+      Result = ( get_bc_size() || ( NrEasy && easy_says_it() ) ) ?
+	       kInfeasible : kLowPrecision;
       break;
       }
      continue;
@@ -3857,7 +3861,11 @@ void BundleSolver::FormD( void )
    if( ! refresh_level_after_master( true ) ) {
     BLOG( 1 , std::endl
               << "Bundle::FormD: empty level refresh made no progress" );
-    Result = get_bc_size() ? kInfeasible : kError;
+    // the domain is empty: because of the vertical linearizations, or of
+    // the easy components at the first master after they changed [see
+    // easy_says_it()]
+    Result = ( get_bc_size() || ( NrEasy && easy_says_it() ) ) ?
+	     kInfeasible : kError;
     return;
     }
    continue;

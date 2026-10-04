@@ -180,7 +180,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   same call. With easy components, a master that Gurobi called unbounded
   after failing on numerical difficulties made the Lagrangian dual of
   pHydro_4 report the problem infeasible, and an empty easy region was taken
-  for a numerical error
+  for a numerical error; with the level, whose pure master cannot be
+  unbounded, an empty easy region that the relaxation of the level cannot
+  fix is reported as infeasible rather than as an error or a low precision
 
 - a BundleSolver detached from a Block and attached to another one, or to
   the same one again, gives the linear part of the 0-th component to its

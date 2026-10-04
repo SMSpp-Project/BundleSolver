@@ -2853,11 +2853,16 @@ public:
   * because of them: their region being empty, or having a direction v of
   * negative cost c v < 0 that the coupling term does not see (A v = 0).
   * Neither depends on the stability centre nor on the bundle, hence with a
-  * stabilized master (proximal, trust region and, it seems, level) it shows
-  * up at the first master solved after the easy components changed, and an
-  * empty or unbounded master after that one can only be a numerical error
-  * in disguise. Without stabilization this does not hold, and the answer is
-  * always taken. */
+  * stabilized master (proximal, trust region) it shows up at the first
+  * master solved after the easy components changed, and an empty or
+  * unbounded master after that one can only be a numerical error in
+  * disguise. With the level, the first master is the proximal probe, and the
+  * pure level master cannot be unbounded at all, its objective being the
+  * proximity term alone and the model value, the costs of the easy
+  * components included, being in the level constraint; it can be empty,
+  * either because of the level, which relaxing the level tells apart, or
+  * because of the easy region, which shows up as above. Without
+  * stabilization none of this holds, and the answer is always taken. */
 
  bool easy_says_it( void ) const {
   const bool stabilized =
