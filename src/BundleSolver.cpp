@@ -3834,8 +3834,10 @@ void BundleSolver::FormD( void )
          ? Solver::kOK : rc;
    }
 
-  if( mps == Solver::kOK )           // everything's alright
+  if( mps == Solver::kOK ) {         // everything's alright
+   f_easy_first_MP = false;          // see easy_says_it()
    break;
+   }
 
   /* see the twin test in compute(): with vertical linearizations around, an
    * empty primal master may be the level set rather than the domain, and
@@ -3895,21 +3897,25 @@ void BundleSolver::FormD( void )
                                 ? ( mps == Solver::kUnbounded )
                                 : ( mps == Solver::kInfeasible );
 
+  // an empty MP is an answer if the vertical linearizations make it so,
+  // or if the easy components do at the first master after they changed;
+  // an unbounded one only in the latter case [see easy_says_it()]; after a
+  // failure of the MP Solver neither is believed
+  const bool easy_answer = NrEasy && easy_says_it() && ( ! mp_failed );
+
   if( primal_empty ) {                // the MP is (primal) empty
-   if( ( ! get_bc_size() ) ||         // there are no vertical linearizations
-       mp_failed )                    // or the MP Solver has already failed
+   if( ( ( ! get_bc_size() ) || mp_failed ) && ( ! easy_answer ) )
     mps = Solver::kError;             // it must be a numerical error
-   else {                             // there are vertical linearizations
+   else {                             // vertical linearizations or easy
     Result = kInfeasible;             // the MP can really be infeasible
     return;                           // nothing else to do
     }
    }
 
   if( primal_unbounded ) {            // the MP is (primal) unbounded
-   if( ( ! NrEasy ) ||                // there are no easy components
-       mp_failed )                    // or the MP Solver has already failed
+   if( ! easy_answer )                // it is not the easy components'
     mps = Solver::kError;             // it must be a numerical error
-   else {                             // there are easy components
+   else {                             // the easy components say it
     Result = kUnbounded;              // the MP can really be unbounded
     return;                           // nothing else to do
     }
@@ -6255,6 +6261,8 @@ void BundleSolver::CreateMPB( void )
  else
   MasterPB = new MasterProblemBlock();
 
+ f_easy_first_MP = true;  // no master solved yet [see easy_says_it()]
+
  }  // end( BundleSolver::CreateMPB )
 
 /*--------------------------------------------------------------------------*/
@@ -7857,6 +7865,9 @@ void BundleSolver::process_outstanding_Modification( void )
     }
 
    if( NrEasy && IsEasy[ wFi ] ) {  // coming from an easy component
+    // the easy component has changed, and with it what the next master can
+    // say of it [see easy_says_it()]
+    f_easy_first_MP = true;
     // The easy component is represented exactly by its inner Block, registered
     // below MPBlock. The original physical Modification therefore reaches the
     // Solver attached to MPBlock independently and updates the master model.
