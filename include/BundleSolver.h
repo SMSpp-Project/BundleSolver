@@ -1908,7 +1908,9 @@ public:
   * master has been solved at least once). A Modification of a component
   * may remove from its global pool some of them (say, those that are no
   * longer feasible for it) before the next compute() updates the bundle:
-  * then the dual solution, which is made with them, cannot be given. */
+  * then the dual solution, which is made with them, cannot be given. Nor
+  * can it be when, for a component, no linearization has a nonzero
+  * multiplier, as a master problem that failed leaves them. */
 
  bool has_dual_solution( void ) override;
 

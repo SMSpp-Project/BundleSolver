@@ -2747,15 +2747,22 @@ bool BundleSolver::has_dual_solution( void )
    continue;
 
   // the linearizations in the bundle with a nonzero multiplier, which make
-  // the dual solution [see get_dual_solution_hard()], must be in the pool
+  // the dual solution [see get_dual_solution_hard()], must be in the pool,
+  // and there must be one at least: with none, as a master problem that
+  // failed leaves them, there is no convex combination to give
   const auto & inv = InvItemVcblr[ k ];
+  bool any = false;
   for( Index slot = 0 ; slot < Index( inv.size() ) ; ++slot ) {
    const auto name = inv[ slot ];
-   if( ( name < vBPar2.back() ) &&
-       ( MasterPB->get_theta( hard_k( k ) , int( name ) ) != 0 ) &&
-       ( ! v_c05f[ k ]->is_linearization_there( slot ) ) )
+   if( ( name >= vBPar2.back() ) ||
+       ( MasterPB->get_theta( hard_k( k ) , int( name ) ) == 0 ) )
+    continue;
+   if( ! v_c05f[ k ]->is_linearization_there( slot ) )
     return( false );
+   any = true;
    }
+  if( ! any )
+   return( false );
   }
 
  return( true );
