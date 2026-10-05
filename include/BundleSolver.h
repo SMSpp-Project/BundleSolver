@@ -1901,14 +1901,16 @@ public:
  bool has_var_solution( void ) override { return( true ); }
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
- /// BundleSolver always returns a dual solution, possibly unfeasible
- /** BundleSolver always returns a dual solution, possibly
-  * infeasible. This
-  *  in fact requires that the Master Problem has been solved at least once,
-  *  but has_dual_solution() can only be called after compute() and therefore
-  *  the Master Problem must have been solved at least once. */
+ /// true if the dual solution can be given, possibly unfeasible
+ /** The dual solution is a combination of the linearizations in the global
+  * pools of the components, as the last master problem solved has left it
+  * (has_dual_solution() can only be called after compute(), hence the
+  * master has been solved at least once). A Modification of a component
+  * may remove from its global pool some of them (say, those that are no
+  * longer feasible for it) before the next compute() updates the bundle:
+  * then the dual solution, which is made with them, cannot be given. */
 
- bool has_dual_solution( void ) override { return( true ); }
+ bool has_dual_solution( void ) override;
 
 /*--------------------------------------------------------------------------*/
 

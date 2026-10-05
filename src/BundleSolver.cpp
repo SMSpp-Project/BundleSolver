@@ -2729,6 +2729,41 @@ void BundleSolver::get_dual_solution( Configuration * solc )
 
 /*--------------------------------------------------------------------------*/
 
+bool BundleSolver::has_dual_solution( void )
+{
+ for( Index k = 0 ; k < NrFi ; ++k ) {
+  if( NrEasy && IsEasy[ k ] )
+   continue;  // its dual solution is not made of linearizations
+
+  if( Zvalid[ k ] ) {
+   // the optimal aggregated linearization is the only one used
+   if( ! v_c05f[ k ]->is_linearization_there(
+					   ItemVcblr[ whisZ[ k ] ].second ) )
+    return( false );
+   continue;
+   }
+
+  if( ! MasterPB )
+   continue;
+
+  // the linearizations in the bundle with a nonzero multiplier, which make
+  // the dual solution [see get_dual_solution_hard()], must be in the pool
+  const auto & inv = InvItemVcblr[ k ];
+  for( Index slot = 0 ; slot < Index( inv.size() ) ; ++slot ) {
+   const auto name = inv[ slot ];
+   if( ( name < vBPar2.back() ) &&
+       ( MasterPB->get_theta( hard_k( k ) , int( name ) ) != 0 ) &&
+       ( ! v_c05f[ k ]->is_linearization_there( slot ) ) )
+    return( false );
+   }
+  }
+
+ return( true );
+
+ }  // end( BundleSolver::has_dual_solution() )
+
+/*--------------------------------------------------------------------------*/
+
 void BundleSolver::get_dual_solution_easy( Index k )
 {
  // The optimal primal u^k of the k-th easy component is the primal
