@@ -4057,11 +4057,8 @@ void BundleSolver::FormD( void )
  // v* is "fake" and so is Delta* (but anyway, this means that any finite
  // lower bound is much better than what we currently have)
 
- // compute || d* ||_2
- // Under quadratic stabilisation, ReadDStart( t ) == t || z* ||_2^2 / 2
- // and d = - t z*, hence || d* ||_2 == t || z* ||_2 ==
- //                                     t * sqrt( 2 * DST / t )
- // For non-quadratic stabilisations (e.g. boxstep) we materialise d*.
+ // Compute || d* ||_2 from the physical step: its relation to the
+ // normalized aggregate depends on the stabilization and multiplier mass.
  NrmD = 0;
  if( MasterPB ) {
   const auto d = MasterPB->get_d_vector();
@@ -4070,19 +4067,33 @@ void BundleSolver::FormD( void )
   }
  NrmD = sqrt( NrmD );
 
- // in the easy case NrmD also gives the (2-)norm of z*; otherwise we
- // compute it explicitly. The relationship d* = - t z* is NOT VALID
- // WHEN THERE ARE CONSTRAINTS if z* is to be interpreted as the
- // aggregate subgradient of the objective; it IS VALID IF z* IS TO BE
- // INTERPRETED AS THE AGGREGATE SUBGRADIENT OF THE ESSENTIAL OBJECTIVE
- // ( f + i_X ), which is exactly what is needed here.
- if( ( WZNorm & 3 ) == 2 )
-  NrmZ = NrmD / t;
- else {  // otherwise compute the norm directly from the z* vector
-  std::vector< double > tZ;
-  if( MasterPB )
-   tZ = MasterPB->get_z_vector();
-  NrmZ = ::norm( tZ , WZNorm & 3 );
+ // Reuse ||d*|| for the Euclidean norm when the stabilization provides a
+ // scalar relation to MPB's aggregate, including the box/domain normals.
+ NrmZ = 0;
+ if( MasterPB ) {
+  double step_scale = 0.0;
+  if( ( WZNorm & 3 ) == 2 ) {
+   if( MasterPB->uses_pure_level_aggregation() )
+    step_scale = MasterPB->get_level_multiplier();  // d* = -omega z*
+   else if( MPStbl == MasterProblemBlock::kProximal ||
+            MPStbl == MasterProblemBlock::kDoublyStabilized ||
+            MPStbl == MasterProblemBlock::kLevel ) {
+    // This includes the initial level probe. The primal getter returns
+    // -d*/t here; the dual getter also divides the raw aggregate by lambda.
+    step_scale = MasterPB->get_t();
+    if( ! UsesPrimalMaster() )
+     step_scale *= MasterPB->get_lambda();
+    }
+   }
+
+  if( step_scale > 0.0 && std::isfinite( step_scale ) )
+   NrmZ = NrmD / step_scale;
+  else {
+   // Other norms/stabilizations, or an unusable scalar denominator:
+   // retain get_z_vector()'s handling of the aggregate and zero mass.
+   auto tZ = MasterPB->get_z_vector();
+   NrmZ = ::norm( tZ , WZNorm & 3 );
+   }
   }
 
  // with no hard component there is no aggregate to take the norm of, and
