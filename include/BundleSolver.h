@@ -573,8 +573,8 @@ public:
   UpTrgt( 0 ) , LwTrgt( 0 ) , RifeqFi( false ) ,
   CmptdinL( false ) , UpFiBest( INFshift ) , UpFiLmb1def( 0 ) ,
   LwFiLmb1def( 0 ) , UpFiLmbdef( 0 ) , LwFiLmbdef( 0 ) , Fi0Lmb( 0 ) ,
-  Fi0Lmb1( 0 ) , DST( 0 ) , NrmD( 0 ) , NrmZ( 0 ) , NrmZFctr( 1 ) ,
-  c_start() , aBP3( 0 ) , LevelNRCntr( 0 ) , NRtMax( 0 ) ,
+  Fi0Lmb1( 0 ) , DST( 0 ) , NrmD( 0 ) , NrmDInf( 0 ) , NrmZ( 0 ) ,
+  NrmZFctr( 1 ) , c_start() , aBP3( 0 ) , LevelNRCntr( 0 ) , NRtMax( 0 ) ,
   LevelStagCntr( 0 )
  {
   // ensure all parameters are properly given their default value
@@ -1068,6 +1068,17 @@ public:
   *   This overrides serious-step t heuristics, the intMnSSC gate for t,
   *   and the endgame t strategy. Null-step and level-target updates retain
   *   their own existing rules.
+  *   With the trust region (4) t is the radius of the box
+  *   \f$ \| x - \bar{x} \|_\infty \leq t \f$ that replaces the proximal
+  *   term, so that the Master Problem is linear; D*_t( z* ) is then
+  *   \f$ t \| z^* \|_1 \f$ instead of \f$ ( t / 2 ) \| z^* \|_2^2 \f$, and
+  *   so are Sigma* + D*_{t*}( z* ) in the stopping test and D*_t( 1 ) in the
+  *   long-term t-strategies. The heuristic t of inttSPar1, which comes from
+  *   a quadratic model of the function along -z*, is not used: t only
+  *   changes by the significant increases and decreases of the long-term
+  *   t-strategies, and a serious step whose d* does not reach the side of
+  *   the box does not count towards intMnSSC, since a larger box would not
+  *   have changed it.
   *
   * - intMPPrimal [0]: tells which formulation should be used for the Master
   *                    Problem. If 1 then the primal version of the MP will be
@@ -1162,8 +1173,8 @@ public:
   *   makes it a mixed-integer linear one that any :MILPSolver can solve; its
   *   Solver must keep the integer Variable integer (e.g., a :MILPSolver with
   *   intRelaxIntVars == 0), and its relative gap has to be tighter than
-  *   dblRelAcc. Otherwise compute() throws std::logic_error, as it does
-  *   with the trust region and no integer Variable; the bundle is never
+  *   dblRelAcc. Otherwise compute() throws std::logic_error; the bundle is
+  *   never
   *   cleaned of the linearizations that are not in the optimal base, since
   *   without the multipliers of a continuous master there is no base, hence
   *   intBPar2 has to be large enough for all of them. If no Variable is
@@ -2689,13 +2700,14 @@ public:
   }
 
 /*--------------------------------------------------------------------------*/
- /// returns D*_{factor}( z* ) = ( factor / 2 ) * || z* ||^2
- /** Returns ( factor / 2 ) * MasterPB::get_dual_norm_squared(); returns
-  * 0 if MasterPB is not yet available. */
+ /// returns D*_{factor}( z* ), the conjugate of the stabilizing term at z*
+ /** Returns MasterPB::get_conjugate_stabilization( factor ), i.e.,
+  * ( factor / 2 ) * || z* ||_2^2, or factor * || z* ||_1 with the trust
+  * region; returns 0 if MasterPB is not yet available. */
 
  VarValue read_DStart( double factor ) const {
   if( MasterPB )
-   return( factor / 2.0 * MasterPB->get_dual_norm_squared() );
+   return( MasterPB->get_conjugate_stabilization( factor ) );
   return( 0 );
   }
 
@@ -3592,6 +3604,10 @@ public:
 
  VarValue t;           ///< the (tremendous) t parameter
  VarValue Prevt;       ///< what t were before being changed for funny reasons
+ bool f_tr_open = false;  ///< the last master was solved without the trust
+                          ///< region, whose radius is still t [see FormD()]
+ VarValue f_tr_t0 = 0;    ///< the radius of the trust region before the MP
+                          ///< looked for the domain [see FormD()], 0 if not
 
  VarValue Sigma;       ///< Sigma*: convex combination of the Alfa's
  VarValue DSTS;        /**< D*_{t*}( -z* ), the other part of the dual
@@ -3827,6 +3843,7 @@ public:
 
  double DST;             ///< D_t( z* ), used to compute the crucial Delta*
  double NrmD;            ///< Euclidean norm of the current direction d*
+ double NrmDInf;         ///< infinity norm of the current direction d*
  double NrmZ;            ///< some norm of the aggregated subgradient z*
  double NrmZFctr;        ///< scaling factor to declare NrmZ "small"
 

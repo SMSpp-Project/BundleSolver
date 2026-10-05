@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- the trust region (intMPStbl == 4) without integer Variable, i.e., the
+  stabilized cutting-plane method with the box || x - x_bar ||_inf <= t,
+  whose master is linear: D*_t( z* ) is t || z* ||_1, the heuristic t
+  is not used and t only changes by the significant increases and
+  decreases, a serious step counting only if d* reaches the side of the
+  box. As long as no point of the domain is known each master starts from
+  tMinor and the box is enlarged only as much as the vertical
+  linearizations ask, which keeps the point close to the centre; the
+  master solved once without it tells an empty domain from a far one, and
+  vertical linearizations are never deleted
+
 - a component that gains an "active" Variable the master already has, e.g.,
   a `LagBFunction` given the dual pair of a multiplier that other
   components also have, keeps the master right: a hard component is reset,
@@ -169,6 +180,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and their small instances stay, as the checks `ctest` runs
 
 ### Fixed
+
+- `IsOptimal()` no longer certifies a point with an empty bundle when t was
+  at tMinor already, so that Prevt had not been set
 
 - a BundleSolver detached from a Block and attached to another one, or to
   the same one again, gives the linear part of the 0-th component to its
