@@ -2852,6 +2852,31 @@ public:
 
  /*--------------------------------------------------------------------------*/
 
+ /// true if an empty or unbounded master can be the easy components' answer
+ /** With the easy components, the master problem can be empty or unbounded
+  * because of them: their region being empty, or having a direction v of
+  * negative cost c v < 0 that the coupling term does not see (A v = 0).
+  * Neither depends on the stability centre nor on the bundle, hence with a
+  * stabilized master (proximal, trust region) it shows up at the first
+  * master solved after the easy components changed, and an empty or
+  * unbounded master after that one can only be a numerical error in
+  * disguise. With the level, the first master is the proximal probe, and the
+  * pure level master cannot be unbounded at all, its objective being the
+  * proximity term alone and the model value, the costs of the easy
+  * components included, being in the level constraint; it can be empty,
+  * either because of the level, which relaxing the level tells apart, or
+  * because of the easy region, which shows up as above. Without
+  * stabilization none of this holds, and the answer is always taken. */
+
+ bool easy_says_it( void ) const {
+  const bool stabilized =
+   ( MPStbl != MasterProblemBlock::kNone ) &&
+   ( UsesLevelStabilization() || ( t < INFshift ) );
+  return( f_easy_first_MP || ( ! stabilized ) );
+  }
+
+ /*--------------------------------------------------------------------------*/
+
  bool UsesPrimalMaster( void ) const {
   return( IsMPPrimal && ! ( DoEasy && ( NrEasy > 0 ) ) );
   }
@@ -3595,6 +3620,10 @@ public:
  ///< the component of v_c05f each member of an aggregated one is in
 
  VarValue t;           ///< the (tremendous) t parameter
+
+ bool f_easy_first_MP = true;  ///< no master solved since the easy changed
+ /**< true until a master problem has been solved since the master was
+  * created or the easy components last changed [see easy_says_it()] */
  VarValue Prevt;       ///< what t were before being changed for funny reasons
 
  VarValue Sigma;       ///< Sigma*: convex combination of the Alfa's

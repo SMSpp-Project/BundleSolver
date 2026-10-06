@@ -191,6 +191,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and no bound at all; a Lagrangian Dual over inexact components reported
   it as the upper bound of the dual, below the lower one
 
+- `FormD()` takes an empty or unbounded master problem that the easy
+  components could explain (an empty region of theirs, or a direction of
+  negative cost the coupling term does not see) as their answer only at the
+  first master solved after they changed, or without stabilization: since
+  neither depends on the stability centre or on the bundle, with a proximal,
+  trust-region or level master any later one is a numerical error in
+  disguise, and so is one that follows a failure of the master Solver in the
+  same call. With easy components, a master that Gurobi called unbounded
+  after failing on numerical difficulties made the Lagrangian dual of
+  pHydro_4 report the problem infeasible, and an empty easy region was taken
+  for a numerical error; with the level, whose pure master cannot be
+  unbounded, an empty easy region that the relaxation of the level cannot
+  fix is reported as infeasible rather than as an error or a low precision
+
 - a BundleSolver detached from a Block and attached to another one, or to
   the same one again, gives the linear part of the 0-th component to its
   new master problem: the flag telling that the master already had it
