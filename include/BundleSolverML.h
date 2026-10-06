@@ -406,7 +406,17 @@ class BundleSolverML : public BundleSolver
   * - intNTrainRounds: number of times the same instance should be (re-)solved
   *   for online training. It is not used by the solver itself (which cannot
   *   reload the Block), but it is a hint that the training driver can read to
-  *   set its re-solve loop; the default is 1, i.e. a single solve. */
+  *   set its re-solve loop; the default is 1, i.e. a single solve.
+  *
+  * Unlike BundleSolver, BundleSolverML also listens to intMaxThread of
+  * ThinComputeInterface: at the beginning of each compute() the number of
+  * threads Torch uses for its operations is set to max( 1 , intMaxThread )
+  * [see torch::set_num_threads()], hence to one with the default 0, i.e.,
+  * "only the thread calling compute()". With more than one the order of the
+  * floating-point sums of the network, and hence the t it predicts and the
+  * whole trajectory, may change from a run to the next. Note that the
+  * setting is global to the process, and hence holds for every other user
+  * of Torch in it until it is changed again. */
 
  enum int_par_type_BndSlvML {
   intMLTrainOnline = intLastBndSlvPar ,  ///< auto-train at end of compute()
@@ -437,6 +447,7 @@ class BundleSolverML : public BundleSolver
    case( intMLIterFirst ):   return( f_ML_iter_first );
    case( intMLIterLast ):    return( f_ML_iter_last );
    case( intMLWindow ):      return( f_ML_window );
+   case( intMaxThread ):     return( f_max_thread );
    default:                  return( BundleSolver::get_int_par( par ) );
   }
 }
@@ -477,6 +488,12 @@ class BundleSolverML : public BundleSolver
     if( value < 1 )
      throw( std::invalid_argument( "BundleSolverML::set_par: intMLWindow must be >= 1" ) );
     f_ML_window = value;
+    return;
+    case( intMaxThread ):
+    if( value < 0 )
+     throw( std::invalid_argument(
+                   "BundleSolverML::set_par: intMaxThread must be >= 0" ) );
+    f_max_thread = value;
     return;
     default:
     BundleSolver::set_par( par , value );
@@ -645,6 +662,7 @@ class BundleSolverML : public BundleSolver
  int f_ML_iter_first = 0;        ///< value of intMLIterFirst [0]
  int f_ML_iter_last = INT_MAX;   ///< value of intMLIterLast [INT_MAX]
  int f_ML_window = INT_MAX;      ///< value of intMLWindow [INT_MAX]
+ int f_max_thread = 0;           ///< value of intMaxThread [0]
  int f_ML_iter = 0;              ///< iteration counter within a solve
 
 /*--------------------------------------------------------------------------*/

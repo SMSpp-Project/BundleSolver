@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `BundleSolverML` listens to `intMaxThread`: at the beginning of each
+  `compute()` the number of threads of Torch is set to max( 1 ,
+  intMaxThread ), hence to one with the default 0, so that the predictions of
+  the network, and with them the whole trajectory, are the same from a run to
+  the next; with more threads the order of the floating-point sums may
+  change them
+
 - a component that gains an "active" Variable the master already has, e.g.,
   a `LagBFunction` given the dual pair of a multiplier that other
   components also have, keeps the master right: a hard component is reset,

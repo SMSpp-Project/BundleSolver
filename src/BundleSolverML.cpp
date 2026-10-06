@@ -24,6 +24,7 @@
 /*------------------------------ INCLUDES ----------------------------------*/
 /*--------------------------------------------------------------------------*/
 
+#include <algorithm>
 #include <cmath>
 #include <iostream>
 #include <stdexcept>
@@ -189,6 +190,10 @@ namespace SMSpp_di_unipi_it
 
 int BundleSolverML::compute( bool changedvars )
 {
+ // the threads of Torch, for the predictions and for the training that
+ // follows [see intMaxThread]
+ torch::set_num_threads( std::max( 1 , f_max_thread ) );
+
  const int ret = BundleSolver::compute( changedvars );
 
  if( f_train_online ) {  // online training: learn from the just-ended solve
