@@ -170,6 +170,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- the global lower bound that a null aggregate subgradient certifies,
+  `UpFiLmb + v^*`, is declared only if `v^*` is not positive: with an
+  inexact oracle the linearization errors may be negative and `v^*`
+  positive, and then that value is above the function at the current point
+  and no bound at all; a Lagrangian Dual over inexact components reported
+  it as the upper bound of the dual, below the lower one
+
 - a BundleSolver detached from a Block and attached to another one, or to
   the same one again, gives the linear part of the 0-th component to its
   new master problem: the flag telling that the master already had it
