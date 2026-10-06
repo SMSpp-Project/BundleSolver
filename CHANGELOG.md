@@ -177,6 +177,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `has_dual_solution()` answers false when a Modification of a component
+  has taken away from its global pool, before the next `compute()`, a
+  linearization of the bundle with a nonzero multiplier, since the dual
+  solution is made with it, and when no linearization of a component has a
+  nonzero multiplier, as a master problem that failed leaves them, since
+  there is then no combination to give
+
 - a BundleSolver detached from a Block and attached to another one, or to
   the same one again, gives the linear part of the 0-th component to its
   new master problem: the flag telling that the master already had it
