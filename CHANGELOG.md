@@ -29,6 +29,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   master, which is then the problem itself, is solved without the box, so
   that a side of the box is not taken for an optimum
 
+- `BundleSolver` listens to `dblUpCutOff` and `dblLwCutOff` of `Solver`:
+  in the concave case it stops as soon as the best value found is at least
+  `dblUpCutOff`, or as soon as the bound of the model certifies that the
+  optimal value is at most `dblLwCutOff`, and vice versa in the convex case,
+  returning `kCutOff`; with the default (infinite) cutoffs nothing changes
+
 - a component that gains an "active" Variable the master already has, e.g.,
   a `LagBFunction` given the dual pair of a multiplier that other
   components also have, keeps the master right: a hard component is reset,

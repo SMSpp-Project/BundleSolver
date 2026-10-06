@@ -1204,6 +1204,17 @@ public:
   *                              optimal; if INF, it is disabled; see dbltStar
   *   below for a detailed recount on how this is used
   *
+  * - dblUpCutOff [Inf< double >()], dblLwCutOff [- Inf< double >()]: the
+  *   cutoffs of Solver.h. compute() stops with kCutOff as soon as a point
+  *   is at least as good as asked, i.e., its value is at least dblUpCutOff
+  *   for a concave function (which is maximized) and at most dblLwCutOff for
+  *   a convex one, the point becoming the stability centre so that get_lb()
+  *   / get_ub() report its value; or as soon as the certified global bound
+  *   on the optimal value (not a conditional one, see set_valid_lower_bound()
+  *   in AbstractBlock.h) proves that no point can be, i.e., it is at most
+  *   dblLwCutOff for a concave function and at least dblUpCutOff for a
+  *   convex one. An infinite cutoff is never reached
+  *
   * - dblEveryTTm [0]: periodicity of eEveryTTime events
   *
   * - dblNZEps [0]:    parameter controlling when the norm of the aggregated
@@ -3359,6 +3370,10 @@ public:
 
  double RelAcc;     ///< relative accuracy for declaring a solution optimal
  double AbsAcc;     ///< absolute accuracy for declaring a solution optimal
+ double f_up_cutoff = Inf< double >();    ///< the upper cutoff [see
+                                          ///< dblUpCutOff]
+ double f_lw_cutoff = - Inf< double >();  ///< the lower cutoff [see
+                                          ///< dblLwCutOff]
  double EveryTTm;   ///< periodicity of eEveryTTime events
 
  Index MaxIter;     ///< maximum number of iterations
@@ -3950,6 +3965,32 @@ public:
 /*--------------------------------------------------------------------------*/
 
  bool IsOptimal( double eps = 0 ) const;
+
+ /// the cutoff on the value of a point, in the minimization the solver does
+ /** A point whose value is at most this is at least as good as asked [see
+  * dblUpCutOff and dblLwCutOff]; - INF if there is none. */
+
+ VarValue cutoff_point( void ) const {
+  return( f_convex ? f_lw_cutoff : - f_up_cutoff );
+  }
+
+ /// the cutoff on the global lower bound, in the minimization the solver does
+ /** A certified global lower bound at least this proves that no point can be
+  * as good as asked [see dblUpCutOff and dblLwCutOff]; INF if there is
+  * none. */
+
+ VarValue cutoff_bound( void ) const {
+  return( f_convex ? f_up_cutoff : - f_lw_cutoff );
+  }
+
+ /// true if the stability centre or the global lower bound reach a cutoff
+
+ bool cutoff_reached( void ) const {
+  const auto cp = cutoff_point();
+  const auto cb = cutoff_bound();
+  return( ( ( cp > - INFshift ) && ( UpFiLmb.back() <= cp ) ) ||
+          ( ( cb < INFshift ) && ( f_global_LB >= cb ) ) );
+  }
 
 /*--------------------------------------------------------------------------*/
 

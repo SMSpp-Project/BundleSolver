@@ -804,6 +804,18 @@ int BundleSolver::compute( bool changedvars )
    break;
    }
 
+  // check for the cutoffs - - - - - - - - - - - - - - - - - - - - - - - - -
+  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  // the stability centre may be at least as good as asked already (e.g.,
+  // at the first iteration of a call), or the global lower bound may have
+  // proven that no point can be [see dblUpCutOff and dblLwCutOff]
+
+  if( cutoff_reached() ) {
+   BLOG( 1 , " ~ stop (cutoff)" << std::endl );
+   Result = kCutOff;
+   break;
+   }
+
   // check for optimality - - - - - - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -1004,6 +1016,19 @@ int BundleSolver::compute( bool changedvars )
    UpFiBest = UpFiLmb1.back();
    if( MaxSol > 1 )
     LmbdBst = Lambda1;
+   }
+
+  // a point at least as good as asked [see dblUpCutOff and dblLwCutOff]
+  // ends compute(): it becomes the stability centre, as at a serious step,
+  // so that its value is the one get_lb() / get_ub() report
+  if( ( cutoff_point() > - INFshift ) &&
+      ( UpFiLmb1.back() <= cutoff_point() ) ) {
+   if( ( UpFiLmb1.back() > - INFshift ) &&
+       ( UpFiLmb1.back() < UpFiLmb.back() ) )
+    GotoLambda1();
+   BLOG( 1 , "            stop (cutoff)" << std::endl );
+   Result = kCutOff;
+   break;
    }
 
   // update the "aggregated" Alfa1 and ScPr1- - - - - - - - - - - - - - - - -
@@ -1405,6 +1430,7 @@ int BundleSolver::compute( bool changedvars )
    case( kInfeasible ):   *f_log << "infeasible"; break;
    case( kUnbounded ):    *f_log << "unbounded"; break;
    case( kLowPrecision ): *f_log << "inexact oracle"; break;
+   case( kCutOff ):       *f_log << "cutoff"; break;
    default:               *f_log << "error";
    }
   if( ( Result != kInfeasible ) && ( Result != kUnbounded ) ) {
@@ -2533,6 +2559,8 @@ void BundleSolver::set_par( idx_type par , double value )
                "BundleSolver::set_par: IncrCost must be >= 0" ) );
    IncrCost = value;
    break;
+  case( dblUpCutOff ): f_up_cutoff = value; break;
+  case( dblLwCutOff ): f_lw_cutoff = value; break;
   default:
    CDASolver::set_par( par , value );
   }
@@ -2916,6 +2944,8 @@ double BundleSolver::get_dbl_par( idx_type par ) const
   case( dblLStabSmall ): return( LStabSmall );
   case( dblCmpAggr ):    return( CmpAggr );
   case( dblIncrCost ):   return( IncrCost );
+  case( dblUpCutOff ):   return( f_up_cutoff );
+  case( dblLwCutOff ):   return( f_lw_cutoff );
   default:               return( CDASolver::get_dbl_par( par ) );
   }
  }  // end( BundleSolver::get_dbl_par )
