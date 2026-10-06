@@ -3157,8 +3157,13 @@ void BundleSolver::reset_level_stabilization( void )
  f_level_reliable_LB = false;
  f_level_initialized = false;
  f_level_restart_centre = INFshift;
- if( MasterPB && UsesLevelStabilization() )
+ if( MasterPB && UsesLevelStabilization() ) {
   MasterPB->set_f_lev( INFshift );
+  // An invalidated centre value cannot seed a fresh level yet. Restore the
+  // proximal initialization master while the updated functions are evaluated,
+  // retaining the existing bundle for reoptimization.
+  MasterPB->restore_initial_level_objective();
+  }
  }
 
 /*--------------------------------------------------------------------------*/
@@ -3741,8 +3746,17 @@ void BundleSolver::FormD( void )
 
  if( initial_level_probe )
   MasterPB->set_f_lev( INFshift );
- else
+ else {
   refresh_level_after_master();
+  // A repeated call may already have a certified closed level gap. Solving
+  // its projection at the centre can produce a zero level multiplier, which
+  // carries no normalized aggregate. Use the independent bound certificate
+  // before asking the master for such an aggregate, as for an empty level.
+  if( level_gap_closed() ) {
+   Result = kOK;
+   return;
+   }
+  }
 
  // fictitious-LB sync for empty components - - - - - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
