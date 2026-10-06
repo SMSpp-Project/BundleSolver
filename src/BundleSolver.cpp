@@ -650,14 +650,6 @@ int BundleSolver::compute( bool changedvars )
  if( MasterPB )
   MasterPB->set_integer( f_int_var );
 
- // the trust region gives no multipliers for the main loop to use
- if( ( MPStbl == MasterProblemBlock::kTrustRegion ) && f_int_var.empty() ) {
-  Result = kError;
-  unlock();
-  throw( std::logic_error( "BundleSolver::compute: the trust region is only "
-                           "available with integer Variable" ) );
-  }
-
  if( ! f_int_var.empty() ) {
   compute_integer( tot_time , tot_NrEvls );
   goto BundleSolver_final_printouts;
@@ -848,6 +840,9 @@ int BundleSolver::compute( bool changedvars )
   const auto ds_level_multiplier = doubly_stabilized
                                     ? MasterPB->get_level_multiplier() : 0.0;
   const auto ds_mu = 1.0 + ds_level_multiplier;
+  // with the trust region t is a radius, and the heuristic t, which comes
+  // from a quadratic model of the function along -z*, has no meaning
+  const bool trust_region = ( MPStbl == MasterProblemBlock::kTrustRegion );
 
   // run iteration-periodic events- - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1108,7 +1103,15 @@ int BundleSolver::compute( bool changedvars )
   // check if noise reduction has to be done- - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-  if( ( ! MPchgs ) && ( ! UsesPureLevelStabilization() ) ) {
+  // with the trust region a step that does not reach its side is the
+  // optimum of the model, which a larger t would not change: if the
+  // function does as well there as the target asks, the step is serious
+  const bool model_optimum = trust_region &&
+                             ( NrmDInf < t * ( 1 - 1e-6 ) ) &&
+                             ( UpFiLmb1.back() < UpTrgt );
+
+  if( ( ! MPchgs ) && ( ! UsesPureLevelStabilization() ) &&
+      ( ! model_optimum ) ) {
    if( ! noise_reduction() ) {
     BLOG( 1 , "            stop: NR required but t maximum" << std::endl );
     Result = kLowPrecision;
@@ -1148,7 +1151,7 @@ int BundleSolver::compute( bool changedvars )
               << ") >= LwTrgt(" << - UpTrgt << ")" );
 
    if( ( ! UsesPureLevelStabilization() ) && ( ! doubly_stabilized ) &&
-       ( tSPar1 & 1 ) ) {
+       ( ! trust_region ) && ( tSPar1 & 1 ) ) {
     tt = Heuristic( tSPar1 >> 6 );
     BLOG( 1 , " ~ Ht = " << shrt << tt );
     }
@@ -1161,9 +1164,15 @@ int BundleSolver::compute( bool changedvars )
     }
 
    const bool gated_level_update = CSSCntr + 1 > MnSSC;
+   // a step that has not reached the side of the trust region would not
+   // have been changed by a larger one, hence it says nothing about t
+   const bool inside_region = trust_region &&
+                              ( NrmDInf < t * ( 1 - 1e-6 ) );
+   if( inside_region )
+    BLOG( 1 , " ~ inside the trust region" );
    // Keep the counter/reset policy used by level-target management. For
    // doubly stabilized SS, the t interval computed here is overridden below.
-   if( ( ++CSSCntr > MnSSC ) &&
+   if( ( ! inside_region ) && ( ++CSSCntr > MnSSC ) &&
        ( ! UsesPureLevelStabilization() ) ) {
     // due to the fact that the counter has just been increased
     if( ( ( tSPar1 & tSP1Msk ) == kBLTTS )  &&
@@ -1203,7 +1212,8 @@ int BundleSolver::compute( bool changedvars )
     BLOG( 1 , "Up1(" << - LwFiLmb1.back() << ") <= UpTrgt(" << - LwTrgt
               << ")" );
 
-   if( ( ! UsesPureLevelStabilization() ) && ( tSPar1 & 2 ) ) {
+   if( ( ! UsesPureLevelStabilization() ) && ( ! trust_region ) &&
+       ( tSPar1 & 2 ) ) {
     tt = Heuristic( tSPar1 >> 8 );
     BLOG( 1 , " ~ Ht = " << shrt << tt );
     }
@@ -3587,6 +3597,19 @@ void BundleSolver::FormD( void )
  // As soon as there is something in the bundle, the current value of t is
  // restored (Prevt is used to hold it).
 
+ // the last master was solved without the trust region, or with one
+ // enlarged past tMaior to reach the domain: its radius is back to t, and
+ // within tMaior once a point of the domain is known
+ if( f_tr_open ) {
+  f_tr_open = false;
+  tHasChgd = true;
+  }
+ if( ( MPStbl == MasterProblemBlock::kTrustRegion ) && RifeqFi &&
+     ( t > tMaior ) ) {
+  t = tMaior;
+  tHasChgd = true;
+  }
+
  // bundle-is-empty check: "no subgradient cut has been added yet to any
  // hard component". Reads is_bundle_empty() from MasterPB.
  // the rule is about the master problem having no subgradient to work with,
@@ -3616,6 +3639,29 @@ void BundleSolver::FormD( void )
     }
    Prevt = INFshift;
    }
+
+ // with the trust region, as long as no point of the domain is known the
+ // MP has no subgradient to choose its point by (the bundle may well not be
+ // empty, but it only has vertical linearizations), and the box is what
+ // keeps it close to the centre, as the projection a quadratic term gives:
+ // each MP starts from tMinor, enlarged only as much as needed to reach the
+ // domain [see below], and t comes back once a point of the domain is known
+ if( MPStbl == MasterProblemBlock::kTrustRegion ) {
+  if( UpFiLmb.back() >= INFshift ) {
+   if( f_tr_t0 == 0 )
+    f_tr_t0 = t;
+   if( t != tMinor ) {
+    t = tMinor;
+    tHasChgd = true;
+    }
+   }
+  else
+   if( f_tr_t0 > 0 ) {
+    t = f_tr_t0;
+    f_tr_t0 = 0;
+    tHasChgd = true;
+    }
+  }
 
  if( tHasChgd ) {
   if( MasterPB )
@@ -3863,6 +3909,7 @@ void BundleSolver::FormD( void )
  // true if the master has already been tried again with t as it was
  // before the empty bundle brought it down to its minimum
  bool t_restored = false;
+ bool domain_known = false;  // the MP without the trust region has points
 
  // true if the master Solver has already failed on a numerical error in
  // this call: what it says afterwards is not taken at face value
@@ -3887,11 +3934,66 @@ void BundleSolver::FormD( void )
     }
    MasterPB->set_box( Lbox , Ubox );
 
+   // with every component easy the master is the problem itself, and with
+   // the proximal term at tMaior it says so, unboundedness included; the
+   // trust region would instead cut it to a box, whose side is not an
+   // optimum, and hence it is dropped (and back as soon as a component is
+   // not easy, unless the master is being solved without it on purpose)
+   if( MPStbl == MasterProblemBlock::kTrustRegion ) {
+    if( NrEasy == NrFi ) {
+     if( MasterPB->get_t() < Inf< double >() )
+      MasterPB->set_t( Inf< double >() );
+     }
+    else
+     if( ( ! f_tr_open ) && ( MasterPB->get_t() == Inf< double >() ) )
+      MasterPB->set_t( t );
+    }
+
    const auto rc = MasterPB->solve_master();
    // an OK or a low-precision OK from the inner Solver counts as kOK;
    // anything else is forwarded so the surrounding error-handling kicks in
    mps = ( rc == Solver::kOK || rc == Solver::kLowPrecision )
          ? Solver::kOK : rc;
+   }
+
+  /* With the trust region the primal MP may be empty only because its box
+   * is too small to reach the region the vertical linearizations leave. The
+   * box is then enlarged until the MP is no longer empty, which with a box
+   * starting from tMinor [see above] gives a point of the domain close to
+   * the centre, as the projection a quadratic term gives. Once the box is
+   * as large as tMaior, the MP is solved once without it: if it is still
+   * empty so is the domain, otherwise the domain is just far from the
+   * centre, which may be anywhere as long as no point of it is known, and
+   * the box goes on growing past tMaior (which bounds t as a
+   * stabilization: t goes back within it once a point of the domain is
+   * known). The step of the MP without the box is never used. */
+  if( ( MPStbl == MasterProblemBlock::kTrustRegion ) && get_bc_size() ) {
+   const bool empty = UsesPrimalMaster() ? ( mps == Solver::kInfeasible )
+                                         : ( mps == Solver::kUnbounded );
+   if( f_tr_open && ( ! empty ) ) {  // the domain is not: the box is back
+    f_tr_open = false;
+    domain_known = true;
+    t *= mxIncr;
+    MasterPB->set_t( t );
+    BLOG( 2 , std::endl << "Bundle::FormD: the domain is not empty, trust "
+                           "region enlarged to t = " << t );
+    continue;
+    }
+   if( empty && ( ! f_tr_open ) && ( ( t < tMaior ) || domain_known ) &&
+       ( t * mxIncr < Inf< double >() ) ) {
+    t *= mxIncr;
+    MasterPB->set_t( t );
+    BLOG( 2 , std::endl << "Bundle::FormD: empty MP, trust region "
+                           "enlarged to t = " << t );
+    continue;
+    }
+   if( empty && ( ! f_tr_open ) && ( ! domain_known ) ) {
+    f_tr_open = true;
+    MasterPB->set_t( Inf< double >() );
+    BLOG( 2 , std::endl << "Bundle::FormD: empty MP, solved without the "
+                           "trust region" );
+    continue;
+    }
    }
 
   if( mps == Solver::kOK ) {         // everything's alright
@@ -4139,11 +4241,13 @@ void BundleSolver::FormD( void )
 
  // Compute || d* ||_2 from the physical step: its relation to the
  // normalized aggregate depends on the stabilization and multiplier mass.
- NrmD = 0;
+ NrmD = NrmDInf = 0;
  if( MasterPB ) {
   const auto d = MasterPB->get_d_vector();
-  for( const auto v : d )
+  for( const auto v : d ) {
    NrmD += v * v;
+   NrmDInf = std::max( NrmDInf , std::abs( v ) );
+   }
   }
  NrmD = sqrt( NrmD );
 
@@ -4181,7 +4285,7 @@ void BundleSolver::FormD( void )
  // zero: the master problem is the problem, and the essential subgradient at
  // its optimum is zero
  if( NrEasy == NrFi )
-  NrmZ = NrmD = 0;
+  NrmZ = NrmD = NrmDInf = 0;
 
  // if still needed, compute the scaling factor for z*
  if( NrmZFctr == INFshift )
@@ -5842,11 +5946,23 @@ void BundleSolver::ResetAlfa( Index k )
 
 void BundleSolver::SimpleBStrat( void )
 {
+ // with the trust region the MP picks a vertex of the box the vertical
+ // linearizations leave rather than the point closest to the centre: those
+ // out of base may well be the ones that bring it there again, and deleting
+ // them may make it cycle without ever reaching the domain (as long as no
+ // point of it is known the bundle has nothing else), hence they are kept
+ const bool keep_vertical =
+  ( MPStbl == MasterProblemBlock::kTrustRegion );
+ auto deletable = [ this , keep_vertical ]( Index i ) {
+  return( ( OOBase[ i ] < Inf< SIndex >() ) &&
+          ( OOBase[ i ] > SIndex( BPar1 ) ) &&
+          ( ( ! keep_vertical ) || is_subgradient_global( i ) ) );
+  };
+
  if( ( BPar7 & 3 ) == 3 ) {  // "eager" deletion
   std::vector< Subset > tbdltd( NrFi );
   for( Index i = 0 ; i < get_max_name() ; ++i )
-   if( ( OOBase[ i ] < Inf< SIndex >() ) &&
-       ( OOBase[ i ] > SIndex( BPar1 ) ) ) {
+   if( deletable( i ) ) {
     tbdltd[ ItemVcblr[ i ].first ].push_back( ItemVcblr[ i ].second );
     Delete( i );
     }
@@ -5859,7 +5975,7 @@ void BundleSolver::SimpleBStrat( void )
   }
  else                        // "lazy" deletion
   for( Index i = 0 ; i < get_max_name() ; ++i )
-   if( ( OOBase[ i ] < Inf< SIndex >() ) && ( OOBase[ i ] > SIndex( BPar1 ) ) )
+   if( deletable( i ) )
     Delete( i );
 
  #if CHECK_DS & 1
@@ -7370,8 +7486,11 @@ bool BundleSolver::IsOptimal( double eps ) const
  // are zero because of the stabilization and not because the point is
  // optimal: reading them as optimality certifies whatever point the
  // algorithm happens to be at, which is how an unbounded problem got
- // declared solved once a previous call had emptied the bundle
- if( Prevt < INFshift )
+ // declared solved once a previous call had emptied the bundle. The same
+ // holds when t was at tMinor already, so that Prevt has not been set
+ // (e.g., the radius of the trust region after a sequence of null steps)
+ if( ( Prevt < INFshift ) ||
+     ( ( NrEasy < NrFi ) && MasterPB && MasterPB->is_bundle_empty() ) )
   return( false );
 
  c_VarValue err = max_error( eps );
