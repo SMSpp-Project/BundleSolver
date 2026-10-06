@@ -3870,6 +3870,21 @@ void BundleSolver::FormD( void )
     }
    MasterPB->set_box( Lbox , Ubox );
 
+   // with every component easy the master is the problem itself, and with
+   // the proximal term at tMaior it says so, unboundedness included; the
+   // trust region would instead cut it to a box, whose side is not an
+   // optimum, and hence it is dropped (and back as soon as a component is
+   // not easy, unless the master is being solved without it on purpose)
+   if( MPStbl == MasterProblemBlock::kTrustRegion ) {
+    if( NrEasy == NrFi ) {
+     if( MasterPB->get_t() < Inf< double >() )
+      MasterPB->set_t( Inf< double >() );
+     }
+    else
+     if( ( ! f_tr_open ) && ( MasterPB->get_t() == Inf< double >() ) )
+      MasterPB->set_t( t );
+    }
+
    const auto rc = MasterPB->solve_master();
    // an OK or a low-precision OK from the inner Solver counts as kOK;
    // anything else is forwarded so the surrounding error-handling kicks in

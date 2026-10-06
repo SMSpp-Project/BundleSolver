@@ -18,7 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   tMinor and the box is enlarged only as much as the vertical
   linearizations ask, which keeps the point close to the centre; the
   master solved once without it tells an empty domain from a far one, and
-  vertical linearizations are never deleted
+  vertical linearizations are never deleted; with every component easy the
+  master, which is then the problem itself, is solved without the box, so
+  that a side of the box is not taken for an optimum
 
 - a component that gains an "active" Variable the master already has, e.g.,
   a `LagBFunction` given the dual pair of a multiplier that other
