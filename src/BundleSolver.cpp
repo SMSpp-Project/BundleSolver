@@ -4186,7 +4186,13 @@ void BundleSolver::FormD( void )
  const bool accurate_level_aggregate =
   ( ! UsesPureLevelStabilization() ) ||
   ( DSTS + Sigma <= max_error() );
+ // and the bound is one only if v^* is not positive, which an exact oracle
+ // guarantees by convexity; with an inexact one the linearizations may be
+ // above the function, the errors Sigma negative and v^* positive, and then
+ // UpFiLmb + v^* is no bound at all (it would be above the value at the
+ // current point), while z^* = 0 certifies nothing
  if( ( UpFiLmb.back() < INFshift ) && ( vStar.back() < INFshift ) &&
+     ( vStar.back() <= 0 ) &&
      ( NrmZFctr < INFshift ) && ( NrmZ <= NrmZFctr * NZEps ) &&
      accurate_level_aggregate ) {
   f_global_LB = UpFiLmb.back() + vStar.back();
