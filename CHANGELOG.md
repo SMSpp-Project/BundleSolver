@@ -203,12 +203,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   nonzero multiplier, as a master problem that failed leaves them, since
   there is then no combination to give
 
-- the global lower bound that a null aggregate subgradient certifies,
-  `UpFiLmb + v^*`, is declared only if `v^*` is not positive: with an
-  inexact oracle the linearization errors may be negative and `v^*`
-  positive, and then that value is above the function at the current point
-  and no bound at all; a Lagrangian Dual over inexact components reported
-  it as the upper bound of the dual, below the lower one
+- the global lower bound that a null aggregate subgradient certifies is
+  `UpFiLmb + min( v^* , 0 )`: with an inexact oracle (or by rounding) the
+  linearization errors may be negative and `v^*` positive, and then
+  `UpFiLmb + v^*` is above the function at the current point; a Lagrangian
+  Dual over inexact components reported it as the upper bound of the dual,
+  below the lower one. The stop that the null subgradient certifies is the
+  same as before
 
 - `FormD()` takes an empty or unbounded master problem that the easy
   components could explain (an empty region of theirs, or a direction of
