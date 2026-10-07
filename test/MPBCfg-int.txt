@@ -35,11 +35,15 @@ intLogVerb      0     # log verbosity of the MILPSolver
 intRelaxIntVars 0     # the integer Variable stay integer
 intMaxThread    1     # single-threaded for reproducibility
 
-2  # number of double parameters
+3  # number of double parameters
 
 # now all the double parameters
 dblRelAcc       1e-9  # relative gap, tighter than dblRelAcc of the bundle
 dblAAccSol      1e-9  # absolute accuracy required to solution
+mip_feasibility_tolerance 1e-10
+                      # integrality as tight as HiGHS allows: the point of
+                      # the master is rounded before it is evaluated [see
+                      # intIntVars of BundleSolver]
 
 0  # number of string parameters
 

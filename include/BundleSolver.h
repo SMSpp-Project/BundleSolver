@@ -466,6 +466,8 @@ public:
 
   dblIncrCost ,   ///< how much evaluation a null step may defer, in masters
 
+  dblIntRad ,     ///< growth of the region of the integer method
+
   dblLastBndSlvPar ///< first allowed new double parameter for derived classes
                    /**< Convenience value for easily allow derived classes
                     * to extend the set of double algorithmic parameters. */
@@ -634,6 +636,7 @@ public:
   IntVars = get_dflt_int_par( intIntVars );
   CmpAggr = get_dflt_dbl_par( dblCmpAggr );
   IncrCost = get_dflt_dbl_par( dblIncrCost );
+  IntRad = get_dflt_dbl_par( dblIntRad );
 
   v_events.resize( max_event_number() );
   }
@@ -1166,18 +1169,22 @@ public:
   *   Variable are kept integer, i.e., what is minimized is f over the
   *   integer points of its domain, along the lines of the stabilized
   *   Benders' methods of van Ackooij, Frangioni and de Oliveira (Comput.
-  *   Optim. Appl. 65, 2016) [see compute_integer()]. The Master Problem must
+  *   Optim. Appl. 65, 2016) [see integer_direction()]. The Master Problem must
   *   then be primal (intMPPrimal == 1), in raw form (intMPV2Form == 1), and
-  *   either proximal (intMPStbl == 0), which makes it a mixed-integer
-  *   quadratic problem, or with the trust region (intMPStbl == 4), which
-  *   makes it a mixed-integer linear one that any :MILPSolver can solve; its
-  *   Solver must keep the integer Variable integer (e.g., a :MILPSolver with
-  *   intRelaxIntVars == 0), and its relative gap has to be tighter than
-  *   dblRelAcc. Otherwise compute() throws std::logic_error; the bundle is
-  *   never
-  *   cleaned of the linearizations that are not in the optimal base, since
-  *   without the multipliers of a continuous master there is no base, hence
-  *   intBPar2 has to be large enough for all of them. If no Variable is
+  *   either proximal (intMPStbl == 0) or level (intMPStbl == 1), which
+  *   make it a mixed-integer quadratic problem [see
+  *   integer_level_direction()], or with the trust region (intMPStbl == 4),
+  *   which makes it a mixed-integer linear one that any :MILPSolver can
+  *   solve; its Solver must keep the integer Variable integer (e.g., a
+  *   :MILPSolver with intRelaxIntVars == 0) with an integrality tolerance of
+  *   0, or as small as it allows, since the point of the master is rounded
+  *   before it is evaluated and the linearization there may not cut away the
+  *   point of the master otherwise, and its relative gap has to be tighter
+  *   than dblRelAcc. Otherwise compute() throws std::logic_error; the
+  *   bundle is never cleaned of the linearizations that are not in the
+  *   optimal base, since without the multipliers of a continuous master
+  *   there is no base, hence intBPar2 has to be large enough for all of
+  *   them. If no Variable is
   *   integer, 1 is the same as 0. */
 
  void set_par( idx_type par , int value ) override;
@@ -1580,7 +1587,18 @@ public:
   *   have been measured. With 0 the null step is taken as soon as it is
   *   shown, as the incremental evaluation always did; a very large value
   *   evaluates every component whenever a null step is shown. Only the
-  *   sequential inner loop applies it. */
+  *   sequential inner loop applies it.
+  *
+  * - dblIntRad [0.1]: with integer Variable and the trust region [see
+  *                    intIntVars], the fraction p of the whole region by
+  *   which the region of the stabilized master grows each time the centre
+  *   is optimal in it: the k-th region lets min( 1 , k p ) of the binary
+  *   Variable change (the local branching, at least 1 of them) and every
+  *   other Variable with a finite box move by min( 1 , k p ) of its width
+  *   (at least 1 if it is integer), while those with no finite box move by
+  *   t, multiplied by dblmxIncr at each enlargement within [ dbltMinor ,
+  *   dbltMaior ]; after ceil( 1 / p ) enlargements the stabilization is
+  *   removed altogether. It must be in ( 0 , 1 ]. */
 
  void set_par( idx_type par , double value ) override;
 
@@ -2281,7 +2299,7 @@ public:
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
  [[nodiscard]] double get_dflt_dbl_par( idx_type par ) const override {
-  static const std::array< double , 22 > dflt_dbl_par = {
+  static const std::array< double , 23 > dflt_dbl_par = {
    0 ,      // dblNZEps
    1e+2 ,   // dbltStar
    0 ,      // dblMinNrEvls
@@ -2303,7 +2321,8 @@ public:
    2.0 ,    // dblLStabIncr
    1e-2 ,   // dblLStabSmall
    0 ,      // dblCmpAggr
-   0        // dblIncrCost
+   0 ,      // dblIncrCost
+   0.1      // dblIntRad
    };
 
   if( ( par >= dblLastParCDAS ) && ( par < dblLastBndSlvPar ) )
@@ -2437,7 +2456,8 @@ public:
    { "dblLStabIncr" , BundleSolver::dblLStabIncr } ,
    { "dblLStabSmall" , BundleSolver::dblLStabSmall } ,
    { "dblCmpAggr" , BundleSolver::dblCmpAggr } ,
-   { "dblIncrCost" , BundleSolver::dblIncrCost }
+   { "dblIncrCost" , BundleSolver::dblIncrCost } ,
+   { "dblIntRad" , BundleSolver::dblIntRad }
    };
 
   const auto it = dbl_pars_map.find( name );
@@ -2514,12 +2534,12 @@ public:
 
  [[nodiscard]] const std::string & dbl_par_idx2str( idx_type idx )
   const override {
-  static const std::array< std::string , 22 > dbl_pars_str = {
+  static const std::array< std::string , 23 > dbl_pars_str = {
    "dblNZEps" , "dbltStar" , "dblMinNrEvls" , "dblBPar5" , "dblm1" ,
    "dblm2" , "dblm3" , "dblmxIncr" , "dblmnIncr" , "dblmxDecr" ,
    "dblmnDecr" , "dbltMaior" , "dbltMinor" , "dbltInit" , "dbltSPar2" ,
    "dbltSPar3" , "dblLStabM" , "dblLStabDlt" , "dblLStabIncr" ,
-   "dblLStabSmall" , "dblCmpAggr" , "dblIncrCost" };
+   "dblLStabSmall" , "dblCmpAggr" , "dblIncrCost" , "dblIntRad" };
 
  if( ( idx >= dblLastParCDAS ) && ( idx < dblLastBndSlvPar ) )
    return( dbl_pars_str[ idx - dblLastParCDAS ] );
@@ -2776,25 +2796,33 @@ public:
  void FormD( void );
 
 /*--------------------------------------------------------------------------*/
- /// the main loop of compute() when some Variable are integer
- /** The main loop of compute() when intIntVars == 1 and some Variable are
-  * integer, so that what is minimized is
+ /// the Master Problem step of compute() when some Variable are integer
+ /** When intIntVars == 1 and some Variable are integer, what is minimized
+  * is
   * \f[
   *   F( x ) = f_0( x ) + \sum_k f_k( x ) \; , \qquad x \in X = [ L , U ]
   *   \, , \; x_j \in \mathbb{Z} \; \forall j \in J \; ,
   * \f]
   * J being the set of integer Variable. It is the stabilized cutting-plane
   * method of van Ackooij, Frangioni and de Oliveira (Comput. Optim. Appl.
-  * 65, 2016), with the proximal stabilization in place of the trust region
-  * of the paper, to which it is closely related, or with the trust region
+  * 65, 2016), run by the main loop of compute() itself, the parts that
+  * differ from the continuous method being integer_direction(),
+  * integer_trial_point() and integer_step(), with the proximal
+  * stabilization in place of the trust region of the paper, to which it is
+  * closely related, or with the trust region
   * \f$ \| x - \bar{x} \|_\infty \leq t \f$ in its place (intMPStbl == 4),
   * as in the paper but with the infinity norm, since the 1-norm of the paper
-  * is the linear local branching constraint only with binary Variable; the
-  * constraints excluding the regions already explored, which the paper adds
-  * optionally and only with binary Variable, are not. With
+  * is the linear local branching constraint only with binary Variable.
+  * When all the Variable are binary and the centre is optimal in the region
+  * of the trust region, that region is also excluded from then on by the
+  * reverse local branching constraint, as the paper optionally does [see
+  * MasterProblemBlock::add_reverse_local_branching()]: a stabilized master
+  * that these constraints make empty has its region explored already, and
+  * is taken as a local optimum, while a cutting-plane master that they make
+  * empty proves the centre optimal. With
   * \f$ \check{F} \f$ the cutting-plane model and \f$ \bar{x} \f$ the
-  * stability centre, which is
-  * the best point found so far, each iteration
+  * stability centre, which is the best point found so far [see
+  * integer_start()], each iteration
   *
   * - solves the stabilized master, the proximal one
   *   \f$ x^p \in \arg\min \{ \check{F}( x ) + \frac{1}{2t} \| x - \bar{x}
@@ -2806,8 +2834,16 @@ public:
   *   \f$ v^* = \check{F}( x^p ) - F( \bar{x} ) \f$;
   *
   * - if \f$ v^* \geq - \varepsilon \f$, i.e., the stabilized master sees
-  *   nothing better than \f$ \bar{x} \f$ in its neighbourhood, removes the
-  *   stabilization: it solves the cutting-plane master
+  *   nothing better than \f$ \bar{x} \f$ in its neighbourhood, relaxes the
+  *   stabilization by degrees, as in the stabilized Benders' method of
+  *   Baena, Castro and Frangioni (Manag. Sci. 66, 2020): t is multiplied by
+  *   dblmxIncr and the stabilized master is solved again, until t reaches
+  *   dbltMaior, from which on the proximal term cuts nothing; with the trust
+  *   region the region grows instead by the fraction dblIntRad of the
+  *   whole one, the binary Variable having the local branching in its
+  *   place, so that after ceil( 1 / dblIntRad ) enlargements it is the
+  *   whole one. Then it removes the stabilization altogether, and solves
+  *   the cutting-plane master
   *   \f$ x^c \in \arg\min \{ \check{F}( x ) : x \in X \, , \,
   *   x_J \in \mathbb{Z} \} \f$, i.e., the same with \f$ t = \infty \f$,
   *   whose value, less the gap of its Solver, is a lower bound \f$ \ell \f$
@@ -2820,12 +2856,14 @@ public:
   * - otherwise \f$ x^p \f$ is the next trial point;
   *
   * - evaluates every hard component at the trial point, adding the
-  *   linearizations to the bundle, and moves \f$ \bar{x} \f$ there if F is
+  *   linearizations to the bundle [see integer_trial_point()], and moves
+  *   \f$ \bar{x} \f$ there if F is
   *   lower than at \f$ \bar{x} \f$, i.e., with the \f$ \beta = 0 \f$ of the
   *   experiments of the paper; after a cutting-plane trial point that is not
   *   lower the method keeps solving the cutting-plane master, the
   *   stabilization being restored only after the centre has moved, as the
-  *   radius of the trust region of the paper is only reduced then.
+  *   radius of the trust region of the paper is only reduced then [see
+  *   integer_step()].
   *
   * The tolerance \f$ \varepsilon \f$ is max_error(), as for the continuous
   * method. With only integer Variable and a bounded X the method terminates
@@ -2836,15 +2874,155 @@ public:
   * paper), and the integer points of X are finitely many. The bundle is
   * never cleaned, which the paper allows only finitely often anyway. If the
   * cutting-plane master is unbounded, as it may be when X is not, t is
-  * increased tenfold and the method goes on with the proximal master. t
-  * is otherwise kept fixed. tot_time and tot_NrEvls are increased by the
-  * time and the number of the evaluations. */
+  * increased tenfold and the method goes on with the stabilized master,
+  * which is then never removed. t is never decreased, as in the paper the
+  * radius is not reset after the centre has moved, and the parts of the
+  * main loop that need the
+  * multipliers of a continuous master (the noise reduction, the rules for
+  * t, the cleaning of the bundle) are skipped.
+  *
+  * This method solves the master(s) of an iteration; it returns
+  * eIntGoOn if the trial point is the one of the last master,
+  * eIntOptimal if the centre has been certified optimal, eIntRetry if t
+  * has been increased and the master has to be solved again, and
+  * eIntStop if the method has to stop, with Result telling why. */
 
- void compute_integer( double & tot_time , long & tot_NrEvls );
+ int integer_direction( void );
+
+/*--------------------------------------------------------------------------*/
+ /// the Master Problem step of compute() with integer Variable and level
+ /** With the level stabilization [see intMPStbl] and integer Variable the
+  * method is the level one of van Ackooij, Frangioni and de Oliveira
+  * (Comput. Optim. Appl. 65, 2016, Algorithm 4): integer_direction() solves
+  * the cutting-plane master until there is a stability centre and a lower
+  * bound, then this method solves the level master
+  * \f[
+  *   \min \{ \frac{1}{2} \| x - \bar{x} \|^2 : \check{F}( x ) \leq
+  *   F^{lev} \, , \, x \in X \, , \, x_J \in \mathbb{Z} \} \; ,
+  * \f]
+  * whose point is the next trial point. The level is
+  * \f$ F^{lev} = F( \bar{x} ) - \max \{ \varepsilon , m_l \Delta \} \f$,
+  * with \f$ \Delta \f$ the gap between \f$ F( \bar{x} ) \f$ and the lower
+  * bound and \f$ m_l \f$ = dblLStabM, and it is moved only when the upper
+  * bound decreases by more than \f$ \varepsilon \f$ or the last level
+  * set was empty, as in (19) of the paper; an empty level set makes
+  * \f$ F^{lev} \f$ the new lower bound, and the method stops when the gap
+  * is at most \f$ \varepsilon \f$ = max_error(), which has to be positive
+  * since a level can never prove that it is the optimal value. Since each
+  * empty level set only shrinks the gap by the factor \f$ 1 - m_l \f$, and
+  * there may be many points within a level set before it is empty, with a
+  * small \f$ \varepsilon \f$ the gap would close only after many
+  * iterations: as in the hybrid variant of the paper, each time a level set
+  * is empty the cutting-plane master is solved as well, whose bound is
+  * exact. This makes the method finite when all the Variable are integer
+  * and X is bounded, which is the case the paper analyses; with continuous
+  * Variable as well the cutting-plane model need not become exact in
+  * finitely many steps, and the method may reach intMaxIter with the right
+  * value and the gap still open, which the trust region does not.
+  * Returns as integer_direction(). */
+
+ int integer_level_direction( void );
+
+/*--------------------------------------------------------------------------*/
+ /// what the main loop of compute() does after a step of it
+
+ enum loop_action { eLoopGoOn = 0 , eLoopNext , eLoopStop };
+
+/*--------------------------------------------------------------------------*/
+ /// the trial point of the main loop of compute() without integer Variable
+ /** The part of the main loop of compute() that, without integer Variable,
+  * goes from the direction to the evaluation of the trial point: the
+  * "ex-ante" noise reduction, the hard long-term t-strategy, the trial
+  * point Lambda1, the cleaning of the bundle and the inner loop that
+  * evaluates the components there, whose count it writes in \p cnt.
+  * tot_time and tot_NrEvls are increased by the time and the number of the
+  * evaluations. Returns eLoopNext if the master has to be solved again,
+  * eLoopStop if the method has to stop, with Result telling why, and
+  * eLoopGoOn otherwise. */
+
+ int continuous_trial_point( double & tot_time , long & tot_NrEvls ,
+                             Index & cnt );
+
+/*--------------------------------------------------------------------------*/
+ /// the step of the main loop of compute() without integer Variable
+ /** The part of the main loop of compute() that, without integer Variable,
+  * decides the step after the trial point has been evaluated: the cases of
+  * a vertical linearization, of the "phase 0" and of the noise reduction,
+  * the serious step / null step decision and the update of t. \p cnt is
+  * the count of the inner loop [see continuous_trial_point()], and the
+  * other arguments the multiplier of the level row of a doubly stabilized
+  * master, read before the bundle changed. Returns the same as
+  * continuous_trial_point(). */
+
+ int continuous_step( Index cnt , bool doubly_stabilized ,
+                      double ds_level_multiplier , double ds_mu );
+
+/*--------------------------------------------------------------------------*/
+ /// the outcomes of integer_direction()
+
+ enum int_direction_outcome { eIntGoOn = 0 , eIntOptimal , eIntRetry ,
+                              eIntStop };
+
+/*--------------------------------------------------------------------------*/
+ /// set up the method with integer Variable before the main loop
+ /** Sets up the method of integer_direction() before the main loop: a
+  * stability centre needs a finite value of F there, hence if the current
+  * point has none, it is made integer and evaluated, and taken as the
+  * centre if F is finite there. tot_time and tot_NrEvls are increased by
+  * the time and the number of the evaluations. Returns false if the
+  * evaluation stops the method, with Result telling why. */
+
+ bool integer_start( double & tot_time , long & tot_NrEvls );
+
+/*--------------------------------------------------------------------------*/
+ /// evaluate the point of the last master with integer Variable
+ /** Takes as Lambda1 the point of the last master solved by
+  * integer_direction(), makes it integer [see PrepareLambda1()] and
+  * evaluates every hard component there [see integer_evaluate()]. */
+
+ bool integer_trial_point( double & tot_time , long & tot_NrEvls );
+
+/*--------------------------------------------------------------------------*/
+ /// evaluate every hard component at Lambda1 with integer Variable
+ /** Evaluates every hard component at Lambda1, which PrepareLambda1() has
+  * set up, inserting the linearizations in the bundle. tot_time and
+  * tot_NrEvls are increased by the time and the number of the
+  * evaluations. Returns false if the evaluation stops the method, with
+  * Result telling why (kError, kUnbounded or kStopTime). */
+
+ bool integer_evaluate( double & tot_time , long & tot_NrEvls );
+
+/*--------------------------------------------------------------------------*/
+ /// the serious step / null step of the method with integer Variable
+ /** The serious step / null step decision of integer_direction(): the
+  * centre moves to the trial point if F is lower there, and otherwise the
+  * method stays without stabilization after a cutting-plane trial point.
+  * Returns false if the method has to stop, i.e., if a cutting-plane trial
+  * point is no better than what the master predicted, so that what is left
+  * is the gap of the master Solver, with Result = kLowPrecision. */
+
+ bool integer_step( void );
+
+/*--------------------------------------------------------------------------*/
+ /// whether the stabilization can be removed with integer Variable
+ /** True if the region of the trust region is the whole one [see dblIntRad],
+  * or the proximal term has reached dbltMaior, so that the master is solved
+  * without stabilization [see integer_direction()]; never true once the
+  * cutting-plane master has been found unbounded. */
+
+ [[nodiscard]] bool integer_region_full( void ) const;
+
+/*--------------------------------------------------------------------------*/
+ /// the radius of the local branching on the binary Variable
+ /** The radius of the local branching on the binary Variable, the larger of
+  * 1 and the current fraction of the region of their number [see
+  * dblIntRad]. */
+
+ [[nodiscard]] double integer_kappa( void ) const;
 
 /*--------------------------------------------------------------------------*/
  /// solve the Master Problem with integer Variable and proximal parameter tm
- /** Solves the Master Problem of compute_integer() with proximal parameter
+ /** Solves the Master Problem of integer_direction() with proximal parameter
   * \p tm, Inf< double >() giving the cutting-plane master, and on success
   * reads vStar; returns the status of MasterProblemBlock::solve_master(). */
 
@@ -3588,6 +3766,27 @@ public:
  /// which Variable of the C05Function are integer, empty if none is
  std::vector< bool > f_int_var;
 
+ bool f_int_centre = false;  ///< with integer Variable, there is a centre
+ bool f_int_cp = false;      ///< ... the last master was not stabilized
+ VarValue f_int_model = 0;   ///< ... the model value at the trial point
+ VarValue f_int_c0 = 0;      ///< ... the constant of the 0-th component
+ double f_int_tfull = 0;     ///< ... the t from which on nothing is cut
+ Index f_int_nnb = 0;        ///< ... the number of the non-binary ones
+ bool f_int_nofull = false;  ///< ... the stabilization stays [see above]
+ std::vector< bool > f_int_bin;  ///< ... which are binary
+ bool f_int_lbranch = false; ///< ... the binary ones have local branching
+ bool f_int_level = false;   ///< ... the master is the level one
+ VarValue f_int_vlev = 0;    ///< ... the current level
+ VarValue f_int_vup_lev = 0; ///< ... the upper bound when it was set
+ bool f_int_lev_empty = false;  ///< ... the last level set was empty
+ Index f_int_nb = 0;         ///< ... the number of the binary ones
+ double f_int_frac = 0;      ///< ... the fraction of the region
+
+ /// with integer Variable, the master is not stabilized: after a
+ /// cutting-plane step that has not improved the centre the method stays
+ /// so until it does, as the trust region is only reduced after a SS
+ bool f_int_global = false;
+
  bool f_tdisc_done = false;  ///< the discovery of t is over in this call
 
  std::vector< double > v_tdisc;  ///< the t * ( 1 + lambda ) seen so far
@@ -3595,6 +3794,8 @@ public:
  double CmpAggr;       ///< share of the components each aggregated one holds
 
  double IncrCost;      ///< deferral of null steps [see dblIncrCost]
+
+ double IntRad;      ///< radius of the local branching [see dblIntRad]
 
  double f_ev_ema = -1;  ///< average seconds of an evaluation of a component
 
