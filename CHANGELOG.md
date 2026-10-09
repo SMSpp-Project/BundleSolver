@@ -231,8 +231,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Whoever wants that variant links the new library, which brings BundleSolver
   along with it
 
-### Removed
-
 ### Fixed
 
 - the global lower bound of the dual master, which is in the frame of the
