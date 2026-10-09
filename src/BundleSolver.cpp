@@ -2002,8 +2002,9 @@ void BundleSolver::set_par( idx_type par , int value )
   case( intMaxNrEvls ): MaxNrEvls = value; break;
   case( intDoEasy ):
    DoEasy = value;
-   // which components are easy is decided by set_Block(), but whether
-   // their duals are kept can change at any time [see InitMPB()]
+   // which components are easy, and whether they are scaled by a size
+   // Variable, is decided by set_Block(), but whether their duals are kept
+   // can change at any time [see InitMPB()]
    if( MasterPB )
     MasterPB->keep_easy_duals( ( DoEasy & 8 ) ||
 			       ( ( DoEasy & 12 ) == 12 ) );
@@ -6862,6 +6863,11 @@ void BundleSolver::InitMPB( void )
  const int max_bsize = vBPar2.empty()
                        ? int( BPar2 )
                        : int( vBPar2.back() );
+ // whether the easy components are scaled by a size Variable is decided
+ // when the dual master is built [see intDoEasy]
+ MasterPB->use_easy_size_variables( ! ( DoEasy & 16 ) );
+ MasterPB->use_easy_mirrors( DoEasy & 32 );
+
  MasterPB->configure( want_primal ,
                       std::max( int( BPar2 ) , max_bsize ) ,
                       int( NumVar ) ,
