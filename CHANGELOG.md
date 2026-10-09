@@ -249,6 +249,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a translation made with a centre where the function was lower cuts off
   the optimum
 
+- with an empty bundle and t at `dbltMinor` the master is solved again with
+  the previous t before a verdict of the easy components is trusted: the
+  master of a Bundle with easy components and t at `dbltMinor` is badly
+  scaled, and a master Solver may declare it empty or unbounded when it is
+  not (the first master of a Lagrangian dual of a unit commitment instance,
+  whose objective was only 1e-10 times the squared norm of z, was declared
+  unbounded by Gurobi with FeasibilityTol 1e-8, and the dual reported
+  unbounded)
+
 - `has_dual_solution()` answers false when a Modification of a component
   has taken away from its global pool, before the next `compute()`, a
   linearization of the bundle with a nonzero multiplier, since the dual

@@ -3800,6 +3800,24 @@ void BundleSolver::FormD( void )
   // failure of the MP Solver neither is believed
   const bool easy_answer = NrEasy && easy_says_it() && ( ! mp_failed );
 
+  // with an empty bundle t is at tMinor [see above], and the master of a
+  // Bundle with easy components is then a badly scaled problem, the
+  // stabilizing term vanishing against their data, which a master Solver
+  // may well declare empty or unbounded when it is not: the verdict is the
+  // easy components' answer only if the master solved again with t where
+  // it was before the empty bundle (Prevt) still gives it
+  if( easy_answer && ( primal_empty || primal_unbounded ) &&
+      ( ! t_restored ) && ( Prevt < INFshift ) ) {
+   t_restored = true;
+   t = Prevt;
+   Prevt = INFshift;
+   if( MasterPB )
+    MasterPB->set_t( t );
+   BLOG( 2 , std::endl << "Bundle::FormD: MP empty or unbounded with t at "
+                          "its minimum, solving again with t = " << t );
+   continue;
+   }
+
   if( primal_empty ) {                // the MP is (primal) empty
    if( ( ( ! get_bc_size() ) || mp_failed ) && ( ! easy_answer ) )
     mps = Solver::kError;             // it must be a numerical error

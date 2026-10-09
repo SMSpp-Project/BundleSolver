@@ -473,10 +473,11 @@ BundleSolver::Index ParallelBundleSolver::InnerLoopOrdered( bool extrastep ,
 							   bool batch )
 {
  /* Deterministic parallel inner loop. Up to MaxThread components are kept
-  * in flight (each compute()-d by a thread of the pool), but, unlike the legacy
-  * formulation, their results are *consumed in the fixed round-robin order
-  * in which they were launched*: the main thread always blocks on the head
-  * of the in-flight queue, even if a later task finished first. This removes
+  * in flight (each compute()-d by a thread of the pool), but, unlike the
+  * completion-order formulation, their results are *consumed in the fixed
+  * round-robin order in which they were launched*: the main thread always
+  * blocks on the head of the in-flight queue, even if a later task finished
+  * first. This removes
   * any dependence on thread timing, so both the set and the order of the
   * processed components are reproducible.
   *
@@ -630,15 +631,17 @@ BundleSolver::Index ParallelBundleSolver::InnerLoopOrdered( bool extrastep ,
    if( GetGi( wFi ) )
     insrtd = true;
 
-   // check if the accrued information changes the MP (see legacy for the
-   // detailed rationale of the strict inequalities)
+   // check if the accrued information changes the MP (see the
+   // completion-order loop for the detailed rationale of the strict
+   // inequalities)
    if( ( ! MPchgs ) && ( UpFiLmb1.back() < UpTrgt ) )
     MPchgs = 1;
 
    if( ( ! MPchgs ) && insrtd && RifeqFi && ( LwFiLmb1.back() > LwTrgt ) )
     MPchgs = 1;
 
-   // wind-down tests (skipped in the extrastep path, as in the legacy one).
+   // wind-down tests (skipped in the extrastep path, as in the
+   // completion-order one).
    // "earlystop" means the MP is already guaranteed to change (or time is
    // up): we must stop launching new tasks, and in faithful (discard) mode
    // we also drop the still in-flight tasks so that exactly the components

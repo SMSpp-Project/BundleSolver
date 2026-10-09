@@ -14,9 +14,7 @@
  *
  * available at
  *
- * \link
  *  http://www.di.unipi.it/~frangio/abstracts.html#SIOPT02
- * \endlink
  *
  * or
  *
@@ -27,9 +25,7 @@
  *
  * available at
  *
- * \link
  *  http://www.di.unipi.it/~frangio/abstracts.html#NDOB18
- * \endlink
  *
  * In particular, BundleSolver implements the Incremental version of
  * the (Generalized) Proximal Bundle approach using upper models (for all the
@@ -40,9 +36,7 @@
  *
  * available at
  *
- * \link
  *  http://www.di.unipi.it/~frangio/abstracts.html#SIOPT16
- * \endlink
  *
  * BundleSolver is capable of solving any Block such that:
  *
@@ -66,14 +60,12 @@
  * algorithm as "easy components", see
  *
  *   A. Frangioni, E. Gorgone "Generalized Bundle Methods for Sum-Functions
- *   with ``Easy'' Components: Applications to Multicommodity Network Design"
+ *   with "Easy" Components: Applications to Multicommodity Network Design"
  *   Mathematical Programming 145(1), 133 – 161, 2014
  *
  * available at
  *
- * \link
  *  http://www.di.unipi.it/~frangio/abstracts.html#MP11c
- * \endlink
  *
  * In that case, the LagBFunction is never evaluated, which means that there is
  * no need for a Solver to be attached to the inner Block.
@@ -172,7 +164,7 @@ namespace SMSpp_di_unipi_it
 /*--------------------------------------------------------------------------*/
 /*------------------------------- CLASSES ----------------------------------*/
 /*--------------------------------------------------------------------------*/
-/** @defgroup LagBFunction_CLASSES Classes in BundleSolver.h
+/** @defgroup BundleSolver_CLASSES Classes in BundleSolver.h
  *  @{ */
 
 /*--------------------------------------------------------------------------*/
@@ -191,9 +183,7 @@ namespace SMSpp_di_unipi_it
  *
  * available at
  *
- * \link
  *  http://www.di.unipi.it/~frangio/abstracts.html#SIOPT02
- * \endlink
  *
  * or
  *
@@ -204,9 +194,7 @@ namespace SMSpp_di_unipi_it
  *
  * available at
  *
- * \link
  *  http://www.di.unipi.it/~frangio/abstracts.html#NDOB18
- * \endlink
  *
  * In particular, BundleSolver implements the Incremental version of
  * the (Generalized) Proximal Bundle approach using upper models (for all the
@@ -217,9 +205,7 @@ namespace SMSpp_di_unipi_it
  *
  * available at
  *
- * \link
  *  http://www.di.unipi.it/~frangio/abstracts.html#SIOPT16
- * \endlink
  *
  * BundleSolver is capable of solving any Block such that:
  *
@@ -256,14 +242,12 @@ namespace SMSpp_di_unipi_it
  * algorithm as "easy components", see
  *
  *   A. Frangioni, E. Gorgone "Generalized Bundle Methods for Sum-Functions
- *   with ``Easy'' Components: Applications to Multicommodity Network Design"
+ *   with "Easy" Components: Applications to Multicommodity Network Design"
  *   Mathematical Programming 145(1), 133–161, 2014
  *
  * available at
  *
- * \link
  *  http://www.di.unipi.it/~frangio/abstracts.html#MP11c
- * \endlink
  *
  * In that case, the LagBFunction is never evaluated, which means that there is
  * no need for a Solver to be attached to the inner Block.
@@ -1298,7 +1282,7 @@ public:
   *   the epsilon-subdifferential of Lambda, then the point is
   *   epsilon-optimal. Note that if the minimization problem is subject to
   *   constraints, i.e., Fi() has to be minimized only on the points Lambda
-  *   \in L, the latter being a convex set, then the above is referred to a
+  *   belonging to a convex set L, then the above is referred to a
   *   subgradient of the "actual function" ( Fi + I_L )( Lambda ), where I_L
   *   is the indicator function of L (evaluating to 0 inside L and to +INF
   *   otherwise). In other words, one has to show that there exists a(n
@@ -1430,9 +1414,9 @@ public:
   *   linearization errors, and therefore possibly in detecting directions
   *   that are non-decreasing even for the model (hence even less so for
   *   the real functon). To avoid this, if the aggregate linearization
-  *   error \sigma* is "too negative", i.e.,
+  *   error \f$ \sigma^* \f$ is "too negative", i.e.,
   *
-  *      \sigma* < - m3 * t * || z* ||^2
+  *   \f[ \sigma^* < - m_3 \, t \, \| z^* \|^2 \f]
   *
   *   then a NR step is performed by increasing t (if this is still possible,
   *   otherwise error is given). Traditionally m3 < 0.5 was required, but
@@ -2839,7 +2823,12 @@ public:
     set Result to kOK and return without a fresh master solution; compute()
     must then run its termination events without using master quantities.
     Otherwise report an unrecoverable master failure through Result so
-    compute() can stop or handle it. */
+    compute() can stop or handle it. An empty or unbounded master is
+    reported as kInfeasible / kUnbounded only when it is an answer [see
+    easy_says_it()]; with an empty bundle and t at dbltMinor the master is
+    solved again with the previous t (Prevt) before a verdict of the easy
+    components is trusted, and the same is done before an unrecoverable
+    failure of the master Solver is declared. */
 
  void FormD( void );
 
@@ -3115,7 +3104,13 @@ public:
   * components included, being in the level constraint; it can be empty,
   * either because of the level, which relaxing the level tells apart, or
   * because of the easy region, which shows up as above. Without
-  * stabilization none of this holds, and the answer is always taken. */
+  * stabilization none of this holds, and the answer is always taken.
+  * Two cases are excluded by FormD() even when this returns true: a master
+  * that follows a failure of the master Solver in the same call, which is
+  * the same error in disguise, and a master solved with an empty bundle,
+  * whose t is at dbltMinor and whose stabilizing term vanishes against the
+  * data of the easy components, which is solved again with the previous t
+  * and believed only if it is again empty or unbounded. */
 
  bool easy_says_it( void ) const {
   const bool stabilized =
@@ -3744,12 +3739,10 @@ public:
  * "representative subgradient" for component k for the computation of the t
  * heuristics, which use information about an "aggregate representative
  * subgradient" obtained by summing all the individual "representative
- * subgradients". NOTE 1: the "representative subgradient" used to be selected
- * as the one
- *         with smallest Alfa1k and largest ScPr1k, which may have been a
- *         bit better but was heuristic anyway; choosing the first makes
- *         for a simpler logic, and ideally "the first should be the best"
- *         so it still makes sense.
+ * subgradients". NOTE 1: the first subgradient is chosen, rather than the
+ *         one with smallest Alfa1k and largest ScPr1k, since either choice
+ *         is heuristic and the first one keeps the logic simple (ideally,
+ *         "the first should be the best").
  * NOTE 2: "easy" components do not have a "representative subgradient" and
  *         are therefore excluded from the "aggregate representative
  *         subgradient": THIS IS WRONG and probably means that most t
@@ -3913,6 +3906,11 @@ public:
  /**< true until a master problem has been solved since the master was
   * created or the easy components last changed [see easy_says_it()] */
  VarValue Prevt;       ///< what t were before being changed for funny reasons
+ /**< the value of t before an empty bundle brought it down to tMinor,
+  * INFshift if t has not been changed so; FormD() restores it as soon as
+  * the bundle is not empty, or within the same call when the master solved
+  * with tMinor is empty or unbounded as an answer of the easy components,
+  * or fails with no item left to remove */
  bool f_tr_open = false;  ///< the last master was solved without the trust
                           ///< region, whose radius is still t [see FormD()]
  VarValue f_tr_t0 = 0;    ///< the radius of the trust region before the MP
@@ -4068,7 +4066,7 @@ public:
 
  std::vector< ColVariable * > LamVcblr;  ///< map Lambda -> ColVariable
 
- // per-component local→global Lambda index map for sparse Lambda mode.
+ // per-component local->global Lambda index map for sparse Lambda mode.
  // v_local2global[ h ] has size get_num_active_var() + 1 for v_c05f[ h ];
  // entries [ 0 .. loc_NV - 1 ] are the indices in LamVcblr of h's active
  // Variables in the order get_linearization_coefficients writes them, and
@@ -4088,14 +4086,14 @@ public:
  // process_outstanding_Modification's 4th loop, where a naked
  // FunctionModVars* (i.e. one that did NOT arrive as a lockstep
  // GroupModification covering all components) promotes a dense Solver
- // to sparse on the spot — materialising identity local-to-global maps
+ // to sparse on the spot (materialising identity local-to-global maps
  // in v_local2global[ * ] and rebuilding Lambda2Idx / v_ref_count from
- // the dense invariant — before the sparse handlers below process the
+ // the dense invariant) before the sparse handlers below process the
  // Mod. When false, every gather site falls back to the dense
  // "all components see the same Lambda" code path.
  bool f_sparse_lambda = false;
 
- // pointer → global Lambda index map, the inverse of LamVcblr. Kept live
+ // pointer -> global Lambda index map, the inverse of LamVcblr. Kept live
  // (and incrementally maintained) only when f_sparse_lambda == true;
  // used to resolve ColVariable * coming from a FunctionModVars* against
  // the global Lambda index space when v_c05f[ h ] is sparse (i.e. when
@@ -4109,7 +4107,7 @@ public:
  // v_c05f (+ f_lf if any) that have LamVcblr[ i ] as an active
  // variable. Built in set_Block alongside LamVcblr; decremented by the
  // sparse FunctionModVarsRngd / FunctionModVarsSbst handlers, and when
- // it reaches 0 the slot is queued for global removal — at the end of
+ // it reaches 0 the slot is queued for global removal: at the end of
  // the 4th Modification loop we compact LamVcblr / Lambda / Lambda2Idx
  // / v_local2global[ * ] and call MasterPB->remove_vars to reclaim the
  // master row. Kept live only when f_sparse_lambda == true.
