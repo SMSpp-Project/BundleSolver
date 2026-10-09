@@ -1220,7 +1220,29 @@ public:
   *   on the optimal value (not a conditional one, see set_valid_lower_bound()
   *   in AbstractBlock.h) proves that no point can be, i.e., it is at most
   *   dblLwCutOff for a concave function and at least dblUpCutOff for a
-  *   convex one. An infinite cutoff is never reached
+  *   convex one. An infinite cutoff is never reached.
+  *   The former cutoff (dblLwCutOff for a convex function, dblUpCutOff for a
+  *   concave one) is also a lower bound L on the function f the solver
+  *   minimizes [see cutoff_point()] below which the caller does not care
+  *   where the minimum is: either min f >= L, and L is a valid bound, or a
+  *   point with f <= L exists, and compute() stops with kCutOff as soon as
+  *   it finds one. Thus, with the dual Master Problem (intMPPrimal == 0), L
+  *   is the global lower bound of the master, or the largest between it and
+  *   the true one, if any [see global_LB_row()]; in a Branch-and-Bound whose
+  *   relaxation this solver computes, the cutoff is the value of the
+  *   incumbent, which then stabilizes the dual of the node. Yet L is only a
+  *   conditional bound: what the master proves is a bound on max{ f , L },
+  *   which is one on f only if it is above L, and only then it is recorded
+  *   as the global lower bound that get_lb() / get_ub() report; the level
+  *   target is never put below L, so that an empty level keeps proving that
+  *   min f is above it. A master optimal at the bound, i.e., an optimality
+  *   test passed with the value at the stability centre within the accuracy
+  *   of L, has only found a point as good as asked up to the accuracy, and
+  *   compute() returns kCutOff rather than kOK. A master that fails with
+  *   the bound is solved again without it, which then stays out until
+  *   compute() returns. With infinite cutoffs, or with the primal master
+  *   (which has no global lower bound, hence neither with integer
+  *   Variable), nothing of this happens
   *
   * - dblEveryTTm [0]: periodicity of eEveryTTime events
   *
@@ -3728,6 +3750,18 @@ public:
  Vec_VarValue LowerBound;  ///< Lower Bound over (each component of) Fi
  VarValue f_global_LB;     ///< an algorithmically discovered global LB
 
+ VarValue f_cond_LB = -INFshift;
+ ///< the cutoff that is the global lower bound of the master, which is
+ ///< only conditionally valid [see global_LB_row()]; -INF if there is none
+
+ VarValue f_LB_row = -INFshift;
+ ///< the global lower bound last set in the master, translated with the
+ ///< stability centre [see global_LB_row()]; -INF if there is none
+
+ bool f_cond_LB_off = false;
+ ///< true if the master has failed with the cutoff as its global lower
+ ///< bound in this call to compute(), which then goes on without it
+
  VarValue f_level_Delta = 0;
  ///< expected decrease used by level stabilization
 
@@ -4192,6 +4226,34 @@ public:
   return( ( ( cp > - INFshift ) && ( UpFiLmb.back() <= cp ) ) ||
           ( ( cb < INFshift ) && ( f_global_LB >= cb ) ) );
   }
+
+ /// the global lower bound of the master
+ /** Sets the global lower bound of the master to the largest between the
+  * true one, if any, and cutoff_point(), recording the latter in f_cond_LB
+  * when it is the larger. A point with value at most cutoff_point() is as
+  * good as asked, so whoever set the cutoff does not care where the minimum
+  * is if it is below: either min f >= cutoff_point(), and the bound is
+  * valid, or compute() stops with kCutOff as soon as it finds such a point.
+  * The cutoff is only a conditional bound, as a bound that the master then
+  * proves is one on f only if it is above it [see dblUpCutOff and
+  * dblLwCutOff]. The global lower bound of the master is in the frame of
+  * the stability centre [see LB_translation()], hence it is set again
+  * whenever the centre moves; with no value at the stability centre to
+  * translate it with, the master is left as it is. Only the dual master has
+  * a global lower bound, hence with the primal one nothing is done. Since
+  * with the cutoff the master may be badly conditioned, a master that fails
+  * with it is solved again without it, which then stays out until compute()
+  * returns [see f_cond_LB_off]. */
+
+ void global_LB_row( void );
+
+ /// the translation of the global lower bound of the master
+ /** The value that the global lower bound of the master is decreased by, that
+  * of the function at the stability centre in the frame of the master [see
+  * intMPV2Form]: without the easy components in the displacement form, and
+  * with only the hard ones in the dual iterate form. */
+
+ VarValue LB_translation( void ) const;
 
 /*--------------------------------------------------------------------------*/
 

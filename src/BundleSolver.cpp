@@ -509,6 +509,7 @@ int BundleSolver::compute( bool changedvars )
 
  Result = kStillRunning;    // still working
  NRtMax = 0;                // no noise reduction yet in this call
+ f_cond_LB_off = false;     // the cutoff may be the bound of the master
 
  // start timer now (so that processing Modification is included) - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -785,9 +786,12 @@ int BundleSolver::compute( bool changedvars )
    if( UsesLevelStabilization() && f_level_initialized &&
        ( f_level_value < INFshift ) && ( UpFiLmb.back() < INFshift ) &&
        level_empty ) {
-    BLOG( 1 , " ~ level empty: LB = " << def << f_level_value
-              << std::endl );
-    record_level_lower_bound( f_level_value );
+    // the level is never below the cutoff that is the global lower bound
+    // of the master [see install_level_stabilization()], hence its being
+    // empty proves that the function is above it
+    const auto lev = std::max( f_level_value , f_cond_LB );
+    BLOG( 1 , " ~ level empty: LB = " << def << lev << std::endl );
+    record_level_lower_bound( lev );
     if( level_gap_closed() ) {
      level_gap_optimal = true;
      Result = kOK;
@@ -836,6 +840,19 @@ int BundleSolver::compute( bool changedvars )
 
   if( cutoff_reached() ) {
    BLOG( 1 , " ~ stop (cutoff)" << std::endl );
+   Result = kCutOff;
+   break;
+   }
+
+  // with the cutoff as the global lower bound of the master, an optimality
+  // certificate is one for max{ f , f_cond_LB }: if the value at the centre
+  // is within the accuracy of it, the minimum of f may well be below, and
+  // the centre is only as good as asked up to the accuracy [see
+  // global_LB_row()]
+  if( ( f_cond_LB > -INFshift ) && ( ! level_gap_optimal ) &&
+      f_int_var.empty() && IsOptimal() &&
+      ( UpFiLmb.back() - max_error() <= f_cond_LB ) ) {
+   BLOG( 1 , " ~ stop (cutoff, optimal at the bound)" << std::endl );
    Result = kCutOff;
    break;
    }
@@ -2928,27 +2945,17 @@ void BundleSolver::install_level_stabilization( void )
   return;
   }
 
- auto lev = f_level_value;
- if( ! ( UsesPrimalMaster() && MPV2Form ) ) {
-  VarValue rf = 0;
-  if( ( ! UsesPrimalMaster() ) && MPV2Form ) {
-   // In the dual iterate frame the explicit x_bar . z objective term already
-   // translates the linear component (and every exact easy component). The
-   // PFB constants still carry F_k(x_bar), so only hard component references
-   // must be removed from the absolute level.
-   for( Index k = 0 ; k < NrFi ; ++k )
-    if( ( ! NrEasy ) || ( ! IsEasy[ k ] ) )
-     rf += UpRifFi[ k ];
-   }
-  else {
-   rf = UpRifFi.back();
-   if( NrEasy )
-    for( Index k = 0 ; k < NrFi ; ++k )
-     if( IsEasy[ k ] )
-      rf -= UpRifFi[ k ];
-   }
-  lev -= rf;
-  }
+ // never below the cutoff that is the global lower bound of the master:
+ // there the level would be empty because of that row alone, which proves
+ // nothing, while above it an empty level proves that min f is above it
+ auto lev = std::max( f_level_value , f_cond_LB );
+
+ // the level is translated as the global lower bound, save in the primal
+ // iterate frame, where it is absolute; in the dual iterate frame the PFB
+ // constants still carry F_k( x_bar ), so the hard component references
+ // must be removed from it
+ if( ! ( UsesPrimalMaster() && MPV2Form ) )
+  lev -= LB_translation();
  MasterPB->set_f_lev( lev );
  }
 
@@ -3276,6 +3283,59 @@ void BundleSolver::record_level_lower_bound( VarValue lb )
 
 /*--------------------------------------------------------------------------*/
 
+BundleSolver::VarValue BundleSolver::LB_translation( void ) const
+{
+ // the displacement frame removes the linear and hard-component reference
+ // values (but not exact easy components); in the dual iterate frame
+ // x_bar . z already translates the linear and exact-easy terms, as for the
+ // level row, so only hard-component references are removed
+ VarValue rf = 0;
+ if( ( ! UsesPrimalMaster() ) && MPV2Form ) {
+  for( Index k = 0 ; k < NrFi ; ++k )
+   if( ( ! NrEasy ) || ( ! IsEasy[ k ] ) )
+    rf += UpRifFi[ k ];
+  }
+ else {
+  rf = UpRifFi.back();
+  if( NrEasy )
+   for( Index k = 0 ; k < NrFi ; ++k )
+    if( IsEasy[ k ] )
+     rf -= UpRifFi[ k ];
+  }
+
+ return( rf );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::global_LB_row( void )
+{
+ if( ( ! MasterPB ) || UsesPrimalMaster() )
+  return;
+
+ // with no value at the stability centre there is nothing to translate the
+ // bound with, and the master is left as it is
+ const VarValue rf = LB_translation();
+ if( ! std::isfinite( rf ) )
+  return;
+
+ // the cutoff, if it is above the true bound and has not been put aside
+ const VarValue tlb = TrueLB ? LowerBound.back() : -INFshift;
+ const VarValue cp = f_cond_LB_off ? -INFshift : cutoff_point();
+ f_cond_LB = ( cp > tlb ) ? cp : -INFshift;
+
+ // the row is in the frame of the stability centre, hence it changes as
+ // the centre moves; the master is only told when it does
+ const VarValue lb = std::max( tlb , f_cond_LB );
+ const VarValue row = ( lb > -INFshift ) ? lb - rf : -INFshift;
+ if( row != f_LB_row ) {
+  f_LB_row = row;
+  MasterPB->set_global_LB( row );
+  }
+ }
+
+/*--------------------------------------------------------------------------*/
+
 void BundleSolver::FormD( void )
 {
  // initialize the Master Problem Solver- - - - - - - - - - - - - - - - - - -
@@ -3470,38 +3530,13 @@ void BundleSolver::FormD( void )
    }
 
   LowerBound.back() = LwrBnd;        // in all cases, record it
-  if( TrueLB ) {   // if the bound value is finite
-   // Translate it using the active storage frame. The displacement frame
-   // removes the linear and hard-component reference values (but not exact
-   // easy components). In the dual iterate frame x_bar . z already translates
-   // the linear and exact-easy terms, so only hard-component references are
-   // removed here.
-   VarValue rf = 0;
-   if( ( ! UsesPrimalMaster() ) && MPV2Form ) {
-    // As for the level row, x_bar . z already accounts for the linear and
-    // exact-easy reference terms in the dual iterate frame.
-    for( Index k = 0 ; k < NrFi ; ++k )
-     if( ( ! NrEasy ) || ( ! IsEasy[ k ] ) )
-      rf += UpRifFi[ k ];
-    }
-   else {
-    rf = UpRifFi.back();
-    if( NrEasy )
-     for( Index k = 0 ; k < NrFi ; ++k )
-      if( IsEasy[ k ] )
-       rf -= UpRifFi[ k ];
-    }
-
-   LwrBnd -= rf;
-   }
-
-  // set the global lower bound in the master problem (translated if it
-  // is finite); the bound has to be set even if it is -INF, because
-  // before it was not so, hence it has to be reset
-  if( MasterPB )
-   MasterPB->set_global_LB( LwrBnd );
 
   }  // end( if( the global lower bound has changed ) )
+
+ // the global lower bound of the master: the true one or the cutoff, as
+ // the largest of the two, translated with the current stability centre
+ // (this must come before the level is installed, which the cutoff bounds)
+ global_LB_row();
 
  if( ! TrueLB )  // if no true LB, see if "conditional" one is there
   LowerBound.back() = f_convex
@@ -3795,6 +3830,19 @@ void BundleSolver::FormD( void )
   // is handled as an error as well [see above]
   mp_failed = true;
 
+  // the cutoff as the global lower bound of the master is only an aid, and
+  // with it the master may be badly conditioned (say, with almost all the
+  // mass on its row): it is the first thing to go, for the rest of the call
+  if( ( f_cond_LB > -INFshift ) && ( ! f_cond_LB_off ) ) {
+   f_cond_LB_off = true;
+   global_LB_row();
+   if( f_cond_LB <= -INFshift ) {
+    BLOG( 2 , std::endl << "Bundle::FormD: error in MP, cutoff bound "
+                           "removed" );
+    continue;
+    }
+   }
+
   BLOG( 2 , std::endl << "Bundle::FormD: error in MP, emergency delete" );
 
   Index i = InINF;
@@ -3958,10 +4006,11 @@ void BundleSolver::FormD( void )
             MPStbl == MasterProblemBlock::kDoublyStabilized ||
             MPStbl == MasterProblemBlock::kLevel ) {
     // This includes the initial level probe. The primal getter returns
-    // -d*/t here; the dual getter also divides the raw aggregate by lambda.
+    // -d*/t here; the dual getter also divides the raw aggregate by the
+    // mass of the rows [see MasterProblemBlock::aggregate_mass()].
     step_scale = MasterPB->get_t();
     if( ! UsesPrimalMaster() )
-     step_scale *= MasterPB->get_lambda();
+     step_scale *= MasterPB->aggregate_mass();
     }
    }
 
@@ -4014,11 +4063,17 @@ void BundleSolver::FormD( void )
  // may be above the function, the errors Sigma negative and v^* positive,
  // and UpFiLmb + v^* would then be above the value at the current point; the
  // bound is that value, i.e., z^* = 0 still certifies the stop, with no gap
+ // with the cutoff as the global lower bound of the master, the bound is one
+ // on max{ f , f_cond_LB }, hence one on f only if it is above f_cond_LB
+ // (by more than the accuracy, as otherwise it may just be that row)
  if( ( UpFiLmb.back() < INFshift ) && ( vStar.back() < INFshift ) &&
      ( NrmZFctr < INFshift ) && ( NrmZ <= NrmZFctr * NZEps ) &&
      accurate_level_aggregate ) {
-  f_global_LB = UpFiLmb.back() + std::min( vStar.back() , VarValue( 0 ) );
-  refresh_level_after_master();
+  const auto lb = UpFiLmb.back() + std::min( vStar.back() , VarValue( 0 ) );
+  if( ( f_cond_LB <= -INFshift ) || ( lb - max_error() > f_cond_LB ) ) {
+   f_global_LB = lb;
+   refresh_level_after_master();
+   }
  }
 
  if( initial_level_probe && MasterPB ) {
@@ -6798,6 +6853,8 @@ void BundleSolver::CreateMPB( void )
   MasterPB = new MasterProblemBlock();
 
  f_easy_first_MP = true;  // no master solved yet [see easy_says_it()]
+ f_cond_LB = -INFshift;   // nor any global lower bound set in it
+ f_LB_row = -INFshift;
 
  }  // end( BundleSolver::CreateMPB )
 
