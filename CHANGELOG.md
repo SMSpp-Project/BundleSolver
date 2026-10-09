@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-09
+
 ### Added
 
 - bit 4 (+16) of `intDoEasy`: the dual master problem does not scale the
@@ -719,7 +721,8 @@ Several major improvements:
 
 - First test release.
 
-[Unreleased]: https://gitlab.com/smspp/bundlesolver/-/compare/0.5.0...develop
+[Unreleased]: https://gitlab.com/smspp/bundlesolver/-/compare/0.6.0...develop
+[0.6.0]: https://gitlab.com/smspp/bundlesolver/-/compare/0.5.0...0.6.0
 [0.5.0]: https://gitlab.com/smspp/bundlesolver/-/compare/0.4.5...0.5.0
 [0.4.5]: https://gitlab.com/smspp/bundlesolver/-/compare/0.4.4...0.4.5
 [0.4.4]: https://gitlab.com/smspp/bundlesolver/-/compare/0.4.3...0.4.4
