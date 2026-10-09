@@ -120,18 +120,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `C05Function` (the inner Block of a `LagBFunction`), or that of the
   `C05Function` itself if it is a Block with no nested Block, so that a
   configuration names the hard components of any instance without knowing
-  their position; which components are easy is a concept of this Solver, and
-  the parameter replaces `vstr_LDSl_NoEasy` of `LagrangianDualSolver`
+  their position; which components are easy is a concept of this Solver
 
 - the tests of this directory and of the OSBDO examples carry the label of the
   module, so that the pipeline, which selects with `ctest -L <module>`, runs
   them: they were built and never run
 
-- `test/osbdo`, the multicommodity instances of OSBDO solved in the same
-  resource-directive form, with a `BendersBFunction` per commodity and the
-  coupling as an easy `LagBFunction`, against the whole problem as one LP;
-  the generator is the one of OSBDO and a script runs OSBDO on the same
-  instance, so that the two are compared on what they both solve
+- `test/osbdo`, the four examples of OSBDO (multicommodity flow, supply chain,
+  intersection of convex sets and federated learning) solved by `BundleSolver`
+  in the same form, the agents as `BendersBFunction` or `LogisticFunction` and
+  the coupling as an easy `LagBFunction`, each on an instance out of a verbatim
+  copy of the generator of OSBDO and checked against a reference value, the
+  whole problem as one LP or QP where there is one
 
 ### Changed
 
@@ -232,13 +232,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   along with it
 
 ### Removed
-
-- the tester of the large-scale functions of Karmitsa, Bagirov and Makela
-  (`test/kbm`), the scripts that run OSBDO and compute the reference of the
-  federated learning example, and the multicommodity instance of the paper
-  (`test/osbdo`): they are measurements of a paper and not checks, and
-  they live with its other experiments; the testers of the OSBDO examples
-  and their small instances stay, as the checks `ctest` runs
 
 ### Fixed
 
@@ -420,10 +413,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that it is a convex combination also with a level row or an individual
   lower bound; with all the mass on the lower bounds the item is replaced
   without any aggregation
+
 - a full bundle frees an item in base that is a vertical row only when fewer
   than two diagonal ones are in base, the aggregate being made of the
   diagonal rows alone and the multiplier of the vertical one being otherwise
   lost
+
 - `is_subgradient_global()` asks the master by the hard component and the
   global name of the item, as the other helpers do, rather than by the
   position in the pool, which with easy components made every row vertical
