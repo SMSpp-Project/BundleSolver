@@ -33,7 +33,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in the concave case it stops as soon as the best value found is at least
   `dblUpCutOff`, or as soon as the bound of the model certifies that the
   optimal value is at most `dblLwCutOff`, and vice versa in the convex case,
-  returning `kCutOff`; with the default (infinite) cutoffs nothing changes
+  returning `kCutOff`; with the default (infinite) cutoffs nothing changes.
+  With the dual master, the cutoff that a point reaches (`dblUpCutOff` in
+  the concave case, `dblLwCutOff` in the convex one) is also the global
+  lower bound of the master, when it is above the true one, as whoever set
+  it does not care where the optimum is beyond it: in a Branch-and-Bound,
+  the incumbent stabilizes the dual of the node. The bound is only
+  conditional: what the master proves is recorded as a global bound, and
+  reported by `get_lb()` / `get_ub()`, only if it is above the cutoff, the
+  level target is never put beyond it, and an optimality test passed with
+  the value at the stability centre within the accuracy of the cutoff ends
+  with `kCutOff` rather than `kOK`; a master that fails with the bound is
+  solved again without it, which then stays out until `compute()` returns
 
 - a component that gains an "active" Variable the master already has, e.g.,
   a `LagBFunction` given the dual pair of a multiplier that other
@@ -215,6 +226,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and their small instances stay, as the checks `ctest` runs
 
 ### Fixed
+
+- the global lower bound of the dual master, which is in the frame of the
+  stability centre, is translated again whenever the centre moves, rather
+  than only when the bound changes: once the multiplier of its row is free
+  in the Solver of the master [see `MasterProblemBlock::set_global_LB()`],
+  a translation made with a centre where the function was lower cuts off
+  the optimum
 
 - `has_dual_solution()` answers false when a Modification of a component
   has taken away from its global pool, before the next `compute()`, a
