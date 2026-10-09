@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- bit 4 (+16) of `intDoEasy`: the dual master problem does not scale the
+  easy components by a size Variable, i.e., the mass lambda of the lower
+  model is fixed to 1 and the global lower bound has no effect there, which
+  gives a master that may be cheaper to solve; without it every easy
+  component whose inner Block owns or takes a size Variable is scaled [see
+  `MasterProblemBlock::use_easy_size_variables()`]. It is read when the
+  Block is set, as which components are easy
+
+- bit 5 (+32) of `intDoEasy`: an easy component whose inner Block neither
+  owns nor takes a size Variable is scaled through a sized copy of its
+  inner Block that the master has in its place [see
+  `MasterProblemBlock::use_easy_mirrors()`]; off by default, so that such a
+  component is not scaled and lambda stays fixed to 1, and of no effect
+  with bit 4
+
 - `BundleSolverML` listens to `intMaxThread`: at the beginning of each
   `compute()` the number of threads of Torch is set to max( 1 ,
   intMaxThread ), hence to one with the default 0, so that the predictions of
