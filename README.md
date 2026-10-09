@@ -35,15 +35,28 @@ only built if Torch is available [see Requirements].
 
 These instructions will let you build the `BundleSolver` module on your system.
 
+The module also comes ready-made, in any of
+
+```sh
+sudo add-apt-repository ppa:smspp-project/smspp   # Ubuntu
+sudo apt install libsmspp-bundle-dev
+
+conda install -c conda-forge smspp-project        # Linux, macOS, Windows
+
+brew tap SMSpp-Project/smspp                      # macOS, Linux
+brew install smspp
+
+vcpkg install "smspp[core,bundle]"                # from the sources
+```
+
+where apt and the port give the module alone, while conda and the tap carry
+the whole framework. What follows is about building it yourself.
+
 ### Requirements
 
 - The [SMS++ core library](https://gitlab.com/smspp/smspp) and its requirements.
 
 - The [MILPSolver](https://gitlab.com/smspp/milpsolver) SMS++ module.
-
-- The [NDOSolver/FiOracle project](https://gitlab.com/frangio68/ndosolver_fioracle_project)
-  and its requirements (depending on the actual MPSolver built); note that this
-  dependency is supposed to be removed down the line.
 
 - Optionally, [Torch](https://pytorch.org/get-started/locally/) (the
   PyTorch C++ API), which is required by (and only by) BundleSolverML: with
@@ -63,18 +76,6 @@ cmake --build .
 ```
 The library has the same configuration options of
 [SMS++](https://gitlab.com/smspp/smspp-project/-/wikis/Customize-the-configuration).
-
-You can also choose the following configuration options:
-
-| Variable       | Description         | Default value |
-|----------------|---------------------|---------------|
-| `WHICH_OSI_QP` | Use CPLEX or GUROBI | GUROBI        |
-
-You can set them with:
-
-```sh
-cmake <source-path> -D<var>=<value>
-```
 
 Optionally, install the library in the system with:
 
@@ -119,14 +120,6 @@ create the `../extlib/makefile-paths` out of the
 Check the [SMS++ installation wiki](https://gitlab.com/smspp/smspp-project/-/wikis/Customize-the-configuration#location-of-required-libraries)
 for further details.
 
-Note that the [NDOSolver/FiOracle
-project](https://gitlab.com/frangio68/ndosolver_fioracle_project) has a similar
-arrangement with its own extlib/ folder, but the `*_ROOT` values are set in the
-SMS++ files and therefore are immediately available there, so there is no need
-to separately edit the NDOSolver/FiOracle project ones (but there would be if
-it were downloaded and compiled independently).
-
-
 ## Getting help
 
 If you need support, you want to submit bugs or propose a new feature, you can
@@ -147,9 +140,17 @@ conduct, and the process for submitting merge requests to us.
   Dipartimento di Informatica  
   Università di Pisa
 
+- **Enrico Calandrini**  
+  Dipartimento di Informatica  
+  Università di Pisa
+
 - **Enrico Gorgone**  
   Dipartimento di Matematica ed Informatica  
   Università di Cagliari
+
+- **Donato Meoli**  
+  Dipartimento di Informatica  
+  Università di Pisa
 
 ### Contributors
 

@@ -1,0 +1,25 @@
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - - -  BSPar.txt  - - - - - - - - - - - - - - - -
+#
+# BundleSolver with its default parameters, except the log, the relative
+# accuracy and the configuration of the Solver of the master problem
+#
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+BlockSolverConfig # exact type of the Configuration object
+0  # the BlockSolverConfig is not a "differential" one: values are being set
+1  # number of (the names of) Solver in this BlockSolverConfig
+BundleSolver # name of Solver
+1  # number of ComputeConfig in this BlockSolverConfig
+ComputeConfig # exact type of the ComputeConfig object
+0  # f_diff == 0 ==> all non-provided parameters are set to the default value
+2 # number of integer parameters
+intMaxIter  100000 # MaxIter, max number of iterations for each call
+intLogVerb       0 # LogVerb, log verbosity of main Bundle algorithm
+1 # number of double parameters
+dblRelAcc     1e-6 # relative accuracy required to solution
+1 # number of string parameters
+strMPBSolverCfg  MPBCfg.txt # BlockSolverConfig for the MasterProblemBlock's Solver
+0 # number of vector-of-int parameters
+0 # number of vector-of-double parameters
+0 # number of vector-of-string parameters
+* # [none]

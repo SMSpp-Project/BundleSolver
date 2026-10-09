@@ -37,6 +37,13 @@
 
 #include "BundleSolver.h"
 
+#include <condition_variable>
+#include <deque>
+#include <future>
+#include <memory>
+#include <mutex>
+#include <thread>
+
 /*--------------------------------------------------------------------------*/
 /*-------------------------- NAMESPACE & USING -----------------------------*/
 /*--------------------------------------------------------------------------*/
@@ -44,7 +51,6 @@
 /// namespace for the Structured Modeling System++ (SMS++)
 namespace SMSpp_di_unipi_it
 {
- using namespace NDO_di_unipi_it;
 
 /*--------------------------------------------------------------------------*/
 /*---------------------- CLASS ParallelBundleSolver ------------------------*/
@@ -101,12 +107,12 @@ public:
  /**< Bit-wise encoded choice of how the parallel inner loop evaluates and
   * consumes the function components:
   *
-  * - bit 0 (1): if 0, the "legacy" formulation is used, whereby ready
-  *   std::future are consumed in completion order; this is fast but the set
-  *   and order of the evaluated components, hence the whole trajectory of
-  *   the algorithm, depend on thread timing and is therefore not
-  *   reproducible. If 1, futures are instead consumed in a fixed round-robin
-  *   index order, which makes the run deterministic;
+  * - bit 0 (1): if 0, the "completion-order" formulation is used, whereby
+  *   ready std::future are consumed in completion order; this is fast but
+  *   the set and order of the evaluated components, hence the whole
+  *   trajectory of the algorithm, depend on thread timing and is therefore
+  *   not reproducible. If 1, futures are instead consumed in a fixed
+  *   round-robin index order, which makes the run deterministic;
   *
   * - bit 1 (2): only relevant with bit 0 == 1 and bit 2 == 0. If 1, as soon
   *   as the master problem is guaranteed to change the still in-flight tasks
@@ -118,8 +124,9 @@ public:
   *   ) components are always evaluated at each iteration (non-incremental
   *   "batch" mode), which maximises the available parallelism.
   *
-  * The meaningful combinations are: 0 = legacy, 1 = work-conserving
-  * deterministic, 3 = faithful-to-sequential, 5 = deterministic batch. */
+  * The meaningful combinations are: 0 = completion-order, 1 =
+  * work-conserving deterministic, 3 = faithful-to-sequential, 5 =
+  * deterministic batch. */
 
  intLastPBndSlvPar  ///< first allowed new int parameter for derived classes
  /**< Convenience value for easily allow derived classes
@@ -155,9 +162,9 @@ public:
 
  ParallelBundleSolver( void ) : BundleSolver() {
   // ensure all parameters are properly given their default value
-  MaxThread = ThinComputeInterface::get_dflt_int_par( intMaxIter );
+  MaxThread = ThinComputeInterface::get_dflt_int_par( intMaxThread );
   PoolingInt = 1e-4;
-  ParFrm = 0;  // legacy (completion-order) formulation
+  ParFrm = 0;  // completion-order formulation
   }
 
 /*--------------------------------------------------------------------------*/
@@ -177,15 +184,12 @@ public:
   * is a parameter of ThinComputeInterface that ParallelBundleSolver
   * "listens to" while BundleSolver does not:
   *
-  * - intMaxThread [0]: maximum number of threads that compute() can spawn.
-  *                     Actually this is not "threads" but "tasks", as it
-  *   is implemented by calling intMaxThread std::asynch and therefore the
-  *   actual number of threads may be smaller (down to actually none)
-  *   depending on the C++ scheduler; yet, clearly this gives an upper bound
-  *   on the total number of extra threads spawned when compute() is called
-  *   (which are actually spawned each time that InnerLoop() is called within
-  *   compute(), i.e., at every function iteration round, and then reined in
-  *   when InnerLoop() ends). */
+  * - intMaxThread [0]: maximum number of threads that compute() uses to
+  *                     evaluate the components. The threads are started
+  *   the first time InnerLoop() needs them and live as long as the
+  *   ParallelBundleSolver does, waiting between one evaluation and the next,
+  *   so that no thread is created per evaluation; their number is
+  *   min( intMaxThread , number of hard components ). */
 
  void set_par( idx_type par , int value ) override {
   if( par == intMaxThread )
@@ -202,18 +206,9 @@ public:
  /** Set the double parameters specific of ParallelBundleSolver, or calls the
   * BundleSolver version to deal with the rest:
   *
-  * - dblPoolingInt [1e-4]: waiting time, in seconds, between each round of 
-  *                         InnerLoop() checking for any of the std::asynch
-  *   having finished and produced a result. That is, ParallelBundleSolver
-  *   uses a dampened active wait strategy whereby there is no std::mutex or
-  *   suchlike to automatically wake up the main thread when one of the tasks
-  *   have finished, but the main thread waits the given amount between each
-  *   test. Clearly, too long a waiting time means the main thread being slow
-  *   to react and therefore wasted time, while too short a waiting time means
-  *   too much time spent in active wait. The trade-off is dependent on the
-  *   expected duration of each (or, better, of the faster among the)
-  *   C05Function computations, and therefore left to the user's choice by
-  *   means of this parameter. */
+  * - dblPoolingInt [1e-4]: accepted for compatibility, and not used: the main
+  *                         thread is woken up by the evaluation that ends,
+  *   rather than checking for one at fixed intervals. */
 
  void set_par( idx_type par , double value ) override {
   if( par == dblPoolingInt ) {
@@ -330,10 +325,10 @@ public:
 /*--------------------------------------------------------------------------*/
 /*-------------------------- PROTECTED METHODS -----------------------------*/
 /*--------------------------------------------------------------------------*/
- /* Performs the parallel inner loop: runs (at most) MaxThread std::asynch,
-  * each one compute()-ing a different component, up until the conditions to
-  * stop are satisfied or there no longer are available components to
-  * evaluate. */
+ /* Performs the parallel inner loop: keeps (at most) MaxThread evaluations
+  * running, each one compute()-ing a different component, up until the
+  * conditions to stop are satisfied or there no longer are available
+  * components to evaluate. */
 
  Index InnerLoop( bool extrastep = false ) override;
 
@@ -376,6 +371,49 @@ public:
 /*--------------------------- PRIVATE TYPES --------------------------------*/
 /*--------------------------------------------------------------------------*/
 
+ /// a fixed set of threads that compute() the components
+ /** The threads wait for an evaluation to run and, once it has run, for the
+  * next one. An evaluation submitted with a tag other than Inf< Index >()
+  * puts it in the queue of the finished ones as soon as it ends, and
+  * wait_any() blocks until that queue is not empty; the outcome itself
+  * (the value returned by compute(), or the exception it has thrown) is in
+  * the std::future that submit() returns. */
+
+ class EvalPool {
+ public:
+
+  explicit EvalPool( Index n );
+
+  ~EvalPool();
+
+  Index size( void ) const { return( Index( v_thread.size() ) ); }
+
+  /// runs f->compute( changedvars ) on one of the threads
+  std::future< int > submit( ThinComputeInterface * f , bool changedvars ,
+                             Index tag );
+
+  /// blocks until a tagged evaluation has ended, and returns its tag
+  Index wait_any( void );
+
+  /// forgets the tags of the evaluations ended and not yet waited for
+  void clear_finished( void );
+
+ private:
+
+  struct Job {
+   std::packaged_task< int() > task;
+   Index tag;
+   };
+
+  std::vector< std::thread > v_thread;
+  std::deque< Job > q_job;
+  std::deque< Index > q_done;
+  std::mutex f_mutex;
+  std::condition_variable f_job_cv;
+  std::condition_variable f_done_cv;
+  bool f_stop = false;
+  };
+
 /*--------------------------------------------------------------------------*/
 /*-------------------------- PRIVATE METHODS -------------------------------*/
 /*--------------------------------------------------------------------------*/
@@ -384,6 +422,11 @@ public:
 /*--------------------------------------------------------------------------*/
 /*------------------------------ PRIVATE FIELDS  ---------------------------*/
 /*--------------------------------------------------------------------------*/
+
+ std::unique_ptr< EvalPool > f_pool;  ///< the threads, once they are needed
+
+ /// returns f_pool, (re)started if it has fewer than n threads
+ EvalPool & get_pool( Index n );
 
 /*--------------------------------------------------------------------------*/
 

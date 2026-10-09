@@ -1,4 +1,4 @@
-/*--------------------------------------------------------------------------*/
+﻿/*--------------------------------------------------------------------------*/
 /*--------------------- File BundleSolverML.h ------------------------------*/
 /*--------------------------------------------------------------------------*/
 /** @file
@@ -333,7 +333,7 @@ class BundleSolverML : public BundleSolver
   *
   * @return the predicted step-size t > 0 */
 
- HpNum Heuristic( Index whch ) override;
+ double Heuristic( Index whch ) override;
 
 /*--------------------------------------------------------------------------*/
  /// computes the gradients and updates the active network parameters
@@ -358,6 +358,7 @@ class BundleSolverML : public BundleSolver
   w_vecs.clear();
   coeff_vecs.clear();
   Gs.clear();
+  Es.clear();
   Gs_aggreg.clear();
   Qs.clear();
   alphaS.clear();
@@ -405,7 +406,17 @@ class BundleSolverML : public BundleSolver
   * - intNTrainRounds: number of times the same instance should be (re-)solved
   *   for online training. It is not used by the solver itself (which cannot
   *   reload the Block), but it is a hint that the training driver can read to
-  *   set its re-solve loop; the default is 1, i.e. a single solve. */
+  *   set its re-solve loop; the default is 1, i.e. a single solve.
+  *
+  * Unlike BundleSolver, BundleSolverML also listens to intMaxThread of
+  * ThinComputeInterface: at the beginning of each compute() the number of
+  * threads Torch uses for its operations is set to max( 1 , intMaxThread )
+  * [see torch::set_num_threads()], hence to one with the default 0, i.e.,
+  * "only the thread calling compute()". With more than one the order of the
+  * floating-point sums of the network, and hence the t it predicts and the
+  * whole trajectory, may change from a run to the next. Note that the
+  * setting is global to the process, and hence holds for every other user
+  * of Torch in it until it is changed again. */
 
  enum int_par_type_BndSlvML {
   intMLTrainOnline = intLastBndSlvPar ,  ///< auto-train at end of compute()
@@ -436,6 +447,7 @@ class BundleSolverML : public BundleSolver
    case( intMLIterFirst ):   return( f_ML_iter_first );
    case( intMLIterLast ):    return( f_ML_iter_last );
    case( intMLWindow ):      return( f_ML_window );
+   case( intMaxThread ):     return( f_max_thread );
    default:                  return( BundleSolver::get_int_par( par ) );
   }
 }
@@ -476,6 +488,12 @@ class BundleSolverML : public BundleSolver
     if( value < 1 )
      throw( std::invalid_argument( "BundleSolverML::set_par: intMLWindow must be >= 1" ) );
     f_ML_window = value;
+    return;
+    case( intMaxThread ):
+    if( value < 0 )
+     throw( std::invalid_argument(
+                   "BundleSolverML::set_par: intMaxThread must be >= 0" ) );
+    f_max_thread = value;
     return;
     default:
     BundleSolver::set_par( par , value );
@@ -526,30 +544,15 @@ class BundleSolverML : public BundleSolver
   *   { t } and the prediction of the network is computed but discarded. */
 
  [[nodiscard]] int get_dflt_int_par( idx_type par ) const override {
-  static const std::array< int , 22 > dflt_int_par = {
-   10 ,   // intBPar1
-   100 ,  // intBPar2
-   1 ,    // intBPar3
-   1 ,    // intBPar4
-   0 ,    // intBPar6
-   3 ,    // intBPar7
-   0 ,    // intMnSSC
-   0 ,    // intMnNSC
-   3 ,    // inttSPar1
-   2 ,    // intMaxNrEvls
-   1 ,    // intDoEasy
-   2 ,    // intWZNorm
-   0 ,    // intFrcLstSS
-   0 ,    // intTrgtMng
-   0 ,    // intMPName
-   0 ,    // intMPlvl
-   0 ,    // intQPmp1
-   0 ,    // intQPmp2
-   4 ,    // intOSImp1
-   0 ,    // intOSImp2
-   1 ,    // intOSImp3
-   2      // intRstAlg
-   };
+  /* The three parameters that decide whether the step-size heuristic is
+   * called at all, and how often: bit 0 of inttSPar1 is what makes
+   * BundleSolver ask Heuristic() for t, and the two counters are 0 so that
+   * it is asked at every iteration rather than every few of them. Everything
+   * else is what BundleSolver says it is. */
+  if( par == inttSPar1 )
+   return( 3 );
+  if( ( par == intMnSSC ) || ( par == intMnNSC ) )
+   return( 0 );
 
   static const std::array< int , 6 > dflt_int_par_ML = {
    0 ,    // intMLTrainOnline
@@ -563,47 +566,24 @@ class BundleSolverML : public BundleSolver
   if( ( par >= intLastBndSlvPar ) && ( par < intLastBndSlvMLPar ) )
    return( dflt_int_par_ML[ par - intLastBndSlvPar ] );
 
-  if( ( par >= intLastParCDAS ) && ( par < intLastBndSlvPar ) )
-   return( dflt_int_par[ par - intLastParCDAS ] );
-
-  return( CDASolver::get_dflt_int_par( par ) );
+  return( BundleSolver::get_dflt_int_par( par ) );
   }
 
-/*--------------------------------------------------------------------------*/
- /// get the default value of a double parameter
- /** Returns the default value of the double parameter \p par. Same as
-  * BundleSolver except dblmnIncr and dblmnDecr, both (essentially) == 1:
-  * the minimum "significant" change of t is none, so that after a SS the
-  * network can pick any t in [ t , t * mxIncr ] and after a NS any t in
-  * [ t * mxDecr , t ] (including keeping it essentially unchanged)
-  * instead of being forced to move it. Note that mnIncr is required by
-  * BundleSolver::set_par() to be strictly > 1, hence the tiny offset. */
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+
+ /// the default value of the par-th double parameter
+ /** The defaults are those of BundleSolver but for the two multipliers of
+  * the rule-based t-strategy, which are left at (essentially) 1 so that they
+  * do not pull against the step-size the network predicts [see Heuristic()].
+  */
 
  [[nodiscard]] double get_dflt_dbl_par( idx_type par ) const override {
-  static const std::array< double , 17 > dflt_dbl_par = {
-   0 ,         // dblNZEps
-   1e+2 ,      // dbltStar
-   0 ,         // dblMinNrEvls
-   30 ,        // dblBPar5
-   0.01 ,      // dblm1
-   0.99 ,      // dblm2
-   0.99 ,      // dblm3
-   10 ,        // dblmxIncr
-   1.000001 ,  // dblmnIncr
-   0.1 ,       // dblmxDecr
-   1 ,         // dblmnDecr
-   1e+6 ,      // dbltMaior
-   1e-6 ,      // dbltMinor
-   1 ,         // dbltInit
-   1e-3 ,      // dbltSPar2
-   0 ,         // dbltSPar3
-   1e-1        // dblCtOff
-   };
+  if( par == dblmnIncr )
+   return( 1.000001 );
+  if( par == dblmnDecr )
+   return( 1 );
 
-  if( ( par >= dblLastParCDAS ) && ( par < dblLastBndSlvPar ) )
-   return( dflt_dbl_par[ par - dblLastParCDAS ] );
-
-  return( CDASolver::get_dflt_dbl_par( par ) );
+  return( BundleSolver::get_dflt_dbl_par( par ) );
   }
 
 /*--------------------------------------------------------------------------*/
@@ -629,7 +609,10 @@ class BundleSolverML : public BundleSolver
  std::vector< torch::Tensor > phi_vecs;    ///< feature tensors (net inputs)
  std::vector< torch::Tensor > w_vecs;      ///< search direction tensors w
  std::vector< torch::Tensor > coeff_vecs;  ///< step-type signs: +1 SS, -1 NS
- std::vector< torch::Tensor > Gs;          ///< subgradient matrices G
+ std::vector< torch::Tensor > Gs;
+ std::vector< torch::Tensor > Es;          ///< convexity-constraint
+                                           ///< indicators, one row per
+                                           ///< component          ///< subgradient matrices G
  std::vector< torch::Tensor > Gs_aggreg;   ///< aggregated subgradient vectors
  std::vector< torch::Tensor > Qs;          ///< Gram matrices Q = G G^T
  std::vector< torch::Tensor > alphaS;      ///< linearization error vectors
@@ -679,6 +662,7 @@ class BundleSolverML : public BundleSolver
  int f_ML_iter_first = 0;        ///< value of intMLIterFirst [0]
  int f_ML_iter_last = INT_MAX;   ///< value of intMLIterLast [INT_MAX]
  int f_ML_window = INT_MAX;      ///< value of intMLWindow [INT_MAX]
+ int f_max_thread = 0;           ///< value of intMaxThread [0]
  int f_ML_iter = 0;              ///< iteration counter within a solve
 
 /*--------------------------------------------------------------------------*/

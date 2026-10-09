@@ -7,11 +7,488 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-09
+
 ### Added
+
+- bit 4 (+16) of `intDoEasy`: the dual master problem does not scale the
+  easy components by a size Variable, i.e., the mass lambda of the lower
+  model is fixed to 1 and the global lower bound has no effect there, which
+  gives a master that may be cheaper to solve; without it every easy
+  component whose inner Block owns or takes a size Variable is scaled [see
+  `MasterProblemBlock::use_easy_size_variables()`]. It is read when the
+  Block is set, as which components are easy
+
+- bit 5 (+32) of `intDoEasy`: an easy component whose inner Block neither
+  owns nor takes a size Variable is scaled through a sized copy of its
+  inner Block that the master has in its place [see
+  `MasterProblemBlock::use_easy_mirrors()`]; off by default, so that such a
+  component is not scaled and lambda stays fixed to 1, and of no effect
+  with bit 4
+
+- `BundleSolverML` listens to `intMaxThread`: at the beginning of each
+  `compute()` the number of threads of Torch is set to max( 1 ,
+  intMaxThread ), hence to one with the default 0, so that the predictions of
+  the network, and with them the whole trajectory, are the same from a run to
+  the next; with more threads the order of the floating-point sums may
+  change them
+
+- the trust region (intMPStbl == 4) without integer Variable, i.e., the
+  stabilized cutting-plane method with the box || x - x_bar ||_inf <= t,
+  whose master is linear: D*_t( z* ) is t || z* ||_1, the heuristic t
+  is not used and t only changes by the significant increases and
+  decreases, a serious step counting only if d* reaches the side of the
+  box. As long as no point of the domain is known each master starts from
+  tMinor and the box is enlarged only as much as the vertical
+  linearizations ask, which keeps the point close to the centre; the
+  master solved once without it tells an empty domain from a far one, and
+  vertical linearizations are never deleted; with every component easy the
+  master, which is then the problem itself, is solved without the box, so
+  that a side of the box is not taken for an optimum
+
+- `BundleSolver` listens to `dblUpCutOff` and `dblLwCutOff` of `Solver`:
+  in the concave case it stops as soon as the best value found is at least
+  `dblUpCutOff`, or as soon as the bound of the model certifies that the
+  optimal value is at most `dblLwCutOff`, and vice versa in the convex case,
+  returning `kCutOff`; with the default (infinite) cutoffs nothing changes.
+  With the dual master, the cutoff that a point reaches (`dblUpCutOff` in
+  the concave case, `dblLwCutOff` in the convex one) is also the global
+  lower bound of the master, when it is above the true one, as whoever set
+  it does not care where the optimum is beyond it: in a Branch-and-Bound,
+  the incumbent stabilizes the dual of the node. The bound is only
+  conditional: what the master proves is recorded as a global bound, and
+  reported by `get_lb()` / `get_ub()`, only if it is above the cutoff, the
+  level target is never put beyond it, and an optimality test passed with
+  the value at the stability centre within the accuracy of the cutoff ends
+  with `kCutOff` rather than `kOK`; a master that fails with the bound is
+  solved again without it, which then stays out until `compute()` returns
+
+- a component that gains an "active" Variable the master already has, e.g.,
+  a `LagBFunction` given the dual pair of a multiplier that other
+  components also have, keeps the master right: a hard component is reset,
+  so that its cuts are reloaded from its global pool through the new
+  local-to-global map, which gives them their coefficient on that
+  coordinate, and an easy one gets its terms in the coupling row of the
+  coordinate [see `MasterProblemBlock::add_easy_coupling()`], with the
+  local index the Variable has at the end of the batch; if the coordinate
+  is nonzero in the stability centre, the value of the component there is
+  declared unknown, as for a removal
+
+- a component that gains an "active" Variable no longer needs the master
+  problem to be built anew: for each cut in the bundle,
+  `process_outstanding_Modification()` asks the component that owns it,
+  with the local indices of that component, for its coefficients on the
+  new coordinates alone, which strong quasi-additivity makes valid, and
+  gives them to `MasterProblemBlock::add_vars()` indexed by bundle slot. A
+  coordinate is born at zero in the stability centre as in the point of
+  every cut, hence nothing of the algorithm is reset. The `BlockModAD` of a
+  dynamic Variable or Constraint added to the Block is dropped, since the
+  change of the components reaches the Solver as a `FunctionModVars`
+
+- `intIntVars`: with 1 the integer Variable of the C05Function are kept
+  integer, i.e., what is minimized is the function over the integer points of
+  its domain, by the stabilized cutting-plane method of van Ackooij, Frangioni
+  and de Oliveira (Comput. Optim. Appl. 65, 2016): a proximal (mixed-integer
+  quadratic) or trust-region (mixed-integer linear) master, and the master
+  without stabilization, whose bound is a global lower bound, when the
+  stabilized one sees nothing better than the stability centre even after its
+  region has been enlarged by degrees: with the proximal term t is multiplied
+  by `dblmxIncr` up to `dbltMaior`, with the trust region the region grows by
+  the fraction `dblIntRad` of the whole one, every Variable with a finite box
+  moving by that fraction of its width and the others by t, until after ceil( 1
+  / `dblIntRad` ) enlargements it is the whole one, as in the stabilized
+  Benders' method of Baena, Castro and Frangioni (Manag. Sci. 66, 2020); with
+  the trust region the binary Variable, the integer ones with box [ 0 , 1 ],
+  get in place of it the local branching constraint [see
+  `MasterProblemBlock::set_local_branching()`], whose radius is the same
+  fraction of their number, and a region in which the centre is optimal is
+  excluded with the reverse constraint whenever the trust region has not
+  restricted the other Variable while exploring it; `integer_test` has
+  instances with all, half and a third of the Variable binary. The method is
+  run by the main loop of `compute()` itself, which calls
+  `integer_direction()`, `integer_trial_point()` and `integer_step()` where the
+  continuous method calls `FormD()`, `continuous_trial_point()` and
+  `continuous_step()`; with the level (`intMPStbl` 1) it is the level method of
+  the same paper, whose levels follow its rule (19) with `dblLStabM` and which
+  solves the cutting-plane master each time a level set is empty, whose bound
+  is exact (the hybrid variant of the paper) [see `integer_level_direction()`];
+  the default 0 keeps the continuous relaxation that was always minimized. The
+  test `integer_test` compares it with the same problem written out as one
+  mixed-integer program
+
+- `vstrNoEasy`, the classname() of the components that must never be
+  treated as easy, in addition to those whose index is in `vintNoEasy`: the
+  class of a component is that of the first nested Block of its
+  `C05Function` (the inner Block of a `LagBFunction`), or that of the
+  `C05Function` itself if it is a Block with no nested Block, so that a
+  configuration names the hard components of any instance without knowing
+  their position; which components are easy is a concept of this Solver
+
+- the tests of this directory and of the OSBDO examples carry the label of the
+  module, so that the pipeline, which selects with `ctest -L <module>`, runs
+  them: they were built and never run
+
+- `test/osbdo`, the four examples of OSBDO (multicommodity flow, supply chain,
+  intersection of convex sets and federated learning) solved by `BundleSolver`
+  in the same form, the agents as `BendersBFunction` or `LogisticFunction` and
+  the coupling as an easy `LagBFunction`, each on an instance out of a verbatim
+  copy of the generator of OSBDO and checked against a reference value, the
+  whole problem as one LP or QP where there is one
 
 ### Changed
 
+- a change of the linear part of a component no longer throws away the rows
+  the master problem holds for it: a `C05FunctionModLin` moves every
+  linearization by the same delta and leaves the constant of each of them
+  where it is, hence the deltas that reach the solver between two solves of
+  the master are summed, one dense vector per component, and handed to
+  `MasterProblemBlock::shift_cuts()` in one call, together with the
+  reference `f_k( x_bar )`, which moves by `delta . x_bar`; a component that
+  is being reset anyway, an easy one, or a delta that speaks of a `Variable`
+  this solver does not know, all fall back to asking the component again.
+  The values of the sequence of re-optimizations of the facility location do
+  not move in any of the four forms of the master problem, primal or dual by
+  iterate or displacement
+
+- the noise reduction has a global memory: it sets t to dblmxIncr times the
+  largest among t and the values it has set since the last serious step,
+  and it stops the solver when that value is already dbltMaior, so that the
+  decreases of t in a sequence of null steps can no longer undo it and let
+  it happen forever; the two noise reductions, before the stopping test and
+  after an evaluation that gives neither a serious nor a null step, are one
+  method
+
+- the makefile asks for `-O3 -DNDEBUG` and nothing else, the macro of the
+  patch for `boost::any` on macOS having no reason to be there since there is
+  no `boost::any` left in the core
+
+- whoever links the module keeps it: the classes of a module register
+  themselves in the factory from a static initialiser, and a linker that
+  drops what looks unused takes the registration away with it, so the target
+  now tells whoever links it to keep the symbol that forces the module in,
+  and on ELF, where naming the symbol is not enough, the library as a whole
+
+- the master of the tests asks Gurobi for its least numerical care and not
+  for none of it, and declares the residual zero on the scale of the model:
+  the extra care is paid at every one of the thousands of solves of a run
+
+- the tests of the ML variant link `SMS++::BundleSolverML`, which is where
+  `BundleSolverML` now lives
+
+- the configuration that is installed no longer looks for NDOSolver/FiOracle,
+  which the library does not link any more
+
+- the three places where the parallel loop names a failing component write
+  the log at the same verbosity, and the log says which status the component
+  that stopped the loop returned, a stop with no reason having left whoever
+  read it to guess among the components
+
+- `ParallelBundleSolver` keeps its threads alive and wakes up when an
+  evaluation ends, rather than starting and joining a thread per component at
+  every iteration, and never lets a thread wait on one that has already
+  finished
+
+- the master problem is a `MasterProblemBlock`, i.e., a Block of the model
+  solved by whichever Solver is attached to it, in place of the `MPSolver`
+  hierarchy of the previous versions: what the bundle asks of it is said
+  through the abstract representation and the Modification, so that the
+  master is built, solved and changed as any other Block, and the parameters
+  that only the old hierarchy understood are refused where they no longer
+  mean anything. With the MPSolver hierarchy go the NDOSolver/FiOracle
+  submodule and the Osi and Clp requirements: a BundleSolver needs the core
+  library and MILPSolver, and the Solver of the master is the one the
+  BlockSolverConfig that `strMPBSolverCfg` points at attaches
+
+- the Modification that `MasterProblemBlock` issues in a loop travel in one
+  channel: the shift of the constant of every cut at a move of the reference
+  [see `set_reference()`], the refresh of the box, the linear part of the
+  0-th component and the quadratic term of every z at a change of t. A
+  Solver able to write a whole set of coefficients, or of sides, in one
+  operation then does that instead of one call per cut, per variable or per
+  coupling row
+
+- the groups of components take the threads they spend on their members from
+  the pool of the parallel solver driving them, through
+  `C05SumFunction::set_member_runner()`, instead of starting one per member: a
+  thread costs of the order of 100 microseconds to start and the members of
+  the instances of interest cost less than that, which is why the hand-down
+  was worth it only above a threshold. The two levels share one pool, sized
+  for both, and a group evaluates one of its members in the thread that is
+  waiting for the others anyway, so that no thread of the pool is ever held
+  doing nothing and the members cannot be starved by the components
+
+- the fifth loop of `process_outstanding_Modification()` asks whether any of
+  the Variable a Modification speaks of is still "active" in the component it
+  comes from, that component being reloaded from its global pool whatever has
+  changed. It used to actualise the names against the first component, "which
+  is fairly taken as a representative since all the C05Function have the same
+  active Variable", into a range that nothing read: an assumption that no
+  longer holds when the Lambda is sparse, in sixty lines whose only effect
+  was to decide whether the component is reloaded at all
+
+- BundleSolverML is a library of its own, SMS++::BundleSolverML: Torch is
+  some hundreds of megabytes of shared objects, and a program linking
+  BundleSolver paid the loading of every one of them at each start, 0.2 s per
+  process on our machines, whether or not the ML variant was ever used.
+  Whoever wants that variant links the new library, which brings BundleSolver
+  along with it
+
 ### Fixed
+
+- the global lower bound of the dual master, which is in the frame of the
+  stability centre, is translated again whenever the centre moves, rather
+  than only when the bound changes: once the multiplier of its row is free
+  in the Solver of the master [see `MasterProblemBlock::set_global_LB()`],
+  a translation made with a centre where the function was lower cuts off
+  the optimum
+
+- with an empty bundle and t at `dbltMinor` the master is solved again with
+  the previous t before a verdict of the easy components is trusted: the
+  master of a Bundle with easy components and t at `dbltMinor` is badly
+  scaled, and a master Solver may declare it empty or unbounded when it is
+  not (the first master of a Lagrangian dual of a unit commitment instance,
+  whose objective was only 1e-10 times the squared norm of z, was declared
+  unbounded by Gurobi with FeasibilityTol 1e-8, and the dual reported
+  unbounded)
+
+- `has_dual_solution()` answers false when a Modification of a component
+  has taken away from its global pool, before the next `compute()`, a
+  linearization of the bundle with a nonzero multiplier, since the dual
+  solution is made with it, and when no linearization of a component has a
+  nonzero multiplier, as a master problem that failed leaves them, since
+  there is then no combination to give
+
+- the global lower bound that a null aggregate subgradient certifies is
+  `UpFiLmb + min( v^* , 0 )`: with an inexact oracle (or by rounding) the
+  linearization errors may be negative and `v^*` positive, and then
+  `UpFiLmb + v^*` is above the function at the current point; a Lagrangian
+  Dual over inexact components reported it as the upper bound of the dual,
+  below the lower one. The stop that the null subgradient certifies is the
+  same as before
+
+- `FormD()` takes an empty or unbounded master problem that the easy
+  components could explain (an empty region of theirs, or a direction of
+  negative cost the coupling term does not see) as their answer only at the
+  first master solved after they changed, or without stabilization: since
+  neither depends on the stability centre or on the bundle, with a proximal,
+  trust-region or level master any later one is a numerical error in
+  disguise, and so is one that follows a failure of the master Solver in the
+  same call. With easy components, a master that Gurobi called unbounded
+  after failing on numerical difficulties made the Lagrangian dual of
+  pHydro_4 report the problem infeasible, and an empty easy region was taken
+  for a numerical error; with the level, whose pure master cannot be
+  unbounded, an empty easy region that the relaxation of the level cannot
+  fix is reported as infeasible rather than as an error or a low precision
+
+- `IsOptimal()` no longer certifies a point with an empty bundle when t was
+  at tMinor already, so that Prevt had not been set
+
+- a BundleSolver detached from a Block and attached to another one, or to
+  the same one again, gives the linear part of the 0-th component to its
+  new master problem: the flag telling that the master already had it
+  survived the change of Block, so that the new master was left without
+  it, which gave wrong directions and a wrong bound; a
+  `LagrangianDualSolver` moved to another Block, which carries its inner
+  Solver along, ended its next `compute()` for an inexact oracle
+
+- a linear 0-th component after a quadratic one in the master problem the
+  BundleSolver recycles across Block [see `CreateMPB()`] no longer keeps
+  the rho of the previous Block, which `MasterProblemBlock::clear()` does
+  not forget: the linear one now tells the master that it has no
+  quadratic term
+
+- the pure level stabilization with no reliable lower bound enlarges the
+  expected decrease Delta only after a Serious Step that has decreased Fi
+  by at least Delta / dblLStabIncr; before, Delta was doubled at every
+  opening of the intMnSSC gate, and on the supply chain example of OSBDO
+  it reached 1e74, so that the level constraint did not stabilize the
+  master for most of the run
+
+- `intDoEasy` keeps all its bits: it was stored in a `bool`, so that the
+  dual values and reduced costs of the easy components (bits 4 and 8) were
+  never kept and `get_var_solution()` always refused to give them; also,
+  setting it after the Block, as a BlockSolverConfig does, now decides
+  whether those of the next solves of the master are kept
+
+- the level and doubly stabilized methods with the primal master in the
+  displacement form no longer restart the target for ever: a gap closed by
+  empty levels whose aggregate certificate is not yet within the tolerance
+  restarts the target from the scale-based Delta, which can close it again
+  at the same centre, and so on; the restart happens at most once per
+  centre, and the gap that closes again there is accepted, a second
+  sequence of empty levels converging to the same value from far below being
+  no longer a boundary effect
+
+- the aggregate subgradient `G1` has one entry per Variable rather than one
+  per component: it was sized with the number of components, so that with
+  the sparse Lambda the sum of the subgradients wrote past its end and
+  corrupted the heap whenever it is needed, which with `BundleSolverML`
+  (whose `NeedsG1()` is always true) is always; with the dense Lambda it
+  was only truncated, and its norm, a feature of the network, was wrong
+
+- a Variable removed from a component and given back to it in the same
+  batch stays in the master: its global index was still queued for removal
+  although its reference count was positive again, so that the
+  local-to-global map pointed to another Variable ("duplicate global
+  Variable in a component", or a corrupted heap)
+
+- an easy component that loses a coordinate added in the same batch, not
+  yet in the master, no longer asks the master to drop its terms from a
+  coupling row that does not exist; and the local-to-global maps of the easy
+  components are given to the master also when a component has only gained
+  a coordinate it already had
+
+- a stability centre already beyond the conditional lower bound, as left by
+  a previous call that stopped there as unbounded, is reported unbounded
+  rather than optimal when nothing has changed in between: the test of the
+  conditional bound came after that of optimality, which with exact easy
+  components fires at the first iteration
+
+- the test of pure level stabilization that enlarges the expected decrease
+  without a reliable lower bound measures the error of the model, as the
+  documentation of `dblLStabSmall` says: it was computed after
+  `GotoLambda1()` had moved the reference to the new center, so that it
+  compared the predicted decrease instead; the value of the center the step
+  starts from is now passed to `update_level_after_step()`
+
+- removing coordinates while the algorithm runs works, the master
+  shrinking through `MasterProblemBlock::remove_vars()`: the `BlockModAD` of
+  a removal is dropped as that of an addition, the components reporting the
+  change themselves; in the dense path the removed coordinates leave
+  `LamVcblr`, which kept pointers to destroyed Variable, and when one of
+  them is nonzero at the stability center the values there are declared
+  unknown, the function after the removal being the one before with that
+  coordinate at zero, so that the next finite evaluation becomes the center
+  (the bundle stopped at a wrong value); in the sparse path the linear part
+  losing a Variable is handled through `Lambda2Idx`, and a Variable added
+  and removed in the same batch is no longer passed to the master, which
+  never had it
+
+- a `FunctionModVars` coming from a Function that is not a component, the
+  linear part being one, no longer reads the arrays that hold one entry per
+  component with the index `Inf< Index >()` that
+  `get_index_of_component()` returns for it: it happened in
+  `process_outstanding_Modification()`, both where the values of the
+  components are refreshed and where the local-to-global map of a sparse
+  Lambda is extended, and either one was a segmentation fault. The linear
+  part is marked out of date instead, so that the master receives its
+  coefficients on the new coordinates
+
+- `BundleSolver::get_var_solution()` read `IsEasy`, which is empty when no
+  component is easy, up to the number of components, hence out of its range
+  whenever the Configuration of the solution (e.g., a `GetInnerVarSolConfig`
+  of the `LagrangianDualSolver`) asked for the easy components of a problem
+  without any; it now finds nothing to give, and an index given explicitly
+  is rejected as that of a component that is not easy
+
+- on macOS a program linking the module lost the classes the module
+  registers in the factories when the linker dropped the library, as it
+  does under `-dead_strip_dylibs`, which conda sets: the target now asks the
+  linker for the symbol that forces the module in (`-u`), which ld64,
+  unlike the ELF linker, counts as a use of the library
+
+- the seed of the generator with which a group draws the combinations of
+  linearizations it hands out is `intCmpAggrSeed` told apart by the position
+  of the group, which the solver now passes to it: the group seeded itself
+  with its own size, so that two groups of the same size, which is what a
+  partition into groups of equal size gives, drew the very same sequence
+
+
+- a problem whose components are all easy is solved instead of being refused:
+  the master problem then carries the exact model of each of them, hence it is
+  the problem itself once the proximal term is out of the way, and one solve of
+  it gives the answer. `t` is therefore taken to its maximum, not to its
+  minimum as it is while the bundle of a hard component is empty: with a finite
+  `t` the master is the stabilized problem and not the problem, and on one of
+  the PyPSA networks it gave a dual value of 3.1e9 against the 2.4e11 of the
+  reference. The rule that
+  collapses t while the bundle is empty, the error raised when no component is
+  found to evaluate and the norm of the aggregate, which is divided by a mass
+  that is then zero, all apply to the components that are hard and are skipped
+  when there is none
+
+- the combination of linearizations given back to a component when its
+  bundle is full is divided by the mass its diagonal rows carry, lambda
+  minus the share of its individual lower bound, rather than by 1 - r, so
+  that it is a convex combination also with a level row or an individual
+  lower bound; with all the mass on the lower bounds the item is replaced
+  without any aggregation
+
+- a full bundle frees an item in base that is a vertical row only when fewer
+  than two diagonal ones are in base, the aggregate being made of the
+  diagonal rows alone and the multiplier of the vertical one being otherwise
+  lost
+
+- `is_subgradient_global()` asks the master by the hard component and the
+  global name of the item, as the other helpers do, rather than by the
+  position in the pool, which with easy components made every row vertical
+
+- the duals of an easy component, and the reduced costs of its columns, are
+  the ones of the last solve of the master: the sub-Block of an easy
+  component is a Block of the model, which any Solver may write into between
+  that solve and the question, so what it held when asked was not what the
+  master had left there, as was already the case for its primal. They are
+  saved only when `intDoEasy` says that they will be asked for
+
+- a master that the Solver could not solve, and whose bundle held no item
+  to remove, was the end of the run: it is now solved once more with t as
+  it was before the empty bundle brought it down to its minimum, where the
+  quadratic term vanishes against the data of the easy components and
+  leaves the master a badly scaled problem
+
+- the part of an easy component in the solution of a LagrangianDualSolver
+  was whatever its inner Block held when the solution was asked for: the
+  Solver of the master writes there after each solve, but the inner Block
+  is a Block of the model, which any other Solver may write into after it,
+  so that the solution could mix the multipliers of the master for the hard
+  components with the solution of another Solver for the easy ones. The
+  master now saves what it writes there, and `get_dual_solution()` writes
+  it back [see `MasterProblemBlock::restore_easy_primal()`]
+
+- a variable change of one component that is not wrapped in a
+  `GroupModification` (a "naked" `FunctionModVars`) threw when there were
+  more components, and the throw only hid what went wrong behind it. It is
+  now processed per component, and three things it needs have been put
+  right: (i) with the sparse representation of the Variable the
+  linearizations reloaded into the master were read as dense, which put
+  their coefficients on the wrong global Variable; (ii) a component that
+  stops depending on some of its Variable, while the others still do, has
+  its linearizations reloaded from its global pool (a reset of that
+  component only, the others being no longer reset), and its value in the
+  stability centre is marked unknown if one of those Variable is not 0
+  there; (iii) an easy component has its Lagrangian terms dropped from the
+  coupling rows of the Variable it no longer has, through the new
+  `MasterProblemBlock::drop_easy_coupling()`, and the master is given the
+  new local-to-global maps of the easy components
+
+- the component index passed to `MasterProblemBlock`: it keeps a bundle only
+  for the "hard" components and indexes them by their position among those,
+  while BundleSolver counts the components of Fi globally, the "easy" ones
+  included. With no easy component the two numbers coincide, so the
+  difference showed up only under `intDoEasy`, where it addressed the wrong
+  `PolyhedralFunctionBlock` or ran past the last one; the translation is now
+  made explicit by `hard_k()` and, for the easy components, by `easy_k()`
+
+- a Modification changing the linearizations of a component without
+  changing its Variable only asked the Solver of the master to read the
+  subgradients again, but the master holds copies of them and so gave back
+  the stale ones; the component is now reset, which reloads its
+  linearizations from its global pool as they are
+
+- when a component had used up its share of the bundle with constraints
+  (vertical linearizations, which are never removed), a new one was still
+  put in a free spot elsewhere in the bundle, beyond the global pool of the
+  component, and the C05Function then refused to store it with "invalid
+  linearization name"; this happens when a Lagrangian subproblem is unbounded
+  over and over, and now the solve ends with kError and says that the bundle
+  of that component is full of constraints
+
+- a component answering kLowPrecision stopped the whole solve with an error:
+  that code sorts after kError among the return codes, and the two places
+  that read the status of a component only asked whether it was at least
+  kError. A component saying kLowPrecision has found a solution and says it
+  could not prove it optimal, which is inexact information and not a
+  failure, so it is now let through and used as such
 
 ## [0.5.0] - 2026-09-12
 
@@ -82,8 +559,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   easy components making it so was not properly recognised
   as being so
 
-- allow to terminate in exactly one iteration 
-
+- allow to terminate in exactly one iteration
 
 ## [0.4.4] - 2024-02-27
 
@@ -161,6 +637,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.4.1] - 2021-12-07
 
+### Changed
+
 - improved Modification handling (no over-reacting to easy ones, important bugfix)
 
 - better log, printing times for each component in verbosity 4 and higher
@@ -168,8 +646,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - fixed several flaws
 
 - improved namespace handling and similar stuff
-
-### Changed
 
 ## [0.4.0] - 2021-05-02
 
@@ -245,10 +721,10 @@ Several major improvements:
 
 - First test release.
 
-[Unreleased]: https://gitlab.com/smspp/bundlesolver/-/compare/0.5.0...develop
+[Unreleased]: https://gitlab.com/smspp/bundlesolver/-/compare/0.6.0...develop
+[0.6.0]: https://gitlab.com/smspp/bundlesolver/-/compare/0.5.0...0.6.0
 [0.5.0]: https://gitlab.com/smspp/bundlesolver/-/compare/0.4.5...0.5.0
-[0.4.5]: https://gitlab.com/smspp/bundlesolver/-/compare/0.4.4.1...0.4.5
-[0.4.4.1]: https://gitlab.com/smspp/bundlesolver/-/compare/0.4.4...0.4.4.1
+[0.4.5]: https://gitlab.com/smspp/bundlesolver/-/compare/0.4.4...0.4.5
 [0.4.4]: https://gitlab.com/smspp/bundlesolver/-/compare/0.4.3...0.4.4
 [0.4.3]: https://gitlab.com/smspp/bundlesolver/-/compare/0.4.2...0.4.3
 [0.4.2]: https://gitlab.com/smspp/bundlesolver/-/compare/0.4.1...0.4.2

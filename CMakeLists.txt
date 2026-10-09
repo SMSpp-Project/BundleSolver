@@ -51,87 +51,13 @@ list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 include(BuildType)
 
 # ----- Requirements -------------------------------------------------------- #
-# OsiCpx and/or OsiGrb needed for BundleSolver
-find_package(Osi REQUIRED OPTIONAL_COMPONENTS OsiCpx OsiGrb)
-if (NOT Osi_FOUND)
-    set(NDOFiOracle_USE_OSI OFF)
-endif ()
-
-# OsiClp needed for BundleSolver
-find_package(Clp COMPONENTS OsiClp)
-if (NOT Clp_FOUND)
-    set(NDOFiOracle_USE_CLP OFF)
-endif ()
-
 # Torch needed for BundleSolverML
 find_package(Torch HINTS ${Torch_ROOT})
-
-# Set the WHICH_OSI_QP macro according to these following priorities:
-# - use the given WHICH_OSI_QP in input as CMake option, if any
-# - use Cplex, i.e., 1, if available
-# - use Gurobi, i.e., 2, if available
-# - otherwise, use Clp
-
-# Define a temporary variable to store the value of WHICH_OSI_QP
-set(TEMP_WHICH_OSI_QP 0)
-
-# if WHICH_OSI_QP is *not* given in input as CMake option...
-# (`NOT DEFINED WHICH_OSI_QP` tests `set( )`, not `add_compile_definitions( )`)
-if (NOT DEFINED WHICH_OSI_QP)
-    # ... then use OsiClp in BundleSolver by default (as in BundleSolver.cpp:72)
-    set(TEMP_WHICH_OSI_QP 0)
-else () # else if WHICH_OSI_QP is given in input as CMake option...
-    if (WHICH_OSI_QP MATCHES "^(CPLEX|cplex|CPX|cpx|1)$")
-        set(TEMP_WHICH_OSI_QP 1) # ... then use OsiCpx in BundleSolver
-    elseif (WHICH_OSI_QP MATCHES "^(GUROBI|gurobi|GRB|grb|2)$")
-        set(TEMP_WHICH_OSI_QP 2) # ... then use OsiGrb in BundleSolver
-    else ()
-        set(TEMP_WHICH_OSI_QP 0) # ... then use OsiClp in BundleSolver
-    endif ()
-endif ()
-
-# if Gurobi is found...
-if (Osi_OsiGrb_FOUND)
-    # ... and if WHICH_OSI_QP is *not* given in input as CMake option...
-    # (`NOT DEFINED WHICH_OSI_QP` tests `set( )`, not `add_compile_definitions( )`)
-    if (NOT DEFINED WHICH_OSI_QP)
-        # ... then use OsiGrb in BundleSolver
-        set(TEMP_WHICH_OSI_QP 2)
-    endif ()
-endif ()
-
-# but, if also Cplex is found...
-if (Osi_OsiCpx_FOUND)
-    # ... and if WHICH_OSI_QP is *not* given in input as CMake option...
-    # (`NOT DEFINED WHICH_OSI_QP` tests `set( )`, not `add_compile_definitions( )`)
-    if (NOT DEFINED WHICH_OSI_QP)
-        # ... then use OsiCpx in BundleSolver
-        set(TEMP_WHICH_OSI_QP 1)
-    endif ()
-endif ()
-
-# Add the compile definition only once at the end to avoid warnings
-add_compile_definitions(WHICH_OSI_QP=${TEMP_WHICH_OSI_QP})
-
-# Unset the temporary variable
-unset(TEMP_WHICH_OSI_QP)
 
 if (NOT hasParent)
     # If it's not being called by the umbrella, we need to
     # look for the system-installed libraries.
     find_package(MILPSolver REQUIRED)
-    find_package(NDOFiOracle REQUIRED)
-else ()
-    # NDOFiOracle library, required by BundleSolver.
-    # Requires CoinUtils, Osi and CPLEX.
-    set(NDOFiOracle_READ_PATHS OFF CACHE BOOL
-            "Whether NdoFiOracle will read locations for dependencies or not." FORCE)
-    add_subdirectory(NdoFiOracle)
-
-    # Add the binary directory to RPATH, so executables that use
-    # dynamic loading will look into it.
-    set(SMSPP_BUILD_RPATH
-            "${SMSPP_BUILD_RPATH};${CMAKE_CURRENT_BINARY_DIR}/NdoFiOracle")
 endif ()
 
 # ----- Configuration header ------------------------------------------------ #
@@ -159,7 +85,7 @@ set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
 # With the BUILD_SHARED_LIBS variable we can specify if the library will
 # be STATIC or SHARED, so no reason to do it now.
 add_library(${modName})
-target_compile_features(${modName} PUBLIC cxx_std_17)
+target_compile_features(${modName} PUBLIC cxx_std_20)
 
 # The name of the shared library carries the version of its binary interface,
 # which any minor release may change while the major version is 0, and then
@@ -173,8 +99,25 @@ set_target_properties(${modName} PROPERTIES
         VERSION ${PROJECT_VERSION}
         SOVERSION ${soVersion})
 
-if (MSVC AND BUILD_SHARED_LIBS)
-    target_link_options(${modName} INTERFACE "/INCLUDE:SMSpp_force_load_${modName}")
+# The classes of the module register themselves in the factory from a static
+# initialiser, and a linker that drops what looks unused takes the
+# registration away with it: the target tells whoever links it to keep the
+# symbol that forces the module in, or the library as a whole where naming
+# the symbol is not enough.
+if (BUILD_SHARED_LIBS)
+    if (MSVC)
+        target_link_options(${modName} INTERFACE
+                "/INCLUDE:SMSpp_force_load_${modName}")
+    elseif (UNIX AND (NOT APPLE))
+        # the ELF linker decides by the symbols a regular object asks for, so
+        # naming the symbol is not enough and the library has to be kept
+        target_link_options(${modName} INTERFACE "LINKER:--no-as-needed")
+    elseif (APPLE)
+        # ld64 keeps a dylib that provides a symbol to the link, one asked
+        # for by -u included, even under -dead_strip_dylibs
+        target_link_options(${modName} INTERFACE
+                "LINKER:-u,_SMSpp_force_load_${modName}")
+    endif ()
 endif ()
 
 # When adding source files with target_sources(), PRIVATE means that the files
@@ -184,8 +127,8 @@ endif ()
 # but should be added to anything that links to it.
 # Note: do not GLOB files here.
 target_sources(${modName} PRIVATE
-        src/BundleSolver.cpp
-        src/ParallelBundleSolver.cpp)
+        src/ParallelBundleSolver.cpp
+        src/BundleSolver.cpp)
 
 # When using target_include_directories(), PUBLIC means that any targets
 # that link to this target also need that include directory.
@@ -209,32 +152,37 @@ target_include_directories(
 # library, INTERFACE means they will be linked only to the targets that depend
 # on this library.
 target_link_libraries(${modName} PUBLIC
-        ${modNamespace}::MILPSolver
-        NDOFiOracle::NDOFiOracle)
+        ${modNamespace}::MILPSolver)
 
+# BundleSolverML is a library of its own: Torch is some hundreds of megabytes
+# of shared objects, and a program that links the one here pays the loading of
+# every one of them at each start, which on a machine of ours is 0.2 s per
+# process whether or not the ML variant is ever used. Whoever wants that
+# variant links SMS++::BundleSolverML, which brings this one along with it.
 if (Torch_FOUND)
-    message(STATUS "${modName}: Torch found, configuring BundleSolverML")
-    target_sources(${modName} PRIVATE src/BundleSolverML.cpp)
+    message(STATUS "${modName}: Torch found, configuring ${modName}ML")
+
+    add_library(${modName}ML)
+    target_compile_features(${modName}ML PUBLIC cxx_std_20)
+
+    if (MSVC AND BUILD_SHARED_LIBS)
+        target_link_options(${modName}ML INTERFACE
+                            "/INCLUDE:SMSpp_force_load_${modName}ML")
+    endif ()
+
+    target_sources(${modName}ML PRIVATE src/BundleSolverML.cpp)
+
+    target_include_directories(
+            ${modName}ML PUBLIC
+            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+            $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
+            $<INSTALL_INTERFACE:include/${modNamespace}>)
+
     separate_arguments(TORCH_CXX_FLAGS_LIST UNIX_COMMAND "${TORCH_CXX_FLAGS}")
-    target_compile_options(${modName} PRIVATE ${TORCH_CXX_FLAGS_LIST})
-    target_link_libraries(${modName} PUBLIC ${TORCH_LIBRARIES})
-endif ()
+    target_compile_options(${modName}ML PRIVATE ${TORCH_CXX_FLAGS_LIST})
+    target_link_libraries(${modName}ML PUBLIC ${modName} ${TORCH_LIBRARIES})
 
-# if NDOFiOracle library is *not* given as subdirectory since it is
-# in the system-installed libraries, we need to link the Coin::Osi* targets here
-if (NOT hasParent)
-    message(STATUS "${modName}: OsiClp found, configuring BundleSolver")
-    target_link_libraries(${modName} PUBLIC Coin::OsiClp)
-
-    if (Osi_OsiCpx_FOUND)
-        message(STATUS "${modName}: OsiCpx found, configuring BundleSolver")
-        target_link_libraries(${modName} PUBLIC Coin::OsiCpx)
-    endif ()
-
-    if (Osi_OsiGrb_FOUND)
-        message(STATUS "${modName}: OsiGrb found, configuring BundleSolver")
-        target_link_libraries(${modName} PUBLIC Coin::OsiGrb)
-    endif ()
+    add_library(${modNamespace}::${modName}ML ALIAS ${modName}ML)
 endif ()
 
 # This alias is defined so that executables in this same project can use
@@ -254,6 +202,16 @@ endif ()
 include(GNUInstallDirs)
 
 # Install the library
+# the ML variant goes in the same export set, so that a consumer finding this
+# module gets SMS++::BundleSolverML too when it was built
+if (Torch_FOUND)
+    install(TARGETS ${modName}ML
+            EXPORT ${modName}Targets
+            RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} # .dll
+            LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} # .so .dylib
+            ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}) # .lib
+endif ()
+
 install(TARGETS ${modName}
         EXPORT ${modName}Targets
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} # .dll

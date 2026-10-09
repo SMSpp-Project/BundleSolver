@@ -16,14 +16,11 @@ find_package(Torch QUIET HINTS ${Torch_ROOT})
 
 if (Torch_FOUND)
 
-    # Since we are using the block/solver factory, objects from linked
-    # libraries may wrongly appear unused, and by default the linker does not
-    # include them, so we have to force the linking.
-    if (BUILD_SHARED_LIBS)
-        if (UNIX AND (NOT APPLE))
-            add_link_options("-Wl,--no-as-needed")
-        endif ()
-    else ()
+    # The classes of the modules register themselves in the factories from
+    # static objects, which nothing here names: a shared library is kept by
+    # what its module asks of the linker [see the CMakeLists.txt of the
+    # module], while an archive has to be taken whole.
+    if (NOT BUILD_SHARED_LIBS)
         if (MSVC)
             add_link_options("/WHOLEARCHIVE" "/FORCE:MULTIPLE")
         else () # Unix
@@ -39,17 +36,17 @@ if (Torch_FOUND)
 
     add_executable(${modName}ML_test test.cpp)
     target_link_libraries(${modName}ML_test PRIVATE
-                          SMS++::BundleSolver
+                          SMS++::BundleSolverML
                           ${TORCH_LIBRARIES})
 
     add_executable(LSTMBlock_test LSTMBlock_test.cpp)
     target_link_libraries(LSTMBlock_test PRIVATE
-                          SMS++::BundleSolver
+                          SMS++::BundleSolverML
                           ${TORCH_LIBRARIES})
 
     add_executable(BundleSolverMLCheckpoint_test BundleSolverMLCheckpoint_test.cpp)
     target_link_libraries(BundleSolverMLCheckpoint_test PRIVATE
-                          SMS++::BundleSolver
+                          SMS++::BundleSolverML
                           ${TORCH_LIBRARIES})
 
     if (WIN32 AND BUILD_SHARED_LIBS AND NOT DEFINED ENV{CONDA_BUILD})
@@ -72,3 +69,100 @@ if (Torch_FOUND)
 endif ()
 
 # --------------------------------------------------------------------------- #
+
+# ----- the quadratic 0-th component ---------------------------------------- #
+# Neither of these needs Torch: the first checks the arithmetic the master
+# absorbs the component with, the second solves the same regularised risk
+# twice, with the bundle and as one quadratic program, and compares. The
+# linker has to be told to keep the libraries whose objects only register
+# themselves into the factories
+add_executable(zeroth_quadratic_test test_zeroth_quadratic.cpp)
+target_link_libraries(zeroth_quadratic_test PRIVATE SMS++::BundleSolver)
+add_test(NAME zeroth_quadratic_test COMMAND zeroth_quadratic_test)
+
+if (TARGET SMS++::MILPSolver)
+    add_executable(zeroth_quadratic_e2e_test test_zeroth_quadratic_e2e.cpp)
+    target_link_libraries(zeroth_quadratic_e2e_test PRIVATE
+                          SMS++::BundleSolver
+                          SMS++::MILPSolver)
+    # the test reads BSPar-rho.txt and MPBCfg-rho.txt from the working directory
+    add_test(NAME zeroth_quadratic_e2e_test
+             COMMAND zeroth_quadratic_e2e_test
+             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+endif ()
+
+# ----- a BundleSolver moved from Block to Block ---------------------------- #
+# One BundleSolver carried across Block with different 0-th components, each
+# value against that of a BundleSolver attached to that Block only
+if (TARGET SMS++::MILPSolver)
+    add_executable(reattach_test test_reattach.cpp)
+    target_link_libraries(reattach_test PRIVATE
+                          SMS++::BundleSolver
+                          SMS++::MILPSolver)
+    # it reads BSPar-rho.txt and MPBCfg-rho.txt from the working directory
+    add_test(NAME reattach_test
+             COMMAND reattach_test
+             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+endif ()
+
+# ----- the integer Variable [see intIntVars] ------------------------------- #
+# The bundle with a mixed-integer master against the same problem written out
+# as one mixed-integer program, both solved by HiGHS
+if (TARGET SMS++::MILPSolver)
+    add_executable(integer_test test_integer.cpp)
+    target_link_libraries(integer_test PRIVATE
+                          SMS++::BundleSolver
+                          SMS++::MILPSolver)
+    # the test reads BSPar-int.txt, BSPar-relax.txt, BSCfg-int.txt and
+    # MPBCfg-int.txt from the working directory
+    add_test(NAME integer_test
+             COMMAND integer_test
+             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+endif ()
+
+# ----- the cutoffs [see dblUpCutOff and dblLwCutOff] ----------------------- #
+# The cutoff that a point reaches, which is the global lower bound of the dual
+# master, never reached, reached and reached at the optimum, with each of its
+# stabilizations
+if (TARGET SMS++::MILPSolver)
+    add_executable(cutoff_test test_cutoff.cpp)
+    target_link_libraries(cutoff_test PRIVATE
+                          SMS++::BundleSolver
+                          SMS++::MILPSolver)
+    # the test reads BSPar-cutoff.txt, BSCfg-cut.txt and MPBCfg.txt from the
+    # working directory
+    add_test(NAME cutoff_test
+             COMMAND cutoff_test
+             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+endif ()
+
+# ----- the verdict of the easy components at the first master ------------ #
+# An easy LagBFunction next to a hard component, whose first master has an
+# empty bundle and t at dbltMinor: a master that is not unbounded at the
+# previous t is not taken for the easy components' answer, one that still is
+# gives kUnbounded
+if (TARGET SMS++::MILPSolver)
+    add_executable(easy_tminor_test test_easy_tminor.cpp)
+    target_link_libraries(easy_tminor_test PRIVATE
+                          SMS++::BundleSolver
+                          SMS++::MILPSolver)
+    # it reads BSPar-easy.txt and MPBCfg-easy.txt from the working directory
+    add_test(NAME easy_tminor_test
+             COMMAND easy_tminor_test
+             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+endif ()
+
+# the examples of OSBDO, see osbdo/README.md
+add_subdirectory(osbdo)
+
+
+# ----- the label of this module's tests ------------------------------------ #
+
+# The label lets the module CI select exactly the tests exercising this module
+# with `ctest -L <module>` (see tests/cmake/TestLabels.cmake in the umbrella
+# for the system-tests counterpart): without it these tests are built and
+# never run.
+get_property(_tests DIRECTORY PROPERTY TESTS)
+if (_tests)
+    set_tests_properties(${_tests} PROPERTIES LABELS "${modName}")
+endif ()

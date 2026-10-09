@@ -1,0 +1,60 @@
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - - BSCfg-cut.txt - - - - - - - - - - - - - - - -
+#
+# The ComputeConfig of the BundleSolver of BSPar-cutoff.txt: the dual
+# master with the proximal stabilization, which BSPar-cutoff.txt changes to
+# the level and to the doubly stabilized ones; the dual master is the one
+# whose global lower bound the cutoff becomes [see dblLwCutOff].
+#
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+ComputeConfig         # exact type of the ComputeConfig object
+
+1  # f_diff == 0 ==> all non-provided parameters are set to the default value
+   # f_diff == 1 ==> all non-provided parameters are not changed
+
+7  # number of integer parameters
+
+# now all the integer parameters
+intMaxIter   1000     # max number of iterations for each call
+intLogVerb      0     # log verbosity of the bundle
+intBPar2      100     # max bundle size per component
+intMnSSC        0     # min number of consecutive SS for a t increase
+intMnNSC        1     # min number of consecutive NS for a t decrease
+inttSPar1      12     # long-term t-strategy (12 = balancing)
+intMPPrimal     0     # the dual master, which has the global lower bound
+
+3  # number of double parameters
+
+# now all the double parameters
+dblRelAcc    1e-6     # relative accuracy required to solution
+dbltStar     1e+2     # multiplied to || residual || to estimate the gap
+dbltInit        1     # initial value for t
+
+1  # number of string parameters
+
+# now all the string parameters
+strMPBSolverCfg MPBCfg.txt  # BlockSolverConfig of the master
+
+0  # number of vector-of-int parameters
+
+# now all the vector-of-int parameters
+# [none]
+
+0  # number of vector-of-double parameters
+
+# now all the vector-of-double parameters
+# [none]
+
+0  # number of vector-of-string parameters
+
+# now all the vector-of-string parameters
+# [none]
+
+* # [none]  # no extra Configuration
+
+# end of ComputeConfig - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - END BSCfg-cut.txt - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -

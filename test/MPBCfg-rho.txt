@@ -1,0 +1,19 @@
+BlockSolverConfig
+1  # differential
+1  # one Solver
+GRBMILPSolver
+1  # one ComputeConfig
+ComputeConfig
+1  # differential
+4  # number of integer parameters
+intLogVerb      0
+intRelaxIntVars 1
+intMaxThread    1
+Method          1   # dual simplex: the multipliers of the master are the
+                    # algorithm, an interior point gives them to about 1e-7
+0  # number of double parameters
+0  # number of string parameters
+0  # number of vector-of-int parameters
+0  # number of vector-of-double parameters
+0  # number of vector-of-string parameters
+*  # [none]

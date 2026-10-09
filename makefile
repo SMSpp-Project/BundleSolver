@@ -16,7 +16,6 @@
 #           $(SW)          = compiler options                                #
 #           $(SMS++INC)    = the -I$( core SMS++ include directory )         #
 #           $(SMS++OBJ)    = the core SMS++ library                          #
-#           $(libNDOINC)   = the -I$( libNDO include directory )             #
 #           $(MILPSINC)    = the -I$( MILPSolver include directory )         #
 #           $(MILPSH)      = the .h files to include for MILPSolver          #
 #           $(BNDSLVSDR)   = the directory where the source is               #
@@ -34,13 +33,13 @@
 
 # macros to be exported - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-BNDSLVOBJ = $(BNDSLVSDR)/obj/BundleSolver.o \
-	$(BNDSLVSDR)/obj/ParallelBundleSolver.o
+BNDSLVOBJ = $(BNDSLVSDR)/obj/ParallelBundleSolver.o \
+	$(BNDSLVSDR)/obj/BundleSolver.o
 
 BNDSLVINC = -I$(BNDSLVSDR)/include
 
-BNDSLVH   = $(BNDSLVSDR)/include/BundleSolver.h \
-	$(BNDSLVSDR)/include/ParallelBundleSolver.h
+BNDSLVH   = $(BNDSLVSDR)/include/ParallelBundleSolver.h \
+	$(BNDSLVSDR)/include/BundleSolver.h
 
 # BundleSolverML requires Torch: it is only compiled if $(BNDSLVML) is
 # set (see makefile-c / makefile-s), in which case $(libTorchINC) is the
@@ -57,22 +56,22 @@ clean::
 
 # dependencies: every .o from its .cpp + every recursively included .h- - - -
 
-$(BNDSLVSDR)/obj/BundleSolver.o: $(BNDSLVSDR)/src/BundleSolver.cpp \
-	$(BNDSLVSDR)/include/BundleSolver.h $(SMS++OBJ) $(MILPSH) $(libNDOOBJ)
-	$(CC) -c $(BNDSLVSDR)/src/BundleSolver.cpp -o $@ $(BNDSLVINC) \
-	$(SMS++INC) $(MILPSINC) $(libNDOINC) $(SW)
-
 $(BNDSLVSDR)/obj/ParallelBundleSolver.o: $(BNDSLVSDR)/src/ParallelBundleSolver.cpp \
-	$(BNDSLVH) $(SMS++OBJ) $(MILPSH) $(libNDOOBJ)
+	$(BNDSLVH) $(SMS++OBJ) $(MILPSH)
 	$(CC) -c $(BNDSLVSDR)/src/ParallelBundleSolver.cpp -o $@ \
-	$(BNDSLVINC) $(SMS++INC) $(MILPSINC) $(libNDOINC) $(SW)
+	$(BNDSLVINC) $(SMS++INC) $(MILPSINC) $(SW)
+
+$(BNDSLVSDR)/obj/BundleSolver.o: $(BNDSLVSDR)/src/BundleSolver.cpp \
+	$(BNDSLVSDR)/include/BundleSolver.h $(SMS++OBJ) $(MILPSH)
+	$(CC) -c $(BNDSLVSDR)/src/BundleSolver.cpp -o $@ \
+	$(BNDSLVINC) $(SMS++INC) $(MILPSINC) $(SW)
 
 ifdef BNDSLVML
 $(BNDSLVSDR)/obj/BundleSolverML.o: $(BNDSLVSDR)/src/BundleSolverML.cpp \
 	$(BNDSLVSDR)/include/BundleSolverML.h \
-	$(BNDSLVSDR)/include/BundleSolver.h $(SMS++OBJ) $(MILPSH) $(libNDOOBJ)
+	$(BNDSLVSDR)/include/BundleSolver.h $(SMS++OBJ) $(MILPSH)
 	$(CC) -c $(BNDSLVSDR)/src/BundleSolverML.cpp -o $@ $(BNDSLVINC) \
-	$(SMS++INC) $(MILPSINC) $(libNDOINC) $(libTorchINC) $(SW)
+	$(SMS++INC) $(MILPSINC) $(libTorchINC) $(SW)
 endif
 
 ########################## End of makefile ###################################

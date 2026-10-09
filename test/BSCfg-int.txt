@@ -1,0 +1,60 @@
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - - BSCfg-int.txt - - - - - - - - - - - - - - -
+#
+# The ComputeConfig of the BundleSolver of BSPar-int.txt: integer Variable
+# kept integer, with the trust region of radius dbltInit as stabilization,
+# which makes the master a mixed-integer linear problem [see intIntVars].
+# BSPar-relax.txt changes it to the continuous relaxation.
+#
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+ComputeConfig         # exact type of the ComputeConfig object
+
+1  # f_diff == 0 ==> all non-provided parameters are set to the default value
+   # f_diff == 1 ==> all non-provided parameters are not changed
+
+7  # number of integer parameters
+
+# now all the integer parameters
+intMaxIter    500     # max number of iterations for each call
+intLogVerb      0     # log verbosity of the bundle
+intBPar2     1000     # max bundle size per component: the bundle is never
+                      # cleaned with integer Variable
+intMPPrimal     1     # the primal master, where the x are the Variable
+intMPV2Form     1     # raw form: the Variable of the master are x itself
+intMPStbl       4     # 4 = trust region || x - x_bar ||_inf <= t
+intIntVars      1     # the integer Variable are kept integer
+
+2  # number of double parameters
+
+# now all the double parameters
+dblRelAcc    1e-8     # relative accuracy required to solution
+dbltInit        1     # radius of the trust region
+
+1  # number of string parameters
+
+# now all the string parameters
+strMPBSolverCfg MPBCfg-int.txt  # BlockSolverConfig of the master
+
+0  # number of vector-of-int parameters
+
+# now all the vector-of-int parameters
+# [none]
+
+0  # number of vector-of-double parameters
+
+# now all the vector-of-double parameters
+# [none]
+
+0  # number of vector-of-string parameters
+
+# now all the vector-of-string parameters
+# [none]
+
+* # [none]  # no extra Configuration
+
+# end of ComputeConfig - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - END BSCfg-int.txt - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -

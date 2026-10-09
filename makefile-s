@@ -37,13 +37,6 @@
 # *H   is the list of all include files
 # *INC is the -I< include directories >
 
-# define input macros for libNDO library makefile, then include it
-# signal that *_ROOT values for external libraries need not be read by
-# the libNDO makefiles since they are defined already by SMS++
-NDOFi_NO_PATHS = 0
-libNDOSDR = $(BNDSLVSDR)/NdoFiOracle
-include $(libNDOSDR)/lib/makefile-inc
-
 # define input macros for MILPSolver makefile + dependencies, then include it
 # use the makefile-s version since the SMS++ stuff is supposed to be there
 MILPSSDR = $(BNDSLVSDR)/../MILPSolver
@@ -64,11 +57,11 @@ include $(BNDSLVSDR)/makefile
 
 # append external stuff defined in the other makefiles to BNDSLVOBJ,
 # BNDSLVINC and BNDSLVH, thus the := assignment has to be used (use GNU make)
-BNDSLVOBJ := $(BNDSLVOBJ) $(MILPSOBJ) $(libNDOOBJ)
-BNDSLVINC := $(BNDSLVINC) $(MILPSINC) $(libNDOINC) $(libTorchINC)
-BNDSLVH := $(BNDSLVH) $(MILPSH) $(libNDOH)
+BNDSLVOBJ := $(BNDSLVOBJ) $(MILPSOBJ)
+BNDSLVINC := $(BNDSLVINC) $(MILPSINC) $(libTorchINC)
+BNDSLVH := $(BNDSLVH) $(MILPSH)
 
 # external libraries for BundleSolver
-BNDSLVLIB = $(libNDOLIB) $(MILPSLIB) $(libTorchLIB)
+BNDSLVLIB = $(MILPSLIB) $(libTorchLIB)
 
 ########################### End of makefile-s ################################
