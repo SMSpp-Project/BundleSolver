@@ -1,0 +1,73 @@
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - - MPBCfg-easy.txt - - - - - - - - - - - - - - -
+#
+# The :MILPSolver of the master of BSPar-easy.txt: Gurobi with the dual
+# simplex and the tolerances of the master of the unit commitment
+# configurations, under which a badly scaled first master can be declared
+# unbounded when it is not.
+#
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+BlockSolverConfig     # exact type of the Configuration object
+
+1  # the BlockSolverConfig is a "differential" one
+
+1  # number of (the names of) Solver in this BlockSolverConfig
+
+# now all the names of the Solver - - - - - - - - - - - - - - - - - - - - - -
+GRBMILPSolver         # name of Solver
+
+1  # number of ComputeConfig in this BlockSolverConfig
+
+# now all the ComputeConfig
+# 1st ComputeConfig - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+ComputeConfig         # exact type of the ComputeConfig object
+
+1  # f_diff == 1 ==> all non-provided parameters are not changed
+
+5  # number of integer parameters
+
+# now all the integer parameters
+intLogVerb      0     # log verbosity of the MILPSolver
+intRelaxIntVars 1     # the continuous relaxation is solved
+intMaxThread    1     # single-threaded for reproducibility
+Method          1     # dual simplex
+NumericFocus    1     # the least care of the unit commitment masters
+
+3  # number of double parameters
+
+# now all the double parameters
+dblRelAcc       1e-8  # relative accuracy required to solution
+FeasibilityTol  1e-8  # how much a row of the master may be violated
+OptimalityTol   1e-9  # how much a reduced cost of the master may be off
+
+0  # number of string parameters
+
+# now all the string parameters
+# [none]
+
+0  # number of vector-of-int parameters
+
+# now all the vector-of-int parameters
+# [none]
+
+0  # number of vector-of-double parameters
+
+# now all the vector-of-double parameters
+# [none]
+
+0  # number of vector-of-string parameters
+
+# now all the vector-of-string parameters
+# [none]
+
+* # [none]  # no extra Configuration
+
+# end of ComputeConfig - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+# end of BlockSolverConfig - - - - - - - - - - - - - - - - - - - - - - - - -
+
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - END MPBCfg-easy.txt - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -

@@ -78,7 +78,7 @@ namespace SMSpp_di_unipi_it {
 /*--------------------------------------------------------------------------*/
 /*------------------------------ NetOptions --------------------------------*/
 /*--------------------------------------------------------------------------*/
-/// everything that used to be hard-coded, now a plain data object
+/// the whole architecture of the network as a plain data object
 /** Filled from the algorithmic parameters of BundleSolverML (see the
  * set_par() sketch at the bottom of this file), so that the whole
  * architecture is decided at run time. */

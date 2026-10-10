@@ -107,12 +107,12 @@ public:
  /**< Bit-wise encoded choice of how the parallel inner loop evaluates and
   * consumes the function components:
   *
-  * - bit 0 (1): if 0, the "legacy" formulation is used, whereby ready
-  *   std::future are consumed in completion order; this is fast but the set
-  *   and order of the evaluated components, hence the whole trajectory of
-  *   the algorithm, depend on thread timing and is therefore not
-  *   reproducible. If 1, futures are instead consumed in a fixed round-robin
-  *   index order, which makes the run deterministic;
+  * - bit 0 (1): if 0, the "completion-order" formulation is used, whereby
+  *   ready std::future are consumed in completion order; this is fast but
+  *   the set and order of the evaluated components, hence the whole
+  *   trajectory of the algorithm, depend on thread timing and is therefore
+  *   not reproducible. If 1, futures are instead consumed in a fixed
+  *   round-robin index order, which makes the run deterministic;
   *
   * - bit 1 (2): only relevant with bit 0 == 1 and bit 2 == 0. If 1, as soon
   *   as the master problem is guaranteed to change the still in-flight tasks
@@ -124,8 +124,9 @@ public:
   *   ) components are always evaluated at each iteration (non-incremental
   *   "batch" mode), which maximises the available parallelism.
   *
-  * The meaningful combinations are: 0 = legacy, 1 = work-conserving
-  * deterministic, 3 = faithful-to-sequential, 5 = deterministic batch. */
+  * The meaningful combinations are: 0 = completion-order, 1 =
+  * work-conserving deterministic, 3 = faithful-to-sequential, 5 =
+  * deterministic batch. */
 
  intLastPBndSlvPar  ///< first allowed new int parameter for derived classes
  /**< Convenience value for easily allow derived classes
@@ -163,7 +164,7 @@ public:
   // ensure all parameters are properly given their default value
   MaxThread = ThinComputeInterface::get_dflt_int_par( intMaxThread );
   PoolingInt = 1e-4;
-  ParFrm = 0;  // legacy (completion-order) formulation
+  ParFrm = 0;  // completion-order formulation
   }
 
 /*--------------------------------------------------------------------------*/

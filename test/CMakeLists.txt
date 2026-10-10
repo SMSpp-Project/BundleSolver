@@ -120,6 +120,38 @@ if (TARGET SMS++::MILPSolver)
              WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 endif ()
 
+# ----- the cutoffs [see dblUpCutOff and dblLwCutOff] ----------------------- #
+# The cutoff that a point reaches, which is the global lower bound of the dual
+# master, never reached, reached and reached at the optimum, with each of its
+# stabilizations
+if (TARGET SMS++::MILPSolver)
+    add_executable(cutoff_test test_cutoff.cpp)
+    target_link_libraries(cutoff_test PRIVATE
+                          SMS++::BundleSolver
+                          SMS++::MILPSolver)
+    # the test reads BSPar-cutoff.txt, BSCfg-cut.txt and MPBCfg.txt from the
+    # working directory
+    add_test(NAME cutoff_test
+             COMMAND cutoff_test
+             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+endif ()
+
+# ----- the verdict of the easy components at the first master ------------ #
+# An easy LagBFunction next to a hard component, whose first master has an
+# empty bundle and t at dbltMinor: a master that is not unbounded at the
+# previous t is not taken for the easy components' answer, one that still is
+# gives kUnbounded
+if (TARGET SMS++::MILPSolver)
+    add_executable(easy_tminor_test test_easy_tminor.cpp)
+    target_link_libraries(easy_tminor_test PRIVATE
+                          SMS++::BundleSolver
+                          SMS++::MILPSolver)
+    # it reads BSPar-easy.txt and MPBCfg-easy.txt from the working directory
+    add_test(NAME easy_tminor_test
+             COMMAND easy_tminor_test
+             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+endif ()
+
 # the examples of OSBDO, see osbdo/README.md
 add_subdirectory(osbdo)
 

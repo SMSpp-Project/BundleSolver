@@ -7,7 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-09
+
 ### Added
+
+- bit 4 (+16) of `intDoEasy`: the dual master problem does not scale the
+  easy components by a size Variable, i.e., the mass lambda of the lower
+  model is fixed to 1 and the global lower bound has no effect there, which
+  gives a master that may be cheaper to solve; without it every easy
+  component whose inner Block owns or takes a size Variable is scaled [see
+  `MasterProblemBlock::use_easy_size_variables()`]. It is read when the
+  Block is set, as which components are easy
+
+- bit 5 (+32) of `intDoEasy`: an easy component whose inner Block neither
+  owns nor takes a size Variable is scaled through a sized copy of its
+  inner Block that the master has in its place [see
+  `MasterProblemBlock::use_easy_mirrors()`]; off by default, so that such a
+  component is not scaled and lambda stays fixed to 1, and of no effect
+  with bit 4
 
 - `BundleSolverML` listens to `intMaxThread`: at the beginning of each
   `compute()` the number of threads of Torch is set to max( 1 ,
@@ -33,7 +50,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in the concave case it stops as soon as the best value found is at least
   `dblUpCutOff`, or as soon as the bound of the model certifies that the
   optimal value is at most `dblLwCutOff`, and vice versa in the convex case,
-  returning `kCutOff`; with the default (infinite) cutoffs nothing changes
+  returning `kCutOff`; with the default (infinite) cutoffs nothing changes.
+  With the dual master, the cutoff that a point reaches (`dblUpCutOff` in
+  the concave case, `dblLwCutOff` in the convex one) is also the global
+  lower bound of the master, when it is above the true one, as whoever set
+  it does not care where the optimum is beyond it: in a Branch-and-Bound,
+  the incumbent stabilizes the dual of the node. The bound is only
+  conditional: what the master proves is recorded as a global bound, and
+  reported by `get_lb()` / `get_ub()`, only if it is above the cutoff, the
+  level target is never put beyond it, and an optimality test passed with
+  the value at the stability centre within the accuracy of the cutoff ends
+  with `kCutOff` rather than `kOK`; a master that fails with the bound is
+  solved again without it, which then stays out until `compute()` returns
 
 - a component that gains an "active" Variable the master already has, e.g.,
   a `LagBFunction` given the dual pair of a multiplier that other
@@ -94,18 +122,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `C05Function` (the inner Block of a `LagBFunction`), or that of the
   `C05Function` itself if it is a Block with no nested Block, so that a
   configuration names the hard components of any instance without knowing
-  their position; which components are easy is a concept of this Solver, and
-  the parameter replaces `vstr_LDSl_NoEasy` of `LagrangianDualSolver`
+  their position; which components are easy is a concept of this Solver
 
 - the tests of this directory and of the OSBDO examples carry the label of the
   module, so that the pipeline, which selects with `ctest -L <module>`, runs
   them: they were built and never run
 
-- `test/osbdo`, the multicommodity instances of OSBDO solved in the same
-  resource-directive form, with a `BendersBFunction` per commodity and the
-  coupling as an easy `LagBFunction`, against the whole problem as one LP;
-  the generator is the one of OSBDO and a script runs OSBDO on the same
-  instance, so that the two are compared on what they both solve
+- `test/osbdo`, the four examples of OSBDO (multicommodity flow, supply chain,
+  intersection of convex sets and federated learning) solved by `BundleSolver`
+  in the same form, the agents as `BendersBFunction` or `LogisticFunction` and
+  the coupling as an easy `LagBFunction`, each on an instance out of a verbatim
+  copy of the generator of OSBDO and checked against a reference value, the
+  whole problem as one LP or QP where there is one
 
 ### Changed
 
@@ -205,16 +233,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Whoever wants that variant links the new library, which brings BundleSolver
   along with it
 
-### Removed
-
-- the tester of the large-scale functions of Karmitsa, Bagirov and Makela
-  (`test/kbm`), the scripts that run OSBDO and compute the reference of the
-  federated learning example, and the multicommodity instance of the paper
-  (`test/osbdo`): they are measurements of a paper and not checks, and
-  they live with its other experiments; the testers of the OSBDO examples
-  and their small instances stay, as the checks `ctest` runs
-
 ### Fixed
+
+- the global lower bound of the dual master, which is in the frame of the
+  stability centre, is translated again whenever the centre moves, rather
+  than only when the bound changes: once the multiplier of its row is free
+  in the Solver of the master [see `MasterProblemBlock::set_global_LB()`],
+  a translation made with a centre where the function was lower cuts off
+  the optimum
+
+- with an empty bundle and t at `dbltMinor` the master is solved again with
+  the previous t before a verdict of the easy components is trusted: the
+  master of a Bundle with easy components and t at `dbltMinor` is badly
+  scaled, and a master Solver may declare it empty or unbounded when it is
+  not (the first master of a Lagrangian dual of a unit commitment instance,
+  whose objective was only 1e-10 times the squared norm of z, was declared
+  unbounded by Gurobi with FeasibilityTol 1e-8, and the dual reported
+  unbounded)
 
 - `has_dual_solution()` answers false when a Modification of a component
   has taken away from its global pool, before the next `compute()`, a
@@ -268,6 +303,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   opening of the intMnSSC gate, and on the supply chain example of OSBDO
   it reached 1e74, so that the level constraint did not stabilize the
   master for most of the run
+
+- `intDoEasy` keeps all its bits: it was stored in a `bool`, so that the
+  dual values and reduced costs of the easy components (bits 4 and 8) were
+  never kept and `get_var_solution()` always refused to give them; also,
+  setting it after the Block, as a BlockSolverConfig does, now decides
+  whether those of the next solves of the master are kept
 
 - the level and doubly stabilized methods with the primal master in the
   displacement form no longer restart the target for ever: a gap closed by
@@ -372,10 +413,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that it is a convex combination also with a level row or an individual
   lower bound; with all the mass on the lower bounds the item is replaced
   without any aggregation
+
 - a full bundle frees an item in base that is a vertical row only when fewer
   than two diagonal ones are in base, the aggregate being made of the
   diagonal rows alone and the multiplier of the vertical one being otherwise
   lost
+
 - `is_subgradient_global()` asks the master by the hard component and the
   global name of the item, as the other helpers do, rather than by the
   position in the pool, which with easy components made every row vertical
@@ -678,7 +721,8 @@ Several major improvements:
 
 - First test release.
 
-[Unreleased]: https://gitlab.com/smspp/bundlesolver/-/compare/0.5.0...develop
+[Unreleased]: https://gitlab.com/smspp/bundlesolver/-/compare/0.6.0...develop
+[0.6.0]: https://gitlab.com/smspp/bundlesolver/-/compare/0.5.0...0.6.0
 [0.5.0]: https://gitlab.com/smspp/bundlesolver/-/compare/0.4.5...0.5.0
 [0.4.5]: https://gitlab.com/smspp/bundlesolver/-/compare/0.4.4...0.4.5
 [0.4.4]: https://gitlab.com/smspp/bundlesolver/-/compare/0.4.3...0.4.4

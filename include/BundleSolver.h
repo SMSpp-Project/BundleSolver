@@ -14,9 +14,7 @@
  *
  * available at
  *
- * \link
  *  http://www.di.unipi.it/~frangio/abstracts.html#SIOPT02
- * \endlink
  *
  * or
  *
@@ -27,9 +25,7 @@
  *
  * available at
  *
- * \link
  *  http://www.di.unipi.it/~frangio/abstracts.html#NDOB18
- * \endlink
  *
  * In particular, BundleSolver implements the Incremental version of
  * the (Generalized) Proximal Bundle approach using upper models (for all the
@@ -40,9 +36,7 @@
  *
  * available at
  *
- * \link
  *  http://www.di.unipi.it/~frangio/abstracts.html#SIOPT16
- * \endlink
  *
  * BundleSolver is capable of solving any Block such that:
  *
@@ -66,14 +60,12 @@
  * algorithm as "easy components", see
  *
  *   A. Frangioni, E. Gorgone "Generalized Bundle Methods for Sum-Functions
- *   with ``Easy'' Components: Applications to Multicommodity Network Design"
+ *   with "Easy" Components: Applications to Multicommodity Network Design"
  *   Mathematical Programming 145(1), 133 – 161, 2014
  *
  * available at
  *
- * \link
  *  http://www.di.unipi.it/~frangio/abstracts.html#MP11c
- * \endlink
  *
  * In that case, the LagBFunction is never evaluated, which means that there is
  * no need for a Solver to be attached to the inner Block.
@@ -172,7 +164,7 @@ namespace SMSpp_di_unipi_it
 /*--------------------------------------------------------------------------*/
 /*------------------------------- CLASSES ----------------------------------*/
 /*--------------------------------------------------------------------------*/
-/** @defgroup LagBFunction_CLASSES Classes in BundleSolver.h
+/** @defgroup BundleSolver_CLASSES Classes in BundleSolver.h
  *  @{ */
 
 /*--------------------------------------------------------------------------*/
@@ -191,9 +183,7 @@ namespace SMSpp_di_unipi_it
  *
  * available at
  *
- * \link
  *  http://www.di.unipi.it/~frangio/abstracts.html#SIOPT02
- * \endlink
  *
  * or
  *
@@ -204,9 +194,7 @@ namespace SMSpp_di_unipi_it
  *
  * available at
  *
- * \link
  *  http://www.di.unipi.it/~frangio/abstracts.html#NDOB18
- * \endlink
  *
  * In particular, BundleSolver implements the Incremental version of
  * the (Generalized) Proximal Bundle approach using upper models (for all the
@@ -217,9 +205,7 @@ namespace SMSpp_di_unipi_it
  *
  * available at
  *
- * \link
  *  http://www.di.unipi.it/~frangio/abstracts.html#SIOPT16
- * \endlink
  *
  * BundleSolver is capable of solving any Block such that:
  *
@@ -256,14 +242,12 @@ namespace SMSpp_di_unipi_it
  * algorithm as "easy components", see
  *
  *   A. Frangioni, E. Gorgone "Generalized Bundle Methods for Sum-Functions
- *   with ``Easy'' Components: Applications to Multicommodity Network Design"
+ *   with "Easy" Components: Applications to Multicommodity Network Design"
  *   Mathematical Programming 145(1), 133–161, 2014
  *
  * available at
  *
- * \link
  *  http://www.di.unipi.it/~frangio/abstracts.html#MP11c
- * \endlink
  *
  * In that case, the LagBFunction is never evaluated, which means that there is
  * no need for a Solver to be attached to the inner Block.
@@ -941,14 +925,40 @@ public:
   *     back into the easy sub-Block the reduced costs of their ColVariable;
   *
   *   - bits 2 and 3 together (+12): the same holds for the dual values of
-  *     their RowConstraint.
+  *     their RowConstraint;
+  *
+  *   - bit 4 (+16): the easy components are not scaled by a size Variable,
+  *     i.e., the Master Problem is the one with the mass lambda of the
+  *     lower model fixed to 1. Without it, each easy component is scaled
+  *     by lambda through a size Variable that its inner Block owns or
+  *     takes [see Block::get_size_variable() and
+  *     Block::set_size_variable()], or else, with bit 5, through a copy of
+  *     its inner Block; if all of them are, lambda is free, so that the
+  *     global lower bound enters the Master Problem; with bit 4, or if some
+  *     easy component cannot be scaled, lambda is 1 and the global lower
+  *     bound
+  *     has no effect there, which gives a model that may be cheaper to
+  *     solve [see MasterProblemBlock::use_easy_size_variables()]. As which
+  *     components are easy, it is read when the Block is set;
+  *
+  *   - bit 5 (+32): an easy component whose inner Block neither owns nor
+  *     takes a size Variable is scaled through a copy of its inner Block
+  *     [see AbstractBlock::mirror()], sized by lambda [see
+  *     AbstractBlock::set_size_variable()], that the Master Problem has in
+  *     its place and that follows the changes of the inner Block; a change
+  *     the copy cannot follow puts the inner Block back, unscaled, with
+  *     lambda fixed to 1 [see MasterProblemBlock::use_easy_mirrors()].
+  *     Without it such a component is not scaled. It has no effect with
+  *     bit 4, and it is read when the Block is set.
   *
   *   Hence 1 treats the easy components as such without keeping any of
   *   their dual values, and 13 also keeps all of them, as needed by whoever
   *   reads the dual solution of the easy components [see
   *   get_var_solution()], which throws if asked for dual values that have
-  *   not been kept. The structure of an easy component can change in any of
-  *   its parts, which the MasterProblemBlock handles.
+  *   not been kept; 17 and 29 are the same without the size Variable, 33
+  *   and 45 with the copies. Bit 1
+  *   (+2) is unused, and ignored. The structure of an easy component can
+  *   change in any of its parts, which the MasterProblemBlock handles.
   *
   * - intWZNorm [2]: Proving that some point Lambda is epsilon-optimal for a
   *                  NonDifferentiable Optimization problem involves finding
@@ -1220,7 +1230,29 @@ public:
   *   on the optimal value (not a conditional one, see set_valid_lower_bound()
   *   in AbstractBlock.h) proves that no point can be, i.e., it is at most
   *   dblLwCutOff for a concave function and at least dblUpCutOff for a
-  *   convex one. An infinite cutoff is never reached
+  *   convex one. An infinite cutoff is never reached.
+  *   The former cutoff (dblLwCutOff for a convex function, dblUpCutOff for a
+  *   concave one) is also a lower bound L on the function f the solver
+  *   minimizes [see cutoff_point()] below which the caller does not care
+  *   where the minimum is: either min f >= L, and L is a valid bound, or a
+  *   point with f <= L exists, and compute() stops with kCutOff as soon as
+  *   it finds one. Thus, with the dual Master Problem (intMPPrimal == 0), L
+  *   is the global lower bound of the master, or the largest between it and
+  *   the true one, if any [see global_LB_row()]; in a Branch-and-Bound whose
+  *   relaxation this solver computes, the cutoff is the value of the
+  *   incumbent, which then stabilizes the dual of the node. Yet L is only a
+  *   conditional bound: what the master proves is a bound on max{ f , L },
+  *   which is one on f only if it is above L, and only then it is recorded
+  *   as the global lower bound that get_lb() / get_ub() report; the level
+  *   target is never put below L, so that an empty level keeps proving that
+  *   min f is above it. A master optimal at the bound, i.e., an optimality
+  *   test passed with the value at the stability centre within the accuracy
+  *   of L, has only found a point as good as asked up to the accuracy, and
+  *   compute() returns kCutOff rather than kOK. A master that fails with
+  *   the bound is solved again without it, which then stays out until
+  *   compute() returns. With infinite cutoffs, or with the primal master
+  *   (which has no global lower bound, hence neither with integer
+  *   Variable), nothing of this happens
   *
   * - dblEveryTTm [0]: periodicity of eEveryTTime events
   *
@@ -1250,7 +1282,7 @@ public:
   *   the epsilon-subdifferential of Lambda, then the point is
   *   epsilon-optimal. Note that if the minimization problem is subject to
   *   constraints, i.e., Fi() has to be minimized only on the points Lambda
-  *   \in L, the latter being a convex set, then the above is referred to a
+  *   belonging to a convex set L, then the above is referred to a
   *   subgradient of the "actual function" ( Fi + I_L )( Lambda ), where I_L
   *   is the indicator function of L (evaluating to 0 inside L and to +INF
   *   otherwise). In other words, one has to show that there exists a(n
@@ -1382,9 +1414,9 @@ public:
   *   linearization errors, and therefore possibly in detecting directions
   *   that are non-decreasing even for the model (hence even less so for
   *   the real functon). To avoid this, if the aggregate linearization
-  *   error \sigma* is "too negative", i.e.,
+  *   error \f$ \sigma^* \f$ is "too negative", i.e.,
   *
-  *      \sigma* < - m3 * t * || z* ||^2
+  *   \f[ \sigma^* < - m_3 \, t \, \| z^* \|^2 \f]
   *
   *   then a NR step is performed by increasing t (if this is still possible,
   *   otherwise error is given). Traditionally m3 < 0.5 was required, but
@@ -2791,7 +2823,12 @@ public:
     set Result to kOK and return without a fresh master solution; compute()
     must then run its termination events without using master quantities.
     Otherwise report an unrecoverable master failure through Result so
-    compute() can stop or handle it. */
+    compute() can stop or handle it. An empty or unbounded master is
+    reported as kInfeasible / kUnbounded only when it is an answer [see
+    easy_says_it()]; with an empty bundle and t at dbltMinor the master is
+    solved again with the previous t (Prevt) before a verdict of the easy
+    components is trusted, and the same is done before an unrecoverable
+    failure of the master Solver is declared. */
 
  void FormD( void );
 
@@ -3067,7 +3104,13 @@ public:
   * components included, being in the level constraint; it can be empty,
   * either because of the level, which relaxing the level tells apart, or
   * because of the easy region, which shows up as above. Without
-  * stabilization none of this holds, and the answer is always taken. */
+  * stabilization none of this holds, and the answer is always taken.
+  * Two cases are excluded by FormD() even when this returns true: a master
+  * that follows a failure of the master Solver in the same call, which is
+  * the same error in disguise, and a master solved with an empty bundle,
+  * whose t is at dbltMinor and whose stabilizing term vanishes against the
+  * data of the easy components, which is solved again with the previous t
+  * and believed only if it is again empty or unbounded. */
 
  bool easy_says_it( void ) const {
   const bool stabilized =
@@ -3592,7 +3635,7 @@ public:
  double tSPar2;     ///< double parameter for long-term t-strategy
  double tSPar3;     ///< double parameter for small heuristic t changes
 
- bool DoEasy;       ///< if "easy" components are managed
+ int DoEasy;        ///< how "easy" components are managed [see intDoEasy]
 
  char WZNorm;       ///< how to compute the norm of z*
 
@@ -3696,12 +3739,10 @@ public:
  * "representative subgradient" for component k for the computation of the t
  * heuristics, which use information about an "aggregate representative
  * subgradient" obtained by summing all the individual "representative
- * subgradients". NOTE 1: the "representative subgradient" used to be selected
- * as the one
- *         with smallest Alfa1k and largest ScPr1k, which may have been a
- *         bit better but was heuristic anyway; choosing the first makes
- *         for a simpler logic, and ideally "the first should be the best"
- *         so it still makes sense.
+ * subgradients". NOTE 1: the first subgradient is chosen, rather than the
+ *         one with smallest Alfa1k and largest ScPr1k, since either choice
+ *         is heuristic and the first one keeps the logic simple (ideally,
+ *         "the first should be the best").
  * NOTE 2: "easy" components do not have a "representative subgradient" and
  *         are therefore excluded from the "aggregate representative
  *         subgradient": THIS IS WRONG and probably means that most t
@@ -3727,6 +3768,18 @@ public:
 
  Vec_VarValue LowerBound;  ///< Lower Bound over (each component of) Fi
  VarValue f_global_LB;     ///< an algorithmically discovered global LB
+
+ VarValue f_cond_LB = -INFshift;
+ ///< the cutoff that is the global lower bound of the master, which is
+ ///< only conditionally valid [see global_LB_row()]; -INF if there is none
+
+ VarValue f_LB_row = -INFshift;
+ ///< the global lower bound last set in the master, translated with the
+ ///< stability centre [see global_LB_row()]; -INF if there is none
+
+ bool f_cond_LB_off = false;
+ ///< true if the master has failed with the cutoff as its global lower
+ ///< bound in this call to compute(), which then goes on without it
 
  VarValue f_level_Delta = 0;
  ///< expected decrease used by level stabilization
@@ -3853,6 +3906,11 @@ public:
  /**< true until a master problem has been solved since the master was
   * created or the easy components last changed [see easy_says_it()] */
  VarValue Prevt;       ///< what t were before being changed for funny reasons
+ /**< the value of t before an empty bundle brought it down to tMinor,
+  * INFshift if t has not been changed so; FormD() restores it as soon as
+  * the bundle is not empty, or within the same call when the master solved
+  * with tMinor is empty or unbounded as an answer of the easy components,
+  * or fails with no item left to remove */
  bool f_tr_open = false;  ///< the last master was solved without the trust
                           ///< region, whose radius is still t [see FormD()]
  VarValue f_tr_t0 = 0;    ///< the radius of the trust region before the MP
@@ -4008,7 +4066,7 @@ public:
 
  std::vector< ColVariable * > LamVcblr;  ///< map Lambda -> ColVariable
 
- // per-component local→global Lambda index map for sparse Lambda mode.
+ // per-component local->global Lambda index map for sparse Lambda mode.
  // v_local2global[ h ] has size get_num_active_var() + 1 for v_c05f[ h ];
  // entries [ 0 .. loc_NV - 1 ] are the indices in LamVcblr of h's active
  // Variables in the order get_linearization_coefficients writes them, and
@@ -4028,14 +4086,14 @@ public:
  // process_outstanding_Modification's 4th loop, where a naked
  // FunctionModVars* (i.e. one that did NOT arrive as a lockstep
  // GroupModification covering all components) promotes a dense Solver
- // to sparse on the spot — materialising identity local-to-global maps
+ // to sparse on the spot (materialising identity local-to-global maps
  // in v_local2global[ * ] and rebuilding Lambda2Idx / v_ref_count from
- // the dense invariant — before the sparse handlers below process the
+ // the dense invariant) before the sparse handlers below process the
  // Mod. When false, every gather site falls back to the dense
  // "all components see the same Lambda" code path.
  bool f_sparse_lambda = false;
 
- // pointer → global Lambda index map, the inverse of LamVcblr. Kept live
+ // pointer -> global Lambda index map, the inverse of LamVcblr. Kept live
  // (and incrementally maintained) only when f_sparse_lambda == true;
  // used to resolve ColVariable * coming from a FunctionModVars* against
  // the global Lambda index space when v_c05f[ h ] is sparse (i.e. when
@@ -4049,7 +4107,7 @@ public:
  // v_c05f (+ f_lf if any) that have LamVcblr[ i ] as an active
  // variable. Built in set_Block alongside LamVcblr; decremented by the
  // sparse FunctionModVarsRngd / FunctionModVarsSbst handlers, and when
- // it reaches 0 the slot is queued for global removal — at the end of
+ // it reaches 0 the slot is queued for global removal: at the end of
  // the 4th Modification loop we compact LamVcblr / Lambda / Lambda2Idx
  // / v_local2global[ * ] and call MasterPB->remove_vars to reclaim the
  // master row. Kept live only when f_sparse_lambda == true.
@@ -4192,6 +4250,34 @@ public:
   return( ( ( cp > - INFshift ) && ( UpFiLmb.back() <= cp ) ) ||
           ( ( cb < INFshift ) && ( f_global_LB >= cb ) ) );
   }
+
+ /// the global lower bound of the master
+ /** Sets the global lower bound of the master to the largest between the
+  * true one, if any, and cutoff_point(), recording the latter in f_cond_LB
+  * when it is the larger. A point with value at most cutoff_point() is as
+  * good as asked, so whoever set the cutoff does not care where the minimum
+  * is if it is below: either min f >= cutoff_point(), and the bound is
+  * valid, or compute() stops with kCutOff as soon as it finds such a point.
+  * The cutoff is only a conditional bound, as a bound that the master then
+  * proves is one on f only if it is above it [see dblUpCutOff and
+  * dblLwCutOff]. The global lower bound of the master is in the frame of
+  * the stability centre [see LB_translation()], hence it is set again
+  * whenever the centre moves; with no value at the stability centre to
+  * translate it with, the master is left as it is. Only the dual master has
+  * a global lower bound, hence with the primal one nothing is done. Since
+  * with the cutoff the master may be badly conditioned, a master that fails
+  * with it is solved again without it, which then stays out until compute()
+  * returns [see f_cond_LB_off]. */
+
+ void global_LB_row( void );
+
+ /// the translation of the global lower bound of the master
+ /** The value that the global lower bound of the master is decreased by, that
+  * of the function at the stability centre in the frame of the master [see
+  * intMPV2Form]: without the easy components in the displacement form, and
+  * with only the hard ones in the dual iterate form. */
+
+ VarValue LB_translation( void ) const;
 
 /*--------------------------------------------------------------------------*/
 

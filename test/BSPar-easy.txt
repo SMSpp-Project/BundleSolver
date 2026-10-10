@@ -1,0 +1,73 @@
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - - BSPar-easy.txt - - - - - - - - - - - - - - -
+#
+# The BundleSolver of test_easy_tminor.cpp: the easy components in the
+# master, whose first master has an empty bundle and t at dbltMinor, small
+# enough for the master Solver to declare that master unbounded when the
+# centre is outside the domain of the easy component, and a log verbose
+# enough to say when that master is solved again with the previous t.
+#
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+BlockSolverConfig     # exact type of the Configuration object
+
+1  # the BlockSolverConfig is a "differential" one
+
+1  # number of (the names of) Solver in this BlockSolverConfig
+
+# now all the names of the Solver - - - - - - - - - - - - - - - - - - - - - -
+BundleSolver          # name of Solver
+
+1  # number of ComputeConfig in this BlockSolverConfig
+
+# now all the ComputeConfig
+# 1st ComputeConfig - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+ComputeConfig         # exact type of the ComputeConfig object
+
+1  # f_diff == 1 ==> all non-provided parameters are not changed
+
+3  # number of integer parameters
+
+# now all the integer parameters
+intDoEasy       1     # the LagBFunction of a linear program is easy
+intMaxIter    500     # max number of iterations
+intLogVerb      3     # the log says when the master is solved again
+
+4  # number of double parameters
+
+# now all the double parameters
+dblRelAcc    1e-8     # relative accuracy required to solution
+dbltMinor   1e-16     # minimum value of t, that of the first master
+dbltInit       10     # initial value of t, the one restored
+dbltStar      100     # multiplied to || z* || to estimate the gap
+
+1  # number of string parameters
+
+# now all the string parameters
+strMPBSolverCfg MPBCfg-easy.txt  # BlockSolverConfig of the master Solver
+
+0  # number of vector-of-int parameters
+
+# now all the vector-of-int parameters
+# [none]
+
+0  # number of vector-of-double parameters
+
+# now all the vector-of-double parameters
+# [none]
+
+0  # number of vector-of-string parameters
+
+# now all the vector-of-string parameters
+# [none]
+
+* # [none]  # no extra Configuration
+
+# end of ComputeConfig - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+# end of BlockSolverConfig - - - - - - - - - - - - - - - - - - - - - - - - -
+
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - END BSPar-easy.txt - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
