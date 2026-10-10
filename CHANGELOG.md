@@ -24,6 +24,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- the master problem can be stabilized by a level instead of a proximal term
+  (`intMPStbl` 1, pure level) or by both (`intMPStbl` 2, doubly
+  stabilized): the level is the value at the stability centre minus an
+  expected decrease Delta, which is ( 1 - `dblLStabM` ) times the gap to a
+  reliable lower bound when there is one, and is shortened by `dblLStabM`
+  after the null steps that `intMnNSC` allows; with no reliable lower bound
+  Delta is seeded by a proximal probe of the master (or is `dblLStabDlt`
+  times the value at the centre), in pure level it is enlarged by
+  `dblLStabIncr` after the serious steps that `intMnSSC` allows, provided
+  that the last one has decreased the function by at least Delta /
+  `dblLStabIncr` and that the model error at the step, relative to the
+  model value, is at most `dblLStabSmall`, and it is enlarged by
+  `dblLStabIncr` squared when small serious and null steps alternate; an
+  empty level set is a lower bound, and in the doubly stabilized mode each
+  serious step multiplies t by one plus the multiplier of the level row;
+  with the primal master in the displacement form, a gap closed by empty
+  levels whose aggregate certificate is not yet within the tolerance
+  restarts the target from the scale-based Delta at most once per centre
+
+- the non-easy components can be aggregated before the master problem sees
+  them (`dblCmpAggr`): with 0 every component is a component of the master
+  problem, with 1 all of them are summed into one, and with x in between
+  there are round( 1 / x ) groups of about the same size, each a
+  `C05SumFunction` that is computed by computing all its members and whose
+  linearizations are the sums of theirs; `intCmpAggrRule` says how the
+  components are assigned to the groups (at random with the seed
+  `intCmpAggrSeed`, by scale, by similar or by spread supports), so that
+  the same configuration gives the same groups, and fewer components give a
+  smaller master problem and a coarser model; each group draws the
+  combinations of linearizations it hands out with `intCmpAggrSeed` told
+  apart by its position, and takes the threads it spends on its members
+  from the pool of the parallel solver driving it [see
+  `C05SumFunction::set_member_runner()`], evaluating one of them in the
+  thread that waits for the others
+
+- the 0-th component of the sum-function may be a separable quadratic one,
+  b . x + ( 1 / 2 ) sum_j rho_j x_j^2 written as a `DQuadFunction` (what a
+  regularised risk has in front of the sum), besides a linear one: the
+  master problem carries it in its stabilization [see
+  `MasterProblemBlock::set_zeroth_quadratic()`], the gradient of the
+  component being b_j + rho_j x_j, and it need not span all the Variable; a
+  linear one, also after a quadratic one in the master that is recycled
+  across Block [see `CreateMPB()`], leaves the master with no quadratic
+  term
+
 - bit 4 (+16) of `intDoEasy`: the dual master problem does not scale the
   easy components by a size Variable, i.e., the mass lambda of the lower
   model is fixed to 1 and the global lower bound has no effect there, which
@@ -220,16 +265,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   operation then does that instead of one call per cut, per variable or per
   coupling row
 
-- the groups of components take the threads they spend on their members from
-  the pool of the parallel solver driving them, through
-  `C05SumFunction::set_member_runner()`, instead of starting one per member: a
-  thread costs of the order of 100 microseconds to start and the members of
-  the instances of interest cost less than that, which is why the hand-down
-  was worth it only above a threshold. The two levels share one pool, sized
-  for both, and a group evaluates one of its members in the thread that is
-  waiting for the others anyway, so that no thread of the pool is ever held
-  doing nothing and the members cannot be starved by the components
-
 - the fifth loop of `process_outstanding_Modification()` asks whether any of
   the Variable a Modification speaks of is still "active" in the component it
   comes from, that component being reloaded from its global pool whatever has
@@ -304,33 +339,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `LagrangianDualSolver` moved to another Block, which carries its inner
   Solver along, ended its next `compute()` for an inexact oracle
 
-- a linear 0-th component after a quadratic one in the master problem the
-  BundleSolver recycles across Block [see `CreateMPB()`] no longer keeps
-  the rho of the previous Block, which `MasterProblemBlock::clear()` does
-  not forget: the linear one now tells the master that it has no
-  quadratic term
-
-- the pure level stabilization with no reliable lower bound enlarges the
-  expected decrease Delta only after a Serious Step that has decreased Fi
-  by at least Delta / dblLStabIncr; before, Delta was doubled at every
-  opening of the intMnSSC gate, and on the supply chain example of OSBDO
-  it reached 1e74, so that the level constraint did not stabilize the
-  master for most of the run
-
 - `intDoEasy` keeps all its bits: it was stored in a `bool`, so that the
   dual values and reduced costs of the easy components (bits 4 and 8) were
   never kept and `get_var_solution()` always refused to give them; also,
   setting it after the Block, as a BlockSolverConfig does, now decides
   whether those of the next solves of the master are kept
-
-- the level and doubly stabilized methods with the primal master in the
-  displacement form no longer restart the target for ever: a gap closed by
-  empty levels whose aggregate certificate is not yet within the tolerance
-  restarts the target from the scale-based Delta, which can close it again
-  at the same centre, and so on; the restart happens at most once per
-  centre, and the gap that closes again there is accepted, a second
-  sequence of empty levels converging to the same value from far below being
-  no longer a boundary effect
 
 - the aggregate subgradient `G1` has one entry per Variable rather than one
   per component: it was sized with the number of components, so that with
@@ -356,13 +369,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rather than optimal when nothing has changed in between: the test of the
   conditional bound came after that of optimality, which with exact easy
   components fires at the first iteration
-
-- the test of pure level stabilization that enlarges the expected decrease
-  without a reliable lower bound measures the error of the model, as the
-  documentation of `dblLStabSmall` says: it was computed after
-  `GotoLambda1()` had moved the reference to the new center, so that it
-  compared the predicted decrease instead; the value of the center the step
-  starts from is now passed to `update_level_after_step()`
 
 - removing coordinates while the algorithm runs works, the master
   shrinking through `MasterProblemBlock::remove_vars()`: the `BlockModAD` of
@@ -399,12 +405,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   does under `-dead_strip_dylibs`, which conda sets: the target now asks the
   linker for the symbol that forces the module in (`-u`), which ld64,
   unlike the ELF linker, counts as a use of the library
-
-- the seed of the generator with which a group draws the combinations of
-  linearizations it hands out is `intCmpAggrSeed` told apart by the position
-  of the group, which the solver now passes to it: the group seeded itself
-  with its own size, so that two groups of the same size, which is what a
-  partition into groups of equal size gives, drew the very same sequence
 
 
 - a problem whose components are all easy is solved instead of being refused:
