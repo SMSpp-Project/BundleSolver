@@ -1,80 +1,159 @@
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-# - - - - - - - - - - - - - - - BSPar-ML.txt - - - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - - BSPar-ML.txt - - - - - - - - - - - - - - - -
 #
-# A txt description of the BlockSolverConfig attaching the BundleSolverML
-# to the Block solved by the tester for BundleSolverML. Note that the
-# parameters governing the use of the network-driven step-size heuristic
-# (inttSPar1, intMnSSC, intMnNSC, dblmnIncr, dblmnDecr) are left to their
-# BundleSolverML defaults, which are already set so that the network
-# actually drives the step-size at every iteration. intMLTrainOnline is set
-# so that the network is trained online at the end of each compute(), with
-# no need for the driver to call Backward() explicitly.
+# The BundleSolverML of the tester for BundleSolverML, one for each core of
+# the network [see intMLModel]: all of them run the ComputeConfig of
+# BSCfg-ML.txt, the first as it is, i.e. with the feed-forward network, the
+# others changing only the core to an RNN, a GRU and an LSTM. The tester
+# trains and checks each of them in turn against the plain BundleSolver of
+# BSPar.txt.
 #
-#   Francesca Demelas, Donato Meoli
-#
-# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 BlockSolverConfig     # exact type of the Configuration object
 
-1  # the BlockSolverConfig is not a "differential" one: values are being set
+1  # the BlockSolverConfig is a "differential" one
 
-1  # number of (the names of) Solver in this BlockSolverConfig
+4  # number of (the names of) Solver in this BlockSolverConfig
+
 # now all the names of the Solver - - - - - - - - - - - - - - - - - - - - - -
-BundleSolverML # name of Solver
+BundleSolverML        # feed-forward network
+BundleSolverML        # RNN core
+BundleSolverML        # GRU core
+BundleSolverML        # LSTM core
 
-1  # number of ComputeConfig in this BlockSolverConfig
+4  # number of ComputeConfig in this BlockSolverConfig
 
 # now all the ComputeConfig
-# 1st ComputeConfig - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-ComputeConfig # exact type of the ComputeConfig object
+# 1: feed-forward network
+*BSCfg-ML.txt
 
-1  # f_diff == 0 ==> all non-provided parameters are set to the default value
-   # f_diff == 1 ==> all non-provided parameters are not changed
+# 2: RNN core
+*BSCfg-ML.txt +
 
-4 # number of integer parameters
+1  # f_diff == 1 ==> only the entries below are changed
+
+1  # number of integer parameters
 
 # now all the integer parameters
-intMaxIter       1000 # MaxIter, max number of iterations for each call
-intLogVerb          0 # LogVerb, log verbosity of main Bundle algorithm
-intBPar2          100 # max bundle size per component
-intMLTrainOnline    1 # train the network online at the end of each compute()
+intMLModel          1 # RNN core
 
-3 # number of double parameters
+0  # number of double parameters
 
 # now all the double parameters
-dblRelAcc    1e-6 # relative accuracy required to solution
-dbltStar     1e+2 # stopping parameter: multiplied to || residual || to estimate gap
-dbltInit        1 # initial value for t
+# [none]
 
-1 # number of string parameters
+0  # number of string parameters
 
 # now all the string parameters
-strMPBSolverCfg MPBCfg.txt # BlockSolverConfig of the Solver of the master
+# [none]
 
-0 # number of vector-of-int parameters
+0  # number of vector-of-int parameters
 
 # now all the vector-of-int parameters
 # [none]
 
-0 # number of vector-of-double parameters
+0  # number of vector-of-double parameters
 
 # now all the vector-of-double parameters
 # [none]
 
-0 # number of vector-of-string parameters
+0  # number of vector-of-string parameters
 
 # now all the vector-of-string parameters
 # [none]
 
-# pointer to the "extra" Configuration
+# the "extra" Configuration slot, which this block does not change
+# but has to write all the same: an override block that leaves it
+# out is read on to the end of the stream, and so swallows whatever
+# follows it in the enclosing file, i.e. the next ComputeConfig
 * # [none]
 
-# end of 1st ComputeConfig - - - - - - - - - - - - - - - - - - - - - - - - - -
+# 3: GRU core
+*BSCfg-ML.txt +
 
-# end of BlockSolverConfig - - - - - - - - - - - - - - - - - - - - - - - - - -
+1  # f_diff == 1 ==> only the entries below are changed
+
+1  # number of integer parameters
+
+# now all the integer parameters
+intMLModel          2 # GRU core
+
+0  # number of double parameters
+
+# now all the double parameters
+# [none]
+
+0  # number of string parameters
+
+# now all the string parameters
+# [none]
+
+0  # number of vector-of-int parameters
+
+# now all the vector-of-int parameters
+# [none]
+
+0  # number of vector-of-double parameters
+
+# now all the vector-of-double parameters
+# [none]
+
+0  # number of vector-of-string parameters
+
+# now all the vector-of-string parameters
+# [none]
+
+# the "extra" Configuration slot, which this block does not change
+# but has to write all the same: an override block that leaves it
+# out is read on to the end of the stream, and so swallows whatever
+# follows it in the enclosing file, i.e. the next ComputeConfig
+* # [none]
+
+# 4: LSTM core
+*BSCfg-ML.txt +
+
+1  # f_diff == 1 ==> only the entries below are changed
+
+1  # number of integer parameters
+
+# now all the integer parameters
+intMLModel          3 # LSTM core
+
+0  # number of double parameters
+
+# now all the double parameters
+# [none]
+
+0  # number of string parameters
+
+# now all the string parameters
+# [none]
+
+0  # number of vector-of-int parameters
+
+# now all the vector-of-int parameters
+# [none]
+
+0  # number of vector-of-double parameters
+
+# now all the vector-of-double parameters
+# [none]
+
+0  # number of vector-of-string parameters
+
+# now all the vector-of-string parameters
+# [none]
+
+# the "extra" Configuration slot, which this block does not change
+# but has to write all the same: an override block that leaves it
+# out is read on to the end of the stream, and so swallows whatever
+# follows it in the enclosing file, i.e. the next ComputeConfig
+* # [none]
+
+# end of BlockSolverConfig - - - - - - - - - - - - - - - - - - - - - - - - -
 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-# - - - - - - - - - - - - - - END BSPar-ML.txt - - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - END BSPar-ML.txt - - - - - - - - - - - - - - -
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -

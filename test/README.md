@@ -10,20 +10,24 @@ it as the only `Objective` of an otherwise "empty" `AbstractBlock`, save for
 the `ColVariable` active in the `PolyhedralFunction`.
 
 The `AbstractBlock` is first solved by a standard `BundleSolver`, whose
-optimal value is taken as the reference. Then a `BundleSolverML` is attached
-and the `AbstractBlock` is repeatedly solved with it; configured with
-`intMLTrainOnline`, the solver trains its network online by itself at the
-end of each solve, so no explicit `Backward()` is needed. At each epoch the
-optimal value is compared with the reference one and the network parameters
-are checked to change (which also certifies that the network actually drove
-the step-size during the solve). The tester also checks that the
-`SaveModel()` / `LoadModel()` round-trip exactly restores the weights, and
+optimal value is taken as the reference. Then four `BundleSolverML` are
+attached, one for each core of the network (none, i.e., a feed-forward
+network, RNN, GRU and LSTM, see `intMLModel`), and the `AbstractBlock` is
+repeatedly solved with each of them; configured with `intMLTrainOnline`, the
+solver trains its network online by itself at the end of each solve, so no
+explicit `Backward()` is needed. For each solver the tester checks that the
+network has the core asked by `intMLModel`; at each epoch the optimal value
+is compared with the reference one and the network parameters are checked
+to change (which also certifies that the network actually drove the
+step-size during the solve), and then the `SaveModel()` / `LoadModel()`
+round-trip is checked to exactly restore the weights. It also checks
 that the shared-network mechanism (`set_shared_net()`, `get_shared_net()`,
 `clear_shared_net()`) correctly redirects the active network among multiple
 `BundleSolverML` objects.
 
 The reference (`BundleSolver`) and the ML (`BundleSolverML`) configurations
-are read from `BSPar.txt` and `BSPar-ML.txt` in the current directory. The
+are read from `BSPar.txt` and `BSPar-ML.txt` in the current directory, the
+latter including the ComputeConfig of `BSCfg-ML.txt`. The
 usage of the executable is the following:
 
        ./BundleSolverML_test [seed nvar dens epochs]

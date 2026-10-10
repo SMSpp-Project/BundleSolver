@@ -1,0 +1,61 @@
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - - BSCfg-ML.txt - - - - - - - - - - - - - - - -
+#
+# The ComputeConfig of the BundleSolverML of BSPar-ML.txt, with the default
+# feed-forward network. The parameters governing the use of the
+# network-driven step-size heuristic (inttSPar1, intMnSSC, intMnNSC,
+# dblmnIncr, dblmnDecr) are left to their BundleSolverML defaults, which are
+# already set so that the network actually drives the step-size at every
+# iteration. intMLTrainOnline is set so that the network is trained online
+# at the end of each compute(), with no need for the driver to call
+# Backward() explicitly.
+#
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+ComputeConfig         # exact type of the ComputeConfig object
+
+1  # f_diff == 0 ==> all non-provided parameters are set to the default value
+   # f_diff == 1 ==> all non-provided parameters are not changed
+
+4  # number of integer parameters
+
+# now all the integer parameters
+intMaxIter       1000 # max number of iterations for each call
+intLogVerb          0 # log verbosity of the bundle
+intBPar2          100 # max bundle size per component
+intMLTrainOnline    1 # train the network online at the end of compute()
+
+3  # number of double parameters
+
+# now all the double parameters
+dblRelAcc        1e-6 # relative accuracy required to solution
+dbltStar         1e+2 # multiplied to || residual || to estimate the gap
+dbltInit            1 # initial value for t
+
+1  # number of string parameters
+
+# now all the string parameters
+strMPBSolverCfg MPBCfg.txt # BlockSolverConfig of the Solver of the master
+
+0  # number of vector-of-int parameters
+
+# now all the vector-of-int parameters
+# [none]
+
+0  # number of vector-of-double parameters
+
+# now all the vector-of-double parameters
+# [none]
+
+0  # number of vector-of-string parameters
+
+# now all the vector-of-string parameters
+# [none]
+
+* # [none]  # no extra Configuration
+
+# end of ComputeConfig - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - END BSCfg-ML.txt - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -

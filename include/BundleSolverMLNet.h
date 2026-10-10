@@ -2,68 +2,31 @@
 /*----------------------- File BundleSolverMLNet.h -------------------------*/
 /*--------------------------------------------------------------------------*/
 /** @file
- * PROPOSAL / PROTOTYPE (not yet compiled against the real repo).
+ * Definition of Net, the network with which BundleSolverML predicts the
+ * step-size t at each iteration, and of NetOptions, the plain data object
+ * that describes its architecture.
  *
- * A *runtime-parametric* replacement for the hard-coded `Net` struct
- * currently found in BundleSolverML.h.
+ * The architecture is decided at run time: a recurrent core (none, i.e. a
+ * feed-forward network, or an RNN, a GRU or an LSTM, of given hidden size
+ * and number of layers), an optional Gaussian bottleneck, and a head made of
+ * a stack of Linear layers with a chosen activation, ending in a single
+ * strictly positive output clamped to [ t_min , t_max ]. BundleSolverML
+ * builds it from intMLModel and intMLHidden; the remaining fields of
+ * NetOptions keep their defaults.
  *
- * NOTE: the struct below is deliberately named `Net`, in the same namespace,
- * because it is meant to take the place of the existing one. Nothing includes
- * this file yet, so there is no clash today; but this header and
- * BundleSolverML.h cannot both be included in the same translation unit until
- * the substitution is actually made. Wiring it in is the next step, and is
- * left out of this commit on purpose.
+ * The recurrent core is applied to the bundle iterations, one call of
+ * forward() being one time step, and hence it carries its hidden state from
+ * a call to the next; reset_state() clears it at the start of each instance
+ * and detach_state() cuts it off the autograd graph. The core is a separate
+ * member with its own forward() rather than an element of a
+ * torch::nn::Sequential, since the recurrent modules of Torch return their
+ * state alongside the output (LSTMBlock.h gives the alternative of a wrapper
+ * that does fit in a Sequential).
  *
- * The aim is to be able to change the underlying ML model *without* editing
- * the code and recompiling. Ideally everything is driven by algorithmic
- * parameters (i.e. the BSPar-ML.txt file); at worst by a few macros.
- *
- * Findings on how flexible Torch actually is, summarised:
- *
- *  (1) FULLY RUNTIME-CONFIGURABLE
- *      - layer sizes, number of layers, hidden size:
- *        every module takes an *Options* object built at run time,
- *        e.g. torch::nn::LinearOptions( in , out ),
- *             torch::nn::LSTMOptions( in , hid ).num_layers( L ).
- *      - depth of a feed-forward stack: torch::nn::Sequential is a *container*
- *        that can be push_back()-ed in a loop, so an arbitrary number of
- *        layers can be assembled from an integer parameter.
- *      - choice of activation: torch::nn::AnyModule type-erases the module,
- *        so ReLU / Softplus / Tanh can be selected by an int at run time
- *        and pushed into the same Sequential.
- *      - choice of recurrent cell (RNN / GRU / LSTM): all three exist as
- *        separate module types; we hold all three as (null) members and
- *        instantiate exactly one.
- *
- *  (2) THE ONE AWKWARD POINT
- *      torch::nn::Sequential can only chain modules whose forward() takes a
- *      single Tensor and returns a single Tensor. The recurrent modules
- *      return std::tuple< Tensor , std::tuple< Tensor , Tensor > > (output +
- *      hidden state), so an LSTM cannot be pushed into a Sequential *as is*.
- *      The route taken below is therefore: keep the recurrent core as a
- *      separate member with a hand-written forward(), and use a Sequential
- *      only for the MLP *head*.
- *
- *      UPDATE: this is not the only route. A thin wrapper module whose
- *      forward() is Tensor -> Tensor, holding ( h , c ) internally, does let
- *      an LSTM sit inside a Sequential; see LSTMBlock.h, where it is
- *      implemented and tested. Both routes give the same run-time
- *      configurability, and neither is forced on us -- the wrapper keeps the
- *      whole network as one uniform container, the explicit member below
- *      keeps the state handling visible at the call site. The choice can be
- *      made deliberately rather than by default.
- *
- *  (3) CONSEQUENCE FOR State / netCDF (relevant to the get_State/set_State
- *      idea): if the architecture is a run-time parameter, then the *shape*
- *      of the parameter vector is no longer known at compile time. Hence a
- *      BundleSolverMLState must serialise the architecture descriptor
- *      (model type, n_layers, hidden size, head sizes) *alongside* the flat
- *      tensor data, otherwise set_State() cannot rebuild the modules before
- *      loading the weights. named_parameters() gives a stable, ordered
- *      (name -> Tensor) map that flattens cleanly into netCDF doubles.
- *
- *  (4) NOTE: the optimiser (Adam) must be constructed *after* the modules,
- *      since it captures parameters(). Rebuilding the net invalidates it.
+ * Since the shape of the parameters depends on NetOptions, whatever saves
+ * the weights has to save NetOptions too (see BundleSolverMLCheckpoint.h),
+ * and the Adam optimizer, which is bound to parameters(), has to be rebuilt
+ * whenever the network is.
  */
 
 #ifndef __BundleSolverMLNet
@@ -79,15 +42,14 @@ namespace SMSpp_di_unipi_it {
 /*------------------------------ NetOptions --------------------------------*/
 /*--------------------------------------------------------------------------*/
 /// the whole architecture of the network as a plain data object
-/** Filled from the algorithmic parameters of BundleSolverML (see the
- * set_par() sketch at the bottom of this file), so that the whole
- * architecture is decided at run time. */
+/** model_type and hidden_size are set from the intMLModel and intMLHidden
+ * parameters of BundleSolverML, the other fields keep their defaults. */
 
 struct NetOptions {
 
  /// which core the net uses
  enum ModelType {
-  eMLP  = 0 ,   ///< no recurrence (the current behaviour)
+  eMLP  = 0 ,   ///< no recurrence: the head reads phi_t directly
   eRNN  = 1 ,   ///< vanilla Elman RNN
   eGRU  = 2 ,   ///< gated recurrent unit
   eLSTM = 3     ///< long short-term memory
@@ -123,9 +85,7 @@ struct NetOptions {
 /*--------------------------------- Net ------------------------------------*/
 /*--------------------------------------------------------------------------*/
 /// a Net whose architecture is decided at construction time from NetOptions
-/** Replaces the fixed { Linear(20,16) -> Softplus -> Linear(16,1) } network.
- *
- * Structure (mirrors Figure 5.1 of Demelas' thesis):
+/** Structure (mirrors Figure 5.1 of Demelas' thesis):
  *
  *     phi_t --> [ recurrent core ] --> [ (mu,sigma) sampler ] --> [ MLP head ]
  *                     |                     (optional)                |
@@ -135,9 +95,9 @@ struct NetOptions {
  *                                                                     v
  *                                                                     t > 0
  *
- * When model_type == eMLP the recurrent core degenerates into the identity
- * and the class behaves exactly like the current implementation, so the old
- * results remain reproducible with a single parameter value. */
+ * When model_type == eMLP the recurrent core is the identity, and with the
+ * default NetOptions the network is { Linear(20,16) -> Softplus ->
+ * Linear(16,1) }. */
 
 struct Net : torch::nn::Module {
 
@@ -266,6 +226,19 @@ struct Net : torch::nn::Module {
   }
 
 /*--------------------------------------------------------------------------*/
+ /// cut the hidden state off the autograd graph that produced it
+ /** The state keeps its value, but the gradient no longer flows back into
+  * the time steps that computed it; this is what truncates the
+  * back-propagation through time at the start of each training window. */
+
+ void detach_state( void ) {
+  if( h.defined() )
+   h = h.detach();
+  if( c.defined() )
+   c = c.detach();
+  }
+
+/*--------------------------------------------------------------------------*/
  /// one bundle iteration == one time step; returns the predicted t > 0
  /** x is the feature tensor phi_t of shape { input_size }. The hidden state
   * is updated in place, so the time dependency is handled implicitly and no
@@ -332,69 +305,6 @@ struct Net : torch::nn::Module {
   }
 
  };  // end( struct Net )
-
-/*--------------------------------------------------------------------------*/
-/*------------------- SKETCH: wiring into the parameters --------------------*/
-/*--------------------------------------------------------------------------*/
-/* Inside BundleSolverML, following the usual SMS++ convention, we would add
- * the new algorithmic parameters right after the last BundleSolver one (the
- * exact names of the "last" enumerators must be taken from BundleSolver.h):
- *
- *   enum int_par_type_BSML {
- *    intMLModelType = intLastBSlvPar ,   ///< NetOptions::ModelType
- *    intMLHiddenSize ,                   ///< hidden size of the core
- *    intMLNumLayers ,                    ///< stacked recurrent layers
- *    intMLActivation ,                   ///< NetOptions::ActType
- *    intMLHeadDepth ,                    ///< how many hidden layers in head
- *    intMLHeadWidth ,                    ///< width of each of them
- *    intMLStochastic ,                   ///< 0/1: reparametrization on/off
- *    intLastBSMLPar
- *    };
- *
- *   enum dbl_par_type_BSML {
- *    dblMLtMin = dblLastBSlvPar ,
- *    dblMLtMax ,
- *    dblMLLearnRate ,
- *    dblLastBSMLPar
- *    };
- *
- * and then, in set_par(), simply record the value and mark the net as dirty;
- * the Net is (re)built lazily on the first compute() after any change:
- *
- *   void BundleSolverML::set_par( idx_type par , int value ) {
- *    switch( par ) {
- *     case( intMLModelType ):  f_opt.model_type  = value; f_dirty = true; break;
- *     case( intMLHiddenSize ): f_opt.hidden_size = value; f_dirty = true; break;
- *     ...
- *     default: BundleSolver::set_par( par , value );
- *     }
- *    }
- *
- *   void BundleSolverML::rebuild_net_if_needed( void ) {
- *    if( ! f_dirty ) return;
- *    f_opt.head_sizes.assign( f_head_depth , f_head_width );
- *    f_owned_net = std::make_shared< Net >( f_opt );
- *    nn = f_owned_net.get();
- *    // the optimiser captures parameters(), so it must be rebuilt too
- *    f_optimizer = std::make_unique< torch::optim::Adam >(
- *                   nn->parameters() , torch::optim::AdamOptions( f_lr ) );
- *    f_dirty = false;
- *    }
- *
- * With this, a BSPar-ML.txt entry such as
- *
- *   intMLModelType   3     # 0=MLP 1=RNN 2=GRU 3=LSTM
- *   intMLHiddenSize  64
- *   intMLNumLayers   2
- *   intMLHeadDepth   1
- *   intMLHeadWidth   32
- *   intMLStochastic  1
- *
- * switches the whole architecture with no recompilation. Only two things
- * would still need compile-time work: adding a genuinely *new* module type
- * (a new case in build()), and any change to the shape of the feature
- * vector phi_t itself.
- */
 
 }  // end( namespace SMSpp_di_unipi_it )
 

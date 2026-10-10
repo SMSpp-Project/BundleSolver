@@ -191,13 +191,7 @@ class BundleSolverML : public BundleSolver
   * it; the feature vector is sized to the input dimension of Net. */
 
  BundleSolverML( void ) : BundleSolver() {
-  {
-  NetOptions o;
-  o.model_type  = f_ML_model;
-  o.hidden_size = f_ML_hidden;
-  f_owned_net = std::make_shared< Net >( o );
-  }
-  nn = f_owned_net.get();         // point to the private network by default
+  reset_net();                    // point to the private network by default
   size_features = 20;
   features.resize( size_features );
 
@@ -411,7 +405,22 @@ class BundleSolverML : public BundleSolver
   * - intNTrainRounds: number of times the same instance should be (re-)solved
   *   for online training. It is not used by the solver itself (which cannot
   *   reload the Block), but it is a hint that the training driver can read to
-  *   set its re-solve loop; the default is 1, i.e. a single solve.
+  *   set its re-solve loop; the default is 1, i.e. a single solve;
+  *
+  * - intMLModel: the recurrent core of the network, 0 = none (a
+  *   feed-forward network, the default), 1 = RNN, 2 = GRU, 3 = LSTM; the
+  *   state of the core is cleared at the beginning of each compute(), and
+  *   Backward() replays the recorded iterations in their order;
+  *
+  * - intMLHidden: the hidden size of the recurrent core (default 16),
+  *   ignored when intMLModel is 0.
+  *
+  * Changing intMLModel or intMLHidden to a different value rebuilds the
+  * (privately-owned) network with new initial weights, and hence discards
+  * any weights loaded or learnt before; the new weights are drawn right
+  * after seeding Torch with intMLSeed, if that is >= 0, so that they depend
+  * on the values of the three parameters and not on the order in which they
+  * are set.
   *
   * Unlike BundleSolver, BundleSolverML also listens to intMaxThread of
   * ThinComputeInterface: at the beginning of each compute() the number of
@@ -476,10 +485,8 @@ class BundleSolverML : public BundleSolver
     break;
    case( intMLSeed ):
     f_ML_seed = value;
-    if( value >= 0 ) {
-     torch::manual_seed( value );
+    if( value >= 0 )
      reset_net();  // re-init the owned net so the weights are reproducible
-     }
     break;
    case( intNTrainRounds ):
     if( value < 1 )
@@ -507,15 +514,19 @@ class BundleSolverML : public BundleSolver
     if( ( value < 0 ) || ( value > 3 ) )
      throw( std::invalid_argument(
       "BundleSolverML::set_par: intMLModel must be in [ 0 , 3 ]" ) );
-    f_ML_model = value;
-    reset_net();
+    if( value != f_ML_model ) {
+     f_ML_model = value;
+     reset_net();
+     }
     return;
    case( intMLHidden ):
     if( value < 1 )
      throw( std::invalid_argument(
       "BundleSolverML::set_par: intMLHidden must be >= 1" ) );
-    f_ML_hidden = value;
-    reset_net();
+    if( value != f_ML_hidden ) {
+     f_ML_hidden = value;
+     reset_net();
+     }
     return;
     default:
     BundleSolver::set_par( par , value );
@@ -698,21 +709,24 @@ class BundleSolverML : public BundleSolver
 /*--------------------------------------------------------------------------*/
 
  /// re-initializes the privately-owned network
- /** Re-allocates the private network (and drops the stale Adam optimizer,
-  * which is bound to the parameters of the old one); used by set_par() when
-  * intMLSeed is set, so that the new initial weights are drawn right after
-  * the seeding. If a shared network is active it is left untouched, since
-  * it is externally managed and possibly shared with other solvers. */
+ /** Re-allocates the private network with the architecture given by
+  * intMLModel and intMLHidden (and drops the stale Adam optimizer, which is
+  * bound to the parameters of the old one); used by the constructor and by
+  * set_par() when intMLSeed, intMLModel or intMLHidden change. If intMLSeed
+  * is >= 0, Torch is seeded with it right before the new initial weights
+  * are drawn, which makes them independent of what was drawn before. If a
+  * shared network is active it is left untouched, since it is externally
+  * managed and possibly shared with other solvers. */
 
  void reset_net( void ) {
+  if( f_ML_seed >= 0 )
+   torch::manual_seed( f_ML_seed );
   if( f_shared_net )  // shared net is externally managed: do not touch it
    return;
-  {
   NetOptions o;
   o.model_type  = f_ML_model;
   o.hidden_size = f_ML_hidden;
   f_owned_net = std::make_shared< Net >( o );
-  }
   nn = f_owned_net.get();
   f_optimizer.reset();
   }

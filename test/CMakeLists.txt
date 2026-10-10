@@ -61,7 +61,8 @@ if (Torch_FOUND)
                 COMMENT "Copying runtime DLLs next to ${modName}ML_test.exe")
     endif ()
 
-    # the test reads BSPar.txt and BSPar-ML.txt from the working directory
+    # the test reads BSPar.txt, BSPar-ML.txt and BSCfg-ML.txt from the working
+    # directory
     add_test(NAME ${modName}ML_test
              COMMAND ${modName}ML_test
              WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})

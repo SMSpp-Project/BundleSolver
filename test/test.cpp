@@ -7,11 +7,13 @@
  * A "random" convex PolyhedralFunction is constructed and put as the only
  * Objective of an otherwise "empty" AbstractBlock. The Block is first solved
  * by a standard BundleSolver, whose optimal value is taken as the reference,
- * and then repeatedly solved by a BundleSolverML that trains its network
- * online by itself at the end of each solve (intMLTrainOnline); the optimal
- * values are compared at each epoch and the network parameters are checked
- * to change. The model save / load round-trip and the shared-network
- * mechanism are tested as well.
+ * and then repeatedly solved by each BundleSolverML of BSPar-ML.txt, one for
+ * each core of the network (none, RNN, GRU, LSTM), that trains its network
+ * online by itself at the end of each solve (intMLTrainOnline); for each of
+ * them the network is checked to have the core asked by intMLModel, the
+ * optimal values are compared at each epoch, the network parameters are
+ * checked to change, and the model save / load round-trip is tested. The
+ * shared-network mechanism is tested as well.
  *
  * The test is intentionally minimal and depends only on the SMS++ core and
  * BundleSolver (which embeds BundleSolverML when built with Torch); it does
@@ -321,97 +323,116 @@ int main( int argc , char ** argv )
   delete( bsc );
   }
 
- // training solves with BundleSolverML - - - - - - - - - - - - - - - - - - -
+ // training solves with each BundleSolverML - - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
- // the ML BlockSolverConfig comes from -L
+ // the ML BlockSolverConfig, with one BundleSolverML for each core of the
+ // network [see intMLModel]
  BlockSolverConfig * mlbsc = apply_bsc( NDOBlock , ml_bsc_fn );
 
- auto bml = dynamic_cast< BundleSolverML * >(
-		         ( NDOBlock->get_registered_solvers() ).front() );
- if( ! bml ) {
-  cerr << "Error: the registered Solver is not a BundleSolverML" << endl;
-  exit( 1 );
+ std::vector< BundleSolverML * > bmls;
+ for( auto s : NDOBlock->get_registered_solvers() ) {
+  auto b = dynamic_cast< BundleSolverML * >( s );
+  if( ! b ) {
+   cerr << "Error: a registered Solver is not a BundleSolverML" << endl;
+   exit( 1 );
+   }
+  bmls.push_back( b );
   }
 
- #if( LOG_LEVEL >= 2 )
-  bml->set_log( & cout );
- #endif
-
- // the relative accuracy required to BundleSolverML in BSPar-ML.txt is
+ // the relative accuracy required to BundleSolverML in BSCfg-ML.txt is
  // 1e-6, but an untrained network may stop the algorithm slightly short
  // of the required precision, hence the looser comparison tolerance
  const double tol = 1e-4;
 
- for( Index epoch = 0 ; epoch < n_epochs ; ++epoch ) {
-  // detach and re-attach the Solver so that each epoch performs a full
-  // solve from scratch: otherwise the bundle accumulated in the previous
-  // epochs makes the Solver terminate immediately with no new iteration
-  reset_x();
-  wipe_global_pool();
-  NDOBlock->unregister_Solver( bml );
-  NDOBlock->register_Solver( bml );
+ for( auto bml : bmls ) {
+  const int model = bml->get_int_par( BundleSolverML::intMLModel );
 
-  // BundleSolverML trains online by itself at the end of compute() (since
-  // intMLTrainOnline is set in the ML BlockSolverConfig), so no explicit
-  // Backward() / ClearBuffers() is needed here
-  double nrm_before = net_norm( bml->nn );
-  int rtrn = bml->compute( false );
-  double nrm_after = net_norm( bml->nn );
+  #if( LOG_LEVEL >= 2 )
+   bml->set_log( & cout );
+  #endif
 
-  bool hs = ( ( rtrn >= Solver::kOK ) && ( rtrn < Solver::kError ) ) ||
-            ( rtrn == Solver::kLowPrecision );
-  double fi_ml = hs ? bml->get_ub() : Inf< double >();
-
-  bool ok = hs && ( std::abs( fi_ml - fi_ref ) <=
-		    tol * std::max( 1.0 , std::abs( fi_ref ) ) );
-  AllPassed &= ok;
-
-  LOG1( "BundleSolverML[ " << epoch << " ]: Fi* = " << fi_ml << endl );
-  if( ! ok )
-   cout << "epoch " << epoch << ": Fi* = " << fi_ml << " vs reference "
-	<< fi_ref << " <-- ERROR" << endl;
-
-  // the online training must have changed the network parameters; since the
-  // weights can only change if Heuristic() recorded some iteration and the
-  // ensuing Backward() found nonzero gradients, this single check also
-  // certifies that the network was actually exercised during the solve
-  if( nrm_before == nrm_after ) {
-   cout << "epoch " << epoch << ": online training did not change the"
-	<< " network parameters <-- ERROR" << endl;
-   AllPassed = false;
-   }
-  }
-
- // test the model save / load round-trip - - - - - - - - - - - - - - - - - -
- // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
- {
-  auto probe = torch::ones( { 20 } );
-  double out_saved = bml->nn->forward( probe ).item< double >();
-  bml->SaveModel( ModelFile );
-
-  // one more solve to perturb the weights (BundleSolverML auto-trains)
-  reset_x();
-  wipe_global_pool();
-  NDOBlock->unregister_Solver( bml );
-  NDOBlock->register_Solver( bml );
-  bml->compute( false );
-
-  bml->LoadModel( ModelFile );
-  double out_loaded = bml->nn->forward( probe ).item< double >();
-
-  if( std::abs( out_loaded - out_saved ) > 1e-12 ) {
-   cout << "save / load round-trip mismatch: " << out_saved << " vs "
-	<< out_loaded << " <-- ERROR" << endl;
+  // the network must have the core that intMLModel asks for
+  if( bml->nn->opt.model_type != model ) {
+   cout << "model " << model << ": the network has core "
+	<< bml->nn->opt.model_type << " <-- ERROR" << endl;
    AllPassed = false;
    }
 
-  remove( ModelFile );
+  for( Index epoch = 0 ; epoch < n_epochs ; ++epoch ) {
+   // detach and re-attach the Solver so that each epoch performs a full
+   // solve from scratch: otherwise the bundle accumulated in the previous
+   // epochs makes the Solver terminate immediately with no new iteration
+   reset_x();
+   wipe_global_pool();
+   NDOBlock->unregister_Solver( bml );
+   NDOBlock->register_Solver( bml );
+
+   // BundleSolverML trains online by itself at the end of compute() (since
+   // intMLTrainOnline is set in the ML BlockSolverConfig), so no explicit
+   // Backward() / ClearBuffers() is needed here
+   double nrm_before = net_norm( bml->nn );
+   int rtrn = bml->compute( false );
+   double nrm_after = net_norm( bml->nn );
+
+   bool hs = ( ( rtrn >= Solver::kOK ) && ( rtrn < Solver::kError ) ) ||
+             ( rtrn == Solver::kLowPrecision );
+   double fi_ml = hs ? bml->get_ub() : Inf< double >();
+
+   bool ok = hs && ( std::abs( fi_ml - fi_ref ) <=
+		     tol * std::max( 1.0 , std::abs( fi_ref ) ) );
+   AllPassed &= ok;
+
+   LOG1( "BundleSolverML[ " << model << " , " << epoch << " ]: Fi* = "
+	 << fi_ml << endl );
+   if( ! ok )
+    cout << "model " << model << ", epoch " << epoch << ": Fi* = " << fi_ml
+	 << " vs reference " << fi_ref << " <-- ERROR" << endl;
+
+   // the online training must have changed the network parameters; since
+   // the weights can only change if Heuristic() recorded some iteration and
+   // the ensuing Backward() found nonzero gradients, this single check also
+   // certifies that the network was actually exercised during the solve
+   if( nrm_before == nrm_after ) {
+    cout << "model " << model << ", epoch " << epoch << ": online training"
+	 << " did not change the network parameters <-- ERROR" << endl;
+    AllPassed = false;
+    }
+   }
+
+  // test the model save / load round-trip; the probe starts from a null
+  // state each time, since a recurrent core carries it across forward()
+  {
+   auto probe = torch::ones( { 20 } );
+   bml->nn->reset_state();
+   double out_saved = bml->nn->forward( probe ).item< double >();
+   bml->SaveModel( ModelFile );
+
+   // one more solve to perturb the weights (BundleSolverML auto-trains)
+   reset_x();
+   wipe_global_pool();
+   NDOBlock->unregister_Solver( bml );
+   NDOBlock->register_Solver( bml );
+   bml->compute( false );
+
+   bml->LoadModel( ModelFile );
+   bml->nn->reset_state();
+   double out_loaded = bml->nn->forward( probe ).item< double >();
+
+   if( std::abs( out_loaded - out_saved ) > 1e-12 ) {
+    cout << "model " << model << ": save / load round-trip mismatch: "
+	 << out_saved << " vs " << out_loaded << " <-- ERROR" << endl;
+    AllPassed = false;
+    }
+
+   remove( ModelFile );
+   }
   }
 
  // test the shared-network mechanism - - - - - - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  {
+  auto bml = bmls.front();
   auto net = bml->get_shared_net();
 
   auto other = dynamic_cast< BundleSolverML * >(

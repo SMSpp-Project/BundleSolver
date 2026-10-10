@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `intMLModel` and `intMLHidden` of `BundleSolverML`: the recurrent core of
+  the network (0 = none, the feed-forward network of before, 1 = RNN, 2 =
+  GRU, 3 = LSTM) and its hidden size, so that the cores already in `Net`
+  can be chosen from the configuration; changing either rebuilds the
+  network, seeded with `intMLSeed` if that is >= 0, so that the initial
+  weights do not depend on the order in which the parameters are set. The
+  state of the core is cleared at the beginning of each `compute()`, the
+  prediction no longer builds an autograd graph, and `Backward()` replays
+  the recorded iterations of a recurrent core in their order, with the
+  gradient truncated at each window [see `intMLWindow`]
+
 ## [0.6.0] - 2026-10-09
 
 ### Added

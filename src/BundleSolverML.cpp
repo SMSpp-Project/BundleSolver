@@ -194,6 +194,10 @@ int BundleSolverML::compute( bool changedvars )
  // follows [see intMaxThread]
  torch::set_num_threads( std::max( 1 , f_max_thread ) );
 
+ // a new instance: the recurrent core of the network starts from a null
+ // state (nothing happens with a feed-forward network)
+ nn->reset_state();
+
  const int ret = BundleSolver::compute( changedvars );
 
  if( f_train_online ) {  // online training: learn from the just-ended solve
@@ -303,8 +307,15 @@ G1Norm = std::sqrt( n2 );
  for( auto & fi : features )
   fi = std::min( std::max( fi , -10.0 ) , 10.0 );
 
+ /* The prediction needs no gradient, since Backward() evaluates the network
+  * again on the recorded features; this also keeps the state of a recurrent
+  * core from chaining the autograd graphs of all the iterations. */
  auto input = torch::tensor( features );
- auto output = nn->forward( input );
+ torch::Tensor output;
+ {
+  torch::NoGradGuard no_grad;
+  output = nn->forward( input );
+  }
 
  double t_pred = output.item< double >();
  if( ( ! std::isfinite( t_pred ) ) || ( t_pred <= 0 ) ) {
@@ -496,8 +507,17 @@ void BundleSolverML::Backward( void )
    const size_t k_win = ( f_ML_window >= int( n_rec ) )
                        ? n_rec : size_t( f_ML_window );
 
+  /* A recurrent core is replayed on all the recorded iterations, in their
+   * order and starting from a null state, so that at each of them it has
+   * the state it had when the prediction was made; the state crosses the
+   * windows, but the gradient does not (truncated back-propagation through
+   * time). A feed-forward network only needs the iterations in the loss. */
+  const bool rec = ( nn->opt.model_type != NetOptions::eMLP );
+  nn->reset_state();
+
   for( size_t wstart = 0 ; wstart < n_rec ; wstart += k_win ) {
    const size_t wend = std::min( wstart + k_win , n_rec );
+   nn->detach_state();
 
   torch::Tensor loss = torch::zeros( {} , torch::kFloat32 );
   size_t last_idx = wend - 1;
@@ -510,14 +530,19 @@ void BundleSolverML::Backward( void )
   for( size_t f = wstart ; f < wend ; ++f ) {
    float coeff_val = coeff_vecs[ f ].item< float >();
    bool is_ss = ( coeff_val > 0 );
-   if( ( ! is_ss ) && ( f != last_idx ) )
+   if( ( ! is_ss ) && ( f != last_idx ) ) {
+    if( rec )  // not in the loss, but it moves the state
+     nn->forward( phi_vecs[ f ] );
     continue;
+    }
    ss_count++;
 
    if( ( ! w_vecs[ f ].defined() ) || ( ! Gs[ f ].defined() ) ||
        ( ! Qs[ f ].defined() ) || ( f >= alphaS.size() ) ||
        ( ! alphaS[ f ].defined() ) ) {
     std::cerr << "Backward: missing tensor at iteration " << f << std::endl;
+    if( rec )
+     nn->forward( phi_vecs[ f ] );
     continue;
     }
 
