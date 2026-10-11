@@ -655,7 +655,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - minor improvements in logging and comments
 
 - quite significant rehaul of t heuristics: reshuffled the bits in tSPar1
-  (baiscally keeping compatibility with develop branch) and added the "reversal
+  (basically keeping compatibility with develop branch) and added the "reversal
   form of the poorman's quasi-Newton update". This requires the computation of
   the norm of the "aggregated representative subgradient", doing which called
   for some nontrivial changes in the computation of Alfa1 and ScPr1
