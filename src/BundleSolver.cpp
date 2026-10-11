@@ -4231,7 +4231,15 @@ int BundleSolver::continuous_trial_point( double & tot_time ,
  // all stuff that must be computed/changed inside InnerLoop()
 
  Alfa1 = 0;
- ScPr1 = NeedsScPr1() ? read_Gid_aggregate() : 0;
+ // < g , d > of the new subgradient g and the step d = Lambda1 - Lambda
+ // starts from the linear part of the 0-th component, and each hard
+ // component adds its own when it is evaluated
+ ScPr1 = 0;
+ if( NeedsScPr1() && MasterPB ) {
+  const auto & b = MasterPB->get_linear_part();
+  for( Index i = 0 ; i < std::min( Index( b.size() ) , NumVar ) ; ++i )
+   ScPr1 += b[ i ] * ( Lambda1[ i ] - Lambda[ i ] );
+  }
  if( NeedsG1() ) {
   G1Norm = INFshift;
   G1.assign( NumVar , double( 0 ) );
@@ -5868,11 +5876,13 @@ bool BundleSolver::GetGi( Index wFi )
     ScPr1k = 0;
     const auto & m = v_local2global[ wFi ];
     for( Index li = 0 ; li < loc_NV ; ++li )
-     ScPr1k += Lambda[ m[ li ] ] * G1k[ li ];
+     ScPr1k += ( Lambda1[ m[ li ] ] - Lambda[ m[ li ] ] ) * G1k[ li ];
     }
-   else
-    ScPr1k = std::inner_product( Lambda.begin() , Lambda.end() , G1k ,
-                                 double( 0 ) );
+   else {
+    ScPr1k = 0;
+    for( Index i = 0 ; i < NumVar ; ++i )
+     ScPr1k += ( Lambda1[ i ] - Lambda[ i ] ) * G1k[ i ];
+    }
 
    #if CHECK_BAD_F & 2
     // if so required, check for "very negative Alfa1" and print a warning on
@@ -5910,11 +5920,13 @@ bool BundleSolver::GetGi( Index wFi )
     ScPr1k = 0;
     const auto & m = v_local2global[ wFi ];
     for( Index li = 0 ; li < loc_NV ; ++li )
-     ScPr1k += Lambda[ m[ li ] ] * G1k[ li ];
+     ScPr1k += ( Lambda1[ m[ li ] ] - Lambda[ m[ li ] ] ) * G1k[ li ];
     }
-   else
-    ScPr1k = std::inner_product( Lambda.begin() , Lambda.end() , G1k ,
-                                 double( 0 ) );
+   else {
+    ScPr1k = 0;
+    for( Index i = 0 ; i < NumVar ; ++i )
+     ScPr1k += ( Lambda1[ i ] - Lambda[ i ] ) * G1k[ i ];
+    }
    }
 
   // helper: materialise a dense (NumVar-sized) physical copy of G1k either by

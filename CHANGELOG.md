@@ -35,6 +35,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   it where it did not go far enough, whatever the sign of the function; the
   per-iteration subgradient matrices are no longer recorded
 
+- the scalar product < g , d* > of the new subgradient and the direction
+  that the heuristics of t 2 and 3 use (`inttSPar1`) and that
+  `BundleSolverML` takes as a feature, which was z* d* plus the product of
+  each new subgradient with the stability center rather than with d*
+
 ## [0.6.0] - 2026-10-09
 
 ### Added
