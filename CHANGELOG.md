@@ -23,6 +23,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - the prediction of `BundleSolverML` no longer builds an autograd graph
 
+### Fixed
+
+- the loss of `BundleSolverML`, which was the mean of t times the best value
+  of the function over the serious steps: no gradient reached the network
+  through the direction, so the training moved t by the sign of the function
+  alone, upwards at every serious step on a concave one. Each prediction of
+  t is now paired with the step it has produced, and the loss is the mean of
+  c log t, c being the cosine of the angle between the new subgradient and
+  the direction, which decreases t where the step went too far and increases
+  it where it did not go far enough, whatever the sign of the function; the
+  per-iteration subgradient matrices are no longer recorded
+
 ## [0.6.0] - 2026-10-09
 
 ### Added

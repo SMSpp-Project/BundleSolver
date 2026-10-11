@@ -43,137 +43,10 @@ using Index = Function::Index;
 /*-------------------------------- MACROS ----------------------------------*/
 /*--------------------------------------------------------------------------*/
 
-static constexpr auto InINF = SMSpp_di_unipi_it::Inf< Index >();
-
 /// maximum L2 norm for gradient clipping applied after loss.backward();
 /// if the norm of the gradients exceeds this value, all the gradients are
 /// rescaled by GRAD_CLIP_NORM / norm (typical values are 1 ... 10)
 static constexpr float GRAD_CLIP_NORM = 1.0f;
-
-/*--------------------------------------------------------------------------*/
-/*----------------------------- FUNCTIONS ----------------------------------*/
-/*--------------------------------------------------------------------------*/
-
-static void chgsign( double * v , Index n )
-{
- for( const auto ev = v + n ; v < ev ; ++v )
-  *v = - *v;
- }
-
-/*--------------------------------------------------------------------------*/
-/*------------------------ CLASS BundleSolverML_Fi --------------------------*/
-/*--------------------------------------------------------------------------*/
-/* Custom autograd function used to attach the discounted search-direction
- * accumulator w_cum to the loss computation graph.
- *
- * The signature is apply( input , gs_scalar , fi_val ), where
- *
- * - input is the tensor whose gradient is sought (w_cum, of shape { N });
- *
- * - gs_scalar is a scalar tensor (gs.sum()), used as a constant multiplier
- *   in the backward pass, i.e., it is not differentiated;
- *
- * - fi_val is a double constant, not differentiated.
- *
- * The forward pass returns fi_val as a scalar (shape { }) with the same
- * dtype / device as input.
- *
- * The backward pass returns a null gradient for all the inputs: w_cum does
- * not require_grad() itself, as the gradient path towards the network
- * parameters runs through nn_out (which multiplies the output of this
- * function in the loss term of Backward()), not through w_cum directly.
- * Returning a null gradient is correct and avoids any shape mismatch
- * between w_cum (whose shape is set at the first recorded iteration) and
- * the bundle size at later iterations. */
-
-struct BundleSolverML_Fi
- : public torch::autograd::Function< BundleSolverML_Fi >
-{
- static torch::Tensor forward( torch::autograd::AutogradContext * ctx ,
-			       torch::Tensor input ,
-			       torch::Tensor gs_scalar ,
-			       double fi_val ) {
-  // save gs_scalar (shape { }) for backward: the shape is independent of
-  // the bundle size
-  ctx->save_for_backward( { gs_scalar } );
-  // return fi_val as a scalar tensor matching input's dtype / device
-  return( torch::tensor( fi_val , input.options() ).squeeze() );
-  }
-
- static torch::autograd::tensor_list backward(
-				torch::autograd::AutogradContext * ctx ,
-				torch::autograd::tensor_list grad_outputs ) {
-  return { torch::Tensor() ,   // grad w.r.t. input (w_cum), not needed
-	   torch::Tensor() ,   // grad w.r.t. gs_scalar, a constant
-	   torch::Tensor() };  // grad w.r.t. fi_val, a constant
-  }
- };
-
-/*--------------------------------------------------------------------------*/
-/*------------------------ CLASS BundleSolverML_W ---------------------------*/
-/*--------------------------------------------------------------------------*/
-/* Custom autograd function for the projected search direction w.
- *
- * The forward pass returns sum( w ) so as to attach the computation graph;
- * the backward pass computes the gradient w.r.t. the step-size t via the
- * KKT projection
- *
- *   \f[ \lambda^* = ( e^T Q^{-1} \alpha ) / ( e^T Q^{-1} e ) \f]
- *
- * out of which
- *
- *   \f[ dw / dt = ( 1 / t^2 ) G^T Q^{-1} ( \lambda^* e - \alpha ) \f] */
-
-struct BundleSolverML_W
- : public torch::autograd::Function< BundleSolverML_W >
-{
- static torch::Tensor forward( torch::autograd::AutogradContext * ctx ,
-			       torch::Tensor w , torch::Tensor G ,
-			       torch::Tensor Q , torch::Tensor alpha ,
-			       torch::Tensor E , double ts ) {
-  torch::Tensor ts_tensor = torch::tensor( ts , Q.options() );
-  ctx->save_for_backward( { G , Q , alpha , E , ts_tensor } );
-  return( w.sum() );
-  }
-
- static torch::autograd::tensor_list backward(
-				torch::autograd::AutogradContext * ctx ,
-				torch::autograd::tensor_list grad_outputs ) {
-  auto saved = ctx->get_saved_variables();
-  torch::Tensor G = saved[ 0 ];
-  torch::Tensor Q = saved[ 1 ];
-  torch::Tensor alpha = saved[ 2 ];
-  torch::Tensor E = saved[ 3 ];
-  torch::Tensor ts = saved[ 4 ];
-  torch::Tensor grad_out = grad_outputs[ 0 ];
-
-  // regularize Q and compute its inverse via Cholesky factorization
-  auto I = torch::eye( Q.size( 0 ) , Q.options() );
-  auto Qreg = Q + 1e+1 * I;
-  auto L = torch::linalg_cholesky( Qreg );
-  auto Qinv = torch::cholesky_inverse( L );
-
-  // KKT projection: lambda* = ( e^T Q^{-1} alpha ) / ( e^T Q^{-1} e )
-  auto Qinvalpha = torch::matmul( Qinv , alpha );
-  auto QinvEt = torch::matmul( Qinv , E.t() );
-  auto M = torch::matmul( E , QinvEt );
-  auto Ik = torch::eye( M.size( 0 ) , M.options() );
-  auto Mreg = M + 1e-8 * Ik;
-  auto ek = torch::ones( { M.size( 0 ) } , Q.options() );
-  auto rhs = ek + torch::matmul( E , Qinvalpha );
-  auto lambda = torch::linalg_solve( Mreg , rhs );
-  auto proj = torch::matmul( E.t() , lambda ) - alpha;
-
-  // dw / dt = ( 1 / t^2 ) G^T Q^{-1} proj
-  double ts_val = ts.item< double >();
-  auto result = torch::matmul( G.transpose( 0 , 1 ) ,
-			       torch::matmul( Qinv , proj ) );
-  result = ( 1.0 / ( ts_val * ts_val ) ) * result * grad_out;
-
-  return { result , torch::Tensor() , torch::Tensor() , torch::Tensor() ,
-	   torch::Tensor() , torch::Tensor() };
-  }
- };
 
 /*--------------------------------------------------------------------------*/
 /*------------------------- FACTORY MANAGEMENT -----------------------------*/
@@ -333,148 +206,71 @@ G1Norm = std::sqrt( n2 );
      ( f_ML_iter > f_ML_iter_last ) )
   return( t_pred );
 
+ /* What is recorded is the prediction, the step-size the current trial
+  * point was computed with, and the outcome of that step: the cosine of
+  * the angle between the new subgradient g (the sum of those of the
+  * components evaluated at the trial point) and the step d = \bar{x}_+ -
+  * \bar{x} from the center to the trial point. By convexity
+  * f( \bar{x}_+ ) - f( \bar{x} ) <= < g , d >, and along the path d( t )
+  * of the proximal Master problem d f( \bar{x} + d( t ) ) / d t ~
+  * < g , d > / t, so a positive < g , d > says that a smaller t would have
+  * done better and a negative one that a larger t would. This holds
+  * whatever the sign of f, since g is the subgradient of the convex
+  * function the algorithm actually minimizes, i.e., of - f for a concave
+  * one [see Backward()]. */
  phi_vecs.push_back( input );
-
- // search direction w
- auto tZ = MasterPB->get_z_vector();
- w_vecs.push_back( torch::tensor( tZ ).requires_grad_( true ) );
-
- // how many items the bundle holds now, which is how many rows G has
- int col_num = 0;
- for( Index i = 0 ; i < get_max_name() ; ++i )
-  if( is_bundle_item( i ) )
-   col_num++;
-
- // subgradient matrix G, one row for each item in the bundle; the global
- // name of each of them is kept to read its linearization error below
- std::vector< Index > G_names;
- std::vector< std::vector< VarValue > > G_mat;
- std::vector< Index > comp_of_row;
- comp_of_row.reserve( col_num );
-
- G_mat.reserve( col_num );
- for( Index i = 0 ; i < get_max_name() ; ++i )
-  if( is_bundle_item( i ) ) {
-   std::vector< VarValue > G( NumVar );
-   v_c05f[ ItemVcblr[ i ].first ]->get_linearization_coefficients(
-		    G.data() , Range( 0 , NumVar ) , ItemVcblr[ i ].second );
-   if( ! f_convex )
-    chgsign( G.data() , NumVar );
-   G_mat.push_back( std::move( G ) );
-   G_names.push_back( i );
-   comp_of_row.push_back( ItemVcblr[ i ].first );
-   }
-
- if( G_mat.empty() ) {
-  // no linearization in the bundle yet: nothing to differentiate through,
-  // drop the entries recorded so far for this iteration
-  phi_vecs.pop_back();
-  w_vecs.pop_back();
-  return( t_pred );
-  }
-
- int rows = G_mat.size();
- int cols = G_mat[ 0 ].size();
- std::vector< double > flat;
- flat.reserve( rows * cols );
- for( const auto & row : G_mat )
-  flat.insert( flat.end() , row.begin() , row.end() );
-
- torch::Tensor G_tensor = torch::from_blob( flat.data() , { rows , cols } ,
-					    torch::kDouble ).clone();
- /* Indicator matrix E of the convexity constraints: one row per component
-  * that the bundle has an item of, compressed over the components actually
-  * present, which is what the projection in the backward pass solves with
-  * [see BundleSolverML_W::backward()]. */
- std::map< Index , long > comp2row;
- for( auto c : comp_of_row )
-  if( ! comp2row.count( c ) ) {
-   long next = long( comp2row.size() );
-   comp2row[ c ] = next;
-   }
-
- auto E_tensor = torch::zeros( { long( comp2row.size() ) , long( rows ) } ,
-			       torch::kDouble );
- for( size_t r = 0 ; r < comp_of_row.size() ; ++r )
-  E_tensor[ comp2row[ comp_of_row[ r ] ] ][ long( r ) ] = 1.0;
-
- Es.push_back( E_tensor );
-
- Gs.push_back( G_tensor );
-
- // aggregated subgradient (whisG1 indices)
- std::vector< int64_t > valid_indices;
- for( auto k : whisG1 ) {
-  if( k == InINF )
-   break;
-  if( Index( k ) < Index( cols ) )
-   valid_indices.push_back( int64_t( k ) );
-  }
-
- torch::Tensor grad_sum;
- if( valid_indices.empty() )
-  grad_sum = torch::zeros( { rows } , torch::kDouble );
- else {
-  auto idx = torch::tensor( valid_indices , torch::kLong );
-  grad_sum = G_tensor.index_select( 1 , idx ).sum( 1 );
-  }
- Gs_aggreg.push_back( grad_sum );
-
- /* Step-type coefficient: +1 SS, -1 NS. Note that SSDone already reflects
-  * the type of the current step when Heuristic() is called, while the
-  * SS / NS counters do not, as they are updated later. */
- coeff_vecs.push_back( torch::tensor( SSDone ? 1.0f : -1.0f ) );
-
- // Gram matrix Q and linearization errors alpha
- torch::Tensor Q = torch::matmul( G_tensor , G_tensor.transpose( 0 , 1 ) );
- Qs.push_back( Q );
- std::vector< double > alpha( G_names.size() , 0 );
- for( Index i = 0 ; i < G_names.size() ; ++i )
-  alpha[ i ] = read_alpha_global( G_names[ i ] );
- alphaS.push_back( torch::tensor( alpha , torch::kDouble ) );
-
  tS.push_back( t_pred );
- FiS.push_back( UpFiBest );
+ tU.push_back( t );
+
+ double gd = 0;
+ double nd = 0;
+ for( Index i = 0 ; i < NumVar ; ++i ) {
+  const double di = Lambda1[ i ] - Lambda[ i ];
+  gd += G1[ i ] * di;
+  nd += di * di;
+  }
+ nd = std::sqrt( nd );
+
+ double cs = 0;
+ if( ( G1Norm > 0 ) && ( nd > 0 ) && std::isfinite( gd ) )
+  cs = std::min( std::max( gd / ( G1Norm * nd ) , -1.0 ) , 1.0 );
+ csS.push_back( cs );
 
  return( t_pred );
 
  }  // end( BundleSolverML::Heuristic )
 
 /*--------------------------------------------------------------------------*/
-
-torch::Tensor BundleSolverML::w( size_t f , double t )
-{
- return( BundleSolverML_W::apply( w_vecs[ f ] , Gs[ f ] , Qs[ f ] ,
-				  alphaS[ f ] , Es[ f ] , t ) );
- }
-
-/*--------------------------------------------------------------------------*/
-/* The loss is constructed as follows: for each recorded iteration f that
- * either is a SS or is the last one
+/* The prediction t_f made at the recorded iteration f is the step-size of
+ * the trial point of the next recorded iteration f + 1, provided nothing
+ * else has changed t in between (a noise reduction step, the bounds
+ * [ tMinor , tMaior ], the counters intMnSSC / intMnNSC, ...), which is
+ * checked by comparing t_f with the step-size actually used there. The
+ * outcome of that step is the cosine c_{f+1} recorded at f + 1 [see
+ * Heuristic()], and the loss is
  *
- *   nn_out = nn->forward( phi_vecs[ f ] ).sum()        [ re-evaluated ]
- *   w_curr = BundleSolverML_W::apply( ... )            [ scalar ]
- *   w_cum += 0.9^( total - ss_count ) * nn_out * w_curr
- *   loss  += coeff * nn_out * BundleSolverML_Fi( w_cum , gs_scalar , fi )
+ *   L = ( 1 / n ) \sum_f c_{f+1} \log t_f
  *
- * and finally loss /= ss_count (mean reduction), so that the magnitude of
- * the loss does not scale with the number of iterations. After
- * loss.backward() the gradients are clipped to GRAD_CLIP_NORM and the Adam
- * update is applied.
+ * over the n iterations f whose prediction was used. Since c_{f+1} is a
+ * constant, the gradient of L w.r.t. the parameters of the network is the
+ * mean of c_{f+1} d \log t_f, hence an Adam step decreases t_f where the
+ * step went too far ( c_{f+1} > 0 ) and increases it where it did not go
+ * far enough ( c_{f+1} < 0 ); the logarithm makes the update independent
+ * of the scale of t, and the cosine of the scale of f and of its
+ * subgradients, so that one network can be trained on instances of
+ * different size. The stationary point is where, on average, the trial
+ * points are minima of f along the path d( t ) (i.e., < g , d > = 0), which
+ * is the step-size an exact line search along that path would give.
  *
- * Three measures guard against exploding gradients:
- *
- * 1. feature normalization [see Heuristic()]: phi_vecs stores the already
- *    normalized tensors, so the forward pass re-run here uses the same
- *    scaled inputs that produced the original prediction;
- *
- * 2. mean (rather than sum) loss reduction, and no fi_val multiplier in
- *    the loss term, since it is a constant w.r.t. the network parameters
- *    whose ~ 1e5 magnitude only inflates the gradients;
- *
- * 3. gradient clipping + Adam: the optimizer is kept as a field so that
- *    its moment estimates persist across successive Backward() calls on
- *    the same (possibly shared) network. */
+ * The recorded iterations are split in windows of intMLWindow iterations,
+ * each one giving an Adam step. A recurrent core is replayed on all the
+ * recorded iterations, in their order and starting from a null state, so
+ * that at each of them it has the state it had when the prediction was
+ * made; the state crosses the windows, but the gradient does not
+ * (truncated back-propagation through time). After loss.backward() the
+ * gradients are clipped to GRAD_CLIP_NORM. The optimizer is kept as a field
+ * so that its moment estimates persist across successive Backward() calls
+ * on the same (possibly shared) network. */
 
 void BundleSolverML::Backward( void )
 {
@@ -485,8 +281,7 @@ void BundleSolverML::Backward( void )
   /* The Adam optimizer is lazily initialized at the first Backward() call,
    * which means it is always bound to the *active* network (nn), whether
    * it is the private one or a shared network injected via
-   * set_shared_net(). lr = 1e-4 is a conservative choice for this loss
-   * scale. */
+   * set_shared_net(). */
   if( ! f_optimizer ) {
    auto opts = torch::optim::AdamOptions( 1e-4 ).betas( { 0.9 , 0.999 } )
                           .eps( 1e-8 ).weight_decay( 1e-5 );
@@ -494,119 +289,70 @@ void BundleSolverML::Backward( void )
 							 opts );
    }
 
-  f_optimizer->zero_grad();
-
-  if( phi_vecs.empty() ) {
-   BML_LOG( "Backward: no iterations, skipping" << std::endl );
+  const size_t n_rec = phi_vecs.size();
+  if( n_rec < 2 ) {
+   BML_LOG( "Backward: no prediction with a known outcome, skipping"
+	    << std::endl );
    return;
    }
 
   if( ! nn->is_training() )
    nn->train();
-   const size_t n_rec = phi_vecs.size();
-   const size_t k_win = ( f_ML_window >= int( n_rec ) )
+
+  const size_t k_win = ( f_ML_window >= int( n_rec ) )
                        ? n_rec : size_t( f_ML_window );
 
-  /* A recurrent core is replayed on all the recorded iterations, in their
-   * order and starting from a null state, so that at each of them it has
-   * the state it had when the prediction was made; the state crosses the
-   * windows, but the gradient does not (truncated back-propagation through
-   * time). A feed-forward network only needs the iterations in the loss. */
-  const bool rec = ( nn->opt.model_type != NetOptions::eMLP );
   nn->reset_state();
 
   for( size_t wstart = 0 ; wstart < n_rec ; wstart += k_win ) {
    const size_t wend = std::min( wstart + k_win , n_rec );
    nn->detach_state();
+   f_optimizer->zero_grad();
 
-  torch::Tensor loss = torch::zeros( {} , torch::kFloat32 );
-  size_t last_idx = wend - 1;
-  int ss_count = 0;
+   torch::Tensor loss = torch::zeros( {} , torch::kFloat32 );
+   size_t n_used = 0;
 
-  // scalar accumulator for the discounted search directions
-  torch::Tensor w_cum = torch::zeros( {} , torch::kFloat32 );
+   for( size_t f = wstart ; f < wend ; ++f ) {
+    // the network is run on every iteration, as each one moves the state
+    // of a recurrent core
+    auto t_f = nn->forward( phi_vecs[ f ] ).sum();
 
-  
-  for( size_t f = wstart ; f < wend ; ++f ) {
-   float coeff_val = coeff_vecs[ f ].item< float >();
-   bool is_ss = ( coeff_val > 0 );
-   if( ( ! is_ss ) && ( f != last_idx ) ) {
-    if( rec )  // not in the loss, but it moves the state
-     nn->forward( phi_vecs[ f ] );
-    continue;
-    }
-   ss_count++;
-
-   if( ( ! w_vecs[ f ].defined() ) || ( ! Gs[ f ].defined() ) ||
-       ( ! Qs[ f ].defined() ) || ( f >= alphaS.size() ) ||
-       ( ! alphaS[ f ].defined() ) ) {
-    std::cerr << "Backward: missing tensor at iteration " << f << std::endl;
-    if( rec )
-     nn->forward( phi_vecs[ f ] );
-    continue;
-    }
-
-   try {
-    std::unique_ptr<torch::NoGradGuard> no_grad;
-    if ( !f_train_online ) {
-    no_grad = std::make_unique<torch::NoGradGuard>();
-    }
-    auto nn_out = nn->forward( phi_vecs[ f ] ).sum();  // scalar, float32
-
-    if( ! nn_out.requires_grad() ) {
-     std::cerr << "Backward: no grad_fn on nn_out at iteration " << f
-	       << std::endl;
+    if( f + 1 >= n_rec )  // the last prediction has no outcome
      continue;
-     }
 
-    auto w_curr = BundleSolverML_W::apply( w_vecs[ f ] , Gs[ f ] , Qs[ f ] ,
-					   alphaS[ f ] , Es[ f ] ,
-					   nn_out.item< double >() );
+    if( std::abs( tU[ f + 1 ] - tS[ f ] ) >
+	1e-9 * std::max( 1.0 , std::abs( tS[ f ] ) ) )
+     continue;            // t_f has not been used as such
 
-    double discount = std::pow( 0.9 ,
-                                double( ( wend - wstart ) - ss_count ) );
-    w_cum = w_cum + float( discount ) * nn_out * w_curr;
+    if( csS[ f + 1 ] == 0 )
+     continue;
 
-    auto gs_scalar = Gs_aggreg[ f ].to( torch::kFloat32 ).sum();
-
-    auto term = coeff_vecs[ f ] * nn_out *
-                BundleSolverML_Fi::apply( w_cum , gs_scalar , FiS[ f ] );
-    loss += term;
-
-    BML_LOG( "Backward: iteration " << f << ( is_ss ? " [SS]" : " [last]" )
-	     << ", discount = " << discount << ", nn_out = "
-	     << nn_out.item< float >() << ", contribution = "
-	     << term.item< float >() << std::endl );
+    loss = loss + float( csS[ f + 1 ] ) * torch::log( t_f + 1e-12f );
+    ++n_used;
     }
-   catch( const std::exception & e ) {
-    std::cerr << "Backward: error at iteration " << f << ": " << e.what()
-	      << std::endl;
+
+   if( ! n_used ) {
+    BML_LOG( "Backward: window [ " << wstart << " , " << wend
+	     << " ) has no used prediction, skipping" << std::endl );
+    continue;
     }
-   }  // end( for( f ) )
 
-  if( ! ss_count ) {
-   BML_LOG( "Backward: no SS / last iteration, skipping" << std::endl );
-   return;
-   }
+   loss = loss / float( n_used );
 
-  // mean reduction: the loss magnitude must not grow with the iterations
-  loss = loss / float( ss_count );
+   BML_LOG( "Backward: window [ " << wstart << " , " << wend
+	    << " ), loss = " << loss.item< float >() << " over " << n_used
+	    << " predictions" << std::endl );
 
-  BML_LOG( "Backward: mean loss = " << loss.item< float >()
-	   << ", ss_count = " << ss_count << " / " << phi_vecs.size()
-	   << std::endl );
+   loss.backward();
 
-  loss.backward();
+   // clip the gradients so that their global L2 norm is <= GRAD_CLIP_NORM
+   auto pre_clip_norm = torch::nn::utils::clip_grad_norm_(
+					     nn->parameters() , GRAD_CLIP_NORM );
+   BML_LOG( "Backward: gradient norm (pre-clip) = " << pre_clip_norm
+	    << std::endl );
 
-  // clip the gradients so that their global L2 norm is <= GRAD_CLIP_NORM
-  auto params = nn->parameters();
-  auto pre_clip_norm = torch::nn::utils::clip_grad_norm_( params ,
-							  GRAD_CLIP_NORM );
-  BML_LOG( "Backward: gradient norm (pre-clip) = " << pre_clip_norm
-	   << std::endl );
-
-  f_optimizer->step();
-  }  // end( for( wstart ) ) 
+   f_optimizer->step();
+   }  // end( for( wstart ) )
   }
  catch( const std::exception & e ) {
   std::cerr << "Backward: exception: " << e.what() << std::endl;

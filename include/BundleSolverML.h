@@ -21,11 +21,12 @@
  * \endlink
  *
  * BundleSolverML implements the step-size (proximal parameter) prediction
- * part of that approach: it learns t with an objective-based, time-discounted
- * loss differentiated through the search direction by automatic
- * differentiation. The convex multipliers that form the direction are still
- * computed by the classical Master problem of the base BundleSolver, rather
- * than by the attention-based recurrent network of the paper.
+ * part of that approach. The convex multipliers that form the direction are
+ * still computed by the classical Master problem of the base BundleSolver,
+ * rather than by the attention-based recurrent network of the paper, and
+ * the network learns t from the outcome of each step, i.e., from the sign
+ * of the directional derivative of the function at the trial point along
+ * the direction [see Backward()].
  *
  * The network can be trained online: after each compute() the caller can
  * invoke Backward(), which computes a loss out of the recorded iterations,
@@ -159,8 +160,8 @@ namespace SMSpp_di_unipi_it
  *
  * Note that copy and move operations are deleted to protect the Torch
  * nn::Module internals, which manage reference-counted parameter tensors;
- * all the tensors needed for differentiation are stored in per-iteration
- * vectors (phi_vecs, w_vecs, Gs, ...) and consumed during Backward(). */
+ * the features and the outcome of each step are stored in per-iteration
+ * vectors (phi_vecs, tS, tU, csS) and consumed during Backward(). */
 
 class BundleSolverML : public BundleSolver
 {
@@ -325,8 +326,9 @@ class BundleSolverML : public BundleSolver
   * bits of inttSPar1 are set [see get_dflt_int_par()]: it builds the
   * feature vector out of the current state of the algorithm, runs a
   * forward pass through the active network (shared or private) and
-  * returns the predicted step-size t > 0. It also records all the tensors
-  * (G, Q, alpha, w, ...) needed by the subsequent Backward() call.
+  * returns the predicted step-size t > 0. It also records the features,
+  * the prediction and the outcome of the step that has just been done,
+  * which are what the subsequent Backward() call needs.
   *
   * @param whch  unused, kept for interface compatibility with BundleSolver
   *
@@ -336,12 +338,13 @@ class BundleSolverML : public BundleSolver
 
 /*--------------------------------------------------------------------------*/
  /// computes the gradients and updates the active network parameters
- /** Iterates over all the recorded iterations, accumulates a scalar loss
-  * (weighted by the step type and discounted over time), back-propagates
-  * it through the active network and applies an Adam update to its
-  * parameters. If a shared network is active the update affects all the
-  * solvers sharing the same Net. This is meant to be called once per
-  * solve, after compute() returns. */
+ /** Iterates over all the recorded iterations, pairs each prediction of t
+  * with the outcome of the step it has produced, accumulates a scalar loss
+  * that decreases t where the step went too far and increases it where it
+  * did not go far enough, back-propagates it through the active network
+  * and applies an Adam update to its parameters. If a shared network is
+  * active the update affects all the solvers sharing the same Net. This is
+  * meant to be called once per solve, after compute() returns. */
 
  void Backward( void );
 
@@ -354,35 +357,11 @@ class BundleSolverML : public BundleSolver
 
  void ClearBuffers( void ) {
   phi_vecs.clear();
-  w_vecs.clear();
-  coeff_vecs.clear();
-  Gs.clear();
-  Es.clear();
-  Gs_aggreg.clear();
-  Qs.clear();
-  alphaS.clear();
-  thetaS.clear();
-  phiS.clear();
-  lastIndexS.clear();
   tS.clear();
-  FiS.clear();
+  tU.clear();
+  csS.clear();
   f_ML_iter = 0;
   }
-
-/*--------------------------------------------------------------------------*/
- /// constructs the search direction tensor for iteration f with step t
- /** Wraps the custom autograd function computing the search direction so
-  * that the computation is differentiable w.r.t. the output of the
-  * network (used internally by Backward()).
-  *
-  * @param f  iteration index into the recorded tensor vectors
-  *
-  * @param t  step-size value
-  *
-  * @return a scalar tensor representing sum( w ), connected to the
-  *         autograd graph */
-
- torch::Tensor w( size_t f , double t );
 
 /*--------------------------------------------------------------------------*/
 /*---------------------- PARAMETERS OF THE SOLVER ----------------------------*/
@@ -645,20 +624,10 @@ class BundleSolverML : public BundleSolver
  // per-iteration tensors recorded by Heuristic() for the backward pass
 
  std::vector< torch::Tensor > phi_vecs;    ///< feature tensors (net inputs)
- std::vector< torch::Tensor > w_vecs;      ///< search direction tensors w
- std::vector< torch::Tensor > coeff_vecs;  ///< step-type signs: +1 SS, -1 NS
- std::vector< torch::Tensor > Gs;
- std::vector< torch::Tensor > Es;          ///< convexity-constraint
-                                           ///< indicators, one row per
-                                           ///< component          ///< subgradient matrices G
- std::vector< torch::Tensor > Gs_aggreg;   ///< aggregated subgradient vectors
- std::vector< torch::Tensor > Qs;          ///< Gram matrices Q = G G^T
- std::vector< torch::Tensor > alphaS;      ///< linearization error vectors
- std::vector< torch::Tensor > thetaS;      ///< currently unused
- std::vector< torch::Tensor > phiS;        ///< currently unused
- std::vector< torch::Tensor > lastIndexS;  ///< currently unused
- std::vector< double > tS;                 ///< predicted step-sizes
- std::vector< double > FiS;                ///< best upper bounds on f*
+ std::vector< double > tS;   ///< predicted step-sizes
+ std::vector< double > tU;   ///< step-sizes of the trial points
+ std::vector< double > csS;  ///< cosines of the angle between the new
+                             ///< subgradient and the direction
 
 /*--------------------------------------------------------------------------*/
 /*----------------------- PRIVATE PART OF THE CLASS --------------------------*/
