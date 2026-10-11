@@ -17,13 +17,14 @@ ComputeConfig         # exact type of the ComputeConfig object
 1  # f_diff == 0 ==> all non-provided parameters are set to the default value
    # f_diff == 1 ==> all non-provided parameters are not changed
 
-4  # number of integer parameters
+5  # number of integer parameters
 
 # now all the integer parameters
 intMaxIter       1000 # max number of iterations for each call
 intLogVerb          0 # log verbosity of the bundle
 intBPar2          100 # max bundle size per component
 intMLTrainOnline    1 # train the network online at the end of compute()
+intMaxThread        1 # threads used by Torch
 
 3  # number of double parameters
 

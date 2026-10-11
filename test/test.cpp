@@ -345,12 +345,21 @@ int main( int argc , char ** argv )
  // of the required precision, hence the looser comparison tolerance
  const double tol = 1e-4;
 
- for( auto bml : bmls ) {
+ for( Index i = 0 ; i < bmls.size() ; ++i ) {
+  auto bml = bmls[ i ];
   const int model = bml->get_int_par( BundleSolverML::intMLModel );
 
   #if( LOG_LEVEL >= 2 )
    bml->set_log( & cout );
   #endif
+
+  // the i-th BundleSolverML of BSPar-ML.txt asks for core i, whatever the
+  // other parameters of its ComputeConfig
+  if( model != int( i ) ) {
+   cout << "BundleSolverML " << i << ": intMLModel is " << model
+	<< " <-- ERROR" << endl;
+   AllPassed = false;
+   }
 
   // the network must have the core that intMLModel asks for
   if( bml->nn->opt.model_type != model ) {

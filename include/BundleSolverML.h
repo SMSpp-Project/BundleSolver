@@ -510,6 +510,7 @@ class BundleSolverML : public BundleSolver
      throw( std::invalid_argument(
                    "BundleSolverML::set_par: intMaxThread must be >= 0" ) );
     f_max_thread = value;
+    return;
    case( intMLModel ):
     if( ( value < 0 ) || ( value > 3 ) )
      throw( std::invalid_argument(
