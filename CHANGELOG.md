@@ -40,6 +40,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the algorithm, while the latter used to hide the former as soon as it was
   finite, however worse
 
+- a serious step accepted a point worse than the stability centre when some
+  hard component had no item in the bundle: the targets were then infinite,
+  which is right when the value at the centre is not known yet, but the
+  recovery from failures of the master problem can empty the bundle in the
+  middle of a call. On a two-stage stochastic unit commitment the
+  Lagrangian Dual moved its centre from 3.81e9 to -3.78e12 and stopped
+  there; the upper target is now the value at the centre whenever this is
+  known, so that only an improving step is serious
+
 - the recovery from a numerical failure of the master problem declared it
   unrecoverable as soon as the bundle had only items of the current
   iteration (the new linearizations and the aggregated ones, not removable

@@ -5253,8 +5253,11 @@ void BundleSolver::PrepareLambda1( void )
  // update the upper and lower targets - - - - - - - - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // note that vStar.back() == INFshift if the bundle of any of the hard
- // components is empty, in which case there are no targets: any "finite"
- // information about them is better than what we currently have
+ // components is empty, in which case there is no model to set the targets
+ // with: if the value at the stability centre is not known either, any
+ // "finite" information is better than what we currently have, but if it
+ // is known (the bundle having been emptied by the recovery from failures
+ // of the master problem [see FormD()]) a serious step has to improve on it
 
  if( vStar.back() < INFshift ) {
   UpTrgt = UpRifFi.back() + ( 1.0 - m2 ) * vStar.back();
@@ -5265,7 +5268,7 @@ void BundleSolver::PrepareLambda1( void )
    LwTrgt = UpRifFi.back() + ( 1.0 + m1 ) * vStar.back();
   }
  else {
-  UpTrgt = INFshift;
+  UpTrgt = UpFiLmb.back();
   LwTrgt = -INFshift;
   }
 
