@@ -156,7 +156,8 @@ endif ()
 # ----- the time limit while the master fails [see dblMaxTime] ------------- #
 # A master Solver that fails at each call after the first few, whose failures
 # the BundleSolver recovers from by emptying the bundle one item at a time:
-# with no time limit it ends in kError, with one in kStopTime soon after it
+# with no time limit it ends in kLowPrecision at the stability centre, with
+# one in kStopTime soon after it
 if (TARGET SMS++::MILPSolver)
     add_executable(time_limit_test test_time_limit.cpp)
     target_link_libraries(time_limit_test PRIVATE
@@ -168,6 +169,25 @@ if (TARGET SMS++::MILPSolver)
              COMMAND time_limit_test
              WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
     set_tests_properties(time_limit_test PROPERTIES SKIP_RETURN_CODE 77)
+endif ()
+
+# ----- a failure of the master on the items of this iteration ------------ #
+# A master Solver that fails at its first calls, when the bundle only has the
+# items of the first iteration, which are not removable at this iteration:
+# the recovery removes them as well, and the call ends in kOK with the value
+# of a BundleSolver whose master does not fail
+if (TARGET SMS++::MILPSolver)
+    add_executable(mp_recovery_test test_mp_recovery.cpp)
+    target_link_libraries(mp_recovery_test PRIVATE
+                          SMS++::BundleSolver
+                          SMS++::MILPSolver)
+    # it reads BSPar-recovery.txt, BSCfg-cut.txt, MPBCfg-transient.txt and
+    # MPBCfg-int.txt from the working directory, and it is skipped without
+    # HiGHS
+    add_test(NAME mp_recovery_test
+             COMMAND mp_recovery_test
+             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+    set_tests_properties(mp_recovery_test PROPERTIES SKIP_RETURN_CODE 77)
 endif ()
 
 # the examples of OSBDO, see osbdo/README.md

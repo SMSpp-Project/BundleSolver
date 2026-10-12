@@ -19,8 +19,11 @@
  * large enough for the recovery to take much longer than the time limit.
  * The instance is solved by the two BundleSolver of BSPar-time.txt:
  *
- * - the first, with no time limit, has to end in kError, after the
- *   recovery has removed the items one at a time;
+ * - the first, with no time limit, has to end in kLowPrecision at the
+ *   stability centre: the recovery removes the items one at a time, those
+ *   of the current iteration as well, the master problem with an empty
+ *   bundle is the centre itself, which then the noise reduction cannot get
+ *   away from, until t is at its maximum;
  *
  * - the second, with dblMaxTime well below the time the recovery takes,
  *   has to end in kStopTime soon after the time limit, with the value of
@@ -237,13 +240,18 @@ int main( int argc , char ** argv )
  auto limit = dynamic_cast< BundleSolver * >( *std::next( slvs.begin() ) );
 
  // with no time limit the recovery removes the items one at a time, at WAIT
- // seconds each, and then gives up, after much longer than the time limit
+ // seconds each, until the bundle is empty and the master problem gives the
+ // centre, which the noise reduction does not change: the call ends with
+ // the centre, as not optimal, after much longer than the time limit
  const auto st0 = nolimit->compute( false );
  const double t0 = nolimit->get_elapsed_time();
+ const double v0 = nolimit->get_ub();  // the value at the stability centre
  const long f0 = FailingMPSolver::Failures;
  cout << "no time limit: status " << st0 << " in " << t0 << " s, " << f0
       << " failed master problems" << endl;
- check( st0 == Solver::kError , "kError with no time limit" );
+ check( st0 == Solver::kLowPrecision , "kLowPrecision with no time limit" );
+ check( std::isfinite( v0 ) , "the value of the stability centre with no "
+	                      "time limit" );
  check( t0 > MAXT + 10 * WAIT , "the recovery outlasts the time limit" );
 
  // with the time limit it stops in the recovery, soon after the limit, with

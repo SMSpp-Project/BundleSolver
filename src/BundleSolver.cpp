@@ -3912,9 +3912,27 @@ void BundleSolver::FormD( void )
     continue;
     }
 
-   BLOG( 1 , std::endl << "Bundle::FormD: unrecoverable MP failure." );
-   Result = kError;
-   return;
+   // the items that are not removable only for a while are the ones that
+   // have entered the bundle at this iteration (the new linearizations, the
+   // aggregated ones): without any of them the model is still a model of
+   // the function, only a coarser one, and Delete() keeps the books of the
+   // aggregated one and of the representative of the component as for any
+   // other item, so when nothing else is left they go as well rather than
+   // the whole call failing; the unremovable ones (OOBase == - Inf) stay
+   for( Index j = get_max_name() ; j-- ; )
+    if( ( OOBase[ j ] < 0 ) && ( OOBase[ j ] > - Inf< SIndex >() ) ) {
+     i = j;
+     break;
+     }
+
+   if( i == InINF ) {
+    BLOG( 1 , std::endl << "Bundle::FormD: unrecoverable MP failure." );
+    Result = kError;
+    return;
+    }
+
+   BLOG( 2 , std::endl << "Bundle::FormD: error in MP, item " << i
+	               << " of this iteration deleted" );
    }
 
   // i can be deleted, do it and try again hoping this will solve the

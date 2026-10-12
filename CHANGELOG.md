@@ -40,6 +40,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the algorithm, while the latter used to hide the former as soon as it was
   finite, however worse
 
+- the recovery from a numerical failure of the master problem declared it
+  unrecoverable as soon as the bundle had only items of the current
+  iteration (the new linearizations and the aggregated ones, not removable
+  until the next one), as at the first master of a call or right after a
+  serious step: these are now removed as well, the model without them being
+  still a model of the function, and only an empty bundle, whose master is
+  the stability centre itself, is left. On `pHydro_18` of plan4res the
+  Lagrangian Dual ended in `kError` at the 149-th iteration, its master
+  failing on GUROBI's dual simplex right after a serious step
+
 - the time limit (`dblMaxTime`) did not hold while the master problem was
   failing: the recovery, which removes an item from the bundle and solves
   the master again until it works or the bundle is empty, did not look at
