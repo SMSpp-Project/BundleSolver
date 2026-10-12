@@ -1,5 +1,5 @@
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-# - - - - - - - - - - - - - - - BSPar-cutoff.txt - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - BSPar-cutoff.txt  - - - - - - - - - - - - - - -
 #
 # The BundleSolver of test_cutoff.cpp, one for each stabilization of the
 # dual master whose global lower bound the cutoff becomes: proximal, level
@@ -105,5 +105,5 @@ intMPStbl       2     # 2 = doubly stabilized
 # end of BlockSolverConfig - - - - - - - - - - - - - - - - - - - - - - - - -
 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-# - - - - - - - - - - - - - END BSPar-cutoff.txt - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - END BSPar-cutoff.txt  - - - - - - - - - - - - - -
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -

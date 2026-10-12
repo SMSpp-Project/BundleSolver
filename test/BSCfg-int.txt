@@ -1,5 +1,5 @@
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-# - - - - - - - - - - - - - - - BSCfg-int.txt - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - - BSCfg-int.txt - - - - - - - - - - - - - - - -
 #
 # The ComputeConfig of the BundleSolver of BSPar-int.txt: integer Variable
 # kept integer, with the trust region of radius dbltInit as stabilization,
@@ -56,5 +56,5 @@ strMPBSolverCfg MPBCfg-int.txt  # BlockSolverConfig of the master
 # end of ComputeConfig - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-# - - - - - - - - - - - - - - END BSCfg-int.txt - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - END BSCfg-int.txt - - - - - - - - - - - - - - -
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -

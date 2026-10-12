@@ -2618,7 +2618,7 @@ public:
   }
 
 /** @} ---------------------------------------------------------------------*/
-/*------ METHODS FOR HANDLING THE State OF THE BundleSolver -----*/
+/*------ METHODS FOR HANDLING THE State OF THE BundleSolver ----------------*/
 /*--------------------------------------------------------------------------*/
 /** @name Handling the State of the BundleSolver
  *  @{ */
@@ -4381,7 +4381,7 @@ class BundleSolverState : public State {
  using VarValue = BundleSolver::VarValue;
  using Vec_VarValue = BundleSolver::Vec_VarValue;
 
-/*------- CONSTRUCTING AND DESTRUCTING BundleSolverState --------*/
+/*------- CONSTRUCTING AND DESTRUCTING BundleSolverState -------------------*/
 
  /// constructor, doing everything or nothing.
  /** Constructor of BundleSolverState. If provided with a pointer
@@ -4433,7 +4433,7 @@ class BundleSolverState : public State {
    delete el;
   }
 
-/*---- METHODS DESCRIBING THE BEHAVIOR OF A BundleSolverState ---*/
+/*---- METHODS DESCRIBING THE BEHAVIOR OF A BundleSolverState --------------*/
 
  /// serialize a BundleSolverState into a netCDF::NcGroup
  /** The method serializes the BundleSolverState into the provided

@@ -1,5 +1,5 @@
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-# - - - - - - - - - - - - - - - BSPar-easy.txt - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - BSPar-easy.txt  - - - - - - - - - - - - - - - -
 #
 # The BundleSolver of test_easy_tminor.cpp: the easy components in the
 # master, whose first master has an empty bundle and t at dbltMinor, small
@@ -69,5 +69,5 @@ strMPBSolverCfg MPBCfg-easy.txt  # BlockSolverConfig of the master Solver
 # end of BlockSolverConfig - - - - - - - - - - - - - - - - - - - - - - - - -
 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-# - - - - - - - - - - - - - - END BSPar-easy.txt - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - END BSPar-easy.txt  - - - - - - - - - - - - - - -
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -

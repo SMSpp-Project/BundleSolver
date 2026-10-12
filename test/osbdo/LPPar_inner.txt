@@ -92,5 +92,5 @@ Method     1 # dual simplex: basic (extreme-point) duals for the Benders cuts
 # end of BlockSolverConfig- - - - - - - - - - - - - - - - - - - - - - - - - -
 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-# - - -  - - - - - - - - - - END LPPar_innerBlock.txt - - - - - - - - - - - -
+# - - - - - - - - - - - - - END LPPar_inner.txt - - - - - - - - - - - - - - -
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -

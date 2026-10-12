@@ -166,7 +166,7 @@ namespace SMSpp_di_unipi_it
 class BundleSolverML : public BundleSolver
 {
 /*--------------------------------------------------------------------------*/
-/*----------------------- PUBLIC PART OF THE CLASS --------------------------*/
+/*----------------------- PUBLIC PART OF THE CLASS -------------------------*/
 /*--------------------------------------------------------------------------*/
 
  public:
@@ -184,7 +184,7 @@ class BundleSolverML : public BundleSolver
  ///< a collection of VecMem vectors (e.g., previous iterates)
 
 /*--------------------------------------------------------------------------*/
-/*------------------- CONSTRUCTING AND DESTRUCTING --------------------------*/
+/*------------------- CONSTRUCTING AND DESTRUCTING -------------------------*/
 /*--------------------------------------------------------------------------*/
 
  /// constructor: allocates the private Net
@@ -229,7 +229,7 @@ class BundleSolverML : public BundleSolver
  virtual ~BundleSolverML() { set_Block( nullptr ); }
 
 /*--------------------------------------------------------------------------*/
-/*-------------------- SHARED NETWORK MANAGEMENT ----------------------------*/
+/*-------------------- SHARED NETWORK MANAGEMENT ---------------------------*/
 /*--------------------------------------------------------------------------*/
  /// injects an externally-owned shared network into this solver
  /** Injects the externally-owned shared network \p net into this solver:
@@ -279,7 +279,7 @@ class BundleSolverML : public BundleSolver
   }
 
 /*--------------------------------------------------------------------------*/
-/*-------------------- METHODS FOR HANDLING THE MODEL -----------------------*/
+/*-------------------- METHODS FOR HANDLING THE MODEL ----------------------*/
 /*--------------------------------------------------------------------------*/
  /// saves the active network weights to a TorchScript archive (.pt)
  /** Saves the weights of the currently active network (shared or private)
@@ -302,7 +302,7 @@ class BundleSolverML : public BundleSolver
  void LoadModel( const std::string & filepath );
 
 /*--------------------------------------------------------------------------*/
-/*--------------------- METHODS FOR SOLVING THE Block -----------------------*/
+/*--------------------- METHODS FOR SOLVING THE Block ----------------------*/
 /*--------------------------------------------------------------------------*/
  /// solve the problem, optionally training the network online
  /** Runs BundleSolver::compute() and, if intMLTrainOnline is nonzero,
@@ -318,7 +318,7 @@ class BundleSolverML : public BundleSolver
  int compute( bool changedvars = true ) override;
 
 /*--------------------------------------------------------------------------*/
-/*----------------------- ML-SPECIFIC METHODS -------------------------------*/
+/*----------------------- ML-SPECIFIC METHODS ------------------------------*/
 /*--------------------------------------------------------------------------*/
  /// step-size heuristic overriding the base class rule
  /** Method overriding the rule-based short-term t-strategies of the base
@@ -364,7 +364,7 @@ class BundleSolverML : public BundleSolver
   }
 
 /*--------------------------------------------------------------------------*/
-/*---------------------- PARAMETERS OF THE SOLVER ----------------------------*/
+/*---------------------- PARAMETERS OF THE SOLVER --------------------------*/
 /*--------------------------------------------------------------------------*/
  /// public enum of the int parameters added by BundleSolverML
  /** Public enum of the additional int algorithmic parameters of
@@ -604,7 +604,7 @@ class BundleSolverML : public BundleSolver
   }
 
 /*--------------------------------------------------------------------------*/
-/*---------------------------- PUBLIC FIELDS --------------------------------*/
+/*---------------------------- PUBLIC FIELDS -------------------------------*/
 /*--------------------------------------------------------------------------*/
  // the fields are public to allow direct access by training drivers
 
@@ -630,13 +630,13 @@ class BundleSolverML : public BundleSolver
                              ///< subgradient and the direction
 
 /*--------------------------------------------------------------------------*/
-/*----------------------- PRIVATE PART OF THE CLASS --------------------------*/
+/*----------------------- PRIVATE PART OF THE CLASS ------------------------*/
 /*--------------------------------------------------------------------------*/
 
  private:
 
 /*--------------------------------------------------------------------------*/
-/*---------------------------- PRIVATE FIELDS -------------------------------*/
+/*---------------------------- PRIVATE FIELDS ------------------------------*/
 /*--------------------------------------------------------------------------*/
 
  std::shared_ptr< Net > f_owned_net;
@@ -675,7 +675,7 @@ class BundleSolverML : public BundleSolver
  int f_ML_iter = 0;              ///< iteration counter within a solve
 
 /*--------------------------------------------------------------------------*/
-/*-------------------------- PRIVATE METHODS --------------------------------*/
+/*-------------------------- PRIVATE METHODS -------------------------------*/
 /*--------------------------------------------------------------------------*/
 
  /// re-initializes the privately-owned network

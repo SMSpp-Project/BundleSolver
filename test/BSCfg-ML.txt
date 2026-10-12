@@ -1,5 +1,5 @@
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-# - - - - - - - - - - - - - - - BSCfg-ML.txt - - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - - BSCfg-ML.txt  - - - - - - - - - - - - - - - -
 #
 # The ComputeConfig of the BundleSolverML of BSPar-ML.txt, with the default
 # feed-forward network. The parameters governing the use of the
@@ -58,5 +58,5 @@ strMPBSolverCfg MPBCfg.txt # BlockSolverConfig of the Solver of the master
 # end of ComputeConfig - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-# - - - - - - - - - - - - - - END BSCfg-ML.txt - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - END BSCfg-ML.txt  - - - - - - - - - - - - - - -
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -

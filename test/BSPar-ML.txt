@@ -1,5 +1,5 @@
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-# - - - - - - - - - - - - - - - BSPar-ML.txt - - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - - BSPar-ML.txt  - - - - - - - - - - - - - - - -
 #
 # The BundleSolverML of the tester for BundleSolverML, one for each core of
 # the network [see intMLModel]: all of them run the ComputeConfig of
@@ -155,5 +155,5 @@ intMLModel          3 # LSTM core
 # end of BlockSolverConfig - - - - - - - - - - - - - - - - - - - - - - - - -
 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-# - - - - - - - - - - - - - - END BSPar-ML.txt - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - END BSPar-ML.txt  - - - - - - - - - - - - - - -
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -

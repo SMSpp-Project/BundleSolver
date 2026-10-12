@@ -1,5 +1,5 @@
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-# - - - - - - - - - - - - - - - BSPar-int.txt - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - - BSPar-int.txt - - - - - - - - - - - - - - - -
 #
 # The BundleSolver of test_integer.cpp on the integer points of the box,
 # with the trust region [see BSCfg-int.txt].
@@ -24,5 +24,5 @@ BundleSolver          # name of Solver
 # end of BlockSolverConfig - - - - - - - - - - - - - - - - - - - - - - - - -
 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-# - - - - - - - - - - - - - - END BSPar-int.txt - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - END BSPar-int.txt - - - - - - - - - - - - - - -
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -

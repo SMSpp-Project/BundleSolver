@@ -5,6 +5,8 @@
 # accuracy and the configuration of the Solver of the master problem
 #
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
 BlockSolverConfig # exact type of the Configuration object
 0  # the BlockSolverConfig is not a "differential" one: values are being set
 1  # number of (the names of) Solver in this BlockSolverConfig
@@ -23,3 +25,7 @@ strMPBSolverCfg  MPBCfg.txt # BlockSolverConfig for the MasterProblemBlock's Sol
 0 # number of vector-of-double parameters
 0 # number of vector-of-string parameters
 * # [none]
+
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - - END BSPar.txt - - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -

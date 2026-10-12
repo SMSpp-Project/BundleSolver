@@ -1,5 +1,5 @@
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-# - - - - - - - - - - - - - - - MPBCfg-int.txt - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - MPBCfg-int.txt  - - - - - - - - - - - - - - - -
 #
 # The :MILPSolver of the master of BSPar-int.txt and BSPar-relax.txt, which
 # keeps the integer Variable integer, and of the same problem written out as
@@ -72,5 +72,5 @@ mip_feasibility_tolerance 1e-10
 # end of BlockSolverConfig - - - - - - - - - - - - - - - - - - - - - - - - -
 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-# - - - - - - - - - - - - - - END MPBCfg-int.txt - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - END MPBCfg-int.txt  - - - - - - - - - - - - - - -
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -

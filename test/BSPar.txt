@@ -1,5 +1,5 @@
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-# - - - - - - - - - - - - - - - -  BSPar.txt - - - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - - - BSPar.txt - - - - - - - - - - - - - - - - -
 #
 # A txt description of the BlockSolverConfig attaching the standard
 # BundleSolver, used as the reference, to the Block solved by the tester

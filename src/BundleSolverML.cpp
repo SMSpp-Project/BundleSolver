@@ -58,7 +58,7 @@ namespace SMSpp_di_unipi_it
  }
 
 /*--------------------------------------------------------------------------*/
-/*--------------------- METHODS FOR SOLVING THE Block -----------------------*/
+/*--------------------- METHODS FOR SOLVING THE Block ----------------------*/
 /*--------------------------------------------------------------------------*/
 
 int BundleSolverML::compute( bool changedvars )
@@ -82,7 +82,7 @@ int BundleSolverML::compute( bool changedvars )
  }
 
 /*--------------------------------------------------------------------------*/
-/*-------------------- METHODS FOR HANDLING THE MODEL -----------------------*/
+/*-------------------- METHODS FOR HANDLING THE MODEL ----------------------*/
 /*--------------------------------------------------------------------------*/
 
 void BundleSolverML::SaveModel( const std::string & filepath )
@@ -131,7 +131,7 @@ void BundleSolverML::LoadModel( const std::string & filepath )
  }
 
 /*--------------------------------------------------------------------------*/
-/*----------------------- ML-SPECIFIC METHODS -------------------------------*/
+/*----------------------- ML-SPECIFIC METHODS ------------------------------*/
 /*--------------------------------------------------------------------------*/
 
 double BundleSolverML::Heuristic( Index whch )
