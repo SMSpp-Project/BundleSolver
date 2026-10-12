@@ -3651,10 +3651,18 @@ void BundleSolver::FormD( void )
  for( ; ; )  // error-handling loop - - - - - - - - - - - - - - - - - - - - - -
  {           // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-  // ensure the master Solver will not take too much time
+  // ensure the master Solver will not take too much time; the recovery
+  // from a failure of the master may solve it many times, and the time
+  // limit holds there as well
   if( MaxTime < INFshift ) {
+   const double left = MaxTime - get_elapsed_time();
+   if( left <= 0 ) {
+    BLOG( 2 , std::endl << "Bundle::FormD: time is up in the MP" );
+    Result = kStopTime;
+    return;
+    }
    if( MasterPB )
-    MasterPB->set_max_time( MaxTime - get_elapsed_time() );
+    MasterPB->set_max_time( left );
    }
 
   int mps = Solver::kOK;
@@ -4588,7 +4596,7 @@ int BundleSolver::integer_master( double tm )
 
  // ensure the master Solver will not take too much time
  if( MaxTime < INFshift )
-  MasterPB->set_max_time( MaxTime - get_elapsed_time() );
+  MasterPB->set_max_time( std::max( MaxTime - get_elapsed_time() , 0.0 ) );
 
  std::vector< double > Lbox( NumVar ) , Ubox( NumVar );
  for( Index i = 0 ; i < NumVar ; ++i ) {
@@ -5533,8 +5541,10 @@ void BundleSolver::SetupFiLambda1( Index wFi )
 
  // start by setting a "time cutoff" with the remaining total time - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // (never negative: a Solver may refuse it and keep its previous limit)
  if( MaxTime < INFshift )
-  fwFi->set_par( dblMaxTime , MaxTime - get_elapsed_time() );
+  fwFi->set_par( dblMaxTime , std::max( MaxTime - get_elapsed_time() ,
+                                       0.0 ) );
 
  // set the component-specific string parameters, if any - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -5696,8 +5706,10 @@ void BundleSolver::SetupFiLambda( Index wFi )
 
  // start by setting a "time cutoff" with the remaining total time - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ // (never negative: a Solver may refuse it and keep its previous limit)
  if( MaxTime < INFshift )
-  fwFi->set_par( dblMaxTime , MaxTime - get_elapsed_time() );
+  fwFi->set_par( dblMaxTime , std::max( MaxTime - get_elapsed_time() ,
+                                       0.0 ) );
 
  // set the component-specific string parameters, if any - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -

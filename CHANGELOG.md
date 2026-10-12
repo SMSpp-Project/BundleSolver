@@ -40,6 +40,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the algorithm, while the latter used to hide the former as soon as it was
   finite, however worse
 
+- the time limit (`dblMaxTime`) did not hold while the master problem was
+  failing: the recovery, which removes an item from the bundle and solves
+  the master again until it works or the bundle is empty, did not look at
+  the time, and gave the master Solver the time left even when this was
+  negative, which GUROBI refuses, keeping its previous limit. On an AC unit
+  commitment over 24 hours the Lagrangian Dual stopped at 600 seconds went
+  on for 200 more in the recovery and ended in `kError`; it now stops with
+  `kStopTime` as soon as the time is up, and the time left that the master
+  Solver and the components are given is never below zero
+
 - the loss of `BundleSolverML`, which was the mean of t times the best value
   of the function over the serious steps: no gradient reached the network
   through the direction, so the training moved t by the sign of the function
