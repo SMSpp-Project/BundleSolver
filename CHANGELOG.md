@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- a lower bound that needs no test on z*: at each master problem of the
+  proximal method or of the trust region, the model at the trial point minus
+  the Hölder term sum_i | s_i | max | Lambda_i - y*_i | over the bounds of
+  the variables, s being the subgradient of the model plus the indicator of
+  the box that the master gives (`box_lower_bound()`). It is finite when
+  every variable with s_i != 0 has finite bounds, the largest one is kept as
+  the global bound, and `IsOptimal()` stops when the value at the centre is
+  within the accuracy of it, whatever `dblNZEps` is
+
 - `intMLModel` and `intMLHidden` of `BundleSolverML`: the recurrent core of
   the network (0 = none, the feed-forward network, 1 = RNN, 2 = GRU, 3 =
   LSTM) and its hidden size, so that the cores already in `Net` can be
@@ -24,6 +33,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - the prediction of `BundleSolverML` no longer builds an autograd graph
 
 ### Fixed
+
+- a true global lower bound [see `set_valid_lower_bound()`] within the
+  accuracy of the value at the centre now stops `compute()` with `kOK`, and
+  `get_lb()` / `get_ub()` give the largest of it and of the bound found by
+  the algorithm, while the latter used to hide the former as soon as it was
+  finite, however worse
 
 - the loss of `BundleSolverML`, which was the mean of t times the best value
   of the function over the serious steps: no gradient reached the network

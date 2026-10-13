@@ -1932,13 +1932,8 @@ public:
   *  solution found so far is returned. */
 
  VarValue get_lb( void ) override {
-  if( f_convex ) {
-   if( f_global_LB > - INFshift )
-    return( f_global_LB );
-
-   // if LowerBound is not conditional (see Block.h:2728) then return it
-   return( TrueLB ? LowerBound.back() : - INFshift );
-   }
+  if( f_convex )  // the largest of the algorithmic bound and of the true
+   return( global_bound() );  // one, if any [see set_valid_lower_bound()]
   else
    if( ( MaxSol > 1 ) && ( UpFiBest < UpFiLmb.back() ) )
     return( - UpFiBest );
@@ -1958,13 +1953,19 @@ public:
     return( UpFiBest );
    else
     return( UpFiLmb.back() );
-  else {
-   if( f_global_LB > - INFshift )
-    return( - f_global_LB );
+  else
+   return( - global_bound() );
+  }
 
-   // if UpperBound is not conditional (see Block.h:2728) then return it
-   return( TrueLB ? - LowerBound.back() : INFshift );
-   }
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ /// the best global lower bound on the function the solver minimizes
+ /** The largest of the algorithmically discovered one and of the true one
+  * given by the Block [see set_valid_lower_bound() in Block.h], if any;
+  * - INF if there is none. A conditional bound is never one. */
+
+ VarValue global_bound( void ) const {
+  const VarValue tlb = TrueLB ? LowerBound.back() : - INFshift;
+  return( std::max( f_global_LB , tlb ) );
   }
 
 /*--------------------------------------------------------------------------*/
@@ -3769,6 +3770,10 @@ public:
  Vec_VarValue LowerBound;  ///< Lower Bound over (each component of) Fi
  VarValue f_global_LB;     ///< an algorithmically discovered global LB
 
+ VarValue f_box_LB = -INFshift;
+ ///< the bound of box_lower_bound() at the last master problem, which needs
+ ///< no test on z*; - INF if there is none
+
  VarValue f_cond_LB = -INFshift;
  ///< the cutoff that is the global lower bound of the master, which is
  ///< only conditionally valid [see global_LB_row()]; -INF if there is none
@@ -4224,15 +4229,16 @@ public:
 /*--------------------------------------------------------------------------*/
 
  /// true if the stability center is optimal up to eps (RelAcc if eps <= 0)
- /** The test is \f$ D^*_t( z^* ) + \Sigma \leq \varepsilon \f$, where
-  * \f$ D^*_t \f$ is the conjugate of the stabilizing term of the master
-  * problem: \f$ D^*_t( z ) = \frac{t}{2} \| z \|_2^2 \f$ for the proximal
-  * term \f$ \frac{1}{2t} \| \cdot \|_2^2 \f$, and \f$ D^*_t( z ) = t \| z
-  * \|_1 \f$ for the trust region \f$ \| \cdot \|_\infty \leq t \f$, whose
-  * indicator has the dual norm as conjugate; hence the trust region has
-  * the same test as the proximal term, with the norm dual to that of the
-  * region. Neither gives a lower bound on its own: from the aggregated
-  * linearization and the Hölder inequality,
+ /** The test is \f$ D^*_{t^*}( z^* ) + \Sigma \leq \varepsilon \f$, with
+  * \f$ t^* \f$ = dbltStar, where \f$ D^*_t \f$ is the conjugate of the
+  * stabilizing term of the master problem: \f$ D^*_t( z ) = \frac{t}{2} \|
+  * z \|_2^2 \f$ for the proximal term \f$ \frac{1}{2t} \| \cdot \|_2^2
+  * \f$, and \f$ D^*_t( z ) = t \| z \|_1 \f$ for the trust region \f$ \|
+  * \cdot \|_\infty \leq t \f$, whose indicator has the dual norm as
+  * conjugate; hence the trust region has the same test as the proximal
+  * term, with the norm dual to that of the region. Neither gives a lower
+  * bound on its own: from the aggregated linearization and the Hölder
+  * inequality,
   * \f[
   *   f( \Lambda ) \geq f( \bar\Lambda ) - \Sigma
   *                - \| z^* \|_1 \| \Lambda - \bar\Lambda \|_\infty
@@ -4240,11 +4246,30 @@ public:
   * for every \f$ \Lambda \f$, which is a bound on the optimal value only
   * if \f$ z^* = 0 \f$, or if \f$ \| \Lambda - \bar\Lambda \|_\infty \f$
   * is bounded, i.e., there are finite bounds on all the variables (at
-  * least on those with \f$ z^*_i \neq 0 \f$). The other stop, \f$ \| z^*
-  * \| \leq \f$ NrmZFctr \f$ \cdot \f$ dblNZEps, rests on the same proviso,
-  * and therefore it is only as safe as dblNZEps is small. */
+  * least on those with \f$ z^*_i \neq 0 \f$). The latter case gives the
+  * bound of box_lower_bound(), and the center is also declared optimal if
+  * its value is within \f$ \varepsilon \f$ of it, which is a stop that
+  * holds whatever dblNZEps is. The other stop, \f$ \| z^* \| \leq \f$
+  * NrmZFctr \f$ \cdot \f$ dblNZEps, rests on \f$ z^* = 0 \f$, and
+  * therefore it is only as safe as dblNZEps is small. */
 
  bool IsOptimal( double eps = 0 ) const;
+
+ /// a lower bound on f valid whatever z* is, or - INF if there is none
+ /** At the trial point \f$ y^* \f$ of the last master problem, the model is
+  * \f$ f( \bar\Lambda ) + v^* \f$, and the master gives a subgradient
+  * \f$ s \f$ of the model plus the indicator of the box of the variables;
+  * hence, by the Hölder inequality,
+  * \f[
+  *   \min f \geq f( \bar\Lambda ) + v^* - \sum_i | s_i |
+  *   \max\{ u_i - y^*_i , y^*_i - l_i \}
+  * \f]
+  * which is finite if every \f$ i \f$ with \f$ s_i \neq 0 \f$ has finite
+  * bounds \f$ [ l_i , u_i ] \f$. Only the proximal and the trust region
+  * masters are covered; the level and doubly stabilized ones have their
+  * own bounds, and so has the integer master. */
+
+ VarValue box_lower_bound( void ) const;
 
  /// the cutoff on the value of a point, in the minimization the solver does
  /** A point whose value is at most this is at least as good as asked [see

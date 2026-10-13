@@ -1838,6 +1838,7 @@ void BundleSolver::set_Block( Block * block )
  UpFiLmbdef = LwFiLmbdef = 0;             // ... at the current point
  LowerBound.resize( NrFi + 1 , -INFshift );  // global lower bounds
  f_global_LB = -INFshift;         // algorithmic global LB
+ f_box_LB = -INFshift;            // and the one of box_lower_bound()
 
  vStar.resize( NrFi + 1 , 0 );
  whisG1.resize( NrFi , InINF );  // no representative yet
@@ -2848,6 +2849,7 @@ void BundleSolver::guts_of_put_State( const BundleSolverState & state )
 
  Fi0Lmb = state.Fi0Lmb;
  f_global_LB = state.global_LB;
+ f_box_LB = -INFshift;  // not saved: it waits for the next master problem
 
  }  // end( BundleSolver::guts_of_put_State )
 
@@ -4094,6 +4096,16 @@ void BundleSolver::FormD( void )
    refresh_level_after_master();
    }
  }
+
+ // the bound of box_lower_bound() needs no test on z*, hence it is valid
+ // whatever dblNZEps is, and the stop of IsOptimal() on it is a "solid" one
+ f_box_LB = box_lower_bound();
+ if( ( f_box_LB > f_global_LB ) &&
+     ( ( f_cond_LB <= -INFshift ) ||
+       ( f_box_LB - max_error() > f_cond_LB ) ) ) {
+  f_global_LB = f_box_LB;
+  refresh_level_after_master();
+  }
 
  if( initial_level_probe && MasterPB ) {
   if( doubly_level_probe && ( reliable_level_LB() > -INFshift ) )
@@ -7702,6 +7714,7 @@ void BundleSolver::ReSetAlg( unsigned char RstLvl )
  std::fill( LwFiLmb.begin() , LwFiLmb.end() , -INFshift );  // lower
  UpFiLmbdef = LwFiLmbdef = 0;             // ... at the current point
  f_global_LB = -INFshift;         // algorithmic global LB
+ f_box_LB = -INFshift;            // and the one of box_lower_bound()
 
  if( RstLvl & RstCrr ) {  // get an initial point - - - - - - - - - - - - - -
   // note that the thusly constructed Master Problem assumes the stability
@@ -7909,6 +7922,15 @@ bool BundleSolver::IsOptimal( double eps ) const
  if( eps <= 0 )
   eps = RelAcc;
 
+ // a true global lower bound [see set_valid_lower_bound() in Block.h]
+ // within the accuracy of the value at the centre proves it optimal, with
+ // no need of z* nor of the bundle
+ if( TrueLB && ( UpFiLmb.back() < INFshift ) ) {
+  c_VarValue lerr = max_error( eps );
+  if( ( lerr < INFshift ) && ( UpFiLmb.back() - LowerBound.back() <= lerr ) )
+   return( true );
+  }
+
  if( vStar.back() >= INFshift )  // some components have no subgradients
   return( false );               // no way one can detect optimality
 
@@ -7935,6 +7957,12 @@ bool BundleSolver::IsOptimal( double eps ) const
  if( Sigma < - err )
   return( false );
 
+ // the bound of box_lower_bound() is a true one: within err of the value
+ // at the centre, the centre is optimal whatever z* is
+ if( ( f_box_LB > -INFshift ) && ( UpFiLmb.back() < INFshift ) &&
+     ( UpFiLmb.back() - f_box_LB <= err ) )
+  return( true );
+
  if( ( tStar > 0 ) && ( DSTS + Sigma <= err ) )
   return( true );
 
@@ -7942,6 +7970,73 @@ bool BundleSolver::IsOptimal( double eps ) const
          ( NrmZFctr < INFshift ) && ( NrmZ <= NrmZFctr * NZEps ) );
 
  }  // end( BundleSolver::IsOptimal )
+
+/*--------------------------------------------------------------------------*/
+
+BundleSolver::VarValue BundleSolver::box_lower_bound( void ) const
+{
+ // the model at the trial point y* = Lambda + d* is UpFiLmb + v*, and the
+ // master problem gives a subgradient s of the model plus the indicator of
+ // the box at y*; hence, for each Lambda in the box
+ //
+ //   f( Lambda ) >= UpFiLmb + v* + < s , Lambda - y* >
+ //               >= UpFiLmb + v* - sum_i | s_i | max | Lambda_i - y*_i |
+ //
+ // with the max over the bounds of Lambda_i, which is finite if every i with s_i != 0 has finite bounds (Hölder with
+ // the 1-norm and the INF-norm). s is -d* / t in the proximal master (the
+ // mass of the rows dividing it in the dual one) and the part of the
+ // multipliers of the box that belongs to the trust region under
+ // kTrustRegion [see get_z_vector()]; the level, doubly stabilized and
+ // integer masters have their own bounds, and are not covered
+ if( ( ! MasterPB ) || ( ! RifeqFi ) || ( ! f_int_var.empty() ) )
+  return( -INFshift );
+ if( ( UpFiLmb.back() >= INFshift ) || ( vStar.back() >= INFshift ) )
+  return( -INFshift );
+ if( Sigma < - max_error() )  // the model is not below f
+  return( -INFshift );
+
+ const bool trust_region = ( MPStbl == MasterProblemBlock::kTrustRegion );
+ if( ( ! trust_region ) && ( ( MPStbl != MasterProblemBlock::kProximal ) ||
+                             UsesPureLevelStabilization() ) )
+  return( -INFshift );
+
+ const auto d = MasterPB->get_d_vector();
+ if( d.size() != NumVar )
+  return( -INFshift );
+
+ std::vector< double > s;
+ if( trust_region )
+  s = MasterPB->get_z_vector();
+ else {
+  double scale = MasterPB->get_t();
+  if( ! UsesPrimalMaster() )
+   scale *= MasterPB->aggregate_mass();
+  if( ! ( ( scale > 0 ) && std::isfinite( scale ) ) )
+   return( -INFshift );
+  s.resize( NumVar );
+  for( Index i = 0 ; i < NumVar ; ++i )
+   s[ i ] = d[ i ] / scale;
+  }
+ if( s.size() != NumVar )
+  return( -INFshift );
+
+ VarValue holder = 0;
+ for( Index i = 0 ; i < NumVar ; ++i ) {
+  if( s[ i ] == 0 )
+   continue;
+  const auto bounds = effective_bounds( LamVcblr[ i ] );
+  const double y = Lambda[ i ] + d[ i ];
+  const double w = std::max( std::abs( bounds.second - y ) ,
+                             std::abs( y - bounds.first ) );
+  if( ! std::isfinite( w ) )
+   return( -INFshift );
+  holder += std::abs( s[ i ] ) * w;
+  }
+
+ return( UpFiLmb.back() + std::min( vStar.back() , VarValue( 0 ) )
+         - holder );
+
+ }  // end( BundleSolver::box_lower_bound )
 
 /*--------------------------------------------------------------------------*/
 
@@ -7974,6 +8069,7 @@ void BundleSolver::FModChg( VarValue shift , Index wFi )
    --LwFiLmbdef;                // one less known
    }
   f_global_LB = -INFshift;      // global LB no longer valid
+  f_box_LB = -INFshift;
   reset_level_stabilization();  // and so is the level target
   return;
   }
@@ -7997,6 +8093,7 @@ void BundleSolver::FModChg( VarValue shift , Index wFi )
    --LwFiLmbdef;                // one less known
    }
   f_global_LB = -INFshift;      // global LB no longer valid
+  f_box_LB = -INFshift;
   reset_level_stabilization();  // and so is the level target
   return;
   }
@@ -8025,6 +8122,8 @@ void BundleSolver::FModChg( VarValue shift , Index wFi )
   LwFiLmb.back() += shift;
 
  f_global_LB += shift;
+ if( f_box_LB > -INFshift )
+  f_box_LB += shift;
 
  /* The level target and the lower bound it rests on are absolute function
   * values, so a known shift moves them along with everything else: leaving
@@ -8471,6 +8570,8 @@ void BundleSolver::process_outstanding_Modification( void )
      if( LwFiLmb.back() > -INFshift )
       LwFiLmb.back() += shift;
      f_global_LB += shift;
+     if( f_box_LB > -INFshift )
+      f_box_LB += shift;
      }
 
     to_delete = true;  // in either case, all that had to be done
