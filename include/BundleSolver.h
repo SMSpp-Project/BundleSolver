@@ -4223,6 +4223,27 @@ public:
 
 /*--------------------------------------------------------------------------*/
 
+ /// true if the stability center is optimal up to eps (RelAcc if eps <= 0)
+ /** The test is \f$ D^*_t( z^* ) + \Sigma \leq \varepsilon \f$, where
+  * \f$ D^*_t \f$ is the conjugate of the stabilizing term of the master
+  * problem: \f$ D^*_t( z ) = \frac{t}{2} \| z \|_2^2 \f$ for the proximal
+  * term \f$ \frac{1}{2t} \| \cdot \|_2^2 \f$, and \f$ D^*_t( z ) = t \| z
+  * \|_1 \f$ for the trust region \f$ \| \cdot \|_\infty \leq t \f$, whose
+  * indicator has the dual norm as conjugate; hence the trust region has
+  * the same test as the proximal term, with the norm dual to that of the
+  * region. Neither gives a lower bound on its own: from the aggregated
+  * linearization and the Hölder inequality,
+  * \f[
+  *   f( \Lambda ) \geq f( \bar\Lambda ) - \Sigma
+  *                - \| z^* \|_1 \| \Lambda - \bar\Lambda \|_\infty
+  * \f]
+  * for every \f$ \Lambda \f$, which is a bound on the optimal value only
+  * if \f$ z^* = 0 \f$, or if \f$ \| \Lambda - \bar\Lambda \|_\infty \f$
+  * is bounded, i.e., there are finite bounds on all the variables (at
+  * least on those with \f$ z^*_i \neq 0 \f$). The other stop, \f$ \| z^*
+  * \| \leq \f$ NrmZFctr \f$ \cdot \f$ dblNZEps, rests on the same proviso,
+  * and therefore it is only as safe as dblNZEps is small. */
+
  bool IsOptimal( double eps = 0 ) const;
 
  /// the cutoff on the value of a point, in the minimization the solver does
