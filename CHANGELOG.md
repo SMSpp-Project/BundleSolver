@@ -79,6 +79,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   it where it did not go far enough, whatever the sign of the function; the
   per-iteration subgradient matrices are no longer recorded
 
+- `NeedsG1()` did not ask for the new subgradient when the heuristic of t 4
+  is used after a serious step only, as it compared the bits 6 and 7 of
+  `inttSPar1` with 172 rather than with 192: the heuristic then read a G1
+  that had not been computed
+
 - the scalar product < g , d* > of the new subgradient and the direction
   that the heuristics of t 2 and 3 use (`inttSPar1`) and that
   `BundleSolverML` takes as a feature, which was z* d* plus the product of

@@ -7401,7 +7401,7 @@ bool BundleSolver::NeedsScPr1( void )
 bool BundleSolver::NeedsG1( void )
 {
  // G1 is only used in Heuristic4
- return( ( ( ( tSPar1 & 1 ) && ( ( tSPar1 & tSPHMsk1 ) == 172 ) ) ) ||
+ return( ( ( ( tSPar1 & 1 ) && ( ( tSPar1 & tSPHMsk1 ) == 192 ) ) ) ||
          ( ( ( tSPar1 & 2 ) && ( ( tSPar1 & tSPHMsk2 ) == 768 ) ) ) );
  }
 
