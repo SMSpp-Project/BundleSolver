@@ -4,9 +4,10 @@
 # The BundleSolverML of the tester for BundleSolverML, one for each core of
 # the network [see intMLModel]: all of them run the ComputeConfig of
 # BSCfg-ML.txt, the first as it is, i.e. with the feed-forward network, the
-# others changing only the core to an RNN, a GRU and an LSTM. The tester
-# trains and checks each of them in turn against the plain BundleSolver of
-# BSPar.txt.
+# next three changing only the core to an RNN, a GRU and an LSTM, and the
+# last three the loss and the features [see intMLLoss and intMLFeatures]
+# of the first three cores. The tester trains and checks each of them in
+# turn against the plain BundleSolver of BSPar.txt.
 #
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -14,15 +15,18 @@ BlockSolverConfig     # exact type of the Configuration object
 
 1  # the BlockSolverConfig is a "differential" one
 
-4  # number of (the names of) Solver in this BlockSolverConfig
+7  # number of (the names of) Solver in this BlockSolverConfig
 
 # now all the names of the Solver - - - - - - - - - - - - - - - - - - - - - -
 BundleSolverML        # feed-forward network
 BundleSolverML        # RNN core
 BundleSolverML        # GRU core
 BundleSolverML        # LSTM core
+BundleSolverML        # feed-forward network, step loss
+BundleSolverML        # RNN core, dimensionless features
+BundleSolverML        # GRU core, both
 
-4  # number of ComputeConfig in this BlockSolverConfig
+7  # number of ComputeConfig in this BlockSolverConfig
 
 # now all the ComputeConfig
 
@@ -120,6 +124,132 @@ intMLModel          2 # GRU core
 
 # now all the integer parameters
 intMLModel          3 # LSTM core
+
+0  # number of double parameters
+
+# now all the double parameters
+# [none]
+
+0  # number of string parameters
+
+# now all the string parameters
+# [none]
+
+0  # number of vector-of-int parameters
+
+# now all the vector-of-int parameters
+# [none]
+
+0  # number of vector-of-double parameters
+
+# now all the vector-of-double parameters
+# [none]
+
+0  # number of vector-of-string parameters
+
+# now all the vector-of-string parameters
+# [none]
+
+# the "extra" Configuration slot, which this block does not change
+# but has to write all the same: an override block that leaves it
+# out is read on to the end of the stream, and so swallows whatever
+# follows it in the enclosing file, i.e. the next ComputeConfig
+* # [none]
+
+# 5: feed-forward network, step loss
+*BSCfg-ML.txt +
+
+1  # f_diff == 1 ==> only the entries below are changed
+
+1  # number of integer parameters
+
+# now all the integer parameters
+intMLLoss          1 # the step loss
+
+0  # number of double parameters
+
+# now all the double parameters
+# [none]
+
+0  # number of string parameters
+
+# now all the string parameters
+# [none]
+
+0  # number of vector-of-int parameters
+
+# now all the vector-of-int parameters
+# [none]
+
+0  # number of vector-of-double parameters
+
+# now all the vector-of-double parameters
+# [none]
+
+0  # number of vector-of-string parameters
+
+# now all the vector-of-string parameters
+# [none]
+
+# the "extra" Configuration slot, which this block does not change
+# but has to write all the same: an override block that leaves it
+# out is read on to the end of the stream, and so swallows whatever
+# follows it in the enclosing file, i.e. the next ComputeConfig
+* # [none]
+
+# 6: RNN core, dimensionless features
+*BSCfg-ML.txt +
+
+1  # f_diff == 1 ==> only the entries below are changed
+
+2  # number of integer parameters
+
+# now all the integer parameters
+intMLModel         1 # RNN core
+intMLFeatures      1 # dimensionless features
+
+0  # number of double parameters
+
+# now all the double parameters
+# [none]
+
+0  # number of string parameters
+
+# now all the string parameters
+# [none]
+
+0  # number of vector-of-int parameters
+
+# now all the vector-of-int parameters
+# [none]
+
+0  # number of vector-of-double parameters
+
+# now all the vector-of-double parameters
+# [none]
+
+0  # number of vector-of-string parameters
+
+# now all the vector-of-string parameters
+# [none]
+
+# the "extra" Configuration slot, which this block does not change
+# but has to write all the same: an override block that leaves it
+# out is read on to the end of the stream, and so swallows whatever
+# follows it in the enclosing file, i.e. the next ComputeConfig
+* # [none]
+
+# 7: GRU core, step loss and dimensionless features
+*BSCfg-ML.txt +
+
+1  # f_diff == 1 ==> only the entries below are changed
+
+3  # number of integer parameters
+
+# now all the integer parameters
+intMLModel         2 # GRU core
+intMLLoss          1 # the step loss
+intMLFeatures      1 # dimensionless features
 
 0  # number of double parameters
 

@@ -2244,6 +2244,12 @@ void BundleSolver::set_par( idx_type par , double value )
                "BundleSolver::set_par: IntRad must be in ( 0 , 1 ]" ) );
    IntRad = value;
    break;
+  case( dbltSPar4 ):
+   if( value < 0 )
+    throw( std::invalid_argument(
+               "BundleSolver::set_par: tSPar4 must be >= 0" ) );
+   tSPar4 = value;
+   break;
   default:
    CDASolver::set_par( par , value );
   }
@@ -2630,6 +2636,7 @@ double BundleSolver::get_dbl_par( idx_type par ) const
   case( dblUpCutOff ):   return( f_up_cutoff );
   case( dblLwCutOff ):   return( f_lw_cutoff );
   case( dblIntRad ):     return( IntRad );
+  case( dbltSPar4 ):     return( tSPar4 );
   default:               return( CDASolver::get_dbl_par( par ) );
   }
  }  // end( BundleSolver::get_dbl_par )
@@ -6707,6 +6714,9 @@ bool BundleSolver::FindNext( void )
 
 double BundleSolver::Heuristic( Index whch )
 {
+ if( tSPar1 & 1024 )
+  return( Heuristic5() );
+
  switch( whch & 3 ) {
   case( 0 ): return( Heuristic1() );
   case( 1 ): return( Heuristic2() );
@@ -6914,6 +6924,38 @@ double BundleSolver::Heuristic4( void )
  if( G1Norm == INFshift )
   G1Norm = norm( G1 , 2 );
  return( t + ( ScPr1 + t * NZ2 ) / ( G1Norm + 2 * ScPr1 / t + NZ2 ) );
+ }
+
+/*--------------------------------------------------------------------------*/
+/* The fifth heuristic only looks at the sign of the directional derivative
+ * of f along the step: by convexity f( \bar{x} + d ) - f( \bar{x} ) <=
+ * < g , d >, with g the new subgradient in the trial point and d the step
+ * from the stability center, and along the path d( t ) of the proximal
+ * master the derivative of f( \bar{x} + d( t ) ) is ~ < g , d > / t.
+ * Hence, < g , d > < 0 says that a larger t would have done better, and
+ * < g , d > > 0 that a smaller one would; t is moved accordingly by the
+ * factor exp( - tSPar4 c ), with c = < g , d > / ( || g || || d || ) the
+ * cosine of the angle, so that t changes at most by exp( tSPar4 ). */
+
+double BundleSolver::Heuristic5( void )
+{
+ if( G1Norm == INFshift )
+  G1Norm = norm( G1 , 2 );
+
+ double gd = 0;
+ double nd = 0;
+ for( Index i = 0 ; i < NumVar ; ++i ) {
+  const double di = Lambda1[ i ] - Lambda[ i ];
+  gd += G1[ i ] * di;
+  nd += di * di;
+  }
+ nd = std::sqrt( nd );
+
+ if( ( G1Norm <= 0 ) || ( nd <= 0 ) || ( ! std::isfinite( gd ) ) )
+  return( t );
+
+ const double c = std::min( std::max( gd / ( G1Norm * nd ) , -1.0 ) , 1.0 );
+ return( t * std::exp( - tSPar4 * c ) );
  }
 
 /*--------------------------------------------------------------------------*/
@@ -7400,9 +7442,10 @@ bool BundleSolver::NeedsScPr1( void )
 
 bool BundleSolver::NeedsG1( void )
 {
- // G1 is only used in Heuristic4
+ // G1 is only used in Heuristic4 and Heuristic5
  return( ( ( ( tSPar1 & 1 ) && ( ( tSPar1 & tSPHMsk1 ) == 192 ) ) ) ||
-         ( ( ( tSPar1 & 2 ) && ( ( tSPar1 & tSPHMsk2 ) == 768 ) ) ) );
+         ( ( ( tSPar1 & 2 ) && ( ( tSPar1 & tSPHMsk2 ) == 768 ) ) ) ||
+         ( ( tSPar1 & 3 ) && ( tSPar1 & 1024 ) ) );
  }
 
 /*--------------------------------------------------------------------------*/

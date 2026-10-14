@@ -28,6 +28,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   replays the recorded iterations of a recurrent core in their order, with
   the gradient truncated at each window [see `intMLWindow`]
 
+- `intMLLoss` and `intMLFeatures` of `BundleSolverML`, whose defaults 0 keep
+  the loss and the features it had. With `intMLLoss` = 1 each prediction of
+  t is paired with the step it has produced, and the loss is the mean of
+  c log t, c being the cosine of the angle between the new subgradient and
+  the step, which decreases t where the step went too far and increases it
+  where it did not go far enough, whatever the sign of the function. With
+  `intMLFeatures` = 1 the features are dimensionless (the values of the
+  function relative to its value at the center, the step-size through the
+  decrease the model predicts, the norms through their ratios), and the
+  network gives the fraction tau of the current estimate of the gap that
+  the decrease predicted by the model has to be, t = tau ( Sigma* +
+  D_t*( z* ) ) / || z* ||^2, rather than t itself, so that one network
+  applies to instances of different size and scale; weights trained with
+  the other features do not apply
+
+- the heuristic of t 5, selected by the bit 10 of `inttSPar1` both after a
+  serious and after a null step: t is multiplied by exp( - beta c ), c being
+  the cosine of the angle between the new subgradient and the step from the
+  stability center to the trial point, and beta the new `dbltSPar4` (0.3 by
+  default), so that t increases when the step was too short and decreases
+  when it was too long
+
 ### Changed
 
 - the prediction of `BundleSolverML` no longer builds an autograd graph
@@ -68,16 +90,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   on for 200 more in the recovery and ended in `kError`; it now stops with
   `kStopTime` as soon as the time is up, and the time left that the master
   Solver and the components are given is never below zero
-
-- the loss of `BundleSolverML`, which was the mean of t times the best value
-  of the function over the serious steps: no gradient reached the network
-  through the direction, so the training moved t by the sign of the function
-  alone, upwards at every serious step on a concave one. Each prediction of
-  t is now paired with the step it has produced, and the loss is the mean of
-  c log t, c being the cosine of the angle between the new subgradient and
-  the direction, which decreases t where the step went too far and increases
-  it where it did not go far enough, whatever the sign of the function; the
-  per-iteration subgradient matrices are no longer recorded
 
 - `NeedsG1()` did not ask for the new subgradient when the heuristic of t 4
   is used after a serious step only, as it compared the bits 6 and 7 of

@@ -23,10 +23,13 @@
  * BundleSolverML implements the step-size (proximal parameter) prediction
  * part of that approach. The convex multipliers that form the direction are
  * still computed by the classical Master problem of the base BundleSolver,
- * rather than by the attention-based recurrent network of the paper, and
- * the network learns t from the outcome of each step, i.e., from the sign
- * of the directional derivative of the function at the trial point along
- * the direction [see Backward()].
+ * rather than by the attention-based recurrent network of the paper. By
+ * default the network learns t with an objective-based, time-discounted
+ * loss differentiated through the search direction; as options [see
+ * intMLLoss and intMLFeatures] it learns t from the outcome of each step,
+ * i.e., from the sign of the directional derivative of the function at the
+ * trial point along the direction, and it sees dimensionless features
+ * [see Backward() and Heuristic()].
  *
  * The network can be trained online: after each compute() the caller can
  * invoke Backward(), which computes a loss out of the recorded iterations,
@@ -160,8 +163,9 @@ namespace SMSpp_di_unipi_it
  *
  * Note that copy and move operations are deleted to protect the Torch
  * nn::Module internals, which manage reference-counted parameter tensors;
- * the features and the outcome of each step are stored in per-iteration
- * vectors (phi_vecs, tS, tU, csS) and consumed during Backward(). */
+ * all the tensors needed by the loss are stored in per-iteration vectors
+ * (phi_vecs, w_vecs, Gs, ..., or tU and csS) and consumed during
+ * Backward(). */
 
 class BundleSolverML : public BundleSolver
 {
@@ -326,9 +330,16 @@ class BundleSolverML : public BundleSolver
   * bits of inttSPar1 are set [see get_dflt_int_par()]: it builds the
   * feature vector out of the current state of the algorithm, runs a
   * forward pass through the active network (shared or private) and
-  * returns the predicted step-size t > 0. It also records the features,
-  * the prediction and the outcome of the step that has just been done,
-  * which are what the subsequent Backward() call needs.
+  * returns the predicted step-size t > 0. With intMLFeatures == 0 the
+  * features are divided by fixed scales and the network gives t; with
+  * intMLFeatures == 1 they are dimensionless (values of the function
+  * relative to the value at the center, norms by their ratios), and the
+  * network gives tau, the fraction of the current estimate of the gap that
+  * the decrease predicted by the model has to be, so that the same network
+  * applies to instances of different size and scale. It also records what
+  * the loss of intMLLoss needs in the subsequent Backward() call: the
+  * tensors (G, Q, alpha, w, ...) out of which the search direction is
+  * differentiated, or the outcome of the step that has just been done.
   *
   * @param whch  unused, kept for interface compatibility with BundleSolver
   *
@@ -338,11 +349,13 @@ class BundleSolverML : public BundleSolver
 
 /*--------------------------------------------------------------------------*/
  /// computes the gradients and updates the active network parameters
- /** Iterates over all the recorded iterations, pairs each prediction of t
-  * with the outcome of the step it has produced, accumulates a scalar loss
-  * that decreases t where the step went too far and increases it where it
-  * did not go far enough, back-propagates it through the active network
-  * and applies an Adam update to its parameters. If a shared network is
+ /** Iterates over all the recorded iterations, accumulates a scalar loss,
+  * back-propagates it through the active network and applies an Adam
+  * update to its parameters. With intMLLoss == 0 the loss is weighted by
+  * the step type and discounted over time; with intMLLoss == 1 it pairs
+  * each prediction of t with the outcome of the step it has produced, and
+  * decreases t where the step went too far and increases it where it did
+  * not go far enough. If a shared network is
   * active the update affects all the solvers sharing the same Net. This is
   * meant to be called once per solve, after compute() returns. */
 
@@ -357,11 +370,35 @@ class BundleSolverML : public BundleSolver
 
  void ClearBuffers( void ) {
   phi_vecs.clear();
+  w_vecs.clear();
+  coeff_vecs.clear();
+  Gs.clear();
+  Es.clear();
+  Gs_aggreg.clear();
+  Qs.clear();
+  alphaS.clear();
   tS.clear();
+  sS.clear();
+  FiS.clear();
   tU.clear();
   csS.clear();
   f_ML_iter = 0;
   }
+
+/*--------------------------------------------------------------------------*/
+ /// constructs the search direction tensor for iteration f with step t
+ /** Wraps the custom autograd function computing the search direction so
+  * that the computation is differentiable w.r.t. the output of the
+  * network (used with intMLLoss == 0).
+  *
+  * @param f  iteration index into the recorded tensor vectors
+  *
+  * @param t  step-size value
+  *
+  * @return a scalar tensor representing sum( w ), connected to the
+  *         autograd graph */
+
+ torch::Tensor w( size_t f , double t );
 
 /*--------------------------------------------------------------------------*/
 /*---------------------- PARAMETERS OF THE SOLVER --------------------------*/
@@ -392,7 +429,18 @@ class BundleSolverML : public BundleSolver
   *   Backward() replays the recorded iterations in their order;
   *
   * - intMLHidden: the hidden size of the recurrent core (default 16),
-  *   ignored when intMLModel is 0.
+  *   ignored when intMLModel is 0;
+  *
+  * - intMLLoss: the loss of Backward(), 0 (the default) = the
+  *   objective-based one, differentiated through the search direction and
+  *   discounted over time, 1 = the step one, \sum_f c_{f+1} \log t_f with
+  *   c_{f+1} the cosine between the new subgradient and the step produced
+  *   by t_f [see Backward()];
+  *
+  * - intMLFeatures: the features of the network, 0 (the default) = divided
+  *   by fixed scales, the network giving t, 1 = dimensionless, the network
+  *   giving tau with t = tau ( Sigma* + D_t*( z* ) ) / || z* ||^2 [see
+  *   Heuristic()].
   *
   * Changing intMLModel or intMLHidden to a different value rebuilds the
   * (privately-owned) network with new initial weights, and hence discards
@@ -421,6 +469,8 @@ class BundleSolverML : public BundleSolver
   intMLWindow ,      ///< length of each backward window [INF]
   intMLModel ,       ///< 0 = MLP, 1 = RNN, 2 = GRU, 3 = LSTM [0]
   intMLHidden ,      ///< hidden size of the recurrent core [16]
+  intMLLoss ,        ///< 0 = objective loss, 1 = step loss [0]
+  intMLFeatures ,    ///< 0 = scaled features, 1 = dimensionless [0]
   intLastBndSlvMLPar ///< first allowed new int parameter for derived classes
   };
 
@@ -445,6 +495,8 @@ class BundleSolverML : public BundleSolver
    case( intMaxThread ):     return( f_max_thread );
    case( intMLModel ):       return( f_ML_model );
    case( intMLHidden ):      return( f_ML_hidden );
+   case( intMLLoss ):        return( f_ML_loss );
+   case( intMLFeatures ):    return( f_ML_features );
    default:                  return( BundleSolver::get_int_par( par ) );
   }
 }
@@ -508,6 +560,18 @@ class BundleSolverML : public BundleSolver
      reset_net();
      }
     return;
+   case( intMLLoss ):
+    if( ( value < 0 ) || ( value > 1 ) )
+     throw( std::invalid_argument(
+      "BundleSolverML::set_par: intMLLoss must be in [ 0 , 1 ]" ) );
+    f_ML_loss = value;
+    return;
+   case( intMLFeatures ):
+    if( ( value < 0 ) || ( value > 1 ) )
+     throw( std::invalid_argument(
+      "BundleSolverML::set_par: intMLFeatures must be in [ 0 , 1 ]" ) );
+    f_ML_features = value;
+    return;
     default:
     BundleSolver::set_par( par , value );
    }
@@ -527,6 +591,8 @@ class BundleSolverML : public BundleSolver
   if( name == "intMLWindow" )      return( intMLWindow );
   if( name == "intMLModel" )       return( intMLModel );
   if( name == "intMLHidden" )      return( intMLHidden );
+  if( name == "intMLLoss" )        return( intMLLoss );
+  if( name == "intMLFeatures" )    return( intMLFeatures );
 
   return( BundleSolver::int_par_str2idx( name ) );
   }
@@ -536,8 +602,10 @@ class BundleSolverML : public BundleSolver
 
  [[nodiscard]] const std::string & int_par_idx2str( idx_type idx )
   const override {
-  static const std::array< std::string , 8 > int_pars_str_ML = {
-   "intMLTrainOnline" , "intMLSeed" , "intNTrainRounds","intMLIterFirst" , "intMLIterLast" , "intMLWindow" , "intMLModel" , "intMLHidden" };
+  static const std::array< std::string , 10 > int_pars_str_ML = {
+   "intMLTrainOnline" , "intMLSeed" , "intNTrainRounds" , "intMLIterFirst" ,
+   "intMLIterLast" , "intMLWindow" , "intMLModel" , "intMLHidden" ,
+   "intMLLoss" , "intMLFeatures" };
 
   if( ( idx >= intLastBndSlvPar ) && ( idx < intLastBndSlvMLPar ) )
    return( int_pars_str_ML[ idx - intLastBndSlvPar ] );
@@ -569,7 +637,7 @@ class BundleSolverML : public BundleSolver
   if( ( par == intMnSSC ) || ( par == intMnNSC ) )
    return( 0 );
 
-  static const std::array< int , 8 > dflt_int_par_ML = {
+  static const std::array< int , 10 > dflt_int_par_ML = {
    0 ,    // intMLTrainOnline
    -1 ,   // intMLSeed
    1 ,    // intNTrainRounds
@@ -577,7 +645,9 @@ class BundleSolverML : public BundleSolver
    INT_MAX ,  // intMLIterLast
    INT_MAX ,  // intMLWindow
    0 ,        // intMLModel
-   16         // intMLHidden
+   16 ,       // intMLHidden
+   0 ,        // intMLLoss
+   0          // intMLFeatures
    };
 
   if( ( par >= intLastBndSlvPar ) && ( par < intLastBndSlvMLPar ) )
@@ -624,7 +694,24 @@ class BundleSolverML : public BundleSolver
  // per-iteration tensors recorded by Heuristic() for the backward pass
 
  std::vector< torch::Tensor > phi_vecs;    ///< feature tensors (net inputs)
- std::vector< double > tS;   ///< predicted step-sizes
+ std::vector< double > tS;                 ///< predicted step-sizes
+ std::vector< double > sS;                 ///< scales: t = s * output
+
+ // those of intMLLoss == 0
+
+ std::vector< torch::Tensor > w_vecs;      ///< search direction tensors w
+ std::vector< torch::Tensor > coeff_vecs;  ///< step-type signs: +1 SS, -1 NS
+ std::vector< torch::Tensor > Gs;          ///< subgradient matrices G
+ std::vector< torch::Tensor > Es;          ///< convexity-constraint
+                                           ///< indicators, one row per
+                                           ///< component
+ std::vector< torch::Tensor > Gs_aggreg;   ///< aggregated subgradient vectors
+ std::vector< torch::Tensor > Qs;          ///< Gram matrices Q = G G^T
+ std::vector< torch::Tensor > alphaS;      ///< linearization error vectors
+ std::vector< double > FiS;                ///< best upper bounds on f*
+
+ // those of intMLLoss == 1
+
  std::vector< double > tU;   ///< step-sizes of the trial points
  std::vector< double > csS;  ///< cosines of the angle between the new
                              ///< subgradient and the direction
@@ -666,12 +753,30 @@ class BundleSolverML : public BundleSolver
 
  bool NeedsG1( void ) override { return( true ); }
 
+ /// the features of intMLFeatures == 0 [see Heuristic()]
+ void scaled_features( void );
+
+ /// the features of intMLFeatures == 1, with the cosine cs between the new
+ /// subgradient and the step and the norm nd of the step [see Heuristic()]
+ void dimensionless_features( double cs , double nd );
+
+ /// the loss of intMLLoss == 0 on the window [ wstart , wend ), with the
+ /// number of the iterations in it in n_used [see Backward()]
+ torch::Tensor objective_loss( size_t wstart , size_t wend ,
+			       size_t & n_used );
+
+ /// the loss of intMLLoss == 1 on the window [ wstart , wend ), with the
+ /// number of the iterations in it in n_used [see Backward()]
+ torch::Tensor step_loss( size_t wstart , size_t wend , size_t & n_used );
+
  int f_ML_iter_first = 0;        ///< value of intMLIterFirst [0]
  int f_ML_iter_last = INT_MAX;   ///< value of intMLIterLast [INT_MAX]
  int f_ML_window = INT_MAX;      ///< value of intMLWindow [INT_MAX]
  int f_max_thread = 0;           ///< value of intMaxThread [0]
  int f_ML_model = 0;             ///< value of intMLModel [0]
  int f_ML_hidden = 16;           ///< value of intMLHidden [16]
+ int f_ML_loss = 0;              ///< value of intMLLoss [0]
+ int f_ML_features = 0;          ///< value of intMLFeatures [0]
  int f_ML_iter = 0;              ///< iteration counter within a solve
 
 /*--------------------------------------------------------------------------*/

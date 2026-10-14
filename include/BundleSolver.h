@@ -452,6 +452,8 @@ public:
 
   dblIntRad ,     ///< growth of the region of the integer method
 
+  dbltSPar4 ,     ///< numerical parameter of the cosine t-heuristic
+
   dblLastBndSlvPar ///< first allowed new double parameter for derived classes
                    /**< Convenience value for easily allow derived classes
                     * to extend the set of double algorithmic parameters. */
@@ -621,6 +623,7 @@ public:
   CmpAggr = get_dflt_dbl_par( dblCmpAggr );
   IncrCost = get_dflt_dbl_par( dblIncrCost );
   IntRad = get_dflt_dbl_par( dblIntRad );
+  tSPar4 = get_dflt_dbl_par( dbltSPar4 );
 
   v_events.resize( max_event_number() );
   }
@@ -901,6 +904,13 @@ public:
   *     01 (+256):  Heuristic2 is used
   *     10 (+512):  Heuristic3 is used
   *     11 (+768):  Heuristic4 is used
+  *
+  *   Bit 10 (+1024), if set, replaces the heuristics of bits 6 to 9 with
+  *   Heuristic5 both during a SS and during a NS: t is multiplied by
+  *   exp( - dbltSPar4 c ), with c the cosine of the angle between the new
+  *   subgradient g and the step d from the stability center to the trial
+  *   point, i.e., t increases if < g , d > < 0 (the step was too short)
+  *   and decreases if < g , d > > 0 (it was too long).
   *
   * - intMaxNrEvls [2]: max number of function evaluations for each
   *                (non-easy) C05Function for each iteration; multiple
@@ -1630,7 +1640,10 @@ public:
   *   (at least 1 if it is integer), while those with no finite box move by
   *   t, multiplied by dblmxIncr at each enlargement within [ dbltMinor ,
   *   dbltMaior ]; after ceil( 1 / p ) enlargements the stabilization is
-  *   removed altogether. It must be in ( 0 , 1 ]. */
+  *   removed altogether. It must be in ( 0 , 1 ].
+  *
+  * - dbltSPar4 [0.3]: the factor beta >= 0 of Heuristic5 [see bit 10 of
+  *                    inttSPar1], which multiplies t by exp( - beta c ). */
 
  void set_par( idx_type par , double value ) override;
 
@@ -2332,7 +2345,7 @@ public:
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
  [[nodiscard]] double get_dflt_dbl_par( idx_type par ) const override {
-  static const std::array< double , 23 > dflt_dbl_par = {
+  static const std::array< double , 24 > dflt_dbl_par = {
    0 ,      // dblNZEps
    1e+2 ,   // dbltStar
    0 ,      // dblMinNrEvls
@@ -2355,7 +2368,8 @@ public:
    1e-2 ,   // dblLStabSmall
    0 ,      // dblCmpAggr
    0 ,      // dblIncrCost
-   0.1      // dblIntRad
+   0.1 ,    // dblIntRad
+   0.3      // dbltSPar4
    };
 
   if( ( par >= dblLastParCDAS ) && ( par < dblLastBndSlvPar ) )
@@ -2490,7 +2504,8 @@ public:
    { "dblLStabSmall" , BundleSolver::dblLStabSmall } ,
    { "dblCmpAggr" , BundleSolver::dblCmpAggr } ,
    { "dblIncrCost" , BundleSolver::dblIncrCost } ,
-   { "dblIntRad" , BundleSolver::dblIntRad }
+   { "dblIntRad" , BundleSolver::dblIntRad } ,
+   { "dbltSPar4" , BundleSolver::dbltSPar4 }
    };
 
   const auto it = dbl_pars_map.find( name );
@@ -2567,12 +2582,13 @@ public:
 
  [[nodiscard]] const std::string & dbl_par_idx2str( idx_type idx )
   const override {
-  static const std::array< std::string , 23 > dbl_pars_str = {
+  static const std::array< std::string , 24 > dbl_pars_str = {
    "dblNZEps" , "dbltStar" , "dblMinNrEvls" , "dblBPar5" , "dblm1" ,
    "dblm2" , "dblm3" , "dblmxIncr" , "dblmnIncr" , "dblmxDecr" ,
    "dblmnDecr" , "dbltMaior" , "dbltMinor" , "dbltInit" , "dbltSPar2" ,
    "dbltSPar3" , "dblLStabM" , "dblLStabDlt" , "dblLStabIncr" ,
-   "dblLStabSmall" , "dblCmpAggr" , "dblIncrCost" , "dblIntRad" };
+   "dblLStabSmall" , "dblCmpAggr" , "dblIncrCost" , "dblIntRad" ,
+   "dbltSPar4" };
 
  if( ( idx >= dblLastParCDAS ) && ( idx < dblLastBndSlvPar ) )
    return( dbl_pars_str[ idx - dblLastParCDAS ] );
@@ -3561,6 +3577,8 @@ public:
 
  double Heuristic4( void );
 
+ double Heuristic5( void );
+
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 /** The heuristics make use of data about the newly obtained aggregate
  * subgradient in the tentative point (G1), such as its linearization error
@@ -3635,6 +3653,7 @@ public:
  int tSPar1;        ///< int parameter for long-term t-strategy
  double tSPar2;     ///< double parameter for long-term t-strategy
  double tSPar3;     ///< double parameter for small heuristic t changes
+ double tSPar4;     ///< double parameter of the cosine t-heuristic
 
  int DoEasy;        ///< how "easy" components are managed [see intDoEasy]
 

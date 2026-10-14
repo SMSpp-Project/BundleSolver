@@ -8,7 +8,8 @@
  * Objective of an otherwise "empty" AbstractBlock. The Block is first solved
  * by a standard BundleSolver, whose optimal value is taken as the reference,
  * and then repeatedly solved by each BundleSolverML of BSPar-ML.txt, one for
- * each core of the network (none, RNN, GRU, LSTM), that trains its network
+ * each core of the network (none, RNN, GRU, LSTM) and three more with the
+ * other loss and features (intMLLoss, intMLFeatures), that trains its network
  * online by itself at the end of each solve (intMLTrainOnline); for each of
  * them the network is checked to have the core asked by intMLModel, the
  * optimal values are compared at each epoch, the network parameters are
@@ -353,9 +354,9 @@ int main( int argc , char ** argv )
    bml->set_log( & cout );
   #endif
 
-  // the i-th BundleSolverML of BSPar-ML.txt asks for core i, whatever the
-  // other parameters of its ComputeConfig
-  if( model != int( i ) ) {
+  // the i-th BundleSolverML of BSPar-ML.txt asks for core i mod 4, whatever
+  // the other parameters of its ComputeConfig
+  if( model != int( i % 4 ) ) {
    cout << "BundleSolverML " << i << ": intMLModel is " << model
 	<< " <-- ERROR" << endl;
    AllPassed = false;
