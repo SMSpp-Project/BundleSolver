@@ -3805,6 +3805,11 @@ public:
  ///< true if the master has failed with the cutoff as its global lower
  ///< bound in this call to compute(), which then goes on without it
 
+ Index f_mp_fail_its = 0;
+ ///< number of iterations, since the last serious step of this call to
+ ///< compute(), in which the master has been solved only after deleting
+ ///< items [see FormD()]
+
  VarValue f_level_Delta = 0;
  ///< expected decrease used by level stabilization
 

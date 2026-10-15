@@ -56,6 +56,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- a master Solver that fails on the master itself, rather than on the
+  bundle, made `compute()` run until `intMaxIter`: the recovery deleted an
+  item, the master was solved without it, and the new trial point gave the
+  item back. This happens, e.g., with an active-set QP Solver that stops at
+  its iteration limit where it cannot tell that the master is empty. Now
+  `compute()` stops with `kError` once the master has failed in more
+  iterations since the last serious step than the items the bundle can hold
+
 - a true global lower bound [see `set_valid_lower_bound()`] within the
   accuracy of the value at the centre now stops `compute()` with `kOK`, and
   `get_lb()` / `get_ub()` give the largest of it and of the bound found by

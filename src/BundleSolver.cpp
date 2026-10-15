@@ -510,6 +510,7 @@ int BundleSolver::compute( bool changedvars )
  Result = kStillRunning;    // still working
  NRtMax = 0;                // no noise reduction yet in this call
  f_cond_LB_off = false;     // the cutoff may be the bound of the master
+ f_mp_fail_its = 0;         // the master has not failed yet
 
  // start timer now (so that processing Modification is included) - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -3746,6 +3747,22 @@ void BundleSolver::FormD( void )
 
   if( mps == Solver::kOK ) {         // everything's alright
    f_easy_first_MP = false;          // see easy_says_it()
+
+   /* Deleting items cures a master Solver that fails on the bundle, not
+    * one that fails on the master itself, e.g., because it stops at its own
+    * iteration limit where it cannot tell that the master is empty or
+    * unbounded: then the master is solved without the item, the new trial
+    * point gives that item (or a similar one) back, and the null steps go
+    * on until MaxIter. Each iteration in which the master fails deletes at
+    * least one item, hence after as many of them, with no serious step in
+    * between, as the items the bundle can hold the whole bundle has been
+    * renewed by the failures, and the master Solver is given up. */
+   if( mp_failed && ( ++f_mp_fail_its > ItemVcblr.size() ) ) {
+    BLOG( 1 , std::endl << "Bundle::FormD: MP failed in " << f_mp_fail_its
+                        << " iterations since the last serious step" );
+    Result = kError;
+    return;
+    }
    break;
    }
 
@@ -6241,6 +6258,8 @@ bool BundleSolver::noise_reduction( void )
 
 void BundleSolver::GotoLambda1( void )
 {
+ f_mp_fail_its = 0;  // a serious step: the master failures start over
+
  // compute DeltaFi - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
  std::vector< VarValue > DF( NrFi + 1 );
