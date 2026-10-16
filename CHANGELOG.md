@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- the cutoff that is the global lower bound of the master is no longer called
+  a conditional bound (`f_cutoff_LB`, formerly `f_cond_LB`), the conditional
+  bound being the one of `Block::get_valid_lower_bound()`; the bound that
+  z* = 0 gives is that of the last iteration because the upper bound of a
+  Lagrangian function is the value of the primal solution of that iteration,
+  as the comment now says; bit 1 of `intDoEasy` is documented as unused
+
 ### Added
 
 - the primal master problem hosts the Block, when its coordinates are all
@@ -236,8 +245,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the concave case, `dblLwCutOff` in the convex one) is also the global
   lower bound of the master, when it is above the true one, as whoever set
   it does not care where the optimum is beyond it: in a Branch-and-Bound,
-  the incumbent stabilizes the dual of the node. The bound is only
-  conditional: what the master proves is recorded as a global bound, and
+  the incumbent stabilizes the dual of the node. The cutoff is not a
+  bound: what the master proves is recorded as a global bound, and
   reported by `get_lb()` / `get_ub()`, only if it is above the cutoff, the
   level target is never put beyond it, and an optimality test passed with
   the value at the stability centre within the accuracy of the cutoff ends

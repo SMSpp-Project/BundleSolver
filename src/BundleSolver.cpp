@@ -509,7 +509,7 @@ int BundleSolver::compute( bool changedvars )
 
  Result = kStillRunning;    // still working
  NRtMax = 0;                // no noise reduction yet in this call
- f_cond_LB_off = false;     // the cutoff may be the bound of the master
+ f_cutoff_LB_off = false;     // the cutoff may be the bound of the master
  f_mp_fail_its = 0;         // the master has not failed yet
 
  // start timer now (so that processing Modification is included) - - - - - -
@@ -790,7 +790,7 @@ int BundleSolver::compute( bool changedvars )
     // the level is never below the cutoff that is the global lower bound
     // of the master [see install_level_stabilization()], hence its being
     // empty proves that the function is above it
-    const auto lev = std::max( f_level_value , f_cond_LB );
+    const auto lev = std::max( f_level_value , f_cutoff_LB );
     BLOG( 1 , " ~ level empty: LB = " << def << lev << std::endl );
     record_level_lower_bound( lev );
     if( level_gap_closed() ) {
@@ -846,13 +846,13 @@ int BundleSolver::compute( bool changedvars )
    }
 
   // with the cutoff as the global lower bound of the master, an optimality
-  // certificate is one for max{ f , f_cond_LB }: if the value at the centre
+  // certificate is one for max{ f , f_cutoff_LB }: if the value at the centre
   // is within the accuracy of it, the minimum of f may well be below, and
   // the centre is only as good as asked up to the accuracy [see
   // global_LB_row()]
-  if( ( f_cond_LB > -INFshift ) && ( ! level_gap_optimal ) &&
+  if( ( f_cutoff_LB > -INFshift ) && ( ! level_gap_optimal ) &&
       f_int_var.empty() && IsOptimal() &&
-      ( UpFiLmb.back() - max_error() <= f_cond_LB ) ) {
+      ( UpFiLmb.back() - max_error() <= f_cutoff_LB ) ) {
    BLOG( 1 , " ~ stop (cutoff, optimal at the bound)" << std::endl );
    Result = kCutOff;
    break;
@@ -2959,7 +2959,7 @@ void BundleSolver::install_level_stabilization( void )
  // never below the cutoff that is the global lower bound of the master:
  // there the level would be empty because of that row alone, which proves
  // nothing, while above it an empty level proves that min f is above it
- auto lev = std::max( f_level_value , f_cond_LB );
+ auto lev = std::max( f_level_value , f_cutoff_LB );
 
  // the level is translated as the global lower bound, save in the primal
  // iterate frame, where it is absolute; in the dual iterate frame the PFB
@@ -3332,12 +3332,12 @@ void BundleSolver::global_LB_row( void )
 
  // the cutoff, if it is above the true bound and has not been put aside
  const VarValue tlb = TrueLB ? LowerBound.back() : -INFshift;
- const VarValue cp = f_cond_LB_off ? -INFshift : cutoff_point();
- f_cond_LB = ( cp > tlb ) ? cp : -INFshift;
+ const VarValue cp = f_cutoff_LB_off ? -INFshift : cutoff_point();
+ f_cutoff_LB = ( cp > tlb ) ? cp : -INFshift;
 
  // the row is in the frame of the stability centre, hence it changes as
  // the centre moves; the master is only told when it does
- const VarValue lb = std::max( tlb , f_cond_LB );
+ const VarValue lb = std::max( tlb , f_cutoff_LB );
  const VarValue row = ( lb > -INFshift ) ? lb - rf : -INFshift;
  if( row != f_LB_row ) {
   f_LB_row = row;
@@ -3888,10 +3888,10 @@ void BundleSolver::FormD( void )
   // the cutoff as the global lower bound of the master is only an aid, and
   // with it the master may be badly conditioned (say, with almost all the
   // mass on its row): it is the first thing to go, for the rest of the call
-  if( ( f_cond_LB > -INFshift ) && ( ! f_cond_LB_off ) ) {
-   f_cond_LB_off = true;
+  if( ( f_cutoff_LB > -INFshift ) && ( ! f_cutoff_LB_off ) ) {
+   f_cutoff_LB_off = true;
    global_LB_row();
-   if( f_cond_LB <= -INFshift ) {
+   if( f_cutoff_LB <= -INFshift ) {
     BLOG( 2 , std::endl << "Bundle::FormD: error in MP, cutoff bound "
                            "removed" );
     continue;
@@ -4110,16 +4110,16 @@ void BundleSolver::FormD( void )
 
  // if the scaling factor could be computed one can check if z* == 0
  // has happened and declare a globally valid LB
- // note: the update of f_global_LB used to be under guard
- // if( f_global_LB < UpFiLmb.back() + vStar.back() )
- // i.e., one would always report the largest f_global_LB ever found.
- // however, declaring a global LB is slippery, as it requires to set NZEps
- // "small enough" and no-one really knows how to do that. as a consequence,
- // one may end up with the final LB being higher than the final UB, which
- // is not something any Solver should ever report. we rather take the
- // conservative stance where the final reported LB is the one of the
- // stopping iteration: since the UB is "that one + v^*" and v^* is negative,
- // this ensures that UB >= LB
+ // the bound is the one of the last iteration, not the largest ever found:
+ // with a Lagrangian function the upper bound is the value of the
+ // convexified primal solution that has become feasible, i.e., of the one
+ // that get_dual_solution() gives (and get_var_solution() of a
+ // LagrangianDualSolver after it), which is the one of the last iteration,
+ // and so has to be the bound. Whether z^* is "zero" is decided by NZEps,
+ // which nobody really knows how to set, so that the bound may be wrong at
+ // any iteration, the last one as well as any other; taken at the same
+ // iteration as the value it comes from it is "that value + v^*" with v^*
+ // not positive, hence it is at least never above the upper bound
  // In pure-level mode the aggregate is obtained by dividing the master
  // multipliers by the level multiplier.  With a very aggressive target this
  // can make NrmZ numerically tiny while DSTS + Sigma still proves that the
@@ -4137,13 +4137,13 @@ void BundleSolver::FormD( void )
  // and UpFiLmb + v^* would then be above the value at the current point; the
  // bound is that value, i.e., z^* = 0 still certifies the stop, with no gap
  // with the cutoff as the global lower bound of the master, the bound is one
- // on max{ f , f_cond_LB }, hence one on f only if it is above f_cond_LB
+ // on max{ f , f_cutoff_LB }, hence one on f only if it is above f_cutoff_LB
  // (by more than the accuracy, as otherwise it may just be that row)
  if( ( UpFiLmb.back() < INFshift ) && ( vStar.back() < INFshift ) &&
      ( NrmZFctr < INFshift ) && ( NrmZ <= NrmZFctr * NZEps ) &&
      accurate_level_aggregate ) {
   const auto lb = UpFiLmb.back() + std::min( vStar.back() , VarValue( 0 ) );
-  if( ( f_cond_LB <= -INFshift ) || ( lb - max_error() > f_cond_LB ) ) {
+  if( ( f_cutoff_LB <= -INFshift ) || ( lb - max_error() > f_cutoff_LB ) ) {
    f_global_LB = lb;
    refresh_level_after_master();
    }
@@ -4153,8 +4153,8 @@ void BundleSolver::FormD( void )
  // whatever dblNZEps is, and the stop of IsOptimal() on it is a "solid" one
  f_box_LB = box_lower_bound();
  if( ( f_box_LB > f_global_LB ) &&
-     ( ( f_cond_LB <= -INFshift ) ||
-       ( f_box_LB - max_error() > f_cond_LB ) ) ) {
+     ( ( f_cutoff_LB <= -INFshift ) ||
+       ( f_box_LB - max_error() > f_cutoff_LB ) ) ) {
   f_global_LB = f_box_LB;
   refresh_level_after_master();
   }
@@ -7206,7 +7206,7 @@ void BundleSolver::CreateMPB( void )
   MasterPB = new MasterProblemBlock();
 
  f_easy_first_MP = true;  // no master solved yet [see easy_says_it()]
- f_cond_LB = -INFshift;   // nor any global lower bound set in it
+ f_cutoff_LB = -INFshift;   // nor any global lower bound set in it
  f_LB_row = -INFshift;
 
  }  // end( BundleSolver::CreateMPB )

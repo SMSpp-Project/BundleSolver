@@ -941,6 +941,11 @@ public:
   *     treated as "easy", and with any nonzero value all the "easy"
   *     components are treated as such;
   *
+  *   - bit 1 (+2) is unused, for historical reasons: bits 1, 2 and 3 used
+  *     to allow changing the objective, the sides of the rows and the bounds
+  *     of the variables of the easy components, which the Master Problem now
+  *     follows anyway, and bits 2 and 3 have been reused for their duals;
+  *
   *   - bit 3 (+8): the dual values of the easy components are saved at each
   *     solution of the Master Problem, so that get_var_solution() can write
   *     back into the easy sub-Block the reduced costs of their ColVariable;
@@ -1261,8 +1266,8 @@ public:
   *   is the global lower bound of the master, or the largest between it and
   *   the true one, if any [see global_LB_row()]; in a Branch-and-Bound whose
   *   relaxation this solver computes, the cutoff is the value of the
-  *   incumbent, which then stabilizes the dual of the node. Yet L is only a
-  *   conditional bound: what the master proves is a bound on max{ f , L },
+  *   incumbent, which then stabilizes the dual of the node. Yet L is a
+  *   cutoff, not a bound: what the master proves is a bound on max{ f , L },
   *   which is one on f only if it is above L, and only then it is recorded
   *   as the global lower bound that get_lb() / get_ub() report; the level
   *   target is never put below L, so that an empty level keeps proving that
@@ -3887,15 +3892,16 @@ public:
  ///< the bound of box_lower_bound() at the last master problem, which needs
  ///< no test on z*; - INF if there is none
 
- VarValue f_cond_LB = -INFshift;
- ///< the cutoff that is the global lower bound of the master, which is
- ///< only conditionally valid [see global_LB_row()]; -INF if there is none
+ VarValue f_cutoff_LB = -INFshift;
+ ///< the cutoff that is the global lower bound of the master, which is a
+ ///< bound on f only if f is above it [see global_LB_row()]; -INF if there
+ ///< is none
 
  VarValue f_LB_row = -INFshift;
  ///< the global lower bound last set in the master, translated with the
  ///< stability centre [see global_LB_row()]; -INF if there is none
 
- bool f_cond_LB_off = false;
+ bool f_cutoff_LB_off = false;
  ///< true if the master has failed with the cutoff as its global lower
  ///< bound in this call to compute(), which then goes on without it
 
@@ -4435,13 +4441,13 @@ public:
 
  /// the global lower bound of the master
  /** Sets the global lower bound of the master to the largest between the
-  * true one, if any, and cutoff_point(), recording the latter in f_cond_LB
+  * true one, if any, and cutoff_point(), recording the latter in f_cutoff_LB
   * when it is the larger. A point with value at most cutoff_point() is as
   * good as asked, so whoever set the cutoff does not care where the minimum
   * is if it is below: either min f >= cutoff_point(), and the bound is
   * valid, or compute() stops with kCutOff as soon as it finds such a point.
-  * The cutoff is only a conditional bound, as a bound that the master then
-  * proves is one on f only if it is above it [see dblUpCutOff and
+  * The cutoff is not a bound, as a bound that the master then proves is
+  * one on f only if it is above it [see dblUpCutOff and
   * dblLwCutOff]. The global lower bound of the master is in the frame of
   * the stability centre [see LB_translation()], hence it is set again
   * whenever the centre moves; with no value at the stability centre to
@@ -4449,7 +4455,7 @@ public:
   * a global lower bound, hence with the primal one nothing is done. Since
   * with the cutoff the master may be badly conditioned, a master that fails
   * with it is solved again without it, which then stays out until compute()
-  * returns [see f_cond_LB_off]. */
+  * returns [see f_cutoff_LB_off]. */
 
  void global_LB_row( void );
 
