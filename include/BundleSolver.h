@@ -43,7 +43,9 @@
  * - only has "continuous" ColVariable (is_integer() == false);
  *
  * - has no Constraint, except possibly BoxConstraint (upper and/or lower
- *   bounds on the ColVariable);
+ *   bounds on the ColVariable) and FRowConstraint containing a
+ *   LinearFunction of the ColVariable, the latter only with the primal
+ *   Master Problem (intMPPrimal == 1);
  *
  * - either its Objective is a FRealObjective containing a C05Function, and
  *   it has no sub-Block;
@@ -133,6 +135,7 @@
 #include <random>
 #include <set>
 #include <unordered_map>
+#include <unordered_set>
 
 #include "CDASolver.h"
 
@@ -215,9 +218,14 @@ namespace SMSpp_di_unipi_it
  *
  * - has no Constraint, except possibly NNConstraint (bounds >= 0) or
  *   BoxConstraint (upper and/or lower bounds) on some of the ColVariable,
- *   but for BoxConstraint the lower bound can only be either 0 or -INF
- *   (general linear constraints would in principle be handled by the
- *   current master problem solver but the interface is not implemented);
+ *   but for BoxConstraint the lower bound can only be either 0 or -INF, and
+ *   FRowConstraint containing a LinearFunction of the ColVariable that the
+ *   C05Function have, which the Master Problem has as rows (the primal
+ *   one) or as multipliers in the aggregate (the dual one); what is
+ *   minimized is then the function plus the indicator of the set they
+ *   define, i.e., + INF out of it, so that a starting point out of it is
+ *   left at the first serious step, the points the master problem gives
+ *   being in it;
  *
  * - the Objective of the Block and of all the sub-Block must be all
  *   FRealObjective containing a C05Function, and:
@@ -2807,6 +2815,16 @@ public:
   }
 
 /*--------------------------------------------------------------------------*/
+ /// whether an empty master problem may be the domain rather than an error
+ /** The master problem is empty for real only if something in it cuts the
+  * space: the vertical linearizations, or the linear Constraint of the Block
+  * [see v_lc_A]; otherwise an empty master is a numerical error. */
+
+ bool may_be_empty( void ) const {
+  return( get_bc_size() || ( ! v_lc_A.empty() ) );
+  }
+
+/*--------------------------------------------------------------------------*/
  /// returns g_name . d for the cut with global name \p name
  /** Routes through MasterPB->get_Gid( k , slot ) via ItemVcblr. */
 
@@ -3087,9 +3105,45 @@ public:
  /** The part of FormLambda1() after Lambda1 has been set: clamps it into
   * the box, rounds its integer entries [see intIntVars], writes it into the
   * ColVariable and computes the upper and lower model values and the
-  * targets there. */
+  * targets there. A Lambda1 that comes out of the master problem satisfies
+  * the linear Constraint of the Block, because the master has them, and
+  * \p from_master says so; any other one is checked [see lc_feasible()]. */
 
- void PrepareLambda1( void );
+ void PrepareLambda1( bool from_master = true );
+
+/*--------------------------------------------------------------------------*/
+ /// read the linear Constraint of the Block into v_lc_A, v_lc_l and v_lc_u
+ /** At set_Block() and at any Modification of them: the FRowConstraint of
+  * the Block with a LinearFunction of the ColVariable in Lambda, a relaxed
+  * one being skipped, with the constant term of the LinearFunction moved to
+  * the sides; any Constraint that is neither one of them nor a bound
+  * makes it throw. */
+
+ void read_linear_constraints( void );
+
+/*--------------------------------------------------------------------------*/
+ /// whether x satisfies the linear Constraint of the Block [see v_lc_A]
+ /** The violation of each row is compared with 1e-9 times the largest of 1
+  * and the absolute value of its side: x is a point the master has not
+  * written, e.g., the initial one, and if it is out by more than that the
+  * first master writes one that is not. */
+
+ [[nodiscard]] bool lc_feasible( const Vec_VarValue & x ) const;
+
+/*--------------------------------------------------------------------------*/
+ /// the value of the 0-th component at Lambda, + INF out of the feasible set
+ /** What the method minimizes is f plus the indicator of the set the linear
+  * Constraint of the Block define, which therefore is part of the 0-th
+  * component: a point out of the set has value + INF, while the
+  * linearizations of f found there are valid for the sum as well. */
+
+ [[nodiscard]] VarValue Fi0_Lmb( void ) const
+  { return( f_lc_lmb_ok ? Fi0Lmb : INFshift ); }
+
+ /// the value of the 0-th component at Lambda1 [see Fi0_Lmb()]
+
+ [[nodiscard]] VarValue Fi0_Lmb1( void ) const
+  { return( f_lc_lmb1_ok ? Fi0Lmb1 : INFshift ); }
 
  /*--------------------------------------------------------------------------*/
 
@@ -3331,7 +3385,7 @@ public:
    ++UpFiLmb1def;  // all components + the sum computed
    UpFiLmb1[ wFi ] = nval;
    UpFiLmb1.back() = std::accumulate( UpFiLmb1.begin() , --(UpFiLmb1.end()) ,
-                                      Fi0Lmb1 );
+                                      Fi0_Lmb1() );
    // note that this is the point where the lower bound (if any) is
    // "baked in" the total function value
    if( TrueLB && ( UpFiLmb1.back() < LowerBound.back() ) )
@@ -3375,7 +3429,7 @@ public:
    ++LwFiLmb1def;  // all components + the sum computed
    LwFiLmb1[ wFi ] = nval;
    LwFiLmb1.back() = std::accumulate( LwFiLmb1.begin() , --(LwFiLmb1.end()) ,
-                                      Fi0Lmb1 );
+                                      Fi0_Lmb1() );
    // note that this is the point where the lower bound (if any) is
    // "baked in" the total function value
    if( TrueLB && ( LwFiLmb1.back() < LowerBound.back() ) )
@@ -3408,7 +3462,7 @@ public:
    ++UpFiLmbdef;  // all components + the sum computed
    UpFiLmb[ wFi ] = nval;
    UpFiLmb.back() = std::accumulate( UpFiLmb.begin() , --(UpFiLmb.end()) ,
-                                     Fi0Lmb );
+                                     Fi0_Lmb() );
    // note that this is the point where the lower bound (if any) is
    // "baked in" the total function value
    if( TrueLB && ( UpFiLmb.back() < LowerBound.back() ) )
@@ -3452,7 +3506,7 @@ public:
    ++LwFiLmbdef;  // all components + the sum computed
    LwFiLmb[ wFi ] = nval;
    LwFiLmb.back() = std::accumulate( LwFiLmb.begin() , --(LwFiLmb.end()) ,
-                                     Fi0Lmb );
+                                     Fi0_Lmb() );
    // note that this is the point where the lower bound (if any) is
    // "baked in" the total function value
    if( TrueLB && ( LwFiLmb.back() < LowerBound.back() ) )
@@ -4173,6 +4227,18 @@ public:
 
  VarValue Fi0Lmb;        ///< value of the linear 0-th component in Lambda
  VarValue Fi0Lmb1;       ///< value of the linear 0-th component in Lambda1
+
+ std::vector< MasterProblemBlock::LinearRow > v_lc_A;
+                         ///< the linear Constraint of the Block, as rows on
+                         ///< the positions of their ColVariable in LamVcblr
+ Vec_VarValue v_lc_l;    ///< their lower sides, the constant term out
+ Vec_VarValue v_lc_u;    ///< and their upper ones
+ std::unordered_set< const Function * > f_lc_fun;
+                         ///< their LinearFunction [see
+                         ///< process_outstanding_Modification()]
+
+ bool f_lc_lmb_ok = true;   ///< whether Lambda satisfies the v_lc_A
+ bool f_lc_lmb1_ok = true;  ///< whether Lambda1 does
 
  Subset CurrNrEvls;      /**< how many times compute() has been called for
                           * each component in the current iteration */

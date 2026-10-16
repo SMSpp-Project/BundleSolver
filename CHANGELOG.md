@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- linear `Constraint` in the Block: a `FRowConstraint` with a
+  `LinearFunction` of the `ColVariable` that the components have, which the
+  master problem has as rows (the primal one) or as multipliers in the
+  aggregate (the dual one, also with easy components). What is minimized is
+  the function plus the indicator of the set they define, i.e., a point out
+  of the set has value + INF while the linearizations of the components there
+  are kept, so that a starting point out of it is left at the first serious
+  step; the points of the master problem are in it by construction, and the
+  others are checked within 1e-9 relative. The first master is solved with
+  the empty components given their fictitious bound, rather than skipped, and
+  an empty master is the set being empty, or under the trust region being out
+  of reach, which enlarges the region as the vertical linearizations do. Any
+  Modification of them (sides, coefficients, a row added, removed, relaxed or
+  enforced) has them read again once the Variable have changed, and given
+  anew to the master problem, the values at the stability centre and at the
+  trial point being then computed again, since the indicator may have changed
+  there
+
 - a lower bound that needs no test on z*: at each master problem of the
   proximal method or of the trust region, the model at the trial point minus
   the Hölder term sum_i | s_i | max | Lambda_i - y*_i | over the bounds of

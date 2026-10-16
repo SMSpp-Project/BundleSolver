@@ -554,12 +554,12 @@ int BundleSolver::compute( bool changedvars )
   if( UpFiLmbdef == NrFi ) {  // ready to compute the total upper bound
    ++UpFiLmbdef;              // do so
    UpFiLmb.back() = std::accumulate( UpFiLmb.begin() , --(UpFiLmb.end()) ,
-                                     Fi0Lmb );
+                                     Fi0_Lmb() );
    }
   if( LwFiLmbdef == NrFi ) {  // ready to compute the total lower bound
    ++LwFiLmbdef;              // do so
    LwFiLmb.back() = std::accumulate( LwFiLmb.begin() , --(LwFiLmb.end()) ,
-                                     Fi0Lmb );
+                                     Fi0_Lmb() );
    }
   }
 
@@ -766,10 +766,10 @@ int BundleSolver::compute( bool changedvars )
      if( ! refresh_level_after_master( true ) ) {
       BLOG( 1 , " ~ stop (empty level refresh made no progress)"
                 << std::endl );
-      // the domain is empty: because of the vertical linearizations, or of
-      // the easy components at the first master after they changed [see
-      // easy_says_it()]
-      Result = ( get_bc_size() || ( NrEasy && easy_says_it() ) ) ?
+      // the domain is empty: because of the vertical linearizations or of
+      // the linear Constraint, or of the easy components at the first
+      // master after they changed [see easy_says_it()]
+      Result = ( may_be_empty() || ( NrEasy && easy_says_it() ) ) ?
 	       kInfeasible : kLowPrecision;
       break;
       }
@@ -1054,6 +1054,7 @@ int BundleSolver::compute( bool changedvars )
   UpFiLmb1 = UpFiLmb;
   LwFiLmb1 = LwFiLmb;
   Fi0Lmb1 = Fi0Lmb;
+  f_lc_lmb1_ok = f_lc_lmb_ok;
   UpTrgt = UpFiLmb1.back();
   LwTrgt = LwFiLmb1.back();
 
@@ -1527,29 +1528,13 @@ void BundleSolver::set_Block( Block * block )
  LamVcblrO.clear();
  LamBVcblr.clear();
 
- // if some Constraints are present, their can only be either BoxConstraints
- // (with LHS == 0), LB0Constraints or NNConstraints - - - - - - - - - - - - -
- // -
+ // the Constraint can be BoxConstraint, LB0Constraint and NNConstraint,
+ // which make the box of Lambda [see effective_bounds()], and FRowConstraint
+ // with a LinearFunction of the ColVariable in Lambda, which the master
+ // problem has [see read_linear_constraints()] - - - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
- // one day general linear constraints will be allowed
 
- for( auto groups : { & f_Block->get_static_constraint_groups() ,
-		      & f_Block->get_dynamic_constraint_groups() } )
-  for( const auto & group : *groups ) {
-   if( ! group )
-    continue;
-   // the type of the elements is asked of the group, which answers once for
-   // all of them, and nothing has to be done with them
-   if( group->elements_are< BoxConstraint >() ||
-       group->elements_are< LB0Constraint >() ||
-       group->elements_are< NNConstraint >() )
-    continue;
-
-   throw( std::logic_error( std::string( "BundleSolver::set_Block: "
-					 "unsupported type of " ) +
-			    ( group->is_dynamic() ? "dynamic" : "static" ) +
-			    " Constraint" ) );
-   }
+ read_linear_constraints();
 
  // read information about the C05Function - - - - - - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1871,6 +1856,10 @@ void BundleSolver::set_Block( Block * block )
    }
   MasterPB->set_box( Lbox , Ubox );
   }
+
+ // and the linear Constraint
+ if( ! v_lc_A.empty() )
+  MasterPB->set_linear_constraints( v_lc_A , v_lc_l , v_lc_u );
 
  // After the physical representation have been cretaed into the MPB, register
  // the solver. This will allow also solver using abstract representation to
@@ -2856,6 +2845,7 @@ void BundleSolver::guts_of_put_State( const BundleSolverState & state )
   }
 
  Fi0Lmb = state.Fi0Lmb;
+ f_lc_lmb_ok = lc_feasible( state.Lambda );
  f_global_LB = state.global_LB;
  f_box_LB = -INFshift;  // not saved: it waits for the next master problem
 
@@ -3522,7 +3512,7 @@ void BundleSolver::FormD( void )
   if( UpFiLmbdef == NrFi ) {
    ++UpFiLmbdef;  // all components + the sum computed
    UpFiLmb.back() = std::accumulate( UpFiLmb.begin() , --(UpFiLmb.end()) ,
-                                     Fi0Lmb );
+                                     Fi0_Lmb() );
    // note that here the global lower bound (if any) is "baked in" the total
    // upper function estimate
    if( TrueLB && ( UpFiLmb.back() < LwrBnd ) )
@@ -3533,7 +3523,7 @@ void BundleSolver::FormD( void )
   if( LwFiLmbdef == NrFi ) {
    ++LwFiLmbdef;  // all components + the sum computed
    LwFiLmb.back() = std::accumulate( LwFiLmb.begin() , --(LwFiLmb.end()) ,
-                                     Fi0Lmb );
+                                     Fi0_Lmb() );
    // note that here the global lower bound (if any) is "baked in" the total
    // lower function estimate
    if( TrueLB && ( LwFiLmb.back() < LwrBnd ) )
@@ -3616,8 +3606,10 @@ void BundleSolver::FormD( void )
  // components, however, that master must be solved immediately; therefore
  // every empty hard component also needs its fictitious bound from the first
  // iteration, otherwise gamma^k = 0 forces lambda = 0 in its normalization
- // row while the easy master fixes lambda = 1.
- if( MasterPB && ( NrEasy || ( ! MasterPB->is_bundle_empty() ) ) )
+ // row while the easy master fixes lambda = 1. The same holds with linear
+ // Constraint, which the step has to satisfy from the first iteration on.
+ if( MasterPB && ( NrEasy || ( ! v_lc_A.empty() ) ||
+                   ( ! MasterPB->is_bundle_empty() ) ) )
   for( Index k = 0 ; k < NrFi ; ++k ) {
    if( NrEasy && IsEasy[ k ] )
     continue;
@@ -3716,7 +3708,7 @@ void BundleSolver::FormD( void )
    * the box goes on growing past tMaior (which bounds t as a
    * stabilization: t goes back within it once a point of the domain is
    * known). The step of the MP without the box is never used. */
-  if( ( MPStbl == MasterProblemBlock::kTrustRegion ) && get_bc_size() ) {
+  if( ( MPStbl == MasterProblemBlock::kTrustRegion ) && may_be_empty() ) {
    const bool empty = UsesPrimalMaster() ? ( mps == Solver::kInfeasible )
                                          : ( mps == Solver::kUnbounded );
    if( f_tr_open && ( ! empty ) ) {  // the domain is not: the box is back
@@ -3784,10 +3776,10 @@ void BundleSolver::FormD( void )
    if( ! refresh_level_after_master( true ) ) {
     BLOG( 1 , std::endl
               << "Bundle::FormD: empty level refresh made no progress" );
-    // the domain is empty: because of the vertical linearizations, or of
-    // the easy components at the first master after they changed [see
-    // easy_says_it()]
-    Result = ( get_bc_size() || ( NrEasy && easy_says_it() ) ) ?
+    // the domain is empty: because of the vertical linearizations or of the
+    // linear Constraint, or of the easy components at the first master
+    // after they changed [see easy_says_it()]
+    Result = ( may_be_empty() || ( NrEasy && easy_says_it() ) ) ?
 	     kInfeasible : kError;
     return;
     }
@@ -3853,9 +3845,9 @@ void BundleSolver::FormD( void )
    }
 
   if( primal_empty ) {                // the MP is (primal) empty
-   if( ( ( ! get_bc_size() ) || mp_failed ) && ( ! easy_answer ) )
+   if( ( ( ! may_be_empty() ) || mp_failed ) && ( ! easy_answer ) )
     mps = Solver::kError;             // it must be a numerical error
-   else {                             // vertical linearizations or easy
+   else {                             // vertical linearizations, rows or easy
     Result = kInfeasible;             // the MP can really be infeasible
     return;                           // nothing else to do
     }
@@ -4787,7 +4779,7 @@ bool BundleSolver::integer_start( double & tot_time , long & tot_NrEvls )
  if( ! f_int_centre ) {  // start from the current point, made integer
   Lambda1 = Lambda;
   vStar.assign( NrFi + 1 , INFshift );
-  PrepareLambda1();
+  PrepareLambda1( false );  // rounded, it may not satisfy the rows
   if( ! integer_evaluate( tot_time , tot_NrEvls ) )
    return( false );
 
@@ -5172,7 +5164,7 @@ void BundleSolver::FormLambda1( double Tau )
 
 /*--------------------------------------------------------------------------*/
 
-void BundleSolver::PrepareLambda1( void )
+void BundleSolver::PrepareLambda1( bool from_master )
 {
  // walk LamVcblr to clamp Lambda1[ i ] into the effective [ lb , ub ]:
  // ColVariable bounds combined with any supported active bound constraint
@@ -5196,6 +5188,9 @@ void BundleSolver::PrepareLambda1( void )
    if( Lambda1[ i ] > bounds.second )
     Lambda1[ i ] = std::floor( bounds.second );
    }
+
+ // the master has the linear Constraint, any other point is checked
+ f_lc_lmb1_ok = from_master || lc_feasible( Lambda1 );
 
  // move the value from Lambda1 to the ColVariable - - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -5252,7 +5247,7 @@ void BundleSolver::PrepareLambda1( void )
   ++UpFiLmb1def;  // all components + the sum computed
   // can now compute the total value:
   UpFiLmb1.back() = std::accumulate( UpFiLmb1.begin() , --(UpFiLmb1.end()) ,
-                                     Fi0Lmb1 );
+                                     Fi0_Lmb1() );
   // note that this is the point where the lower bound (if any) is taken
   // into account when computing the total upper function estimate
   if( TrueLB && ( UpFiLmb1.back() < LowerBound.back() ) )
@@ -5269,7 +5264,7 @@ void BundleSolver::PrepareLambda1( void )
  if( LwFiLmb1def == NrFi ) {
   ++LwFiLmb1def;  // all components + the sum computed
   LwFiLmb1.back() = std::accumulate( LwFiLmb1.begin() , --(LwFiLmb1.end()) ,
-                                     Fi0Lmb1 );
+                                     Fi0_Lmb1() );
   }
  else
   LwFiLmb1.back() = -INFshift;
@@ -5320,6 +5315,104 @@ void BundleSolver::PrepareLambda1( void )
     }
   }
  }  // end( BundleSolver::PrepareLambda1 )
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::read_linear_constraints( void )
+{
+ v_lc_A.clear();
+ v_lc_l.clear();
+ v_lc_u.clear();
+ f_lc_fun.clear();
+
+ // the position in LamVcblr of each ColVariable, built at the first
+ // FRowConstraint (Lambda2Idx is not there with the dense Lambda)
+ std::unordered_map< const Variable * , Index > lam_pos;
+
+ auto read_row = [ & ]( FRowConstraint & cns ) {
+  if( cns.is_relaxed() )
+   return;
+
+  auto lf = dynamic_cast< LinearFunction * >( cns.get_function() );
+  if( ! lf )
+   throw( std::logic_error( "BundleSolver::read_linear_constraints: the "
+                            "Function of a FRowConstraint is not a "
+                            "LinearFunction" ) );
+
+  if( lam_pos.empty() )
+   for( Index i = 0 ; i < NumVar ; ++i )
+    lam_pos.emplace( LamVcblr[ i ] , i );
+
+  MasterProblemBlock::LinearRow row;
+  row.reserve( lf->get_num_active_var() );
+  for( Index h = 0 ; h < lf->get_num_active_var() ; ++h ) {
+   const auto it = lam_pos.find( lf->get_active_var( h ) );
+   if( it == lam_pos.end() )
+    throw( std::logic_error( "BundleSolver::read_linear_constraints: a "
+                             "FRowConstraint has a ColVariable that no "
+                             "component has" ) );
+   row.emplace_back( it->second , lf->get_coefficient( h ) );
+   }
+
+  // the constant term of the LinearFunction goes to the sides
+  const VarValue c0 = lf->get_constant_term();
+  f_lc_fun.insert( lf );
+  v_lc_A.push_back( std::move( row ) );
+  v_lc_l.push_back( cns.get_lhs() > -INFshift ? cns.get_lhs() - c0
+                                              : -INFshift );
+  v_lc_u.push_back( cns.get_rhs() < INFshift ? cns.get_rhs() - c0
+                                             : INFshift );
+  };
+
+ for( auto groups : { & f_Block->get_static_constraint_groups() ,
+		      & f_Block->get_dynamic_constraint_groups() } )
+  for( const auto & group : *groups ) {
+   if( ! group )
+    continue;
+   // the type of the elements is asked of the group, which answers once for
+   // all of them
+   if( group->elements_are< BoxConstraint >() ||
+       group->elements_are< LB0Constraint >() ||
+       group->elements_are< NNConstraint >() )
+    continue;
+
+   if( group->elements_are< FRowConstraint >() ) {
+    group->for_each_as< FRowConstraint >( read_row );
+    continue;
+    }
+
+   throw( std::logic_error( std::string( "BundleSolver::"
+					 "read_linear_constraints: unsupported "
+					 "type of " ) +
+			    ( group->is_dynamic() ? "dynamic" : "static" ) +
+			    " Constraint" ) );
+   }
+
+ }  // end( BundleSolver::read_linear_constraints )
+
+/*--------------------------------------------------------------------------*/
+
+bool BundleSolver::lc_feasible( const Vec_VarValue & x ) const
+{
+ for( Index i = 0 ; i < v_lc_A.size() ; ++i ) {
+  VarValue ax = 0;
+  for( const auto & [ j , a ] : v_lc_A[ i ] )
+   ax += a * x[ j ];
+
+  if( ( v_lc_l[ i ] > -INFshift ) &&
+      ( v_lc_l[ i ] - ax >
+        1e-9 * std::max( VarValue( 1 ) , std::abs( v_lc_l[ i ] ) ) ) )
+   return( false );
+
+  if( ( v_lc_u[ i ] < INFshift ) &&
+      ( ax - v_lc_u[ i ] >
+        1e-9 * std::max( VarValue( 1 ) , std::abs( v_lc_u[ i ] ) ) ) )
+   return( false );
+  }
+
+ return( true );
+
+ }  // end( BundleSolver::lc_feasible )
 
 /*--------------------------------------------------------------------------*/
 
@@ -6289,6 +6382,7 @@ void BundleSolver::GotoLambda1( void )
  UpFiLmbdef = UpFiLmb1def;
  LwFiLmbdef = LwFiLmb1def;
  Fi0Lmb = Fi0Lmb1;
+ f_lc_lmb_ok = f_lc_lmb1_ok;
 
  // change the current point in the Master Problem - - - - - - - - - - - - -
 
@@ -7882,6 +7976,11 @@ void BundleSolver::ReSetAlg( unsigned char RstLvl )
    MasterPB->set_reference( Lambda , F_hard );
    }
   }
+
+ // the starting point is not written by the master, which is why it may
+ // be out of the feasible set of the linear Constraint
+ f_lc_lmb_ok = lc_feasible( Lambda );
+
  }  // end( BundleSolver::ReSetAlg )
 
 /*--------------------------------------------------------------------------*/
@@ -8608,6 +8707,8 @@ void BundleSolver::process_outstanding_Modification( void )
 
  bool Fi0Chgd = false;  // true if the 0-th component changes
 
+ bool lc_chgd = false;  // true if the linear Constraint change
+
  bool to_delete;  // should have been defined inside, but there is not
                   // visible by the lambda
 
@@ -8686,6 +8787,10 @@ void BundleSolver::process_outstanding_Modification( void )
    if( wFi < NrFi )
     FModChg( tmod->shift() , wFi );
    else {
+    // the linear Constraint are all read again at the end
+    if( f_lc_fun.count( tmod->function() ) )
+     lc_chgd = true;
+
     // this is a FunctionMod coming from some unknown Function, not any
     // business of BundleSolver
     to_delete = true;
@@ -8875,10 +8980,19 @@ void BundleSolver::process_outstanding_Modification( void )
 
    }  // end( if( tmod == GroupModification ) )
 
-  if( std::dynamic_pointer_cast< ConstraintMod >( mod ) )
+  if( const auto cmod = std::dynamic_pointer_cast< ConstraintMod >( mod ) ) {
+   // a linear Constraint of the Block whose sides change, or that is
+   // relaxed or enforced: they are all read again at the end
+   const auto cns = dynamic_cast< FRowConstraint * >( cmod->constraint() );
+   if( cns && ( cns->get_Block() == f_Block ) ) {
+    lc_chgd = true;
+    to_delete = true;
+    continue;
+    }
    throw( std::invalid_argument(
               "BundleSolver::process_outstanding_Modification: "
               "ConstraintMod not handled (yet)" ) );
+   }
 
   if( std::dynamic_pointer_cast< VariableMod >( mod ) )
    throw( std::invalid_argument(
@@ -8891,6 +9005,13 @@ void BundleSolver::process_outstanding_Modification( void )
               "BlockMod not handled (yet)" ) );
 
   if( std::dynamic_pointer_cast< BlockModAD >( mod ) ) {
+   // a linear Constraint that comes or goes: they are all read again at
+   // the end
+   if( ( std::dynamic_pointer_cast< BlockModAdd< FRowConstraint > >( mod ) ||
+         std::dynamic_pointer_cast< BlockModRmv< FRowConstraint > >( mod ) ) &&
+       ( mod->get_Block() == f_Block ) )
+    lc_chgd = true;
+
    /* This is the physical notification that a dynamic Variable/Constraint
     * was added to, or removed from, the observed Block. Any effect on a
     * component function reaches BundleSolver separately as a
@@ -8942,7 +9063,44 @@ void BundleSolver::process_outstanding_Modification( void )
  // have never been reset, or are the remaining ones after the (last) one
  // resetting the component
 
+ /* The linear Constraint are read again once the Variable have changed,
+  * at the end; until then the master has none, so that a coordinate that
+  * leaves is in no row of it [see MasterProblemBlock::remove_vars()]. Their
+  * Modification have nothing to do with the components: once they are read
+  * again the only thing that changes is the indicator of the set they
+  * define in the value at the stability centre and at the trial point. */
+
+ const auto read_lc_again = [ this ]() {
+  read_linear_constraints();
+  if( MasterPB )
+   MasterPB->set_linear_constraints( v_lc_A , v_lc_l , v_lc_u );
+  f_lc_lmb_ok = lc_feasible( Lambda );
+  f_lc_lmb1_ok = ( Lambda1.size() == NumVar ) && lc_feasible( Lambda1 );
+  if( UpFiLmbdef == NrFi + 1 ) {  // the total upper bound was known
+   UpFiLmb.back() = INFshift;     // it may be no longer so
+   UpFiLmbdef = NrFi;             // it will have to be recomputed
+   }
+  if( LwFiLmbdef == NrFi + 1 ) {  // the total lower bound was known
+   LwFiLmb.back() = -INFshift;    // it may be no longer so
+   LwFiLmbdef = NrFi;             // it will have to be recomputed
+   }
+  UpFiBest = INFshift;            // the best point may be out of the set
+  // a larger set may have a lower minimum, below the level lower bound
+  if( UsesLevelStabilization() )
+   reset_level_stabilization();
+  };
+
+ if( lc_chgd && MasterPB && ( ! v_lc_A.empty() ) ) {
+  v_lc_A.clear();
+  v_lc_l.clear();
+  v_lc_u.clear();
+  MasterPB->set_linear_constraints( {} , {} , {} );
+  }
+
  if( v_mod_tmp.empty() ) {  // no more Modification to process
+  if( lc_chgd )
+   read_lc_again();
+
   // ordinarily, changes in the 0-th component would be dealt with at the
   // end, but if this is the only thing that happened the end is now, so
   // they have to be dealt with immediately
@@ -10563,6 +10721,9 @@ void BundleSolver::process_outstanding_Modification( void )
  if( to_add ) {
   append_pending_variables( to_add );
   }
+
+ if( lc_chgd )
+  read_lc_again();
 
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  // and this, finally, is all! (save possibly some checks)

@@ -137,6 +137,23 @@ if (TARGET SMS++::MILPSolver)
              WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 endif ()
 
+# ----- the linear Constraint of the Block -------------------------------- #
+# The FRowConstraint with a LinearFunction of the variables, in the primal
+# and in the dual master, displacement and iterate form, proximal, level and
+# trust region, against the Linear Program, also after a side, a coefficient,
+# a row added, relaxed and removed between two calls of compute()
+if (TARGET SMS++::MILPSolver)
+    add_executable(linear_constraints_test test_linear_constraints.cpp)
+    target_link_libraries(linear_constraints_test PRIVATE
+                          SMS++::BundleSolver
+                          SMS++::MILPSolver)
+    # the test reads BSPar-lc.txt, BSCfg-cut.txt and MPBCfg.txt from the
+    # working directory
+    add_test(NAME linear_constraints_test
+             COMMAND linear_constraints_test
+             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+endif ()
+
 # ----- the verdict of the easy components at the first master ------------ #
 # An easy LagBFunction next to a hard component, whose first master has an
 # empty bundle and t at dbltMinor: a master that is not unbounded at the
