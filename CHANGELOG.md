@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- the primal master problem hosts the Block, when its coordinates are all
+  ColVariable of the Block itself and the Block has Constraint other than the
+  box [see `MasterProblemBlock::set_hosted_Block()`]: the Solver of the master
+  then has these Constraint as they are, of any type it can read (e.g., a
+  `FRowConstraint` with a `DQuadFunction`) and possibly on Variable of the
+  Block that are not coordinates, the feasible set being the projection of
+  the one of the Block, and their Modification reach it directly. A point
+  the master has not written is checked on each `RowConstraint` of the Block,
+  with the other Variable at the value of the last master; the dual master
+  keeps the linear rows. `linear_constraints_test` also adds a ball and a
+  Variable that is no coordinate, for the BundleSolver with the primal master
+
 - linear `Constraint` in the Block: a `FRowConstraint` with a
   `LinearFunction` of the `ColVariable` that the components have, which the
   master problem has as rows (the primal one) or as multipliers in the

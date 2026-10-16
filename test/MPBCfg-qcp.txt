@@ -1,0 +1,71 @@
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - - MPBCfg-qcp.txt  - - - - - - - - - - - - - - -
+#
+# The BlockSolverConfig of the :MILPSolver of the MasterProblemBlock of the
+# BundleSolver with the primal master in BSPar-lc.txt, which hosts a Block
+# with a quadratic row: that of MPBCfg.txt, with the barrier, since GUROBI
+# solves a Quadratically Constrained Program with it alone, and the duals of
+# the rows, which GUROBI computes for it only if asked, and which the trust
+# region adds to the aggregate. Elsewhere MPBCfg.txt keeps the dual simplex
+# [see the comment to Method in MILPCfg-MPB.txt].
+#
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+BlockSolverConfig     # exact type of the Configuration object
+
+1  # the BlockSolverConfig is a "differential" one
+
+1 # number of (the names of) Solver in this BlockSolverConfig
+
+# now all the names of the Solver - - - - - - - - - - - - - - - - - - - - - -
+GRBMILPSolver         # name of Solver
+
+1 # number of ComputeConfig in this BlockSolverConfig
+
+# now all the ComputeConfig
+# 1st ComputeConfig - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# that of MILPCfg-MPB.txt, with the barrier and the duals of the QCP
+
+*MILPCfg-MPB.txt +
+
+1  # f_diff == 1 ==> only the entries below are changed
+
+2  # number of integer parameters
+
+# now all the integer parameters
+Method        2   # 0 = primal, 1 = dual simplex, 2 = barrier
+QCPDual       1   # the duals of a Quadratically Constrained Program
+
+0  # number of double parameters
+
+# now all the double parameters
+# [none]
+
+0  # number of string parameters
+
+# now all the string parameters
+# [none]
+
+0  # number of vector-of-int parameters
+
+# now all the vector-of-int parameters
+# [none]
+
+0  # number of vector-of-double parameters
+
+# now all the vector-of-double parameters
+# [none]
+
+0  # number of vector-of-string parameters
+
+# now all the vector-of-string parameters
+# [none]
+
+# pointer to the "extra" Configuration
+* # [none]
+
+# end of BlockSolverConfig- - - - - - - - - - - - - - - - - - - - - - - - - -
+
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - END MPBCfg-qcp.txt  - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -

@@ -2,12 +2,13 @@
 # - - - - - - - - - - - - - - - BSPar-lc.txt  - - - - - - - - - - - - - - - -
 #
 # The BundleSolver of test_linear_constraints.cpp, one for each way the
-# master problem has the linear Constraint of the Block: as rows in the
-# primal form and as multipliers in the dual one, with the sides moving
-# with the centre in the displacement form and fixed in the iterate one,
-# under the proximal, the level and the trust-region stabilizations [see
-# BSCfg-cut.txt]. The tester changes the Constraint between the calls of
-# each of them.
+# master problem has the Constraint of the Block: the primal form hosts the
+# Block, with the rows binding it moving with the centre in the
+# displacement form and fixed in the iterate one, and the dual form has the
+# linear ones as multipliers, under the proximal, the level and the
+# trust-region stabilizations [see BSCfg-cut.txt]; the primal masters are
+# those of MPBCfg-qcp.txt, since the Block gets a quadratic row. The tester
+# changes the Constraint between the calls of each of them.
 #
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -46,10 +47,10 @@ intMPPrimal     1     # the primal master
 # now all the double parameters
 # [none]
 
-0  # number of string parameters
+1  # number of string parameters
 
 # now all the string parameters
-# [none]
+strMPBSolverCfg MPBCfg-qcp.txt  # the master with the quadratic row
 
 0  # number of vector-of-int parameters
 
@@ -124,10 +125,10 @@ intMPV2Form     1     # the iterate form
 # now all the double parameters
 # [none]
 
-0  # number of string parameters
+1  # number of string parameters
 
 # now all the string parameters
-# [none]
+strMPBSolverCfg MPBCfg-qcp.txt  # the master with the quadratic row
 
 0  # number of vector-of-int parameters
 

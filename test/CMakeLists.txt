@@ -137,18 +137,20 @@ if (TARGET SMS++::MILPSolver)
              WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 endif ()
 
-# ----- the linear Constraint of the Block -------------------------------- #
-# The FRowConstraint with a LinearFunction of the variables, in the primal
-# and in the dual master, displacement and iterate form, proximal, level and
+# ----- the Constraint of the Block --------------------------------------- #
+# The FRowConstraint of the Block, which the primal master hosts and the dual
+# one has as multipliers, displacement and iterate form, proximal, level and
 # trust region, against the Linear Program, also after a side, a coefficient,
-# a row added, relaxed and removed between two calls of compute()
+# a row added, relaxed and removed between two calls of compute(), and then,
+# for the primal master alone, a quadratic row and a Variable that is no
+# coordinate
 if (TARGET SMS++::MILPSolver)
     add_executable(linear_constraints_test test_linear_constraints.cpp)
     target_link_libraries(linear_constraints_test PRIVATE
                           SMS++::BundleSolver
                           SMS++::MILPSolver)
-    # the test reads BSPar-lc.txt, BSCfg-cut.txt and MPBCfg.txt from the
-    # working directory
+    # the test reads BSPar-lc.txt, BSCfg-cut.txt, MPBCfg.txt, MPBCfg-qcp.txt
+    # and MILPCfg-MPB.txt from the working directory
     add_test(NAME linear_constraints_test
              COMMAND linear_constraints_test
              WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
