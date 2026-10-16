@@ -941,33 +941,28 @@ public:
   *     treated as "easy", and with any nonzero value all the "easy"
   *     components are treated as such;
   *
-  *   - bit 1 (+2) is unused, for historical reasons: bits 1, 2 and 3 used
-  *     to allow changing the objective, the sides of the rows and the bounds
-  *     of the variables of the easy components, which the Master Problem now
-  *     follows anyway, and bits 2 and 3 have been reused for their duals;
-  *
-  *   - bit 3 (+8): the dual values of the easy components are saved at each
+  *   - bit 1 (+2): the dual values of the easy components are saved at each
   *     solution of the Master Problem, so that get_var_solution() can write
   *     back into the easy sub-Block the reduced costs of their ColVariable;
   *
-  *   - bits 2 and 3 together (+12): the same holds for the dual values of
+  *   - bits 1 and 2 together (+6): the same holds for the dual values of
   *     their RowConstraint;
   *
-  *   - bit 4 (+16): the easy components are not scaled by a size Variable,
+  *   - bit 3 (+8): the easy components are not scaled by a size Variable,
   *     i.e., the Master Problem is the one with the mass lambda of the
   *     lower model fixed to 1. Without it, each easy component is scaled
   *     by lambda through a size Variable that its inner Block owns or
   *     takes [see Block::get_size_variable() and
-  *     Block::set_size_variable()], or else, with bit 5, through a copy of
+  *     Block::set_size_variable()], or else, with bit 4, through a copy of
   *     its inner Block; if all of them are, lambda is free, so that the
-  *     global lower bound enters the Master Problem; with bit 4, or if some
+  *     global lower bound enters the Master Problem; with bit 3, or if some
   *     easy component cannot be scaled, lambda is 1 and the global lower
   *     bound
   *     has no effect there, which gives a model that may be cheaper to
   *     solve [see MasterProblemBlock::use_easy_size_variables()]. As which
   *     components are easy, it is read when the Block is set;
   *
-  *   - bit 5 (+32): an easy component whose inner Block neither owns nor
+  *   - bit 4 (+16): an easy component whose inner Block neither owns nor
   *     takes a size Variable is scaled through a copy of its inner Block
   *     [see AbstractBlock::mirror()], sized by lambda [see
   *     AbstractBlock::set_size_variable()], that the Master Problem has in
@@ -975,16 +970,16 @@ public:
   *     the copy cannot follow puts the inner Block back, unscaled, with
   *     lambda fixed to 1 [see MasterProblemBlock::use_easy_mirrors()].
   *     Without it such a component is not scaled. It has no effect with
-  *     bit 4, and it is read when the Block is set.
+  *     bit 3, and it is read when the Block is set.
   *
   *   Hence 1 treats the easy components as such without keeping any of
-  *   their dual values, and 13 also keeps all of them, as needed by whoever
+  *   their dual values, and 7 also keeps all of them, as needed by whoever
   *   reads the dual solution of the easy components [see
   *   get_var_solution()], which throws if asked for dual values that have
-  *   not been kept; 17 and 29 are the same without the size Variable, 33
-  *   and 45 with the copies. Bit 1
-  *   (+2) is unused, and ignored. The structure of an easy component can
-  *   change in any of its parts, which the MasterProblemBlock handles.
+  *   not been kept; 9 and 15 are the same without the size Variable, 17
+  *   and 23 with the copies. Bit 2 (+4) alone, without bit 1, is ignored.
+  *   The structure of an easy component can change in any of its parts,
+  *   which the MasterProblemBlock handles.
   *
   * - intWZNorm [2]: Proving that some point Lambda is epsilon-optimal for a
   *                  NonDifferentiable Optimization problem involves finding
@@ -2070,8 +2065,8 @@ public:
   *                 any easy component requires access to that
   *   component's description, which is *deleted if not needed* as
   *   dictated by intDoEasy. Hence, if reduced costs are required then
-  *   ( intDoEasy & 8 ) must be true; if dual variables are required then
-  *   *both* ( intDoEasy & 4 ) and ( intDoEasy & 8 ) must be true, since
+  *   ( intDoEasy & 2 ) must be true; if dual variables are required then
+  *   *both* ( intDoEasy & 2 ) and ( intDoEasy & 4 ) must be true, since
   *   the master pipeline reuses the same code path for reduced costs
   *   and dual variables. */
 

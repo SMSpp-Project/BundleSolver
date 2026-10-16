@@ -14,7 +14,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   bound being the one of `Block::get_valid_lower_bound()`; the bound that
   z* = 0 gives is that of the last iteration because the upper bound of a
   Lagrangian function is the value of the primal solution of that iteration,
-  as the comment now says; bit 1 of `intDoEasy` is documented as unused
+  as the comment now says
+
+- the bits of `intDoEasy` are renumbered with no gap, bit 1 being free
+  since its use was dropped: +1 the easy components, +2 (formerly +8) their
+  reduced costs, +4 together with +2 (formerly +12) also the dual values of
+  their rows, +8 (formerly +16) no size Variable, +16 (formerly +32) the
+  sized copies; a configuration written for the old bits has to be
+  translated (e.g., 13 is now 7, 45 is now 23)
 
 ### Added
 

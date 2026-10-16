@@ -2024,8 +2024,7 @@ void BundleSolver::set_par( idx_type par , int value )
    // Variable, is decided by set_Block(), but whether their duals are kept
    // can change at any time [see InitMPB()]
    if( MasterPB )
-    MasterPB->keep_easy_duals( ( DoEasy & 8 ) ||
-			       ( ( DoEasy & 12 ) == 12 ) );
+    MasterPB->keep_easy_duals( DoEasy & 2 );
    break;
   case( intWZNorm ):
    if( WZNorm != char( value ) ) {
@@ -2379,10 +2378,10 @@ void BundleSolver::get_var_solution( Configuration *solc )
 
 void BundleSolver::get_var_solution_easy_pi( Index k )
 {
- if( ! ( ( DoEasy & 12 ) == 12 ) )
+ if( ( DoEasy & 6 ) != 6 )
   throw( std::logic_error(
        "BundleSolver::get_var_solution_easy_pi: "
-       "intDoEasy & 12 == 12 required to get easy components pi" ) );
+       "intDoEasy & 6 == 6 required to get easy components pi" ) );
 
  // The k-th easy sub-Block registered into MasterPB is the very same
  // inner Block exposed by v_c05f[ k ]->build_easy_master_block(): the
@@ -2404,10 +2403,10 @@ void BundleSolver::get_var_solution_easy_pi( Index k )
 
 void BundleSolver::get_var_solution_easy_rc( Index k )
 {
- if( ! ( DoEasy & 8 ) )
+ if( ! ( DoEasy & 2 ) )
   throw( std::logic_error(
        "BundleSolver::get_var_solution_easy_rc: "
-       "intDoEasy & 8 required to get easy components rc" ) );
+       "intDoEasy & 2 required to get easy components rc" ) );
 
  // Same observation as in get_var_solution_easy_pi: the reduced costs of
  // the easy sub-Block ColVariable are the duals of the rows that fence
@@ -7274,8 +7273,8 @@ void BundleSolver::InitMPB( void )
                        : int( vBPar2.back() );
  // whether the easy components are scaled by a size Variable is decided
  // when the dual master is built [see intDoEasy]
- MasterPB->use_easy_size_variables( ! ( DoEasy & 16 ) );
- MasterPB->use_easy_mirrors( DoEasy & 32 );
+ MasterPB->use_easy_size_variables( ! ( DoEasy & 8 ) );
+ MasterPB->use_easy_mirrors( DoEasy & 16 );
 
  MasterPB->configure( want_primal ,
                       std::max( int( BPar2 ) , max_bsize ) ,
@@ -7291,7 +7290,7 @@ void BundleSolver::InitMPB( void )
 
  // the duals of the easy components are saved at each solve of the master
  // only if they are going to be asked for [see intDoEasy]
- MasterPB->keep_easy_duals( ( DoEasy & 8 ) || ( ( DoEasy & 12 ) == 12 ) );
+ MasterPB->keep_easy_duals( DoEasy & 2 );
 
  // The storage frame has already been selected before configure(): 0 is the
  // translated/displacement form, 1 the raw/iterate form.
