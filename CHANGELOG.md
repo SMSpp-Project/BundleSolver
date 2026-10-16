@@ -74,6 +74,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- the tests are registered with ctest also in a fresh build of the
+  umbrella, where `include(CTest)` was commented out and the tests were
+  built but never run
+
 - a master Solver that fails on the master itself, rather than on the
   bundle, made `compute()` run until `intMaxIter`: the recovery deleted an
   item, the master was solved without it, and the new trial point gave the
