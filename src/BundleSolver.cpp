@@ -1528,14 +1528,6 @@ void BundleSolver::set_Block( Block * block )
  LamVcblrO.clear();
  LamBVcblr.clear();
 
- // the Constraint can be BoxConstraint, LB0Constraint and NNConstraint,
- // which make the box of Lambda [see effective_bounds()], and FRowConstraint
- // with a LinearFunction of the ColVariable in Lambda, which the master
- // problem has [see read_linear_constraints()] - - - - - - - - - - - - - - -
- //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
- read_linear_constraints();
-
  // read information about the C05Function - - - - - - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -1832,6 +1824,18 @@ void BundleSolver::set_Block( Block * block )
  Result = kError;
  SSDone = false;
 
+ // the Constraint can be BoxConstraint, LB0Constraint and NNConstraint,
+ // which make the box of Lambda [see effective_bounds()], and any other
+ // Constraint the Solver of a primal master can read, which then hosts the
+ // Block [see host_Block()]; for the dual master they have to be
+ // FRowConstraint with a LinearFunction of the ColVariable in Lambda, which
+ // it has as rows [see read_linear_constraints()] - - - - - - - - - - - - - -
+ //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+ f_host = host_Block();
+ v_host_x.clear();
+ read_linear_constraints();
+
  // initialize the MasterProblemBlock - - - - - - - - - - - - - -  - - - - - -
  // - - - -  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -1857,14 +1861,20 @@ void BundleSolver::set_Block( Block * block )
   MasterPB->set_box( Lbox , Ubox );
   }
 
- // and the linear Constraint
- if( ! v_lc_A.empty() )
+ // and the linear Constraint of the Block, if the master does not host it
+ if( ( ! f_host ) && ( ! v_lc_A.empty() ) )
   MasterPB->set_linear_constraints( v_lc_A , v_lc_l , v_lc_u );
 
  // After the physical representation have been cretaed into the MPB, register
  // the solver. This will allow also solver using abstract representation to
  // correctly generate it.
  MasterPB->register_Solver( std::string( MPBSolverCfg ) );
+
+ // the master hosts the Block only now: its Solver locks the master when it
+ // is registered, sub-Block included, and the Block is locked here; it then
+ // loads the problem again at its first compute() [see
+ // MasterProblemBlock::set_hosted_Block()]
+ rebind_host();
 
  // cleanup easy-component caches - - - - - - - - - - - - - - - - - - - - - -
  // - - - -  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -2845,7 +2855,7 @@ void BundleSolver::guts_of_put_State( const BundleSolverState & state )
   }
 
  Fi0Lmb = state.Fi0Lmb;
- f_lc_lmb_ok = lc_feasible( state.Lambda );
+ f_lc_lmb_ok = in_X( state.Lambda );
  f_global_LB = state.global_LB;
  f_box_LB = -INFshift;  // not saved: it waits for the next master problem
 
@@ -3608,7 +3618,7 @@ void BundleSolver::FormD( void )
  // iteration, otherwise gamma^k = 0 forces lambda = 0 in its normalization
  // row while the easy master fixes lambda = 1. The same holds with linear
  // Constraint, which the step has to satisfy from the first iteration on.
- if( MasterPB && ( NrEasy || ( ! v_lc_A.empty() ) ||
+ if( MasterPB && ( NrEasy || ( ! v_lc_A.empty() ) || f_host ||
                    ( ! MasterPB->is_bundle_empty() ) ) )
   for( Index k = 0 ; k < NrFi ; ++k ) {
    if( NrEasy && IsEasy[ k ] )
@@ -5189,8 +5199,8 @@ void BundleSolver::PrepareLambda1( bool from_master )
     Lambda1[ i ] = std::floor( bounds.second );
    }
 
- // the master has the linear Constraint, any other point is checked
- f_lc_lmb1_ok = from_master || lc_feasible( Lambda1 );
+ // the master has the Constraint, any other point is checked
+ f_lc_lmb1_ok = from_master || in_X( Lambda1 );
 
  // move the value from Lambda1 to the ColVariable - - - - - - - - - - - - - -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -5325,6 +5335,10 @@ void BundleSolver::read_linear_constraints( void )
  v_lc_u.clear();
  f_lc_fun.clear();
 
+ // the master that hosts the Block has its Constraint as they are
+ if( f_host )
+  return;
+
  // the position in LamVcblr of each ColVariable, built at the first
  // FRowConstraint (Lambda2Idx is not there with the dense Lambda)
  std::unordered_map< const Variable * , Index > lam_pos;
@@ -5413,6 +5427,114 @@ bool BundleSolver::lc_feasible( const Vec_VarValue & x ) const
  return( true );
 
  }  // end( BundleSolver::lc_feasible )
+
+/*--------------------------------------------------------------------------*/
+
+bool BundleSolver::host_Block( void ) const
+{
+ // only the primal master can host the Block [see InitMPB()]
+ if( ( ! IsMPPrimal ) || ( DoEasy && ( NrEasy > 0 ) ) )
+  return( false );
+
+ // the coordinates have to be Variable of the Block itself, the sub-Block
+ // being the components, which the Solver of the master ignores
+ for( Index i = 0 ; i < NumVar ; ++i )
+  if( LamVcblr[ i ]->get_Block() != f_Block )
+   return( false );
+
+ // and there has to be something other than the box
+ for( auto groups : { & f_Block->get_static_constraint_groups() ,
+		      & f_Block->get_dynamic_constraint_groups() } )
+  for( const auto & group : *groups )
+   if( group && group->get_num_elements() &&
+       ( ! group->elements_are< BoxConstraint >() ) &&
+       ( ! group->elements_are< LB0Constraint >() ) &&
+       ( ! group->elements_are< NNConstraint >() ) )
+    return( true );
+
+ return( false );
+
+ }  // end( BundleSolver::host_Block )
+
+/*--------------------------------------------------------------------------*/
+
+bool BundleSolver::in_X( const Vec_VarValue & x )
+{
+ if( ! f_host )
+  return( lc_feasible( x ) );
+
+ // the Constraint are checked on the Variable, hence x goes there; the
+ // other Variable of the Block have what the master has last given them,
+ // so that a point found feasible is so, and one that is not may still be
+ for( Index i = 0 ; i < NumVar ; ++i )
+  LamVcblr[ i ]->set_value( x[ i ] );
+
+ bool ok = true;
+ const auto check = [ & ok ]( RowConstraint & cns ) {
+  if( ok && ( ! RowConstraint::is_feasible( cns , 1e-9 ) ) )
+   ok = false;
+  };
+
+ for( auto groups : { & f_Block->get_static_constraint_groups() ,
+		      & f_Block->get_dynamic_constraint_groups() } )
+  for( const auto & group : *groups ) {
+   if( ( ! group ) || ( ! group->get_num_elements() ) ||
+       group->elements_are< BoxConstraint >() ||
+       group->elements_are< LB0Constraint >() ||
+       group->elements_are< NNConstraint >() )
+    continue;
+   // a Constraint that is not a row cannot be checked here, and the point
+   // is taken to be out of the set, the master writing one that is not
+   if( ! group->for_each_as< RowConstraint >( check ) )
+    return( false );
+   if( ! ok )
+    return( false );
+   }
+
+ return( true );
+
+ }  // end( BundleSolver::in_X )
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::unbind_host( void )
+{
+ if( f_host && MasterPB && ( ! v_host_x.empty() ) ) {
+  v_host_x.clear();
+  MasterPB->set_hosted_Block( f_Block , {} );
+  }
+ }
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::rebind_host( void )
+{
+ if( ! ( f_host && MasterPB ) )
+  return;
+
+ if( ( v_host_x.size() == NumVar ) &&
+     std::equal( v_host_x.begin() , v_host_x.end() , LamVcblr.begin() ) )
+  return;
+
+ for( Index i = 0 ; i < NumVar ; ++i )
+  if( LamVcblr[ i ]->get_Block() != f_Block )
+   throw( std::logic_error( "BundleSolver::rebind_host: a ColVariable is "
+                            "not of the Block, which the master hosts" ) );
+
+ v_host_x.assign( LamVcblr.begin() , LamVcblr.begin() + NumVar );
+ MasterPB->set_hosted_Block( f_Block , v_host_x );
+
+ }  // end( BundleSolver::rebind_host )
+
+/*--------------------------------------------------------------------------*/
+
+bool BundleSolver::root_row_function( const Function * f ) const
+{
+ if( ! f )
+  return( false );
+ auto cns = dynamic_cast< const Constraint * >( f->get_Observer() );
+ return( cns && ( cns->get_Block() == f_Block ) );
+ }
 
 /*--------------------------------------------------------------------------*/
 
@@ -7978,8 +8100,8 @@ void BundleSolver::ReSetAlg( unsigned char RstLvl )
   }
 
  // the starting point is not written by the master, which is why it may
- // be out of the feasible set of the linear Constraint
- f_lc_lmb_ok = lc_feasible( Lambda );
+ // be out of the feasible set of the Constraint
+ f_lc_lmb_ok = in_X( Lambda );
 
  }  // end( BundleSolver::ReSetAlg )
 
@@ -8787,8 +8909,8 @@ void BundleSolver::process_outstanding_Modification( void )
    if( wFi < NrFi )
     FModChg( tmod->shift() , wFi );
    else {
-    // the linear Constraint are all read again at the end
-    if( f_lc_fun.count( tmod->function() ) )
+    // the Constraint of the Block are all read again at the end
+    if( root_row_function( tmod->function() ) )
      lc_chgd = true;
 
     // this is a FunctionMod coming from some unknown Function, not any
@@ -8927,6 +9049,9 @@ void BundleSolver::process_outstanding_Modification( void )
    if( wFi >= NrFi ) {
     if( tmod->function() == zeroth_component() )
      Fi0Lmb = INFshift;
+    // as above, a Constraint of the Block
+    if( root_row_function( tmod->function() ) )
+     lc_chgd = true;
     continue;
     }
 
@@ -8981,10 +9106,15 @@ void BundleSolver::process_outstanding_Modification( void )
    }  // end( if( tmod == GroupModification ) )
 
   if( const auto cmod = std::dynamic_pointer_cast< ConstraintMod >( mod ) ) {
-   // a linear Constraint of the Block whose sides change, or that is
-   // relaxed or enforced: they are all read again at the end
-   const auto cns = dynamic_cast< FRowConstraint * >( cmod->constraint() );
-   if( cns && ( cns->get_Block() == f_Block ) ) {
+   // a Constraint of the Block whose sides change, or that is relaxed or
+   // enforced: they are all read again at the end; with the Block hosted
+   // this holds for any Constraint but the box, which is not a row
+   const auto cns = cmod->constraint();
+   if( cns && ( cns->get_Block() == f_Block ) &&
+       ( dynamic_cast< FRowConstraint * >( cns ) ||
+         ( f_host && ( ! dynamic_cast< BoxConstraint * >( cns ) ) &&
+           ( ! dynamic_cast< LB0Constraint * >( cns ) ) &&
+           ( ! dynamic_cast< NNConstraint * >( cns ) ) ) ) ) {
     lc_chgd = true;
     to_delete = true;
     continue;
@@ -9072,10 +9202,11 @@ void BundleSolver::process_outstanding_Modification( void )
 
  const auto read_lc_again = [ this ]() {
   read_linear_constraints();
-  if( MasterPB )
+  // the master that hosts the Block has the Constraint already
+  if( MasterPB && ( ! f_host ) )
    MasterPB->set_linear_constraints( v_lc_A , v_lc_l , v_lc_u );
-  f_lc_lmb_ok = lc_feasible( Lambda );
-  f_lc_lmb1_ok = ( Lambda1.size() == NumVar ) && lc_feasible( Lambda1 );
+  f_lc_lmb1_ok = ( Lambda1.size() == NumVar ) && in_X( Lambda1 );
+  f_lc_lmb_ok = in_X( Lambda );
   if( UpFiLmbdef == NrFi + 1 ) {  // the total upper bound was known
    UpFiLmb.back() = INFshift;     // it may be no longer so
    UpFiLmbdef = NrFi;             // it will have to be recomputed
@@ -9098,6 +9229,7 @@ void BundleSolver::process_outstanding_Modification( void )
   }
 
  if( v_mod_tmp.empty() ) {  // no more Modification to process
+  rebind_host();
   if( lc_chgd )
    read_lc_again();
 
@@ -9941,6 +10073,7 @@ void BundleSolver::process_outstanding_Modification( void )
       Lambda.clear();
       Lambda1.clear();
       LmbdBst.clear();
+      unbind_host();
       if( MasterPB )
        MasterPB->remove_vars( nullptr , 0 );  // remove from MP
       continue;                        // nothing else to do
@@ -9985,6 +10118,7 @@ void BundleSolver::process_outstanding_Modification( void )
      if( MaxSol > 1 )
       LmbdBst.resize( NumVar );
      std::iota( tdlt.begin() , tdlt.end() , rng.first );
+     unbind_host();
      if( MasterPB )
       MasterPB->remove_vars( reinterpret_cast< const int * >( tdlt.data() ) ,
                              int( tdlt.size() ) );  // remove from MP
@@ -10078,6 +10212,7 @@ void BundleSolver::process_outstanding_Modification( void )
       Lambda.clear();
       Lambda1.clear();
       LmbdBst.clear();
+      unbind_host();
       if( MasterPB )
        MasterPB->remove_vars( nullptr , 0 );  // remove from MP
       continue;                        // nothing else to do
@@ -10139,6 +10274,7 @@ void BundleSolver::process_outstanding_Modification( void )
      Lambda1.resize( NumVar );
      if( MaxSol > 1 )
       LmbdBst.resize( NumVar );
+     unbind_host();
      if( MasterPB )
       MasterPB->remove_vars( reinterpret_cast< const int * >( sbst->data() ) ,
                              int( sbst->size() ) );  // remove from MP
@@ -10261,6 +10397,7 @@ void BundleSolver::process_outstanding_Modification( void )
 
   // tell the Master to drop the old global names (the Master still sees
   // the pre-compaction index space), the pending ones excluded
+  unbind_host();
   if( MasterPB && nold )
    MasterPB->remove_vars(
               reinterpret_cast< const int * >( globally_to_remove.data() ) ,
@@ -10722,6 +10859,7 @@ void BundleSolver::process_outstanding_Modification( void )
   append_pending_variables( to_add );
   }
 
+ rebind_host();
  if( lc_chgd )
   read_lc_again();
 

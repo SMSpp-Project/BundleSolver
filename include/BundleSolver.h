@@ -43,9 +43,12 @@
  * - only has "continuous" ColVariable (is_integer() == false);
  *
  * - has no Constraint, except possibly BoxConstraint (upper and/or lower
- *   bounds on the ColVariable) and FRowConstraint containing a
- *   LinearFunction of the ColVariable, the latter only with the primal
- *   Master Problem (intMPPrimal == 1);
+ *   bounds on the ColVariable), and any Constraint the Solver of the primal
+ *   Master Problem (intMPPrimal == 1) can read, possibly on Variable of the
+ *   Block other than the ColVariable of the components, since the primal
+ *   Master Problem hosts the Block [see host_Block()]; with the dual one,
+ *   only FRowConstraint containing a LinearFunction of the ColVariable,
+ *   which it has as multipliers;
  *
  * - either its Objective is a FRealObjective containing a C05Function, and
  *   it has no sub-Block;
@@ -2817,11 +2820,11 @@ public:
 /*--------------------------------------------------------------------------*/
  /// whether an empty master problem may be the domain rather than an error
  /** The master problem is empty for real only if something in it cuts the
-  * space: the vertical linearizations, or the linear Constraint of the Block
-  * [see v_lc_A]; otherwise an empty master is a numerical error. */
+  * space: the vertical linearizations, or the Constraint of the Block [see
+  * v_lc_A and f_host]; otherwise an empty master is a numerical error. */
 
  bool may_be_empty( void ) const {
-  return( get_bc_size() || ( ! v_lc_A.empty() ) );
+  return( get_bc_size() || ( ! v_lc_A.empty() ) || f_host );
   }
 
 /*--------------------------------------------------------------------------*/
@@ -3129,6 +3132,43 @@ public:
   * first master writes one that is not. */
 
  [[nodiscard]] bool lc_feasible( const Vec_VarValue & x ) const;
+
+/*--------------------------------------------------------------------------*/
+ /// whether the primal master hosts the Block
+ /** The primal master hosts the Block [see
+  * MasterProblemBlock::set_hosted_Block()] if the coordinates are all
+  * ColVariable of the Block itself, and the Block has some Constraint other
+  * than the box; otherwise the master has the linear Constraint as rows
+  * [see read_linear_constraints()], and the Block cannot have any other. */
+
+ [[nodiscard]] bool host_Block( void ) const;
+
+/*--------------------------------------------------------------------------*/
+ /// whether x is in the feasible set X of the Constraint of the Block
+ /** With the rows, this is lc_feasible(). With the Block hosted, x is
+  * written in the ColVariable, and each RowConstraint of the Block other
+  * than the box is checked as lc_feasible() does; the other Variable of the
+  * Block have what the master has last given them, so that a point found
+  * in X is so, while one found out of it may not be, which only makes it
+  * have value + INF, i.e., the first point of the master a serious step.
+  * The same holds for a Constraint that is not a RowConstraint. */
+
+ [[nodiscard]] bool in_X( const Vec_VarValue & x );
+
+/*--------------------------------------------------------------------------*/
+ /// take the rows binding the hosted Block out of the master
+ /** The master has to lose them before it loses a coordinate [see
+  * MasterProblemBlock::remove_vars()]; rebind_host() gives them back. */
+
+ void unbind_host( void );
+
+/*--------------------------------------------------------------------------*/
+ /// bind the hosted Block to the coordinates, if not already so
+ void rebind_host( void );
+
+/*--------------------------------------------------------------------------*/
+ /// whether \p f is the Function of a Constraint of the Block
+ [[nodiscard]] bool root_row_function( const Function * f ) const;
 
 /*--------------------------------------------------------------------------*/
  /// the value of the 0-th component at Lambda, + INF out of the feasible set
@@ -4236,6 +4276,12 @@ public:
  std::unordered_set< const Function * > f_lc_fun;
                          ///< their LinearFunction [see
                          ///< process_outstanding_Modification()]
+
+ bool f_host = false;    ///< whether the master hosts the Block [see
+                         ///< host_Block()]
+ std::vector< ColVariable * > v_host_x;
+                         ///< the ColVariable the master has the hosted
+                         ///< Block bound with, empty if none
 
  bool f_lc_lmb_ok = true;   ///< whether Lambda satisfies the v_lc_A
  bool f_lc_lmb1_ok = true;  ///< whether Lambda1 does
