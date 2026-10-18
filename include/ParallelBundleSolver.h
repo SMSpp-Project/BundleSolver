@@ -328,9 +328,13 @@ public:
  /* Performs the parallel inner loop: keeps (at most) MaxThread evaluations
   * running, each one compute()-ing a different component, up until the
   * conditions to stop are satisfied or there no longer are available
-  * components to evaluate. */
+  * components to evaluate. With all = true every component is evaluated
+  * by InnerLoopOrdered() in batch mode, whatever intParFrm says: nothing is
+  * to be gained by consuming the evaluations as they end when all of them
+  * are waited for anyway, and in the order of the sequential version the
+  * bundle follows the same path [see BundleSolver::InnerLoop()]. */
 
- Index InnerLoop( bool extrastep = false ) override;
+ Index InnerLoop( bool extrastep = false , bool all = false ) override;
 
 /*--------------------------------------------------------------------------*/
  /* Deterministic variant of the parallel inner loop: ready std::future are

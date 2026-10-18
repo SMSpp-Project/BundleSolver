@@ -4698,43 +4698,21 @@ bool BundleSolver::integer_evaluate( double & tot_time , long & tot_NrEvls )
 {
  CurrNrEvls.assign( NrFi , Index( 0 ) );
  MPchgs = 0;
- bool go_on = true;
 
  const auto start = std::chrono::system_clock::now();
- while( FindNext() ) {
-  FiAndGi( f_wFi , true );
-
-  // kLowPrecision is not an error [see InnerLoop()]
-  if( ( FiStatus[ f_wFi ] <= kUnEval ) ||
-      ( ( FiStatus[ f_wFi ] >= kError ) &&
-	( FiStatus[ f_wFi ] != kLowPrecision ) ) ) {
-   Result = kError;
-   go_on = false;
-   break;
-   }
-
-  ++CurrNrEvls[ f_wFi ];
-
-  // a component that is -INF somewhere is -INF everywhere [see InnerLoop()]
-  if( UpFiLmb1[ f_wFi ] == -INFshift ) {
-   Result = kUnbounded;
-   go_on = false;
-   break;
-   }
-
-  if( ( MaxTime < INFshift ) && ( get_elapsed_time() > MaxTime ) ) {
-   Result = kStopTime;
-   go_on = false;
-   break;
-   }
-  }
-
+ InnerLoop( false , true );
  const std::chrono::duration< double > elapsed =
                                   std::chrono::system_clock::now() - start;
  tot_time += elapsed.count();
  tot_NrEvls += std::accumulate( CurrNrEvls.begin() , CurrNrEvls.end() , 0 );
 
- return( go_on );
+ // a component that is -INF somewhere is -INF everywhere [see InnerLoop()]
+ if( ( Result != kError ) && ( Result != kStopTime ) &&
+     ( UpFiLmb1.back() == -INFshift ) )
+  Result = kUnbounded;
+
+ return( ( Result != kError ) && ( Result != kStopTime ) &&
+         ( Result != kUnbounded ) );
 
  }  // end( BundleSolver::integer_evaluate )
 
@@ -5537,7 +5515,7 @@ bool BundleSolver::root_row_function( const Function * f ) const
 
 /*--------------------------------------------------------------------------*/
 
-BundleSolver::Index BundleSolver::InnerLoop( bool extrastep )
+BundleSolver::Index BundleSolver::InnerLoop( bool extrastep , bool all )
 {
  // here one might change the value of wFi, corresponding to the first
  // component to be evaluated, if a non-strictly-round-robin order is
@@ -5619,8 +5597,8 @@ BundleSolver::Index BundleSolver::InnerLoop( bool extrastep )
    break;                  // nothing else to do but stop
    }
 
-  if( ( ceval < minceval ) || extrastep )  // too few components compute()-d
-   continue;               // do not stop regardless of MPchgs
+  if( ( ceval < minceval ) || extrastep || all )  // too few components
+   continue;               // compute()-d: do not stop regardless of MPchgs
 
   if( MPchgs ) {           // the MP is guaranteed to change
    // a null step shown on part of the components is deferred if the ones

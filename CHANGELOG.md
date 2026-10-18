@@ -100,6 +100,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- with `intIntVars` 1 the `ParallelBundleSolver` evaluates the components
+  on its threads: the method with integer Variable evaluated them in a loop
+  of its own, which no derived class redefines, and now does it by
+  `InnerLoop()` with the new argument `all`, which evaluates every hard
+  component collecting the linearizations with no stop on a serious or null
+  step; with `all` the `ParallelBundleSolver` consumes the evaluations in
+  the order of the sequential version, hence it takes the same iterations.
+  `integer_test` has several polyhedral components, and the
+  `ParallelBundleSolver` as a second Solver of `BSPar-int.txt`
+
 - the tests are registered with ctest also in a fresh build of the
   umbrella, where `include(CTest)` was commented out and the tests were
   built but never run

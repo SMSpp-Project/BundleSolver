@@ -3060,8 +3060,9 @@ public:
 /*--------------------------------------------------------------------------*/
  /// evaluate every hard component at Lambda1 with integer Variable
  /** Evaluates every hard component at Lambda1, which PrepareLambda1() has
-  * set up, inserting the linearizations in the bundle. tot_time and
-  * tot_NrEvls are increased by the time and the number of the
+  * set up, inserting the linearizations in the bundle, by InnerLoop() with
+  * all = true, hence in parallel in a derived class that evaluates them so.
+  * tot_time and tot_NrEvls are increased by the time and the number of the
   * evaluations. Returns false if the evaluation stops the method, with
   * Result telling why (kError, kUnbounded or kStopTime). */
 
@@ -3357,12 +3358,20 @@ public:
   * "complex and costly" they will likely have checks to understand if the bulk
   * of the computation can be skipped because it has been done already.
   *
+  * The parameter all, if true, means that every (non-easy) component is to
+  * be evaluated, as with extrastep, but with its linearizations collected as
+  * in the normal main loop: no condition for a SS or a NS stops the loop,
+  * which ends when FindNext() finds nothing more to evaluate. This is what
+  * the method with integer Variable needs at each of its trial points [see
+  * integer_evaluate()], and since it is the same hook a derived class
+  * evaluating the components in parallel serves both methods.
+  *
   * The method returns the number of different components evaluated. It may
   * also internally set Result == kError if an irrecoverable error happens
   * during a component compute()-tion or Result == kStopTime if the available
   * running time runs up. */
 
- virtual Index InnerLoop( bool extrastep = false );
+ virtual Index InnerLoop( bool extrastep = false , bool all = false );
 
 /*--------------------------------------------------------------------------*/
  /* Computes Fi[ wFi ]( Lambda1 ). In the "default mode", where getgi == true,
