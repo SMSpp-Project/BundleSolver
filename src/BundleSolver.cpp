@@ -1584,9 +1584,12 @@ void BundleSolver::set_Block( Block * block )
      // continuous and there is no quadratic constraint (the master problem
      // cannot absorb quadratic rows; also, with them the coefficient matrix
      // is stored row-wise, while GetBDesc() hands the master the column-wise
-     // description, see GetBNC())
+     // description, see GetBNC()), nor a PolyhedralFunction in its Objective,
+     // which the MILPSolver writes with columns and rows that are not those
+     // of the Block the master registers
      if( ( ! MILPs->get_num_integer_vars() ) &&
-	 ( ! MILPs->get_numquadrows() ) ) {
+	 ( ! MILPs->get_numquadrows() ) &&
+	 ( ! MILPs->get_num_epigraphs() ) ) {
       // the master registers the inner Block of the easy component as a
       // sub-Block and reads its Objective whole, constant term included,
       // so nothing of its value has to be compensated for from outside
