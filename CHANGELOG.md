@@ -80,6 +80,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   default), so that t increases when the step was too short and decreases
   when it was too long
 
+- the C++20 module `smspp.bundlesolver` (`src/BundleSolver.cppm`), which
+  exports every name that the headers declare at namespace scope and
+  re-exports `smspp.milpsolver`, so that a source file can write `import
+  smspp.bundlesolver;` in place of the `#include` of the headers; it is
+  built with the CMake option `SMSpp_BUILD_MODULE`, as the target
+  `SMS++::BundleSolver_module`. The headers of `BundleSolverML`, which needs
+  Torch, are not in it
+
 ### Changed
 
 - a component whose inner Block has a `PolyhedralFunction` in its Objective,
