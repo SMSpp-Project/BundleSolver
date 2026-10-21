@@ -90,9 +90,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- a component whose inner Block has a `PolyhedralFunction` in its Objective,
-  which a `MILPSolver` now writes as its epigraph, is not easy, as before,
-  since the master registers the Block and not the columns of the epigraph
 - the cutoff that is the global lower bound of the master is no longer called
   a conditional bound (`f_cutoff_LB`, formerly `f_cond_LB`), the conditional
   bound being the one of `Block::get_valid_lower_bound()`; the bound that
