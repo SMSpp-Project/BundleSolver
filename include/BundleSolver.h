@@ -3305,6 +3305,15 @@ public:
 
  void record_level_lower_bound( VarValue lb );
 
+ /// One master attempt; FormD() repeats it after a bounded level restart.
+ void FormD_once( void );
+
+ /// Invalidate an unusable aggregate and request a fresh proximal probe.
+ void recover_level_master( const char * reason );
+
+ /// Bound used to choose targets, distinct from the best certificate.
+ VarValue level_target_LB( void ) const;
+
 /*--------------------------------------------------------------------------*/
  /* Performs a noise reduction step: t is set to dblmxIncr times the largest
   * among its current value and the largest value set by a noise reduction
@@ -3933,6 +3942,11 @@ public:
  ///< value of the centre at which a closed but unconfirmed level gap has
  ///< restarted the target, INFshift if none [see level_gap_closed()]
 
+ Index f_level_recoveries = 0;  ///< bounded retries at the current centre
+ bool f_level_retry = false;   ///< FormD_once() requests another attempt
+ bool f_aggregate_valid = false; ///< fresh, consistent aggregate certificate
+ VarValue f_level_target_LB = -INFshift; ///< restartable target-bound memory
+
  VarValue LStabM;      ///< m_l parameter for level stabilization
 
  VarValue LStabDlt;    ///< initial exogenous Delta fraction, level stab.
@@ -4399,6 +4413,8 @@ public:
   * NrmZFctr \f$ \cdot \f$ dblNZEps, rests on \f$ z^* = 0 \f$, and
   * therefore it is only as safe as dblNZEps is small. */
 
+ // Pure level requires an independently certified closed objective gap;
+ // small projection/aggregate norms remain diagnostics, not global bounds.
  bool IsOptimal( double eps = 0 ) const;
 
  /// a lower bound on f valid whatever z* is, or - INF if there is none

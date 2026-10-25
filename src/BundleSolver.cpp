@@ -511,6 +511,7 @@ int BundleSolver::compute( bool changedvars )
  NRtMax = 0;                // no noise reduction yet in this call
  f_cutoff_LB_off = false;     // the cutoff may be the bound of the master
  f_mp_fail_its = 0;         // the master has not failed yet
+ f_level_recoveries = 0;
 
  // start timer now (so that processing Modification is included) - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -2855,7 +2856,12 @@ void BundleSolver::guts_of_put_State( const BundleSolverState & state )
 
  Fi0Lmb = state.Fi0Lmb;
  f_lc_lmb_ok = in_X( state.Lambda );
- f_global_LB = state.global_LB;
+ // Old states do not distinguish approximate-stationarity bounds from
+ // independently certified ones. Re-establish a level bound from its model.
+ f_global_LB = MPStbl == MasterProblemBlock::kLevel
+               ? -INFshift : state.global_LB;
+ f_level_target_LB = -INFshift;
+ f_aggregate_valid = false;
  f_box_LB = -INFshift;  // not saved: it waits for the next master problem
 
  }  // end( BundleSolver::guts_of_put_State )
@@ -2909,7 +2915,8 @@ bool BundleSolver::level_gap_closed( void ) const
   * accepted: a second sequence of empty levels converging to the same value
   * from far below is no longer a boundary effect, and refusing it would
   * restart the target for ever. */
- if( UsesPrimalMaster() && ( ! MPV2Form ) && ( ! TrueLB ) &&
+ if( MPStbl != MasterProblemBlock::kLevel &&
+     UsesPrimalMaster() && ( ! MPV2Form ) && ( ! TrueLB ) &&
      ( f_level_restart_centre != value ) ) {
   const auto certificate_error = DSTS + Sigma;
   if( ( ! std::isfinite( certificate_error ) ) ||
@@ -2922,8 +2929,21 @@ bool BundleSolver::level_gap_closed( void ) const
 
 /*--------------------------------------------------------------------------*/
 
+BundleSolver::VarValue BundleSolver::level_target_LB( void ) const
+{
+ if( MPStbl != MasterProblemBlock::kLevel )
+  return( reliable_level_LB() );
+ auto lb = f_level_target_LB;
+ if( TrueLB && LowerBound.back() > lb )
+  lb = LowerBound.back();
+ return( lb );
+}
+
+/*--------------------------------------------------------------------------*/
+
 void BundleSolver::reset_level_stabilization( void )
 {
+ f_level_target_LB = -INFshift;
  // the count of consecutive noise-reduction steps refers to the level
  // target being reset here, so it goes with it: keeping it would have the
  // next call stop at its first null step
@@ -2983,7 +3003,7 @@ bool BundleSolver::refresh_level_after_master( bool force )
   return( false );
   }
 
- auto lb = reliable_level_LB();
+ auto lb = level_target_LB();
 
  /* An empty level normally certifies a lower bound.  With a primal
   * displacement master, feasibility tolerances can occasionally classify a
@@ -2999,7 +3019,8 @@ bool BundleSolver::refresh_level_after_master( bool force )
   const bool inconsistent_lb = lb > UpFiLmb.back() + tolerance;
   // at most once per centre [see level_gap_closed()]
   const bool unconfirmed_closed_gap =
-   force && UsesPrimalMaster() && ( ! MPV2Form ) && ( ! TrueLB ) &&
+   force && MPStbl != MasterProblemBlock::kLevel &&
+   UsesPrimalMaster() && ( ! MPV2Form ) && ( ! TrueLB ) &&
    ( f_level_restart_centre != UpFiLmb.back() ) &&
    std::abs( gap ) <= tolerance &&
    ( ( ! std::isfinite( certificate_error ) ) ||
@@ -3069,7 +3090,7 @@ void BundleSolver::update_level_after_step( bool serious_step ,
  if( ! ( UsesLevelStabilization() && f_level_initialized ) )
   return;
 
- auto lb = reliable_level_LB();
+ auto lb = level_target_LB();
  if( lb > -INFshift ) {
   const auto gap = UpFiLmb.back() - lb;
   const auto from_lb = gap > 0 ? ( 1.0 - LStabM ) * gap : 0.0;
@@ -3126,13 +3147,11 @@ void BundleSolver::update_level_after_step( bool serious_step ,
   const bool tiny_progress = ( err < INFshift ) &&
    ( std::abs( DeltaFi ) <= progress_scale );
   bool has_reliable_lb = lb > -INFshift;
-  const bool usable_stagnation_sample =
-   ( ! has_reliable_lb ) || serious_step;
-
-  if( usable_stagnation_sample && tiny_direction && tiny_progress )
+  // A valid global bound does not guarantee a well-conditioned projection.
+  // Persistent tiny null steps must also trigger target recovery; excluding
+  // them can shrink Delta to roundoff while the certified gap remains open.
+  if( tiny_direction && tiny_progress )
    ++LevelStagCntr;
-  else if( has_reliable_lb && ( ! serious_step ) )
-   LevelStagCntr = 0;
   else if( ( ! significant_certificate_error ) ||
            ( ( err < INFshift ) &&
              ( std::abs( DeltaFi ) > 10 * progress_scale ) ) )
@@ -3140,13 +3159,12 @@ void BundleSolver::update_level_after_step( bool serious_step ,
 
   const auto stagnation_limit = std::max< Index >( 3 , MnNSC );
   if( LevelStagCntr >= stagnation_limit ) {
-   /* A bound inferred from previous empty levels or an approximate aggregate
-    * can move with the stalled centre and immediately cap every long-term
-    * Delta increase.  Persistent tiny-direction stagnation is evidence that
-    * this algorithmic bound is not useful for target management.  Discard it
-    * here, but never discard a true bound supplied by the model. */
-   if( ( ! TrueLB ) && ( f_global_LB > -INFshift ) ) {
-    f_global_LB = -INFshift;
+   // Keep an independent certificate even when it is too weak to guide the
+   // next target. Otherwise the same bound immediately caps every escape
+   // and can cause a tiny-step cycle. A later empty-level/model certificate
+   // seeds a fresh sequence of targets; keep the best certificate separately.
+   if( ! TrueLB && f_global_LB > -INFshift ) {
+    f_level_target_LB = -INFshift;
     f_level_LB = -INFshift;
     f_level_reliable_LB = false;
     lb = -INFshift;
@@ -3285,10 +3303,13 @@ void BundleSolver::update_level_after_step( bool serious_step ,
 
 void BundleSolver::record_level_lower_bound( VarValue lb )
 {
- if( lb <= -INFshift )
+ if( ! std::isfinite( lb ) || lb <= -INFshift )
   return;
- if( f_global_LB < lb )
+ if( f_global_LB < lb ) {
   f_global_LB = lb;
+  }
+ if( MPStbl == MasterProblemBlock::kLevel )
+  f_level_target_LB = std::max( f_level_target_LB , lb );
  }
 
 /*--------------------------------------------------------------------------*/
@@ -3347,6 +3368,52 @@ void BundleSolver::global_LB_row( void )
 /*--------------------------------------------------------------------------*/
 
 void BundleSolver::FormD( void )
+{
+ // New oracle cuts change the recovery problem. Bound retries for an
+ // unchanged model, while allowing genuine cutting-plane progress at a NS.
+ if( MPchgs )
+  f_level_recoveries = 0;
+ do {
+  f_level_retry = false;
+  f_aggregate_valid = false;
+  FormD_once();
+  } while( f_level_retry );
+}
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::recover_level_master( const char * reason )
+{
+ f_aggregate_valid = false;
+ Zvalid.assign( NrFi , false );
+ vStar.assign( NrFi + 1 , INFshift );
+ Sigma = DSTS = DST = NrmZ = EpsU = INFshift;
+ if( level_gap_closed() ) {
+  Result = kOK;
+  return;
+  }
+ if( ++f_level_recoveries > 2 ) {
+  BLOG( 1 , " ~ unusable level aggregate (" << reason
+            << "): restart limit reached" << std::endl );
+  Result = kLowPrecision;
+  return;
+  }
+ BLOG( 1 , " ~ unusable level aggregate (" << reason
+           << "): restarting proximal probe " << f_level_recoveries
+           << std::endl );
+ const auto target_bound = f_level_target_LB;
+ reset_level_stabilization();  // keeps the centre and the bundle
+ f_level_target_LB = target_bound;
+ t = tInit;
+ tHasChgd = true;
+ MasterPB->set_t( t );
+ f_level_retry = true;
+ Result = kStillRunning;
+}
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::FormD_once( void )
 {
  // initialize the Master Problem Solver- - - - - - - - - - - - - - - - - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -3747,6 +3814,11 @@ void BundleSolver::FormD( void )
    }
 
   if( mps == Solver::kOK ) {         // everything's alright
+   if( MasterPB && UsesPureLevelStabilization() &&
+       ! MasterPB->aggregate_is_valid() ) {
+    recover_level_master( "normalization" );
+    return;
+    }
    f_easy_first_MP = false;          // see easy_says_it()
 
    /* Deleting items cures a master Solver that fails on the bundle, not
@@ -3776,13 +3848,22 @@ void BundleSolver::FormD( void )
                            : ( mps == Solver::kUnbounded );
 
   if( UsesLevelStabilization() && f_level_initialized &&
-      ( f_level_value < INFshift ) && level_empty ) {
+      ( f_level_value < INFshift ) && level_empty && ! mp_failed ) {
+   // A conclusive empty-level status is the level method's bound update.
+   // It does not require another optimization of the cutting-plane model.
+   if( MPStbl == MasterProblemBlock::kLevel )
+    f_aggregate_valid = false;
    record_level_lower_bound( f_level_value );
+   BLOG( 2 , " ~ empty-level LB = " << def << f_level_value << std::endl );
    if( level_gap_closed() ) {
     Result = kOK;
     return;  // no fresh master solution: compute() uses the gap certificate
     }
    if( ! refresh_level_after_master( true ) ) {
+    if( MPStbl == MasterProblemBlock::kLevel ) {
+     recover_level_master( "empty level refresh made no progress" );
+     return;
+     }
     BLOG( 1 , std::endl
               << "Bundle::FormD: empty level refresh made no progress" );
     // the domain is empty: because of the vertical linearizations or of the
@@ -3793,6 +3874,13 @@ void BundleSolver::FormD( void )
     return;
     }
    continue;
+   }
+
+  // An unreliable pure-level solve is retried with the unit-mass probe;
+  // deleting valid cuts cannot cure an undefined level normalization.
+  if( UsesPureLevelStabilization() && mps != Solver::kStopTime ) {
+   recover_level_master( "master solve" );
+   return;
    }
 
   /* If it's not OK, three things can happen: unfeasible, unbounded, or a
@@ -3976,6 +4064,9 @@ void BundleSolver::FormD( void )
   }  // end ( error-handling loop )- - - - - - - - - - - - - - - - - - - - -
      //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
+ if( Result == kStopTime )
+  return;  // no fresh aggregate exists after an interrupted master solve
+
  // read Sigma* (aggregated linearization error)
  if( MasterPB )
   Sigma = MasterPB->get_aggregated_alpha();
@@ -4015,6 +4106,16 @@ void BundleSolver::FormD( void )
    vStar.back() -= EasyRifFi;
   Sigma += EasyRifFi;
   }
+
+ // Validate before bound publication, aggregate-cut creation or stopping.
+ // The error is meaningful only against a known reference function value.
+ if( MPStbl == MasterProblemBlock::kLevel && RifeqFi &&
+     ( ! std::isfinite( Sigma ) ||
+       Sigma < - max_error( UpRifFi.back() , RelAcc ) ) ) {
+  recover_level_master( "linearization error" );
+  return;
+  }
+ f_aggregate_valid = true;
 
  #if CHECK_BAD_F & 1
   // if so required, check for "very negative Sigma" and print a warning on
@@ -4130,6 +4231,7 @@ void BundleSolver::FormD( void )
  const bool accurate_level_aggregate =
   ( ! UsesPureLevelStabilization() ) ||
   ( DSTS + Sigma <= max_error() );
+
  // and v^* is taken as not positive: an exact oracle guarantees it by
  // convexity, while with an inexact one (or by rounding) the linearizations
  // may be above the function, the errors Sigma negative and v^* positive,
@@ -4138,7 +4240,8 @@ void BundleSolver::FormD( void )
  // with the cutoff as the global lower bound of the master, the bound is one
  // on max{ f , f_cutoff_LB }, hence one on f only if it is above f_cutoff_LB
  // (by more than the accuracy, as otherwise it may just be that row)
- if( ( UpFiLmb.back() < INFshift ) && ( vStar.back() < INFshift ) &&
+ if( ( MPStbl != MasterProblemBlock::kLevel ) && f_aggregate_valid &&
+     ( UpFiLmb.back() < INFshift ) && ( vStar.back() < INFshift ) &&
      ( NrmZFctr < INFshift ) && ( NrmZ <= NrmZFctr * NZEps ) &&
      accurate_level_aggregate ) {
   const auto lb = UpFiLmb.back() + std::min( vStar.back() , VarValue( 0 ) );
@@ -5076,8 +5179,11 @@ void BundleSolver::UpdtCntrs( void )
  if( MasterPB ) {
   // walk every global name; OOBase[i] > 0 means "out of base, removable";
   // a positive theta means "in base", so reset OOBase[i] to 0 (in base)
+  const double mass = MasterPB->uses_pure_level_aggregation()
+                      ? MasterPB->get_level_multiplier() : 1.0;
   for( Index i = 0 ; i < Index( ItemVcblr.size() ) ; ++i )
-   if( ( OOBase[ i ] > 0 ) && ( read_theta_global( i ) >= eps ) )
+   if( ( OOBase[ i ] > 0 ) && mass > 0.0 &&
+       ( read_theta_global( i ) / mass >= eps ) )
     OOBase[ i ] = 0;
   }
 
@@ -6450,6 +6556,7 @@ bool BundleSolver::noise_reduction( void )
 
 void BundleSolver::GotoLambda1( void )
 {
+ f_level_recoveries = 0;
  f_mp_fail_its = 0;  // a serious step: the master failures start over
 
  // compute DeltaFi - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -7437,8 +7544,9 @@ Index BundleSolver::BStrategy( Index wFi )
                                ? MasterPB->get_level_multiplier()
                                : MasterPB->get_lambda();
  const double aggregate_mass_eps =
-  1e-12 * std::max( { std::abs( aggregate_mass ) , double( 1 ) } );
- if( aggregate_mass <= aggregate_mass_eps )
+  1e-12 * ( pure_level_aggregate ? std::abs( aggregate_mass )
+                               : std::max( std::abs( aggregate_mass ) , 1.0 ) );
+ if( ! std::isfinite( aggregate_mass ) || aggregate_mass <= aggregate_mass_eps )
   return( InINF );
 
  // the aggregate is made of the diagonal items alone, with the multipliers
@@ -7559,13 +7667,6 @@ Index BundleSolver::BStrategy( Index wFi )
  // "very full", and therefore also the global pool (for component wFi)
  // is such. The natural choice is to put the new aggregate linearization
  // in the same position in the global pool where whZ was.
- inhibit_Modification( true );
- v_c05f[ wFi ]->store_combination_of_linearizations( coeff ,
-                                                   ItemVcblr[ whZ ].second );
- inhibit_Modification( false );
-
- remove_cut_global( whZ );  // remove the old item in position whZ
-
  // materialise the V2 aggregate cut:
  //   g* = (1/mass) sum_i theta_i g_i
  //   a* = (1/mass) (sum_i theta_i a_i + gamma LB)
@@ -7580,6 +7681,14 @@ Index BundleSolver::BStrategy( Index wFi )
 
  const double Ai =
   MasterPB->get_raw_aggregated_alpha_with_LB( hard_k( wFi ) ) / aggregate_mass;
+
+ // Read the complete aggregate before overwriting/removing its destination:
+ // that destination may itself carry positive weight in the combination.
+ inhibit_Modification( true );
+ v_c05f[ wFi ]->store_combination_of_linearizations( coeff ,
+                                                   ItemVcblr[ whZ ].second );
+ inhibit_Modification( false );
+ remove_cut_global( whZ );
 
  // First remove any pre-existing cut at slot whZ, then re-add the
  // aggregated one
@@ -8249,6 +8358,11 @@ bool BundleSolver::IsOptimal( double eps ) const
  // noise-reduction logic in compute() increase t and re-solve the master.
  if( Sigma < - err )
   return( false );
+
+ if( MPStbl == MasterProblemBlock::kLevel )
+  // A norm tolerance alone is not an objective-accuracy certificate. Also
+  // exclude a zero synthesized from an unavailable projection aggregate.
+  return( level_gap_closed() );
 
  // the bound of box_lower_bound() is a true one: within err of the value
  // at the centre, the centre is optimal whatever z* is
