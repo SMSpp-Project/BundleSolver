@@ -49,6 +49,12 @@ ifdef BNDSLVML
     BNDSLVH += $(BNDSLVSDR)/include/BundleSolverML.h
 endif
 
+# the C++20 module smspp.bundlesolver - - - - - - - - - - - - - - - - - - - -
+# [see makefile-mod of SMS++]
+
+$(eval $(call SMSppMODrule,BNDSLV,$(BNDSLVSDR),BundleSolver,\
+	smspp.bundlesolver,$(MILPSMOD)))
+
 # clean - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 clean::
