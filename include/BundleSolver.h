@@ -729,9 +729,9 @@ public:
   *
   *      EpsU = ( Sigma + D_{tStar}*( z* ) ) / max( | FiVal | , 1 ) ,
   *
-  *   where Sigma = \sum_i Fi[ i ]_{B,Lambda}*( z[ i ]* ) + \sigma_L( w ) and
+  *   where Sigma = Sum_i Fi[ i ]_{B,Lambda}*( z[ i ]* ) + sigma_L( w ) and
   *   z* = - Sum_i z[ i ]* is the optimal solution of the stabilized Dual
-  *   Master Problem, and FiVal =  \sum_i Fi[ i ]( Lambda ) is the function
+  *   Master Problem, and FiVal = Sum_i Fi[ i ]( Lambda ) is the function
   *   value in the current point, is used as an estimate of the relative
   *   gap between the current and the optimal solution; that is, IsOptimal()
   *   returns true if EpsU <= RelAcc. Thus, the number RelAcc / EpsU is
@@ -1089,7 +1089,7 @@ public:
   *              decrease or increase is partitioned between the different
   *              components. currently available formulae are:
   *
-  *              = 0: all \beta_k = 1 / number of non-easy components
+  *              = 0: all beta_k = 1 / number of non-easy components
   *
   *              note that the values of these bits is only significant if
   *              at least one among the bits 0, 1 and 2 is 1.
@@ -1761,10 +1761,10 @@ public:
   *   as follows. They must have the same length. Then, for every
   *   h = 0, 1, ...,
   *   n_components() - 1, the parameter vstr_C05_SPAR_Names[ i ] is set to
-  *   value <prefix>"_h"<suffix>, where <prefix> is the first part of
+  *   value \<prefix\>"_h"\<suffix\>, where \<prefix\> is the first part of
   *   vstr_C05_SPAR_Vals[ i ] up until the rightmost "." (if any) excluded,
-  *   while <suffix> is the last part of vstr_C05_SPAR_Vals[ i ] from the
-  *   rightmost "." included up untile the end (empty if there is no ".").
+  *   while \<suffix\> is the last part of vstr_C05_SPAR_Vals[ i ] from the
+  *   rightmost "." included up until the end (empty if there is no ".").
   *   The parameter is set as a vector-of-string one containing one single
   *   value if the first 4 characters of vstr_C05_SPAR_Names[ i ] are
   *   exactly "vstr", and as a single string parameter otherwise. This is
@@ -1784,10 +1784,11 @@ public:
   *   length. Then, for every h = 0, 1, ..., n_components() - 1, at every
   *   iteration k [see get_elapsed_iterations()] of every call z [see
   *   get_elapsed_calls()], the parameter vstr_C05_EI_SPAR_Names[ i ] is set
-  *   to value <prefix>"_h_z_k"<suffix>, where <prefix> is the first part of
-  *   vstr_C05_EI_SPAR_Vals[ i ] up until the rightmost "." (if any) excluded,
-  *   while <suffix> is the last part of vstr_C05_EI_SPAR_Vals[ i ] from the
-  *   rightmost "." included up untile the end (empty if there is no ".").
+  *   to value \<prefix\>"_h_z_k"\<suffix\>, where \<prefix\> is the first
+  *   part of vstr_C05_EI_SPAR_Vals[ i ] up until the rightmost "." (if any)
+  *   excluded, while \<suffix\> is the last part of vstr_C05_EI_SPAR_Vals[ i ]
+  *   from the rightmost "." included up until the end (empty if there is no
+  *   ".").
   *   The parameter is set as a vector-of-string one containing one single
   *   value if the first 4 characters of vstr_C05_EI_SPAR_Names[ i ] are
   *   exactly "vstr", and as a single string parameter otherwise. This is

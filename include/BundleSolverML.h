@@ -16,9 +16,7 @@
  *
  * available at
  *
- * \link
  *  https://arxiv.org/abs/2509.24736
- * \endlink
  *
  * BundleSolverML implements the step-size (proximal parameter) prediction
  * part of that approach. The convex multipliers that form the direction are
@@ -433,9 +431,9 @@ class BundleSolverML : public BundleSolver
   *
   * - intMLLoss: the loss of Backward(), 0 (the default) = the
   *   objective-based one, differentiated through the search direction and
-  *   discounted over time, 1 = the step one, \sum_f c_{f+1} \log t_f with
-  *   c_{f+1} the cosine between the new subgradient and the step produced
-  *   by t_f [see Backward()];
+  *   discounted over time, 1 = the step one, \f$ \sum_f c_{f+1} \log t_f \f$
+  *   with \f$ c_{f+1} \f$ the cosine between the new subgradient and the
+  *   step produced by t_f [see Backward()];
   *
   * - intMLFeatures: the features of the network, 0 (the default) = divided
   *   by fixed scales, the network giving t, 1 = dimensionless, the network
