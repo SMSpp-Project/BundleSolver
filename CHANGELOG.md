@@ -122,6 +122,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- a change of the linear `Constraint` drops the global lower bound, as it
+  does the level target: a larger set may have a lower minimum, and with
+  the level stabilization the stale bound, above the new minimum, kept
+  the level gap from closing [see `linear_constraints_test`]
+
+- with the level stabilization the initial probe, which is a proximal
+  master, gives the lower bound of its aggregate as the other masters do:
+  at a stability centre that is already optimal the probe predicts no
+  decrease, the level goes to the centre, and its master, with no
+  multiplier on the level row, ran out of restarts
+
+- with the level stabilization and a cutoff, a master problem with no
+  usable aggregate first removes the cutoff as its global lower bound,
+  as any other failing master does, and only then restarts the level:
+  with the stability centre within the accuracy of the cutoff, the
+  restarts ran out and `compute()` returned `kLowPrecision` rather than
+  `kCutOff` [see `cutoff_test`]
+
 - the makefiles of the tests and of the tools build also with g++: they
   take the option that stops at the first error and the one of the
   debugging information, which clang++ and g++ spell differently

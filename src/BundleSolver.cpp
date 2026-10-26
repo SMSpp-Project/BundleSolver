@@ -3392,6 +3392,20 @@ void BundleSolver::recover_level_master( const char * reason )
   Result = kOK;
   return;
   }
+ // the cutoff as the global lower bound of the master is the first thing to
+ // go, before any restart: with the centre within the accuracy of it the
+ // level master is degenerate [see the error handling of FormD_once()]
+ if( ( f_cutoff_LB > -INFshift ) && ( ! f_cutoff_LB_off ) ) {
+  f_cutoff_LB_off = true;
+  global_LB_row();
+  if( f_cutoff_LB <= -INFshift ) {
+   BLOG( 1 , " ~ unusable level aggregate (" << reason
+             << "): cutoff bound removed" << std::endl );
+   f_level_retry = true;
+   Result = kStillRunning;
+   return;
+   }
+  }
  if( ++f_level_recoveries > 2 ) {
   BLOG( 1 , " ~ unusable level aggregate (" << reason
             << "): restart limit reached" << std::endl );
@@ -4239,8 +4253,11 @@ void BundleSolver::FormD_once( void )
  // bound is that value, i.e., z^* = 0 still certifies the stop, with no gap
  // with the cutoff as the global lower bound of the master, the bound is one
  // on max{ f , f_cutoff_LB }, hence one on f only if it is above f_cutoff_LB
- // (by more than the accuracy, as otherwise it may just be that row)
- if( ( MPStbl != MasterProblemBlock::kLevel ) && f_aggregate_valid &&
+ // (by more than the accuracy, as otherwise it may just be that row); the
+ // pure level master has no such bound, save at its initial probe, which is
+ // a proximal master
+ if( ( ( MPStbl != MasterProblemBlock::kLevel ) || initial_level_probe ) &&
+     f_aggregate_valid &&
      ( UpFiLmb.back() < INFshift ) && ( vStar.back() < INFshift ) &&
      ( NrmZFctr < INFshift ) && ( NrmZ <= NrmZFctr * NZEps ) &&
      accurate_level_aggregate ) {
@@ -9307,7 +9324,10 @@ void BundleSolver::process_outstanding_Modification( void )
    LwFiLmbdef = NrFi;             // it will have to be recomputed
    }
   UpFiBest = INFshift;            // the best point may be out of the set
-  // a larger set may have a lower minimum, below the level lower bound
+  // a larger set may have a lower minimum, below the global lower bound
+  // and the level one
+  f_global_LB = -INFshift;
+  f_box_LB = -INFshift;
   if( UsesLevelStabilization() )
    reset_level_stabilization();
   };
