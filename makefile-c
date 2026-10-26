@@ -49,7 +49,8 @@ include $(MILPSSDR)/makefile-c
 # define input macros for Torch library makefile, then include it;
 # BundleSolverML is only compiled in if Torch is actually installed
 # at $(Torch_ROOT)
-ifneq ($(wildcard $(subst $\",,$(Torch_ROOT))/include/torch/csrc/api/include/torch/torch.h),)
+BNDSLVTORCHH = $(subst $\",,$(Torch_ROOT))/include/torch/csrc/api/include
+ifneq ($(wildcard $(BNDSLVTORCHH)/torch/torch.h),)
     include $(BNDSLVSDR)/../extlib/makefile-libTorch
     BNDSLVML = 1
 endif
