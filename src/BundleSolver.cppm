@@ -39,7 +39,6 @@
 
 module;
 
-#include "BundleSolver.h"
 #include "ParallelBundleSolver.h"
 
 /*--------------------------------------------------------------------------*/
