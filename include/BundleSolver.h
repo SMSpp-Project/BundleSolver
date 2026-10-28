@@ -3304,6 +3304,9 @@ public:
 
  /*--------------------------------------------------------------------------*/
 
+ /// Discard an algorithmic level bound contradicted by a feasible value.
+ bool discard_inconsistent_level_bound( VarValue value );
+
  void record_level_lower_bound( VarValue lb );
 
  /// One master attempt; FormD() repeats it after a bounded level restart.

@@ -949,6 +949,11 @@ int BundleSolver::compute( bool changedvars )
     LmbdBst = Lambda1;
    }
 
+  // A newly evaluated feasible point can disprove an older level bound,
+  // even after that bound has been put aside for target selection.
+  if( discard_inconsistent_level_bound( UpFiBest ) )
+   refresh_level_after_master();
+
   // a point at least as good as asked [see dblUpCutOff and dblLwCutOff]
   // ends compute(): it becomes the stability centre, as at a serious step,
   // so that its value is the one get_lb() / get_ub() report
@@ -3301,6 +3306,29 @@ void BundleSolver::update_level_after_step( bool serious_step ,
 
 /*--------------------------------------------------------------------------*/
 
+bool BundleSolver::discard_inconsistent_level_bound( VarValue value )
+{
+ if( ! UsesLevelStabilization() || ! std::isfinite( value ) ||
+     ! std::isfinite( f_global_LB ) )
+  return( false );
+ const auto tolerance = max_error( value , RelAcc );
+ if( ! std::isfinite( tolerance ) || tolerance < 0 ||
+     f_global_LB <= value + tolerance )
+  return( false );
+
+ BLOG( 1 , " ~ inconsistent algorithmic level LB " << def << f_global_LB
+           << " above evaluated value " << value << ": discarding bound"
+           << std::endl );
+ // A feasible value disproves this bound, but is not a replacement LB.
+ // Keep user-provided bounds, the centre, bundle and master objective.
+ f_global_LB = f_level_target_LB = f_level_LB = -INFshift;
+ f_level_reliable_LB = false;
+ f_level_Delta = 0;
+ return( true );
+}
+
+/*--------------------------------------------------------------------------*/
+
 void BundleSolver::record_level_lower_bound( VarValue lb )
 {
  if( ! std::isfinite( lb ) || lb <= -INFshift )
@@ -3310,6 +3338,9 @@ void BundleSolver::record_level_lower_bound( VarValue lb )
   }
  if( MPStbl == MasterProblemBlock::kLevel )
   f_level_target_LB = std::max( f_level_target_LB , lb );
+ // Reject a new certificate too if a point evaluated earlier disproves it.
+ discard_inconsistent_level_bound( std::min( UpFiBest ,
+                  UpFiLmbdef == NrFi + 1 ? UpFiLmb.back() : INFshift ) );
  }
 
 /*--------------------------------------------------------------------------*/
