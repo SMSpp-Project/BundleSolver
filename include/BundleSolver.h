@@ -3663,6 +3663,43 @@ public:
   }
 
 /*--------------------------------------------------------------------------*/
+ /// the weight of the k-th component [see v_c05w]
+
+ VarValue cw( Index k ) const { return( v_c05w[ k ] ); }
+
+/*--------------------------------------------------------------------------*/
+ /// the linearization coefficients of the k-th component, times its weight
+ /** Each calls C05Function::get_linearization_coefficients() of the k-th
+  * component with the same arguments and multiplies by cw( k ) what it has
+  * written in \p g. */
+
+ template< class... A >
+ void lin_coeffs( Index k , VarValue * g , Range r , A... a ) {
+  v_c05f[ k ]->get_linearization_coefficients( g , r , a... );
+  scale_coeffs( k , g , std::min( r.second ,
+                                  v_c05f[ k ]->get_num_active_var() ) ,
+                r.first );
+  }
+
+ template< class... A >
+ void lin_coeffs( Index k , VarValue * g , c_Subset & s , A... a ) {
+  v_c05f[ k ]->get_linearization_coefficients( g , s , a... );
+  scale_coeffs( k , g , s.size() , 0 );
+  }
+
+ void lin_coeffs( Index k , VarValue * g ) {
+  v_c05f[ k ]->get_linearization_coefficients( g );
+  scale_coeffs( k , g , v_c05f[ k ]->get_num_active_var() , 0 );
+  }
+
+ /// multiplies by cw( k ) the entries of g for the indices in [ f , l )
+ void scale_coeffs( Index k , VarValue * g , Index l , Index f ) {
+  if( const auto w = cw( k ) ; w != 1 )
+   for( Index i = f ; i < l ; ++i )
+    g[ i - f ] *= w;
+  }
+
+/*--------------------------------------------------------------------------*/
  /** Finds the next component to compute in the inner loop, writes is in
   * f_wFi; returns false if there is no other component to compute. */
 
@@ -4193,6 +4230,12 @@ public:
 
  std::vector< C05Function * > v_c05f;
  ///< the vector of (pointers to) the components of the sum function
+
+ std::vector< VarValue > v_c05w;
+ ///< the weight of each component, that of the Objective of its sub-Block
+ ///< [see Block::set_objective_weight()], by which its values, bounds,
+ ///< Lipschitz constant and linearizations are multiplied, and the cutoffs
+ ///< given to it divided [see cw() and lin_coeffs()]
 
  LinearFunction * f_lf;  ///< the 0-th component of the sum function
 

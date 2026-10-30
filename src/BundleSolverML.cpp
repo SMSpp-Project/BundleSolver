@@ -402,8 +402,8 @@ double BundleSolverML::Heuristic( Index whch )
  for( Index i = 0 ; i < get_max_name() ; ++i )
   if( is_bundle_item( i ) ) {
    std::vector< VarValue > G( NumVar );
-   v_c05f[ ItemVcblr[ i ].first ]->get_linearization_coefficients(
-		    G.data() , Range( 0 , NumVar ) , ItemVcblr[ i ].second );
+   lin_coeffs( ItemVcblr[ i ].first ,
+	       G.data() , Range( 0 , NumVar ) , ItemVcblr[ i ].second );
    if( ! f_convex )
     chgsign( G.data() , NumVar );
    G_mat.push_back( std::move( G ) );

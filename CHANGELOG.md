@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- the weight of the Objective of a `Block` [see
+  `Block::set_objective_weight()`]: the value, bounds, Lipschitz constant and
+  linearizations of each component are multiplied by the weight of the
+  Objective of its sub-Block, and the cutoffs given to it divided, in
+  `BundleSolver`, `ParallelBundleSolver` and `BundleSolverML`; a component with
+  a weight is not easy, since the master would have to multiply by it both the
+  Objective of the inner Block and its coupling with the multipliers
+
 - the makefiles build the C++20 module `smspp.bundlesolver` when `SMSppMOD`
   is not empty (e.g., `make SMSppMOD=1`), with clang++ 16 or later [see
   `lib/makefile-mod` of SMS++]

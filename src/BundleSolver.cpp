@@ -1230,6 +1230,7 @@ void BundleSolver::set_Block( Block * block )
               "BundleSolver::set_Block: "
               "can only minimize convex / maximize concave" ) );
   v_c05f.push_back( c05f );
+  v_c05w.push_back( 1 );  // the Objective of f_Block itself
   f_lf = nullptr;
   f_qf = nullptr;
   }
@@ -1295,6 +1296,7 @@ void BundleSolver::set_Block( Block * block )
    }
 
   v_c05f.resize( sb.size() );
+  v_c05w.resize( sb.size() );
 
   for( Index i = 0 ; i < sb.size() ; ++i ) {  // for each sub-block
    // the objective function of each sub-block must be a C05Function - - - - -
@@ -1313,6 +1315,7 @@ void BundleSolver::set_Block( Block * block )
 
    // all have to be the same convexity - - - - - - - - - - - - - - - - - - -
    v_c05f[ i ] = c05f;
+   v_c05w[ i ] = sb[ i ]->get_objective_weight();
    if( ! i )
     f_convex = c05f->is_convex();
    else
@@ -1591,8 +1594,12 @@ void BundleSolver::set_Block( Block * block )
      // cannot absorb quadratic rows; also, with them the coefficient matrix
      // is stored row-wise, while GetBDesc() hands the master the column-wise
      // description, see GetBNC())
+     // a component whose sub-Block has a weight [see v_c05w] is not easy:
+     // the master would have to multiply by it both the Objective of the
+     // inner Block and its coupling with the multipliers, while as a hard
+     // component it has it in its linearizations
      if( ( ! MILPs->get_num_integer_vars() ) &&
-	 ( ! MILPs->get_numquadrows() ) ) {
+	 ( ! MILPs->get_numquadrows() ) && ( cw( k ) == 1 ) ) {
       // the master registers the inner Block of the easy component as a
       // sub-Block and reads its Objective whole, constant term included,
       // so nothing of its value has to be compensated for from outside
@@ -3559,8 +3566,8 @@ void BundleSolver::FormD_once( void )
    continue;
 
   // get the lower bound out of the C05Function
-  auto LwrBndk = f_convex ?   v_c05f[ k ]->get_global_lower_bound()
-                          : - v_c05f[ k ]->get_global_upper_bound();
+  auto LwrBndk = cw( k ) * ( f_convex ?   v_c05f[ k ]->get_global_lower_bound()
+                          :  - v_c05f[ k ]->get_global_upper_bound() );
 
   // use it to update the lower estimate in Lambda
   update_LwFiLambd( k , LwrBndk );
@@ -5360,7 +5367,7 @@ void BundleSolver::PrepareLambda1( bool from_master )
    // computing the upper bound requires the Lipschitz constant and is
    // only done if bit 4 of TrgtMng == 1
    if( ( TrgtMng & 16 ) && ( UpFiLmb[ k ] < INFshift ) ) {
-    c_VarValue Lk = v_c05f[ k ]->get_Lipschitz_constant();
+    c_VarValue Lk = cw( k ) * v_c05f[ k ]->get_Lipschitz_constant();
     if( Lk < INFshift ) {
      UpFiLmb1[ k ] = UpFiLmb[ k ] + Lk * NrmD;
      ++UpFiLmb1def;
@@ -5812,8 +5819,8 @@ bool BundleSolver::FiAndGi( Index wFi , bool getgi )
  if( f_log && ( LogVerb > 3 ) && ( FiStatus[ wFi ] == kLowPrecision ) )
   *f_log << " ~ low precision";
 
- auto ue = fwFi->get_upper_estimate();
- auto le = fwFi->get_lower_estimate();
+ auto ue = cw( wFi ) * fwFi->get_upper_estimate();
+ auto le = cw( wFi ) * fwFi->get_lower_estimate();
 
  if( f_log && ( LogVerb > 3 ) ) {
   *f_log << " ]: UB = "<< def;
@@ -5877,7 +5884,7 @@ bool BundleSolver::update_Fi_estimates( Index wFi , bool getgi ,
   // from +INF to something finite), as the theory requires the upper target
   // is *not* changed
   if( ( TrgtMng & 16 ) && ( UpFiLmb1[ wFi ] < INFshift ) ) {
-   c_VarValue LwFi = fwFi->get_Lipschitz_constant();
+   c_VarValue LwFi = cw( wFi ) * fwFi->get_Lipschitz_constant();
    if( LwFi < INFshift )
     update_UpFiLambd( wFi , UpFiLmb1[ wFi ] + LwFi * NrmD );
    }
@@ -6050,7 +6057,7 @@ void BundleSolver::SetupFiLambda1( Index wFi )
   auto lt = f_convex ? LwCutOff : - UpCutOff;
   if( f_log && ( LogVerb > 3 ) )
    *f_log << " ~ lt = " << def << lt;
-  fwFi->set_par( dblLwCutOff , lt );
+  fwFi->set_par( dblLwCutOff , lt / cw( wFi ) );
   }
 
  if( ( ( TrgtMng & 2 ) && f_convex ) ||
@@ -6058,7 +6065,7 @@ void BundleSolver::SetupFiLambda1( Index wFi )
   auto ut = f_convex ? UpCutOff : - LwCutOff;
   if( f_log && ( LogVerb > 3 ) )
    *f_log << " ~ ut = " << def << ut;
-  fwFi->set_par( dblUpCutOff , ut );
+  fwFi->set_par( dblUpCutOff , ut / cw( wFi ) );
   }
 
  if( TrgtMng & 12 ) {
@@ -6125,17 +6132,17 @@ void BundleSolver::SetupFiLambda( Index wFi )
 
  if( f_convex ) {
   if( TrgtMng & 1 )
-   fwFi->set_par( dblLwCutOff , LwCutOff );
+   fwFi->set_par( dblLwCutOff , LwCutOff / cw( wFi ) );
 
   if( TrgtMng & 2 )
-   fwFi->set_par( dblUpCutOff , UpCutOff );
+   fwFi->set_par( dblUpCutOff , UpCutOff / cw( wFi ) );
   }
  else {
   if( TrgtMng & 1 )
-   fwFi->set_par( dblUpCutOff , - LwCutOff );
+   fwFi->set_par( dblUpCutOff , - LwCutOff / cw( wFi ) );
 
   if( TrgtMng & 2 )
-   fwFi->set_par( dblLwCutOff , - UpCutOff );
+   fwFi->set_par( dblLwCutOff , - UpCutOff / cw( wFi ) );
   }
 
  if( TrgtMng & 12 )
@@ -6212,11 +6219,11 @@ bool BundleSolver::GetGi( Index wFi )
 
   // fetch the item from the Oracle - - - - - - - - - - - - - - - - - - - - -
 
-  fwFi->get_linearization_coefficients( G1k );
+  lin_coeffs( wFi , G1k );
   if( ! f_convex )
    chgsign( G1k , loc_NV );
 
-  auto Alfa1k = rs( fwFi->get_linearization_constant() );
+  auto Alfa1k = rs( cw( wFi ) * fwFi->get_linearization_constant() );
 
   // The master receives the raw cut constant (no promotion to a Lambda-
   // dependent linearization error): each cut is shipped as ( g , alpha_raw )
@@ -6330,7 +6337,7 @@ bool BundleSolver::GetGi( Index wFi )
    // active primal/dual storage convention. Keep the local sign used by the
    // old heuristic accumulators, but do not pre-convert the master copy.
    Alfa1k = - Alfa1k;
-   Alfa1k_for_master = rs( fwFi->get_linearization_constant() );
+   Alfa1k_for_master = rs( cw( wFi ) * fwFi->get_linearization_constant() );
    if( f_sparse_lambda ) {
     ScPr1k = 0;
     const auto & m = v_local2global[ wFi ];
@@ -6725,7 +6732,7 @@ void BundleSolver::ResetAlfa( Index k )
    if( is_bundle_item( i ) ) {
     auto kk = ItemVcblr[ i ].first;
     auto nm = ItemVcblr[ i ].second;
-    auto Ai = rs( v_c05f[ kk ]->get_linearization_constant( nm ) );
+    auto Ai = rs( cw( kk ) * v_c05f[ kk ]->get_linearization_constant( nm ) );
     #ifndef NDEBUG
      if( std::isnan( Ai ) )  // linearization no longer valid
       throw( std::logic_error(
@@ -6734,7 +6741,7 @@ void BundleSolver::ResetAlfa( Index k )
     #endif
 
     // recover the linearization coefficients
-    v_c05f[ kk ]->get_linearization_coefficients( Gi.data() ,
+    lin_coeffs( kk , Gi.data() ,
                                                   Range( 0 , NumVar ) , nm );
     if( ! f_convex )
      chgsign( Gi.data() , NumVar );
@@ -6752,7 +6759,7 @@ void BundleSolver::ResetAlfa( Index k )
  else {             // only that specific component need be reset
   for( Index i = 0 ; i < MaxItem[ k ] ; ++i )
    if( InvItemVcblr[ k ][ i ] < vBPar2.back() ) {
-    auto Ai = rs( v_c05f[ k ]->get_linearization_constant( i ) );
+    auto Ai = rs( cw( k ) * v_c05f[ k ]->get_linearization_constant( i ) );
 
     #ifndef NDEBUG
      if( std::isnan( Ai ) )  // linearization no longer valid
@@ -6762,7 +6769,7 @@ void BundleSolver::ResetAlfa( Index k )
     #endif
 
     // recover the linearization coefficients
-    v_c05f[ k ]->get_linearization_coefficients( Gi.data() ,
+    lin_coeffs( k , Gi.data() ,
                                                  Range( 0 , NumVar ) , i );
     if( ! f_convex )
      chgsign( Gi.data() , NumVar );
@@ -6967,14 +6974,14 @@ void BundleSolver::compute_NrmZFctr( void )
 
    if( f_sparse_lambda ) {  // local coefficients, scattered to global
     const Index loc_NV = v_c05f[ k ]->get_num_active_var();
-    v_c05f[ k ]->get_linearization_coefficients( tg1.data() ,
+    lin_coeffs( k , tg1.data() ,
                                                  Range( 0 , loc_NV ) , i );
     const auto & m = v_local2global[ k ];
     for( Index li = 0 ; li < loc_NV ; ++li )
      tg[ m[ li ] ] += tg1[ li ];
     }
    else {
-    v_c05f[ k ]->get_linearization_coefficients( tg1.data() ,
+    lin_coeffs( k , tg1.data() ,
                                                  Range( 0 , NumVar ) , i );
     std::transform( tg.begin() , tg.end() , tg1.begin() , tg.begin() ,
                     std::plus< VarValue >() );
@@ -7682,7 +7689,7 @@ Index BundleSolver::BStrategy( Index wFi )
 
   const Index loc_NV = f_sparse_lambda ? fwFi->get_num_active_var() : NumVar;
   std::vector< double > gk( loc_NV , 0.0 );
-  fwFi->get_linearization_coefficients( gk.data() , Range( 0 , loc_NV ) ,
+  lin_coeffs( wFi , gk.data() , Range( 0 , loc_NV ) ,
                                         gpp );
   if( ! f_convex )
    chgsign( gk.data() , loc_NV );
@@ -7696,7 +7703,8 @@ Index BundleSolver::BStrategy( Index wFi )
   else
    g = std::move( gk );
 
-  const double alpha = rs( fwFi->get_linearization_constant( gpp ) );
+  const double alpha =
+   rs( cw( wFi ) * fwFi->get_linearization_constant( gpp ) );
 
   remove_cut_global( whZ );
   MasterPB->add_cut( hard_k( wFi ) , int( whZ ) , std::move( g ) , alpha ,
@@ -7905,6 +7913,7 @@ void BundleSolver::guts_of_destructor( void )
  f_sparse_lambda = false;
 
  v_c05f.clear();
+ v_c05w.clear();
 
  f_member2cmp.clear();
  v_groups.clear();  // the members are not owned, the groups are
@@ -7955,7 +7964,7 @@ void BundleSolver::aggregate_components( void )
         ( ! f->has_linearization( true ) ) )
      continue;  // no linearization: it goes first, with norm 0
     std::vector< Function::FunctionValue > g( f->get_num_active_var() );
-    f->get_linearization_coefficients( g.data() );
+    lin_coeffs( k , g.data() );
     double n2 = 0;
     for( auto gi : g )
      n2 += gi * gi;
@@ -8724,7 +8733,7 @@ void BundleSolver::add_to_bundle( Index k , Index i )
  if( f_sparse_lambda ) {
   const Index loc_NV = v_c05f[ k ]->get_num_active_var();
   std::vector< double > Gk( loc_NV );
-  v_c05f[ k ]->get_linearization_coefficients( Gk.data() ,
+  lin_coeffs( k , Gk.data() ,
                                                Range( 0 , loc_NV ) , i );
   const auto & m = v_local2global[ k ];
   for( Index li = 0 ; li < loc_NV ; ++li )
@@ -8735,14 +8744,14 @@ void BundleSolver::add_to_bundle( Index k , Index i )
     G1[ m[ li ] ] = Gk[ li ];
   }
  else
-  v_c05f[ k ]->get_linearization_coefficients( G1.data() ,
+  lin_coeffs( k , G1.data() ,
                                                Range( 0 , NumVar ) , i );
  if( ! f_convex )
   chgsign( G1.data() , NumVar );
 
  // recover the physical raw constant. MasterPB owns the raw -> stored-b
  // translation/sign conversion for both diagonal and vertical cuts.
- auto Ai = rs( v_c05f[ k ]->get_linearization_constant( i ) );
+ auto Ai = rs( cw( k ) * v_c05f[ k ]->get_linearization_constant( i ) );
 
  // append the physical ( G1 , Ai ) cut at slot wh of HardCmps[ k ];
  // MasterProblemBlock stores it in the requested primal/dual representation.
@@ -10653,7 +10662,7 @@ void BundleSolver::process_outstanding_Modification( void )
      const auto & subset = local_indices[ k ];
      if( ! subset.empty() ) {
       std::vector< double > local( subset.size() );
-      v_c05f[ k ]->get_linearization_coefficients(
+      lin_coeffs( k ,
                        local.data() , subset , true , pool_name );
       for( Index h = 0 ; h < subset.size() ; ++h )
        values[ global_offsets[ k ][ h ] ] = local[ h ];
@@ -10664,7 +10673,7 @@ void BundleSolver::process_outstanding_Modification( void )
       throw( std::logic_error(
                  "BundleSolver::process_outstanding_Modification: "
                  "dense component has too few active Variables" ) );
-     v_c05f[ k ]->get_linearization_coefficients(
+     lin_coeffs( k ,
                  values.data() , Range( first , first + nadd ) , pool_name );
      }
 
@@ -10949,7 +10958,7 @@ void BundleSolver::process_outstanding_Modification( void )
    std::vector< VarValue > Gi( loc_NV );
    for( auto i : Cchg[ k ] )
     if( InvItemVcblr[ k ][ i ] < vBPar2.back() ) {
-     auto Ai = rs( v_c05f[ k ]->get_linearization_constant( i ) );
+     auto Ai = rs( cw( k ) * v_c05f[ k ]->get_linearization_constant( i ) );
 
      #ifndef NDEBUG
       if( std::isnan( Ai ) )  // linearization no longer valid
@@ -10968,7 +10977,7 @@ void BundleSolver::process_outstanding_Modification( void )
      // direction along which the true Fi worsens. So push both g and the
      // constant through modify_cut. chgsign matches the convex-min space of
      // get_linearization_coefficients for concave problems
-     v_c05f[ k ]->get_linearization_coefficients( Gi.data() ,
+     lin_coeffs( k , Gi.data() ,
                                                   Range( 0 , loc_NV ) , i );
      if( ! f_convex )
       chgsign( Gi.data() , loc_NV );
@@ -11138,7 +11147,7 @@ void BundleSolver::CheckAlpha( void )
 
  for( Index i = 0 ; i < get_max_name() ; ++i )
   if( is_bundle_item( i ) ) {
-   v_c05f[ ItemVcblr[ i ].first ]->get_linearization_coefficients( G.data() ,
+   lin_coeffs( ItemVcblr[ i ].first , G.data() ,
                                                         Range( 0 , NumVar ) ,
                                                      ItemVcblr[ i ].second );
    if( ! f_convex )
@@ -11227,7 +11236,7 @@ void BundleSolver::PrintBundle( void )
   auto j = ItemVcblr[ i ].second;
   *wlog << wFi << "\t" << j << "\t[ ";
 
-  v_c05f[ wFi ]->get_linearization_coefficients( G.data() ,
+  lin_coeffs( wFi , G.data() ,
                                                  Range( 0 , NumVar ) , j );
   if( ! f_convex )
    chgsign( G.data() , NumVar );
@@ -11236,7 +11245,7 @@ void BundleSolver::PrintBundle( void )
    *wlog << G[ h ] << ", ";
 
   *wlog << G.back() << " ]\t"
-         << rs( v_c05f[ wFi ]->get_linearization_constant( j ) )
+         << rs( cw( wFi ) * v_c05f[ wFi ]->get_linearization_constant( j ) )
          << "\t" << read_alpha_global( i ) << std::endl;
   }
  }

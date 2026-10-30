@@ -277,8 +277,8 @@ BundleSolver::Index ParallelBundleSolver::InnerLoop( bool extrastep ,
 
   // collect function values (upper and lower bound)- - - - - - - - - - - - -
   auto fwFi = v_c05f[ wFi ];
-  auto ue = fwFi->get_upper_estimate();
-  auto le = fwFi->get_lower_estimate();
+  auto ue = cw( wFi ) * fwFi->get_upper_estimate();
+  auto le = cw( wFi ) * fwFi->get_lower_estimate();
 
   #if VERBOSE_LOG
    if( f_log && ( LogVerb > 3 ) ) {
@@ -412,8 +412,8 @@ BundleSolver::Index ParallelBundleSolver::InnerLoop( bool extrastep ,
 
   // collect function values (upper and lower bound)- - - - - - - - - - - - -
   auto fwFi = v_c05f[ wFi ];
-  auto ue = fwFi->get_upper_estimate();
-  auto le = fwFi->get_lower_estimate();
+  auto ue = cw( wFi ) * fwFi->get_upper_estimate();
+  auto le = cw( wFi ) * fwFi->get_lower_estimate();
 
   #if VERBOSE_LOG
    if( f_log && ( LogVerb > 3 ) ) {
@@ -602,8 +602,8 @@ BundleSolver::Index ParallelBundleSolver::InnerLoopOrdered( bool extrastep ,
 
   // collect function values (upper and lower bound)- - - - - - - - - - - - -
   auto fwFi = v_c05f[ wFi ];
-  auto ue = fwFi->get_upper_estimate();
-  auto le = fwFi->get_lower_estimate();
+  auto ue = cw( wFi ) * fwFi->get_upper_estimate();
+  auto le = cw( wFi ) * fwFi->get_lower_estimate();
 
   #if VERBOSE_LOG
    if( f_log && ( LogVerb > 3 ) ) {
