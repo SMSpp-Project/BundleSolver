@@ -98,22 +98,10 @@ built if Torch is available [see Requirements].
 
 These instructions will let you build the `BundleSolver` module on your system.
 
-The module also comes ready-made, in any of
-
-```sh
-sudo add-apt-repository ppa:smspp-project/smspp   # Ubuntu
-sudo apt install libsmspp-bundle-dev
-
-conda install -c conda-forge smspp-project        # Linux, macOS, Windows
-
-brew tap SMSpp-Project/smspp                      # macOS, Linux
-brew install smspp
-
-vcpkg install "smspp[core,bundle]"                # from the sources
-```
-
-where apt and the port give the module alone, while conda and the tap carry
-the whole framework. What follows is about building it yourself.
+The module also comes ready-made: on Ubuntu as `libsmspp-bundle-dev`, in vcpkg
+as `smspp[core,bundle]`, and in the other channels that the [installation
+guide](https://gitlab.com/smspp/smspp-project/-/wikis/Installing-SMS++) of
+SMS++ lists. What follows is about building it yourself.
 
 ### Requirements
 
