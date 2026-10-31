@@ -27,7 +27,8 @@ if (Torch_FOUND)
             if (APPLE)
                 add_link_options("-Wl,-all_load")
             else ()
-                add_link_options("-Wl,--whole-archive,--allow-multiple-definition")
+                add_link_options(
+                    "-Wl,--whole-archive,--allow-multiple-definition")
             endif ()
         endif ()
     endif ()
@@ -44,7 +45,8 @@ if (Torch_FOUND)
                           SMS++::BundleSolverML
                           ${TORCH_LIBRARIES})
 
-    add_executable(BundleSolverMLCheckpoint_test BundleSolverMLCheckpoint_test.cpp)
+    add_executable(BundleSolverMLCheckpoint_test
+                   BundleSolverMLCheckpoint_test.cpp)
     target_link_libraries(BundleSolverMLCheckpoint_test PRIVATE
                           SMS++::BundleSolverML
                           ${TORCH_LIBRARIES})
@@ -59,6 +61,14 @@ if (Torch_FOUND)
                 $<TARGET_FILE_DIR:${modName}ML_test>
                 COMMAND_EXPAND_LISTS
                 COMMENT "Copying runtime DLLs next to ${modName}ML_test.exe")
+        # one link at a time, since two copies of the same DLL into a
+        # directory collide, and Ninja links in parallel
+        get_property(_pools GLOBAL PROPERTY JOB_POOLS)
+        if (NOT _pools MATCHES "smspp_runtime_dlls=")
+            set_property(GLOBAL APPEND PROPERTY JOB_POOLS smspp_runtime_dlls=1)
+        endif ()
+        set_property(TARGET ${modName}ML_test
+                     PROPERTY JOB_POOL_LINK smspp_runtime_dlls)
     endif ()
 
     # the test reads BSPar.txt, BSPar-ML.txt and BSCfg-ML.txt from the working
@@ -86,7 +96,8 @@ if (TARGET SMS++::MILPSolver)
     target_link_libraries(zeroth_quadratic_e2e_test PRIVATE
                           SMS++::BundleSolver
                           SMS++::MILPSolver)
-    # the test reads BSPar-rho.txt and MPBCfg-rho.txt from the working directory
+    # the test reads BSPar-rho.txt and MPBCfg-rho.txt from the working
+    # directory
     add_test(NAME zeroth_quadratic_e2e_test
              COMMAND zeroth_quadratic_e2e_test
              WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
