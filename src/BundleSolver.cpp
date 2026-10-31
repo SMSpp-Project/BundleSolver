@@ -641,12 +641,13 @@ int BundleSolver::compute( bool changedvars )
    if( ( ! UsesPrimalMaster() ) || ( ! MPV2Form ) ||
        ( ( MPStbl != MasterProblemBlock::kProximal ) &&
          ( MPStbl != MasterProblemBlock::kTrustRegion ) &&
+         ( MPStbl != MasterProblemBlock::kNone ) &&
          ( MPStbl != MasterProblemBlock::kLevel ) ) ) {
     Result = kError;
     unlock();
     throw( std::logic_error( "BundleSolver::compute: integer Variable need "
-                             "a primal proximal, trust-region or level "
-                             "Master Problem in raw form" ) );
+                             "a primal proximal, trust-region, level or "
+                             "cutting-plane Master Problem in raw form" ) );
     }
    f_int_var = std::move( iv );
    }
@@ -897,8 +898,9 @@ int BundleSolver::compute( bool changedvars )
                                     ? MasterPB->get_level_multiplier() : 0.0;
   const auto ds_mu = 1.0 + ds_level_multiplier;
   // with the trust region t is a radius, and the heuristic t, which comes
-  // from a quadratic model of the function along -z*, has no meaning
-  const bool trust_region = ( MPStbl == MasterProblemBlock::kTrustRegion );
+  // from a quadratic model of the function along -z*, has no meaning, nor
+  // has t with no stabilization
+  const bool trust_region = ( trust_region_radius() > 0 );
 
   // run iteration-periodic events- - - - - - - - - - - - - - - - - - - - - -
   //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1792,7 +1794,7 @@ void BundleSolver::set_Block( Block * block )
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
  t = tInit;
- Prevt = INFshift;
+ Prevt = NaNshift;
 
  Lambda.resize( NumVar );    // the default starting point
  Lambda1.resize( NumVar );   // the tentative point
@@ -3509,19 +3511,19 @@ void BundleSolver::FormD_once( void )
  const bool empty_bundle = ( NrEasy < NrFi ) &&
                            ( MasterPB ? MasterPB->is_bundle_empty() : true );
  if( empty_bundle ) {
-  if( ( t > tMinor ) && ( Prevt == INFshift ) ) {
+  if( ( t > tMinor ) && std::isnan( Prevt ) ) {
    Prevt = t;
    t = tMinor;
    tHasChgd = true;
    }
   }
  else
-  if( Prevt < INFshift ) {
+  if( ! std::isnan( Prevt ) ) {
    if( t != Prevt ) {
     t = Prevt;
     tHasChgd = true;
     }
-   Prevt = INFshift;
+   Prevt = NaNshift;
    }
 
  // with the trust region, as long as no point of the domain is known the
@@ -3532,8 +3534,8 @@ void BundleSolver::FormD_once( void )
  // domain [see below], and t comes back once a point of the domain is known
  if( MPStbl == MasterProblemBlock::kTrustRegion ) {
   if( UpFiLmb.back() >= INFshift ) {
-   if( f_tr_t0 == 0 )
-    f_tr_t0 = t;
+   if( f_tr_t0 == 0 )  // the t an empty bundle has put aside, if any
+    f_tr_t0 = std::isnan( Prevt ) ? t : Prevt;
    if( t != tMinor ) {
     t = tMinor;
     tHasChgd = true;
@@ -3982,10 +3984,10 @@ void BundleSolver::FormD_once( void )
   // easy components' answer only if the master solved again with t where
   // it was before the empty bundle (Prevt) still gives it
   if( easy_answer && ( primal_empty || primal_unbounded ) &&
-      ( ! t_restored ) && ( Prevt < INFshift ) ) {
+      ( ! t_restored ) && ( ! std::isnan( Prevt ) ) ) {
    t_restored = true;
    t = Prevt;
-   Prevt = INFshift;
+   Prevt = NaNshift;
    if( MasterPB )
     MasterPB->set_t( t );
    BLOG( 2 , std::endl << "Bundle::FormD: MP empty or unbounded with t at "
@@ -4000,6 +4002,16 @@ void BundleSolver::FormD_once( void )
     Result = kInfeasible;             // the MP can really be infeasible
     return;                           // nothing else to do
     }
+   }
+
+  // the cutting-plane master, i.e., with no stabilization or with the
+  // trust region at an infinite t, is unbounded when the cuts do not bound
+  // the model, which deleting items cannot cure
+  if( primal_unbounded && ( ! easy_answer ) && ( ! mp_failed ) &&
+      ( trust_region_radius() == INFshift ) ) {
+   BLOG( 1 , std::endl << "Bundle::FormD: unbounded cutting-plane MP" );
+   Result = kError;
+   return;
    }
 
   if( primal_unbounded ) {            // the MP is (primal) unbounded
@@ -4066,10 +4078,10 @@ void BundleSolver::FormD_once( void )
    // badly scaled problem, the quadratic term vanishing against their
    // data: before giving up, t goes back where it was and the master is
    // solved once more
-   if( ( ! t_restored ) && ( Prevt < INFshift ) ) {
+   if( ( ! t_restored ) && ( ! std::isnan( Prevt ) ) ) {
     t_restored = true;
     t = Prevt;
-    Prevt = INFshift;
+    Prevt = NaNshift;
     if( MasterPB )
      MasterPB->set_t( t );
     BLOG( 2 , std::endl << "Bundle::FormD: MP failure with t at its "
@@ -4492,8 +4504,10 @@ int BundleSolver::continuous_step( Index cnt , bool doubly_stabilized ,
                                    double ds_level_multiplier , double ds_mu )
 {
  // with the trust region t is a radius, and the heuristic t, which comes
- // from a quadratic model of the function along -z*, has no meaning
- const bool trust_region = ( MPStbl == MasterProblemBlock::kTrustRegion );
+ // from a quadratic model of the function along -z*, has no meaning, nor
+ // has t with no stabilization, whose radius is infinite
+ const bool trust_region = ( trust_region_radius() > 0 );
+ const VarValue radius = trust_region_radius();
 
  // avoid the t-changing phase if a vertical linearization has been found- -
  //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -4548,7 +4562,7 @@ int BundleSolver::continuous_step( Index cnt , bool doubly_stabilized ,
  // optimum of the model, which a larger t would not change: if the
  // function does as well there as the target asks, the step is serious
  const bool model_optimum = trust_region &&
-                            ( NrmDInf < t * ( 1 - 1e-6 ) ) &&
+                            ( NrmDInf < radius * ( 1 - 1e-6 ) ) &&
                             ( UpFiLmb1.back() < UpTrgt );
 
  if( ( ! MPchgs ) && ( ! UsesPureLevelStabilization() ) &&
@@ -4608,7 +4622,7 @@ int BundleSolver::continuous_step( Index cnt , bool doubly_stabilized ,
   // a step that has not reached the side of the trust region would not
   // have been changed by a larger one, hence it says nothing about t
   const bool inside_region = trust_region &&
-                             ( NrmDInf < t * ( 1 - 1e-6 ) );
+                             ( NrmDInf < radius * ( 1 - 1e-6 ) );
   if( inside_region )
    BLOG( 1 , " ~ inside the trust region" );
   // Keep the counter/reset policy used by level-target management. For
@@ -4785,8 +4799,10 @@ int BundleSolver::continuous_step( Index cnt , bool doubly_stabilized ,
 int BundleSolver::integer_master( double tm )
 {
  // with the trust region its radius is written in the box below, one per
- // coordinate, and the master has none of its own
- const bool tr = ( MPStbl == MasterProblemBlock::kTrustRegion );
+ // coordinate, and the master has none of its own, as it has none with no
+ // stabilization
+ const bool tr = ( MPStbl == MasterProblemBlock::kTrustRegion ) ||
+                 ( MPStbl == MasterProblemBlock::kNone );
  MasterPB->set_t( tr ? Inf< double >() : tm );
 
  // the local branching on the binary Variable has its own radius, and the
@@ -4837,6 +4853,9 @@ int BundleSolver::integer_master( double tm )
 
 bool BundleSolver::integer_region_full( void ) const
 {
+ if( MPStbl == MasterProblemBlock::kNone )
+  return( true );
+
  if( MPStbl == MasterProblemBlock::kTrustRegion )
   return( ( f_int_frac >= 1 ) && ( ! f_int_nofull ) );
 
@@ -5013,6 +5032,12 @@ int BundleSolver::integer_direction( void )
   rc = integer_master( Inf< double >() );
 
   if( rc == Solver::kUnbounded ) {  // X is not bounded
+   if( MPStbl == MasterProblemBlock::kNone ) {
+    BLOG( 1 , " ~ unbounded cutting-plane master with no stabilization"
+              << std::endl );
+    Result = kError;
+    return( eIntStop );
+    }
    if( ! f_int_centre ) {
     BLOG( 1 , " ~ unbounded cutting-plane master with no centre"
               << std::endl );
@@ -5301,7 +5326,12 @@ void BundleSolver::FormLambda1( double Tau )
  if( MasterPB ) {
   const auto d = MasterPB->get_d_vector();
   const double t_master = MasterPB->get_t();
-  const double scale = ( t_master != 0.0 ) ? ( Tau / t_master ) : 1.0;
+  // the step of the trust region is not proportional to t, nor is an
+  // infinite t one to scale
+  const double scale = ( ( trust_region_radius() > 0 ) ||
+                         ( t_master == 0.0 ) || ( Tau == t_master ) ||
+                         ( ! std::isfinite( t_master ) ) )
+                       ? 1.0 : ( Tau / t_master );
   for( Index i = 0 ; i < NumVar ; ++i )
    Lambda1[ i ] = Lambda[ i ] + scale * ( i < d.size() ? d[ i ] : 0.0 );
   }
@@ -6802,8 +6832,7 @@ void BundleSolver::SimpleBStrat( void )
  // out of base may well be the ones that bring it there again, and deleting
  // them may make it cycle without ever reaching the domain (as long as no
  // point of it is known the bundle has nothing else), hence they are kept
- const bool keep_vertical =
-  ( MPStbl == MasterProblemBlock::kTrustRegion );
+ const bool keep_vertical = ( trust_region_radius() > 0 );
  auto deletable = [ this , keep_vertical ]( Index i ) {
   return( ( OOBase[ i ] < Inf< SIndex >() ) &&
           ( OOBase[ i ] > SIndex( BPar1 ) ) &&
@@ -8402,7 +8431,7 @@ bool BundleSolver::IsOptimal( double eps ) const
  // declared solved once a previous call had emptied the bundle. The same
  // holds when t was at tMinor already, so that Prevt has not been set
  // (e.g., the radius of the trust region after a sequence of null steps)
- if( ( Prevt < INFshift ) ||
+ if( ( ! std::isnan( Prevt ) ) ||
      ( ( NrEasy < NrFi ) && MasterPB && MasterPB->is_bundle_empty() ) )
   return( false );
 
@@ -8459,7 +8488,7 @@ BundleSolver::VarValue BundleSolver::box_lower_bound( void ) const
  if( Sigma < - max_error() )  // the model is not below f
   return( -INFshift );
 
- const bool trust_region = ( MPStbl == MasterProblemBlock::kTrustRegion );
+ const bool trust_region = ( trust_region_radius() > 0 );
  if( ( ! trust_region ) && ( ( MPStbl != MasterProblemBlock::kProximal ) ||
                              UsesPureLevelStabilization() ) )
   return( -INFshift );
@@ -8806,7 +8835,7 @@ void BundleSolver::reset_bundle( void )
  // and every cut becomes a duplicate -> the bundle stalls in an endless
  // null-step loop. Starting each re-convergence from tInit avoids that
  t = tInit;
- Prevt = INFshift;
+ Prevt = NaNshift;
  if( MasterPB )
   MasterPB->set_t( t );
 

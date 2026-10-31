@@ -565,7 +565,8 @@ public:
  BundleSolver( void ) : CDASolver() , Result( kUnEval ) ,
   NumVar( 0 ) , NrFi( 0 ) , SCalls( 0 ) , ParIter( 0 ) , NrEasy( 0 ) ,
   LHasChgd( true ) , tHasChgd( true ) , MPchgs( 0 ) , G1Norm( 0 ) ,
-  ScPr1( 0 ) , Alfa1( 0 ) , f_global_LB( -INFshift ) , t( 0 ) , Prevt( 0 ) ,
+  ScPr1( 0 ) , Alfa1( 0 ) , f_global_LB( -INFshift ) , t( 0 ) ,
+  Prevt( NaNshift ) ,
   Sigma( 0 ) , DSTS( 0 ) , DeltaFi( 0 ) , EpsU( 0 ) , CSSCntr( 0 ) ,
   CNSCntr( 0 ) , TrueLB( false ) , SSDone( true ) , f_wFi( 0 ) ,
   f_lf( nullptr ) , f_convex( true ) , MasterPB( nullptr ) ,
@@ -1112,7 +1113,17 @@ public:
   *   changes by the significant increases and decreases of the long-term
   *   t-strategies, and a serious step whose d* does not reach the side of
   *   the box does not count towards intMnSSC, since a larger box would not
-  *   have changed it.
+  *   have changed it. dbltMaior, and with it dbltInit, may be
+  *   Inf< double >(), which removes the box.
+  *   With no stabilization (3) the master is the cutting-plane one of
+  *   Kelley, i.e., the one of the trust region with an infinite t whatever
+  *   t is, on the primal MP only (intMPPrimal == 1): it is meant for
+  *   Variable bounded by their box (e.g., binary), since the master is
+  *   unbounded below as long as the cuts do not bound the model, which then
+  *   stops the method with kError. t, and all that moves it, has no effect,
+  *   and D*_t( z* ) is 0, so that the stopping test is Sigma* <=
+  *   dblRelAcc * | Fi |, i.e., the gap between the value of the centre and
+  *   the one of the master.
   *
   * - intMPPrimal [0]: tells which formulation should be used for the Master
   *                    Problem. If 1 then the primal version of the MP will be
@@ -1204,13 +1215,15 @@ public:
   *   then be primal (intMPPrimal == 1), in raw form (intMPV2Form == 1), and
   *   either proximal (intMPStbl == 0) or level (intMPStbl == 1), which
   *   make it a mixed-integer quadratic problem [see
-  *   integer_level_direction()], or with the trust region (intMPStbl == 4),
-  *   which makes it a mixed-integer linear one that any :MILPSolver can
-  *   solve; its Solver must keep the integer Variable integer (e.g., a
-  *   :MILPSolver with intRelaxIntVars == 0) with an integrality tolerance of
-  *   0, or as small as it allows, since the point of the master is rounded
-  *   before it is evaluated and the linearization there may not cut away the
-  *   point of the master otherwise, and its relative gap has to be tighter
+  *   integer_level_direction()], or with the trust region (intMPStbl == 4)
+  *   or no stabilization (intMPStbl == 3), which make it a mixed-integer
+  *   linear one that any :MILPSolver can solve, the latter being the
+  *   cutting-plane master from the start; its Solver must keep the integer
+  *   Variable integer (e.g., a :MILPSolver with intRelaxIntVars == 0) with
+  *   an integrality tolerance of 0, or as small as it allows, since the
+  *   point of the master is rounded before it is evaluated and the
+  *   linearization there may not cut away the point of the master
+  *   otherwise, and its relative gap has to be tighter
   *   than dblRelAcc. Otherwise compute() throws std::logic_error; the
   *   bundle is never cleaned of the linearizations that are not in the
   *   optimal base, since without the multipliers of a continuous master
@@ -3201,6 +3214,20 @@ public:
   return( MPStbl == MasterProblemBlock::kLevel );
   }
 
+/*--------------------------------------------------------------------------*/
+ /// the radius of the trust region: t, or infinite with no stabilization
+ /** The radius \f$ \| d^* \|_\infty \f$ is measured against in the
+  * stabilizations whose master is that of the trust region, i.e., t under
+  * #kTrustRegion and \f$ \infty \f$ with no stabilization (#kNone), whose
+  * master is the one of the trust region with an infinite t [see
+  * MasterProblemBlock::has_trust_region()]; 0 for the other ones. */
+
+ [[nodiscard]] VarValue trust_region_radius( void ) const {
+  if( MPStbl == MasterProblemBlock::kNone )
+   return( INFshift );
+  return( MPStbl == MasterProblemBlock::kTrustRegion ? t : 0 );
+  }
+
  /*--------------------------------------------------------------------------*/
 
  /// true if an empty or unbounded master can be the easy components' answer
@@ -4095,7 +4122,8 @@ public:
   * created or the easy components last changed [see easy_says_it()] */
  VarValue Prevt;       ///< what t were before being changed for funny reasons
  /**< the value of t before an empty bundle brought it down to tMinor,
-  * INFshift if t has not been changed so; FormD() restores it as soon as
+  * NaNshift if t has not been changed so (t may be INFshift [see
+  * dbltMaior]); FormD() restores it as soon as
   * the bundle is not empty, or within the same call when the master solved
   * with tMinor is empty or unbounded as an answer of the easy components,
   * or fails with no item left to remove */

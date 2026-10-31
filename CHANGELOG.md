@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- the stabilization `kNone` (`intMPStbl` 3), the cutting-plane method of
+  Kelley on the primal master problem, with continuous and with integer
+  Variable (`intIntVars` 1, the cutting-plane master from the start): t has
+  no effect, the stopping test is the gap between the centre and the master,
+  and an unbounded master stops the method with `kError` rather than
+  emptying the bundle; `trust_region_radius()`, t under the trust region and
+  infinite under `kNone`, is what the step is measured against in the noise
+  reduction and in the counter of the serious steps
+
 - the weight of the Objective of a `Block` [see
   `Block::set_objective_weight()`]: the value, bounds, Lipschitz constant and
   linearizations of each component are multiplied by the weight of the
@@ -157,6 +166,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `cmake/FindGUROBI.cmake` (`cmake/FindCPLEX.cmake` on Windows) searches the
   include directory again whenever it takes the library from the directory of
   the version it finds, so that both come from the same version
+
+- with the trust region, as long as no point of the domain is known each
+  master problem starts from `dbltMinor` and t comes back afterwards, but
+  what came back was the `dbltMinor` an empty bundle had already brought t
+  down to, so that the method went on from there whatever `dbltInit` was;
+  the t an empty bundle puts aside is now held by a NaN rather than by
+  `Inf< double >()`, which t may be (`dbltMaior` and `dbltInit` infinite),
+  and `FormLambda1()` does not scale the step of the trust region, nor one
+  whose t is infinite, which gave NaN with an infinite t
 
 - a change of the linear `Constraint` drops the global lower bound, as it
   does the level target: a larger set may have a lower minimum, and with
