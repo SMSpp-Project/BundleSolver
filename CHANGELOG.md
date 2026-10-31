@@ -130,6 +130,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `cmake/FindCPLEX.cmake` and `cmake/FindGUROBI.cmake` keep the version of a
+  found library in the cache, with the include directory it is read from, and
+  read it again when that directory changes: the check of the cache wanted
+  the version, which was not cached, so that every configure searched the
+  library again
+
 - `cmake/FindCPLEX.cmake` and `cmake/FindGUROBI.cmake` drop the cached paths
   of CPLEX and Gurobi when one of them does not exist any more (e.g., in a
   build directory configured once outside and once inside a container, or
