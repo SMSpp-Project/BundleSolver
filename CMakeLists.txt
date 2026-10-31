@@ -117,6 +117,11 @@ if (BUILD_SHARED_LIBS)
         # for by -u included, even under -dead_strip_dylibs
         target_link_options(${modName} INTERFACE
                 "LINKER:-u,_SMSpp_force_load_${modName}")
+    elseif (MINGW)
+        # the PE linker imports a DLL for the symbols asked for, -u
+        # included
+        target_link_options(${modName} INTERFACE
+                "LINKER:-u,SMSpp_force_load_${modName}")
     endif ()
 endif ()
 
@@ -165,9 +170,21 @@ if (Torch_FOUND)
     add_library(${modName}ML)
     target_compile_features(${modName}ML PUBLIC cxx_std_20)
 
-    if (MSVC AND BUILD_SHARED_LIBS)
-        target_link_options(${modName}ML INTERFACE
-                            "/INCLUDE:SMSpp_force_load_${modName}ML")
+    # the options of the target of the module [see above]
+    if (BUILD_SHARED_LIBS)
+        if (MSVC)
+            target_link_options(${modName}ML INTERFACE
+                    "/INCLUDE:SMSpp_force_load_${modName}ML")
+        elseif (UNIX AND (NOT APPLE))
+            target_link_options(${modName}ML INTERFACE
+                    "LINKER:--no-as-needed")
+        elseif (APPLE)
+            target_link_options(${modName}ML INTERFACE
+                    "LINKER:-u,_SMSpp_force_load_${modName}ML")
+        elseif (MINGW)
+            target_link_options(${modName}ML INTERFACE
+                    "LINKER:-u,SMSpp_force_load_${modName}ML")
+        endif ()
     endif ()
 
     target_sources(${modName}ML PRIVATE src/BundleSolverML.cpp)
