@@ -3200,7 +3200,7 @@ public:
  [[nodiscard]] VarValue Fi0_Lmb1( void ) const
   { return( f_lc_lmb1_ok ? Fi0Lmb1 : INFshift ); }
 
- /*--------------------------------------------------------------------------*/
+ /*-------------------------------------------------------------------------*/
 
  bool UsesLevelStabilization( void ) const {
   return( MPStbl == MasterProblemBlock::kLevel ||
@@ -3208,7 +3208,7 @@ public:
             ! f_tdisc_done ) );
   }
 
- /*--------------------------------------------------------------------------*/
+ /*-------------------------------------------------------------------------*/
 
  bool UsesPureLevelStabilization( void ) const {
   return( MPStbl == MasterProblemBlock::kLevel );
@@ -3228,7 +3228,7 @@ public:
   return( MPStbl == MasterProblemBlock::kTrustRegion ? t : 0 );
   }
 
- /*--------------------------------------------------------------------------*/
+ /*-------------------------------------------------------------------------*/
 
  /// true if an empty or unbounded master can be the easy components' answer
  /** With the easy components, the master problem can be empty or unbounded
@@ -3259,13 +3259,13 @@ public:
   return( f_easy_first_MP || ( ! stabilized ) );
   }
 
- /*--------------------------------------------------------------------------*/
+ /*-------------------------------------------------------------------------*/
 
  bool UsesPrimalMaster( void ) const {
   return( IsMPPrimal && ! ( DoEasy && ( NrEasy > 0 ) ) );
   }
 
- /*--------------------------------------------------------------------------*/
+ /*-------------------------------------------------------------------------*/
  /// index of component \p k among the "hard" ones
 
  /** MasterProblemBlock only keeps a bundle for the "hard" components, and
@@ -3286,7 +3286,7 @@ public:
   return( h );
   }
 
- /*--------------------------------------------------------------------------*/
+ /*-------------------------------------------------------------------------*/
  /// index of component \p k among the "easy" ones
 
  /** The counterpart of hard_k() for the components MasterProblemBlock holds
@@ -3303,33 +3303,33 @@ public:
   return( e );
   }
 
- /*--------------------------------------------------------------------------*/
+ /*-------------------------------------------------------------------------*/
 
  VarValue reliable_level_LB( void ) const;
 
- /*--------------------------------------------------------------------------*/
+ /*-------------------------------------------------------------------------*/
 
  /// Whether a finite centre and reliable bound meet the requested accuracy.
  bool level_gap_closed( void ) const;
 
- /*--------------------------------------------------------------------------*/
+ /*-------------------------------------------------------------------------*/
 
  void reset_level_stabilization( void );
 
- /*--------------------------------------------------------------------------*/
+ /*-------------------------------------------------------------------------*/
 
  void install_level_stabilization( void );
 
- /*--------------------------------------------------------------------------*/
+ /*-------------------------------------------------------------------------*/
 
  bool refresh_level_after_master( bool force = false );
 
- /*--------------------------------------------------------------------------*/
+ /*-------------------------------------------------------------------------*/
 
  void update_level_after_step( bool serious_step , bool gated_update ,
                                VarValue old_ref = INFshift );
 
- /*--------------------------------------------------------------------------*/
+ /*-------------------------------------------------------------------------*/
 
  /// Discard an algorithmic level bound contradicted by a feasible value.
  bool discard_inconsistent_level_bound( VarValue value );
