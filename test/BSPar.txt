@@ -28,49 +28,52 @@ ComputeConfig # exact type of the ComputeConfig object
 1  # f_diff == 0 ==> all non-provided parameters are set to the default value
    # f_diff == 1 ==> all non-provided parameters are not changed
 
-6 # number of integer parameters
+6  # number of integer parameters
 
 # now all the integer parameters
 intMaxIter   1000 # MaxIter, max number of iterations for each call
 intLogVerb      0 # LogVerb, log verbosity of main Bundle algorithm
 intBPar2      100 # max bundle size per component
-intMnSSC        0 # min number of consecutive SS with the same t for a t increase
-intMnNSC        1 # min number of consecutive NS with the same t for a t decrease
-inttSPar1      12 # long-term t-strategy (0 = none, 4 = soft, 8 = hard, 12 = balancing)
+intMnSSC        0 # min number of consecutive SS with the same t for a t
+                  # increase
+intMnNSC        1 # min number of consecutive NS with the same t for a t
+                  # decrease
+inttSPar1      12 # long-term t-strategy (0 = none, 4 = soft, 8 = hard, 12 =
+                  # balancing)
 
-3 # number of double parameters
+3  # number of double parameters
 
 # now all the double parameters
 dblRelAcc    1e-6 # relative accuracy required to solution
-dbltStar     1e+2 # stopping parameter: multiplied to || residual || to estimate gap
+dbltStar     1e+2 # stopping parameter: multiplied to || residual || to
+                  # estimate gap
 dbltInit        1 # initial value for t
 
-1 # number of string parameters
+1  # number of string parameters
 
 # now all the string parameters
 strMPBSolverCfg MPBCfg.txt # BlockSolverConfig of the Solver of the master
 
-0 # number of vector-of-int parameters
+0  # number of vector-of-int parameters
 
 # now all the vector-of-int parameters
 # [none]
 
-0 # number of vector-of-double parameters
+0  # number of vector-of-double parameters
 
 # now all the vector-of-double parameters
 # [none]
 
-0 # number of vector-of-string parameters
+0  # number of vector-of-string parameters
 
 # now all the vector-of-string parameters
 # [none]
 
 # pointer to the "extra" Configuration
-* # [none]
+*  # [none]
 
-# end of 1st ComputeConfig - - - - - - - - - - - - - - - - - - - - - - - - - -
-
-# end of BlockSolverConfig - - - - - - - - - - - - - - - - - - - - - - - - - -
+# end of 1st ComputeConfig - - - - - - - - - - - - - - - - - - - - - - - - -
+# end of BlockSolverConfig - - - - - - - - - - - - - - - - - - - - - - - - -
 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # - - - - - - - - - - - - - - - END BSPar.txt - - - - - - - - - - - - - - - -

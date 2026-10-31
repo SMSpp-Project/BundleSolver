@@ -7,6 +7,7 @@
 # whose optimal value the first has to reach.
 #
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 BlockSolverConfig     # exact type of the Configuration object
 
@@ -22,7 +23,7 @@ BundleSolver          # 2nd: the master does not fail
 
 # now all the ComputeConfig - - - - - - - - - - - - - - - - - - - - - - - - -
 
-# 1st ComputeConfig: the master fails at first - - - - - - - - - - - - - -
+# 1st ComputeConfig: the master fails at first - - - - - - - - - - - - - - -
 *BSCfg-cut.txt +
 
 1  # f_diff == 1 ==> only the entries below are changed
@@ -58,9 +59,9 @@ strMPBSolverCfg MPBCfg-transient.txt  # BlockSolverConfig of the master
 # [none]
 
 # pointer to the "extra" Configuration
-* # [none]
+*  # [none]
 
-# 2nd ComputeConfig: the master does not fail - - - - - - - - - - - - - - -
+# 2nd ComputeConfig: the master does not fail - - - - - - - - - - - - - - - -
 *BSCfg-cut.txt +
 
 1  # f_diff == 1 ==> only the entries below are changed
@@ -96,7 +97,7 @@ strMPBSolverCfg MPBCfg-int.txt  # BlockSolverConfig of the master
 # [none]
 
 # pointer to the "extra" Configuration
-* # [none]
+*  # [none]
 
 # end of BlockSolverConfig - - - - - - - - - - - - - - - - - - - - - - - - -
 

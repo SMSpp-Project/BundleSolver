@@ -7,6 +7,7 @@
 # failures takes [see dblMaxTime].
 #
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 BlockSolverConfig     # exact type of the Configuration object
 
@@ -22,7 +23,7 @@ BundleSolver          # 2nd: time limit
 
 # now all the ComputeConfig - - - - - - - - - - - - - - - - - - - - - - - - -
 
-# 1st ComputeConfig: no time limit- - - - - - - - - - - - - - - - - - - - - -
+# 1st ComputeConfig: no time limit - - - - - - - - - - - - - - - - - - - - -
 *BSCfg-cut.txt +
 
 1  # f_diff == 1 ==> only the entries below are changed
@@ -58,7 +59,7 @@ strMPBSolverCfg MPBCfg-fail.txt  # BlockSolverConfig of the master
 # [none]
 
 # pointer to the "extra" Configuration
-* # [none]
+*  # [none]
 
 # 2nd ComputeConfig: time limit - - - - - - - - - - - - - - - - - - - - - - -
 *BSCfg-cut.txt +
@@ -96,7 +97,7 @@ strMPBSolverCfg MPBCfg-fail.txt  # BlockSolverConfig of the master
 # [none]
 
 # pointer to the "extra" Configuration
-* # [none]
+*  # [none]
 
 # end of BlockSolverConfig - - - - - - - - - - - - - - - - - - - - - - - - -
 

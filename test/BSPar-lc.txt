@@ -11,6 +11,7 @@
 # changes the Constraint between the calls of each of them.
 #
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 BlockSolverConfig     # exact type of the Configuration object
 
@@ -29,10 +30,10 @@ BundleSolver          # 5th: level, dual master, iterate form
 
 # now all the ComputeConfig - - - - - - - - - - - - - - - - - - - - - - - - -
 
-# 1st ComputeConfig: proximal, dual master- - - - - - - - - - - - - - - - - -
+# 1st ComputeConfig: proximal, dual master - - - - - - - - - - - - - - - - -
 *BSCfg-cut.txt
 
-# 2nd ComputeConfig: proximal, primal master- - - - - - - - - - - - - - - - -
+# 2nd ComputeConfig: proximal, primal master - - - - - - - - - - - - - - - -
 *BSCfg-cut.txt +
 
 1  # f_diff == 1 ==> only the entries below are changed
@@ -68,9 +69,9 @@ strMPBSolverCfg MPBCfg-qcp.txt  # the master with the quadratic row
 # [none]
 
 # pointer to the "extra" Configuration
-* # [none]
+*  # [none]
 
-# 3rd ComputeConfig: trust region, dual master- - - - - - - - - - - - - - - -
+# 3rd ComputeConfig: trust region, dual master - - - - - - - - - - - - - - -
 *BSCfg-cut.txt +
 
 1  # f_diff == 1 ==> only the entries below are changed
@@ -106,9 +107,9 @@ intMPStbl       4     # 4 = trust region
 # [none]
 
 # pointer to the "extra" Configuration
-* # [none]
+*  # [none]
 
-# 4th ComputeConfig: trust region, primal master, iterate form- - - - - - - -
+# 4th ComputeConfig: trust region, primal master, iterate form - - - - - - -
 *BSCfg-cut.txt +
 
 1  # f_diff == 1 ==> only the entries below are changed
@@ -146,7 +147,7 @@ strMPBSolverCfg MPBCfg-qcp.txt  # the master with the quadratic row
 # [none]
 
 # pointer to the "extra" Configuration
-* # [none]
+*  # [none]
 
 # 5th ComputeConfig: level, dual master, iterate form - - - - - - - - - - - -
 *BSCfg-cut.txt +
@@ -185,7 +186,7 @@ intMPV2Form     1     # the iterate form
 # [none]
 
 # pointer to the "extra" Configuration
-* # [none]
+*  # [none]
 
 # end of BlockSolverConfig - - - - - - - - - - - - - - - - - - - - - - - - -
 

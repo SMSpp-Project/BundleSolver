@@ -34,7 +34,8 @@ ComputeConfig # exact type of the ComputeConfig object
 
 # now all the integer parameters
 intLogVerb 0 # LogVerb, log verbosity of the MILPSolver
-Presolve   0 # disable presolve so row/bound infeasibility yields a Farkas ray
+Presolve   0 # disable presolve so row/bound infeasibility yields a Farkas
+             # ray
 Method     1 # dual simplex: basic (extreme-point) duals for the Benders cuts
 
 ## All specific CPLEX parameter (uncomment based on Solver)
@@ -51,15 +52,16 @@ Method     1 # dual simplex: basic (extreme-point) duals for the Benders cuts
 #Presolve            0    # 0 = off, 1 = conservative, 2 = aggressive
                           # (default -1)
 
-0 # number of double parameters
+0  # number of double parameters
 
 # now all the double parameters
+# [none]
 
 ## All specific CPLEX parameter (uncomment based on Solver)
 #CPXPARAM_Simplex_Tolerances_Feasibility      1.0e-15
 #CPXPARAM_Simplex_Tolerances_Optimality       1.0e-15
 
-0 # number of string parameters
+0  # number of string parameters
 
 # now all the string parameters
 # [none]
@@ -67,29 +69,29 @@ Method     1 # dual simplex: basic (extreme-point) duals for the Benders cuts
 # All specific HiGHS parameter (uncomment based on Solver)
 #presolve  off
 #solver    ipm
-             # (ipm = interior point: converges to analytic center, unique x*)
+             # (ipm = interior point: converges to analytic center, unique
+             # x*)
 
-0 # number of vector-of-int parameters
+0  # number of vector-of-int parameters
 
 # now all the vector-of-int parameters
 # [none]
 
-0 # number of vector-of-double parameters
+0  # number of vector-of-double parameters
 
 # now all the vector-of-double parameters
 # [none]
 
-0 # number of vector-of-string parameters
+0  # number of vector-of-string parameters
 
 # now all the vector-of-string parameters
 # [none]
 
 # pointer to the "extra" Configuration
-* # [none]
+*  # [none]
 
-# end of 1st ComputeConfig- - - - - - - - - - - - - - - - - - - - - - - - - -
-
-# end of BlockSolverConfig- - - - - - - - - - - - - - - - - - - - - - - - - -
+# end of 1st ComputeConfig - - - - - - - - - - - - - - - - - - - - - - - - -
+# end of BlockSolverConfig - - - - - - - - - - - - - - - - - - - - - - - - -
 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # - - - - - - - - - - - - - END LPPar_inner.txt - - - - - - - - - - - - - - -

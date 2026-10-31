@@ -8,6 +8,7 @@
 # bundle only has the items of the first iteration.
 #
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 BlockSolverConfig     # exact type of the Configuration object
 
@@ -23,11 +24,11 @@ HiGHSMILPSolver       # 2nd: the one that answers after the failures
 
 # now all the ComputeConfig
 # 1st ComputeConfig - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-* # [none]  # it has no parameters to set
+*  # [none]  # it has no parameters to set
 
 # 2nd ComputeConfig - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-ComputeConfig         # exact type of the ComputeConfig object
+ComputeConfig # exact type of the ComputeConfig object
 
 1  # f_diff == 1 ==> all non-provided parameters are not changed
 
@@ -62,10 +63,10 @@ intRelaxIntVars 1     # the continuous relaxation is solved
 # now all the vector-of-string parameters
 # [none]
 
-* # [none]  # no extra Configuration
+# pointer to the "extra" Configuration
+*  # [none]  # no extra Configuration
 
 # end of ComputeConfig - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
 # end of BlockSolverConfig - - - - - - - - - - - - - - - - - - - - - - - - -
 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -

@@ -7,6 +7,7 @@
 # unbounded when it is not.
 #
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 BlockSolverConfig     # exact type of the Configuration object
 
@@ -22,7 +23,7 @@ GRBMILPSolver         # name of Solver
 # now all the ComputeConfig
 # 1st ComputeConfig - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-ComputeConfig         # exact type of the ComputeConfig object
+ComputeConfig # exact type of the ComputeConfig object
 
 1  # f_diff == 1 ==> all non-provided parameters are not changed
 
@@ -62,10 +63,10 @@ OptimalityTol   1e-9  # how much a reduced cost of the master may be off
 # now all the vector-of-string parameters
 # [none]
 
-* # [none]  # no extra Configuration
+# pointer to the "extra" Configuration
+*  # [none]  # no extra Configuration
 
 # end of ComputeConfig - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
 # end of BlockSolverConfig - - - - - - - - - - - - - - - - - - - - - - - - -
 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -

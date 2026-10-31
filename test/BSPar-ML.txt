@@ -10,6 +10,7 @@
 # turn against the plain BundleSolver of BSPar.txt.
 #
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 BlockSolverConfig     # exact type of the Configuration object
 
@@ -72,7 +73,7 @@ intMLModel          1 # RNN core
 # but has to write all the same: an override block that leaves it
 # out is read on to the end of the stream, and so swallows whatever
 # follows it in the enclosing file, i.e. the next ComputeConfig
-* # [none]
+*  # [none]
 
 # 3: GRU core
 *BSCfg-ML.txt +
@@ -113,7 +114,7 @@ intMLModel          2 # GRU core
 # but has to write all the same: an override block that leaves it
 # out is read on to the end of the stream, and so swallows whatever
 # follows it in the enclosing file, i.e. the next ComputeConfig
-* # [none]
+*  # [none]
 
 # 4: LSTM core
 *BSCfg-ML.txt +
@@ -154,7 +155,7 @@ intMLModel          3 # LSTM core
 # but has to write all the same: an override block that leaves it
 # out is read on to the end of the stream, and so swallows whatever
 # follows it in the enclosing file, i.e. the next ComputeConfig
-* # [none]
+*  # [none]
 
 # 5: feed-forward network, step loss
 *BSCfg-ML.txt +
@@ -195,7 +196,7 @@ intMLLoss          1 # the step loss
 # but has to write all the same: an override block that leaves it
 # out is read on to the end of the stream, and so swallows whatever
 # follows it in the enclosing file, i.e. the next ComputeConfig
-* # [none]
+*  # [none]
 
 # 6: RNN core, dimensionless features
 *BSCfg-ML.txt +
@@ -237,7 +238,7 @@ intMLFeatures      1 # dimensionless features
 # but has to write all the same: an override block that leaves it
 # out is read on to the end of the stream, and so swallows whatever
 # follows it in the enclosing file, i.e. the next ComputeConfig
-* # [none]
+*  # [none]
 
 # 7: GRU core, step loss and dimensionless features
 *BSCfg-ML.txt +
@@ -280,7 +281,7 @@ intMLFeatures      1 # dimensionless features
 # but has to write all the same: an override block that leaves it
 # out is read on to the end of the stream, and so swallows whatever
 # follows it in the enclosing file, i.e. the next ComputeConfig
-* # [none]
+*  # [none]
 
 # end of BlockSolverConfig - - - - - - - - - - - - - - - - - - - - - - - - -
 

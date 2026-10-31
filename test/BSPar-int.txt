@@ -61,7 +61,7 @@ intMaxThread    4     # the components are evaluated on 4 threads
 # [none]
 
 # pointer to the "extra" Configuration
-* # [none]
+*  # [none]
 
 # end of BlockSolverConfig - - - - - - - - - - - - - - - - - - - - - - - - -
 

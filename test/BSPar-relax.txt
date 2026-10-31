@@ -6,6 +6,7 @@
 # intIntVars 0 and the proximal stabilization.
 #
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 BlockSolverConfig     # exact type of the Configuration object
 
@@ -55,10 +56,10 @@ intIntVars      0     # the integrality is ignored
 # now all the vector-of-string parameters
 # [none]
 
-* # [none]  # no extra Configuration
+# pointer to the "extra" Configuration
+*  # [none]  # no extra Configuration
 
 # end of ComputeConfig - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
 # end of BlockSolverConfig - - - - - - - - - - - - - - - - - - - - - - - - -
 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
