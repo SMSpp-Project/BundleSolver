@@ -43,7 +43,12 @@
  * - only has "continuous" ColVariable (is_integer() == false);
  *
  * - has no Constraint, except possibly BoxConstraint (upper and/or lower
- *   bounds on the ColVariable);
+ *   bounds on the ColVariable), and any Constraint the Solver of the primal
+ *   Master Problem (intMPPrimal == 1) can read, possibly on Variable of the
+ *   Block other than the ColVariable of the components, since the primal
+ *   Master Problem hosts the Block [see host_Block()]; with the dual one,
+ *   only FRowConstraint containing a LinearFunction of the ColVariable,
+ *   which it has as multipliers;
  *
  * - either its Objective is a FRealObjective containing a C05Function, and
  *   it has no sub-Block;
@@ -133,6 +138,7 @@
 #include <random>
 #include <set>
 #include <unordered_map>
+#include <unordered_set>
 
 #include "CDASolver.h"
 
@@ -215,9 +221,14 @@ namespace SMSpp_di_unipi_it
  *
  * - has no Constraint, except possibly NNConstraint (bounds >= 0) or
  *   BoxConstraint (upper and/or lower bounds) on some of the ColVariable,
- *   but for BoxConstraint the lower bound can only be either 0 or -INF
- *   (general linear constraints would in principle be handled by the
- *   current master problem solver but the interface is not implemented);
+ *   but for BoxConstraint the lower bound can only be either 0 or -INF, and
+ *   FRowConstraint containing a LinearFunction of the ColVariable that the
+ *   C05Function have, which the Master Problem has as rows (the primal
+ *   one) or as multipliers in the aggregate (the dual one); what is
+ *   minimized is then the function plus the indicator of the set they
+ *   define, i.e., + INF out of it, so that a starting point out of it is
+ *   left at the first serious step, the points the master problem gives
+ *   being in it;
  *
  * - the Objective of the Block and of all the sub-Block must be all
  *   FRealObjective containing a C05Function, and:
@@ -452,6 +463,8 @@ public:
 
   dblIntRad ,     ///< growth of the region of the integer method
 
+  dbltSPar4 ,     ///< numerical parameter of the cosine t-heuristic
+
   dblLastBndSlvPar ///< first allowed new double parameter for derived classes
                    /**< Convenience value for easily allow derived classes
                     * to extend the set of double algorithmic parameters. */
@@ -552,7 +565,8 @@ public:
  BundleSolver( void ) : CDASolver() , Result( kUnEval ) ,
   NumVar( 0 ) , NrFi( 0 ) , SCalls( 0 ) , ParIter( 0 ) , NrEasy( 0 ) ,
   LHasChgd( true ) , tHasChgd( true ) , MPchgs( 0 ) , G1Norm( 0 ) ,
-  ScPr1( 0 ) , Alfa1( 0 ) , f_global_LB( -INFshift ) , t( 0 ) , Prevt( 0 ) ,
+  ScPr1( 0 ) , Alfa1( 0 ) , f_global_LB( -INFshift ) , t( 0 ) ,
+  Prevt( NaNshift ) ,
   Sigma( 0 ) , DSTS( 0 ) , DeltaFi( 0 ) , EpsU( 0 ) , CSSCntr( 0 ) ,
   CNSCntr( 0 ) , TrueLB( false ) , SSDone( true ) , f_wFi( 0 ) ,
   f_lf( nullptr ) , f_convex( true ) , MasterPB( nullptr ) ,
@@ -621,6 +635,7 @@ public:
   CmpAggr = get_dflt_dbl_par( dblCmpAggr );
   IncrCost = get_dflt_dbl_par( dblIncrCost );
   IntRad = get_dflt_dbl_par( dblIntRad );
+  tSPar4 = get_dflt_dbl_par( dbltSPar4 );
 
   v_events.resize( max_event_number() );
   }
@@ -715,9 +730,9 @@ public:
   *
   *      EpsU = ( Sigma + D_{tStar}*( z* ) ) / max( | FiVal | , 1 ) ,
   *
-  *   where Sigma = \sum_i Fi[ i ]_{B,Lambda}*( z[ i ]* ) + \sigma_L( w ) and
+  *   where Sigma = Sum_i Fi[ i ]_{B,Lambda}*( z[ i ]* ) + sigma_L( w ) and
   *   z* = - Sum_i z[ i ]* is the optimal solution of the stabilized Dual
-  *   Master Problem, and FiVal =  \sum_i Fi[ i ]( Lambda ) is the function
+  *   Master Problem, and FiVal = Sum_i Fi[ i ]( Lambda ) is the function
   *   value in the current point, is used as an estimate of the relative
   *   gap between the current and the optimal solution; that is, IsOptimal()
   *   returns true if EpsU <= RelAcc. Thus, the number RelAcc / EpsU is
@@ -902,6 +917,13 @@ public:
   *     10 (+512):  Heuristic3 is used
   *     11 (+768):  Heuristic4 is used
   *
+  *   Bit 10 (+1024), if set, replaces the heuristics of bits 6 to 9 with
+  *   Heuristic5 both during a SS and during a NS: t is multiplied by
+  *   exp( - dbltSPar4 c ), with c the cosine of the angle between the new
+  *   subgradient g and the step d from the stability center to the trial
+  *   point, i.e., t increases if < g , d > < 0 (the step was too short)
+  *   and decreases if < g , d > > 0 (it was too long).
+  *
   * - intMaxNrEvls [2]: max number of function evaluations for each
   *                (non-easy) C05Function for each iteration; multiple
   *   iterations may be needed if the C05Function has something like time
@@ -920,28 +942,28 @@ public:
   *     treated as "easy", and with any nonzero value all the "easy"
   *     components are treated as such;
   *
-  *   - bit 3 (+8): the dual values of the easy components are saved at each
+  *   - bit 1 (+2): the dual values of the easy components are saved at each
   *     solution of the Master Problem, so that get_var_solution() can write
   *     back into the easy sub-Block the reduced costs of their ColVariable;
   *
-  *   - bits 2 and 3 together (+12): the same holds for the dual values of
+  *   - bits 1 and 2 together (+6): the same holds for the dual values of
   *     their RowConstraint;
   *
-  *   - bit 4 (+16): the easy components are not scaled by a size Variable,
+  *   - bit 3 (+8): the easy components are not scaled by a size Variable,
   *     i.e., the Master Problem is the one with the mass lambda of the
   *     lower model fixed to 1. Without it, each easy component is scaled
   *     by lambda through a size Variable that its inner Block owns or
   *     takes [see Block::get_size_variable() and
-  *     Block::set_size_variable()], or else, with bit 5, through a copy of
+  *     Block::set_size_variable()], or else, with bit 4, through a copy of
   *     its inner Block; if all of them are, lambda is free, so that the
-  *     global lower bound enters the Master Problem; with bit 4, or if some
+  *     global lower bound enters the Master Problem; with bit 3, or if some
   *     easy component cannot be scaled, lambda is 1 and the global lower
   *     bound
   *     has no effect there, which gives a model that may be cheaper to
   *     solve [see MasterProblemBlock::use_easy_size_variables()]. As which
   *     components are easy, it is read when the Block is set;
   *
-  *   - bit 5 (+32): an easy component whose inner Block neither owns nor
+  *   - bit 4 (+16): an easy component whose inner Block neither owns nor
   *     takes a size Variable is scaled through a copy of its inner Block
   *     [see AbstractBlock::mirror()], sized by lambda [see
   *     AbstractBlock::set_size_variable()], that the Master Problem has in
@@ -949,16 +971,16 @@ public:
   *     the copy cannot follow puts the inner Block back, unscaled, with
   *     lambda fixed to 1 [see MasterProblemBlock::use_easy_mirrors()].
   *     Without it such a component is not scaled. It has no effect with
-  *     bit 4, and it is read when the Block is set.
+  *     bit 3, and it is read when the Block is set.
   *
   *   Hence 1 treats the easy components as such without keeping any of
-  *   their dual values, and 13 also keeps all of them, as needed by whoever
+  *   their dual values, and 7 also keeps all of them, as needed by whoever
   *   reads the dual solution of the easy components [see
   *   get_var_solution()], which throws if asked for dual values that have
-  *   not been kept; 17 and 29 are the same without the size Variable, 33
-  *   and 45 with the copies. Bit 1
-  *   (+2) is unused, and ignored. The structure of an easy component can
-  *   change in any of its parts, which the MasterProblemBlock handles.
+  *   not been kept; 9 and 15 are the same without the size Variable, 17
+  *   and 23 with the copies. Bit 2 (+4) alone, without bit 1, is ignored.
+  *   The structure of an easy component can change in any of its parts,
+  *   which the MasterProblemBlock handles.
   *
   * - intWZNorm [2]: Proving that some point Lambda is epsilon-optimal for a
   *                  NonDifferentiable Optimization problem involves finding
@@ -1068,7 +1090,7 @@ public:
   *              decrease or increase is partitioned between the different
   *              components. currently available formulae are:
   *
-  *              = 0: all \beta_k = 1 / number of non-easy components
+  *              = 0: all beta_k = 1 / number of non-easy components
   *
   *              note that the values of these bits is only significant if
   *              at least one among the bits 0, 1 and 2 is 1.
@@ -1091,7 +1113,17 @@ public:
   *   changes by the significant increases and decreases of the long-term
   *   t-strategies, and a serious step whose d* does not reach the side of
   *   the box does not count towards intMnSSC, since a larger box would not
-  *   have changed it.
+  *   have changed it. dbltMaior, and with it dbltInit, may be
+  *   Inf< double >(), which removes the box.
+  *   With no stabilization (3) the master is the cutting-plane one of
+  *   Kelley, i.e., the one of the trust region with an infinite t whatever
+  *   t is, on the primal MP only (intMPPrimal == 1): it is meant for
+  *   Variable bounded by their box (e.g., binary), since the master is
+  *   unbounded below as long as the cuts do not bound the model, which then
+  *   stops the method with kError. t, and all that moves it, has no effect,
+  *   and D*_t( z* ) is 0, so that the stopping test is Sigma* <=
+  *   dblRelAcc * | Fi |, i.e., the gap between the value of the centre and
+  *   the one of the master.
   *
   * - intMPPrimal [0]: tells which formulation should be used for the Master
   *                    Problem. If 1 then the primal version of the MP will be
@@ -1183,13 +1215,15 @@ public:
   *   then be primal (intMPPrimal == 1), in raw form (intMPV2Form == 1), and
   *   either proximal (intMPStbl == 0) or level (intMPStbl == 1), which
   *   make it a mixed-integer quadratic problem [see
-  *   integer_level_direction()], or with the trust region (intMPStbl == 4),
-  *   which makes it a mixed-integer linear one that any :MILPSolver can
-  *   solve; its Solver must keep the integer Variable integer (e.g., a
-  *   :MILPSolver with intRelaxIntVars == 0) with an integrality tolerance of
-  *   0, or as small as it allows, since the point of the master is rounded
-  *   before it is evaluated and the linearization there may not cut away the
-  *   point of the master otherwise, and its relative gap has to be tighter
+  *   integer_level_direction()], or with the trust region (intMPStbl == 4)
+  *   or no stabilization (intMPStbl == 3), which make it a mixed-integer
+  *   linear one that any :MILPSolver can solve, the latter being the
+  *   cutting-plane master from the start; its Solver must keep the integer
+  *   Variable integer (e.g., a :MILPSolver with intRelaxIntVars == 0) with
+  *   an integrality tolerance of 0, or as small as it allows, since the
+  *   point of the master is rounded before it is evaluated and the
+  *   linearization there may not cut away the point of the master
+  *   otherwise, and its relative gap has to be tighter
   *   than dblRelAcc. Otherwise compute() throws std::logic_error; the
   *   bundle is never cleaned of the linearizations that are not in the
   *   optimal base, since without the multipliers of a continuous master
@@ -1240,8 +1274,8 @@ public:
   *   is the global lower bound of the master, or the largest between it and
   *   the true one, if any [see global_LB_row()]; in a Branch-and-Bound whose
   *   relaxation this solver computes, the cutoff is the value of the
-  *   incumbent, which then stabilizes the dual of the node. Yet L is only a
-  *   conditional bound: what the master proves is a bound on max{ f , L },
+  *   incumbent, which then stabilizes the dual of the node. Yet L is a
+  *   cutoff, not a bound: what the master proves is a bound on max{ f , L },
   *   which is one on f only if it is above L, and only then it is recorded
   *   as the global lower bound that get_lb() / get_ub() report; the level
   *   target is never put below L, so that an empty level keeps proving that
@@ -1630,7 +1664,10 @@ public:
   *   (at least 1 if it is integer), while those with no finite box move by
   *   t, multiplied by dblmxIncr at each enlargement within [ dbltMinor ,
   *   dbltMaior ]; after ceil( 1 / p ) enlargements the stabilization is
-  *   removed altogether. It must be in ( 0 , 1 ]. */
+  *   removed altogether. It must be in ( 0 , 1 ].
+  *
+  * - dbltSPar4 [0.3]: the factor beta >= 0 of Heuristic5 [see bit 10 of
+  *                    inttSPar1], which multiplies t by exp( - beta c ). */
 
  void set_par( idx_type par , double value ) override;
 
@@ -1737,10 +1774,10 @@ public:
   *   as follows. They must have the same length. Then, for every
   *   h = 0, 1, ...,
   *   n_components() - 1, the parameter vstr_C05_SPAR_Names[ i ] is set to
-  *   value <prefix>"_h"<suffix>, where <prefix> is the first part of
+  *   value \<prefix\>"_h"\<suffix\>, where \<prefix\> is the first part of
   *   vstr_C05_SPAR_Vals[ i ] up until the rightmost "." (if any) excluded,
-  *   while <suffix> is the last part of vstr_C05_SPAR_Vals[ i ] from the
-  *   rightmost "." included up untile the end (empty if there is no ".").
+  *   while \<suffix\> is the last part of vstr_C05_SPAR_Vals[ i ] from the
+  *   rightmost "." included up until the end (empty if there is no ".").
   *   The parameter is set as a vector-of-string one containing one single
   *   value if the first 4 characters of vstr_C05_SPAR_Names[ i ] are
   *   exactly "vstr", and as a single string parameter otherwise. This is
@@ -1760,10 +1797,11 @@ public:
   *   length. Then, for every h = 0, 1, ..., n_components() - 1, at every
   *   iteration k [see get_elapsed_iterations()] of every call z [see
   *   get_elapsed_calls()], the parameter vstr_C05_EI_SPAR_Names[ i ] is set
-  *   to value <prefix>"_h_z_k"<suffix>, where <prefix> is the first part of
-  *   vstr_C05_EI_SPAR_Vals[ i ] up until the rightmost "." (if any) excluded,
-  *   while <suffix> is the last part of vstr_C05_EI_SPAR_Vals[ i ] from the
-  *   rightmost "." included up untile the end (empty if there is no ".").
+  *   to value \<prefix\>"_h_z_k"\<suffix\>, where \<prefix\> is the first
+  *   part of vstr_C05_EI_SPAR_Vals[ i ] up until the rightmost "." (if any)
+  *   excluded, while \<suffix\> is the last part of vstr_C05_EI_SPAR_Vals[ i ]
+  *   from the rightmost "." included up until the end (empty if there is no
+  *   ".").
   *   The parameter is set as a vector-of-string one containing one single
   *   value if the first 4 characters of vstr_C05_EI_SPAR_Names[ i ] are
   *   exactly "vstr", and as a single string parameter otherwise. This is
@@ -1932,13 +1970,8 @@ public:
   *  solution found so far is returned. */
 
  VarValue get_lb( void ) override {
-  if( f_convex ) {
-   if( f_global_LB > - INFshift )
-    return( f_global_LB );
-
-   // if LowerBound is not conditional (see Block.h:2728) then return it
-   return( TrueLB ? LowerBound.back() : - INFshift );
-   }
+  if( f_convex )  // the largest of the algorithmic bound and of the true
+   return( global_bound() );  // one, if any [see set_valid_lower_bound()]
   else
    if( ( MaxSol > 1 ) && ( UpFiBest < UpFiLmb.back() ) )
     return( - UpFiBest );
@@ -1958,13 +1991,19 @@ public:
     return( UpFiBest );
    else
     return( UpFiLmb.back() );
-  else {
-   if( f_global_LB > - INFshift )
-    return( - f_global_LB );
+  else
+   return( - global_bound() );
+  }
 
-   // if UpperBound is not conditional (see Block.h:2728) then return it
-   return( TrueLB ? - LowerBound.back() : INFshift );
-   }
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+ /// the best global lower bound on the function the solver minimizes
+ /** The largest of the algorithmically discovered one and of the true one
+  * given by the Block [see set_valid_lower_bound() in Block.h], if any;
+  * - INF if there is none. A conditional bound is never one. */
+
+ VarValue global_bound( void ) const {
+  const VarValue tlb = TrueLB ? LowerBound.back() : - INFshift;
+  return( std::max( f_global_LB , tlb ) );
   }
 
 /*--------------------------------------------------------------------------*/
@@ -2040,8 +2079,8 @@ public:
   *                 any easy component requires access to that
   *   component's description, which is *deleted if not needed* as
   *   dictated by intDoEasy. Hence, if reduced costs are required then
-  *   ( intDoEasy & 8 ) must be true; if dual variables are required then
-  *   *both* ( intDoEasy & 4 ) and ( intDoEasy & 8 ) must be true, since
+  *   ( intDoEasy & 2 ) must be true; if dual variables are required then
+  *   *both* ( intDoEasy & 2 ) and ( intDoEasy & 4 ) must be true, since
   *   the master pipeline reuses the same code path for reduced costs
   *   and dual variables. */
 
@@ -2331,7 +2370,7 @@ public:
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
  [[nodiscard]] double get_dflt_dbl_par( idx_type par ) const override {
-  static const std::array< double , 23 > dflt_dbl_par = {
+  static const std::array< double , 24 > dflt_dbl_par = {
    0 ,      // dblNZEps
    1e+2 ,   // dbltStar
    0 ,      // dblMinNrEvls
@@ -2354,7 +2393,8 @@ public:
    1e-2 ,   // dblLStabSmall
    0 ,      // dblCmpAggr
    0 ,      // dblIncrCost
-   0.1      // dblIntRad
+   0.1 ,    // dblIntRad
+   0.3      // dbltSPar4
    };
 
   if( ( par >= dblLastParCDAS ) && ( par < dblLastBndSlvPar ) )
@@ -2489,7 +2529,8 @@ public:
    { "dblLStabSmall" , BundleSolver::dblLStabSmall } ,
    { "dblCmpAggr" , BundleSolver::dblCmpAggr } ,
    { "dblIncrCost" , BundleSolver::dblIncrCost } ,
-   { "dblIntRad" , BundleSolver::dblIntRad }
+   { "dblIntRad" , BundleSolver::dblIntRad } ,
+   { "dbltSPar4" , BundleSolver::dbltSPar4 }
    };
 
   const auto it = dbl_pars_map.find( name );
@@ -2566,12 +2607,13 @@ public:
 
  [[nodiscard]] const std::string & dbl_par_idx2str( idx_type idx )
   const override {
-  static const std::array< std::string , 23 > dbl_pars_str = {
+  static const std::array< std::string , 24 > dbl_pars_str = {
    "dblNZEps" , "dbltStar" , "dblMinNrEvls" , "dblBPar5" , "dblm1" ,
    "dblm2" , "dblm3" , "dblmxIncr" , "dblmnIncr" , "dblmxDecr" ,
    "dblmnDecr" , "dbltMaior" , "dbltMinor" , "dbltInit" , "dbltSPar2" ,
    "dbltSPar3" , "dblLStabM" , "dblLStabDlt" , "dblLStabIncr" ,
-   "dblLStabSmall" , "dblCmpAggr" , "dblIncrCost" , "dblIntRad" };
+   "dblLStabSmall" , "dblCmpAggr" , "dblIncrCost" , "dblIntRad" ,
+   "dbltSPar4" };
 
  if( ( idx >= dblLastParCDAS ) && ( idx < dblLastBndSlvPar ) )
    return( dbl_pars_str[ idx - dblLastParCDAS ] );
@@ -2618,7 +2660,7 @@ public:
   }
 
 /** @} ---------------------------------------------------------------------*/
-/*------ METHODS FOR HANDLING THE State OF THE BundleSolver -----*/
+/*------ METHODS FOR HANDLING THE State OF THE BundleSolver ----------------*/
 /*--------------------------------------------------------------------------*/
 /** @name Handling the State of the BundleSolver
  *  @{ */
@@ -2787,6 +2829,16 @@ public:
   if( MasterPB )
    return( Index( MasterPB->get_vertical_count() ) );
   return( 0 );
+  }
+
+/*--------------------------------------------------------------------------*/
+ /// whether an empty master problem may be the domain rather than an error
+ /** The master problem is empty for real only if something in it cuts the
+  * space: the vertical linearizations, or the Constraint of the Block [see
+  * v_lc_A and f_host]; otherwise an empty master is a numerical error. */
+
+ bool may_be_empty( void ) const {
+  return( get_bc_size() || ( ! v_lc_A.empty() ) || f_host );
   }
 
 /*--------------------------------------------------------------------------*/
@@ -3022,8 +3074,9 @@ public:
 /*--------------------------------------------------------------------------*/
  /// evaluate every hard component at Lambda1 with integer Variable
  /** Evaluates every hard component at Lambda1, which PrepareLambda1() has
-  * set up, inserting the linearizations in the bundle. tot_time and
-  * tot_NrEvls are increased by the time and the number of the
+  * set up, inserting the linearizations in the bundle, by InnerLoop() with
+  * all = true, hence in parallel in a derived class that evaluates them so.
+  * tot_time and tot_NrEvls are increased by the time and the number of the
   * evaluations. Returns false if the evaluation stops the method, with
   * Result telling why (kError, kUnbounded or kStopTime). */
 
@@ -3070,11 +3123,84 @@ public:
  /** The part of FormLambda1() after Lambda1 has been set: clamps it into
   * the box, rounds its integer entries [see intIntVars], writes it into the
   * ColVariable and computes the upper and lower model values and the
-  * targets there. */
+  * targets there. A Lambda1 that comes out of the master problem satisfies
+  * the linear Constraint of the Block, because the master has them, and
+  * \p from_master says so; any other one is checked [see lc_feasible()]. */
 
- void PrepareLambda1( void );
+ void PrepareLambda1( bool from_master = true );
 
- /*--------------------------------------------------------------------------*/
+/*--------------------------------------------------------------------------*/
+ /// read the linear Constraint of the Block into v_lc_A, v_lc_l and v_lc_u
+ /** At set_Block() and at any Modification of them: the FRowConstraint of
+  * the Block with a LinearFunction of the ColVariable in Lambda, a relaxed
+  * one being skipped, with the constant term of the LinearFunction moved to
+  * the sides; any Constraint that is neither one of them nor a bound
+  * makes it throw. */
+
+ void read_linear_constraints( void );
+
+/*--------------------------------------------------------------------------*/
+ /// whether x satisfies the linear Constraint of the Block [see v_lc_A]
+ /** The violation of each row is compared with 1e-9 times the largest of 1
+  * and the absolute value of its side: x is a point the master has not
+  * written, e.g., the initial one, and if it is out by more than that the
+  * first master writes one that is not. */
+
+ [[nodiscard]] bool lc_feasible( const Vec_VarValue & x ) const;
+
+/*--------------------------------------------------------------------------*/
+ /// whether the primal master hosts the Block
+ /** The primal master hosts the Block [see
+  * MasterProblemBlock::set_hosted_Block()] if the coordinates are all
+  * ColVariable of the Block itself, and the Block has some Constraint other
+  * than the box; otherwise the master has the linear Constraint as rows
+  * [see read_linear_constraints()], and the Block cannot have any other. */
+
+ [[nodiscard]] bool host_Block( void ) const;
+
+/*--------------------------------------------------------------------------*/
+ /// whether x is in the feasible set X of the Constraint of the Block
+ /** With the rows, this is lc_feasible(). With the Block hosted, x is
+  * written in the ColVariable, and each RowConstraint of the Block other
+  * than the box is checked as lc_feasible() does; the other Variable of the
+  * Block have what the master has last given them, so that a point found
+  * in X is so, while one found out of it may not be, which only makes it
+  * have value + INF, i.e., the first point of the master a serious step.
+  * The same holds for a Constraint that is not a RowConstraint. */
+
+ [[nodiscard]] bool in_X( const Vec_VarValue & x );
+
+/*--------------------------------------------------------------------------*/
+ /// take the rows binding the hosted Block out of the master
+ /** The master has to lose them before it loses a coordinate [see
+  * MasterProblemBlock::remove_vars()]; rebind_host() gives them back. */
+
+ void unbind_host( void );
+
+/*--------------------------------------------------------------------------*/
+ /// bind the hosted Block to the coordinates, if not already so
+ void rebind_host( void );
+
+/*--------------------------------------------------------------------------*/
+ /// whether \p f is the Function of a Constraint of the Block
+ [[nodiscard]] bool root_row_function( const Function * f ) const;
+
+/*--------------------------------------------------------------------------*/
+ /// the value of the 0-th component at Lambda, + INF out of the feasible set
+ /** What the method minimizes is f plus the indicator of the set the linear
+  * Constraint of the Block define, which therefore is part of the 0-th
+  * component: a point out of the set has value + INF, while the
+  * linearizations of f found there are valid for the sum as well. */
+
+ [[nodiscard]] VarValue Fi0_Lmb( void ) const
+  { return( f_lc_lmb_ok ? Fi0Lmb : INFshift ); }
+
+ /// the value of the 0-th component at Lambda1 [see Fi0_Lmb()]
+
+ [[nodiscard]] VarValue Fi0_Lmb1( void ) const
+  { return( f_lc_lmb1_ok ? Fi0Lmb1 : INFshift ); }
+
+ /*-------------------------------------------------------------------------*/
 
  bool UsesLevelStabilization( void ) const {
   return( MPStbl == MasterProblemBlock::kLevel ||
@@ -3082,13 +3208,28 @@ public:
             ! f_tdisc_done ) );
   }
 
- /*--------------------------------------------------------------------------*/
+ /*-------------------------------------------------------------------------*/
 
  bool UsesPureLevelStabilization( void ) const {
   return( MPStbl == MasterProblemBlock::kLevel );
   }
 
- /*--------------------------------------------------------------------------*/
+/*--------------------------------------------------------------------------*/
+ /// the radius of the trust region: t, or infinite with no stabilization
+ /** The radius \f$ \| d^* \|_\infty \f$ is measured against in the
+  * stabilizations whose master is that of the trust region, i.e., t under
+  * MasterProblemBlock::kTrustRegion and \f$ \infty \f$ with no
+  * stabilization (MasterProblemBlock::kNone), whose master is the one of the
+  * trust region with an infinite t [see
+  * MasterProblemBlock::has_trust_region()]; 0 for the other ones. */
+
+ [[nodiscard]] VarValue trust_region_radius( void ) const {
+  if( MPStbl == MasterProblemBlock::kNone )
+   return( INFshift );
+  return( MPStbl == MasterProblemBlock::kTrustRegion ? t : 0 );
+  }
+
+ /*-------------------------------------------------------------------------*/
 
  /// true if an empty or unbounded master can be the easy components' answer
  /** With the easy components, the master problem can be empty or unbounded
@@ -3119,13 +3260,13 @@ public:
   return( f_easy_first_MP || ( ! stabilized ) );
   }
 
- /*--------------------------------------------------------------------------*/
+ /*-------------------------------------------------------------------------*/
 
  bool UsesPrimalMaster( void ) const {
   return( IsMPPrimal && ! ( DoEasy && ( NrEasy > 0 ) ) );
   }
 
- /*--------------------------------------------------------------------------*/
+ /*-------------------------------------------------------------------------*/
  /// index of component \p k among the "hard" ones
 
  /** MasterProblemBlock only keeps a bundle for the "hard" components, and
@@ -3146,7 +3287,7 @@ public:
   return( h );
   }
 
- /*--------------------------------------------------------------------------*/
+ /*-------------------------------------------------------------------------*/
  /// index of component \p k among the "easy" ones
 
  /** The counterpart of hard_k() for the components MasterProblemBlock holds
@@ -3163,35 +3304,47 @@ public:
   return( e );
   }
 
- /*--------------------------------------------------------------------------*/
+ /*-------------------------------------------------------------------------*/
 
  VarValue reliable_level_LB( void ) const;
 
- /*--------------------------------------------------------------------------*/
+ /*-------------------------------------------------------------------------*/
 
  /// Whether a finite centre and reliable bound meet the requested accuracy.
  bool level_gap_closed( void ) const;
 
- /*--------------------------------------------------------------------------*/
+ /*-------------------------------------------------------------------------*/
 
  void reset_level_stabilization( void );
 
- /*--------------------------------------------------------------------------*/
+ /*-------------------------------------------------------------------------*/
 
  void install_level_stabilization( void );
 
- /*--------------------------------------------------------------------------*/
+ /*-------------------------------------------------------------------------*/
 
  bool refresh_level_after_master( bool force = false );
 
- /*--------------------------------------------------------------------------*/
+ /*-------------------------------------------------------------------------*/
 
  void update_level_after_step( bool serious_step , bool gated_update ,
                                VarValue old_ref = INFshift );
 
- /*--------------------------------------------------------------------------*/
+ /*-------------------------------------------------------------------------*/
+
+ /// Discard an algorithmic level bound contradicted by a feasible value.
+ bool discard_inconsistent_level_bound( VarValue value );
 
  void record_level_lower_bound( VarValue lb );
+
+ /// One master attempt; FormD() repeats it after a bounded level restart.
+ void FormD_once( void );
+
+ /// Invalidate an unusable aggregate and request a fresh proximal probe.
+ void recover_level_master( const char * reason );
+
+ /// Bound used to choose targets, distinct from the best certificate.
+ VarValue level_target_LB( void ) const;
 
 /*--------------------------------------------------------------------------*/
  /* Performs a noise reduction step: t is set to dblmxIncr times the largest
@@ -3246,12 +3399,20 @@ public:
   * "complex and costly" they will likely have checks to understand if the bulk
   * of the computation can be skipped because it has been done already.
   *
+  * The parameter all, if true, means that every (non-easy) component is to
+  * be evaluated, as with extrastep, but with its linearizations collected as
+  * in the normal main loop: no condition for a SS or a NS stops the loop,
+  * which ends when FindNext() finds nothing more to evaluate. This is what
+  * the method with integer Variable needs at each of its trial points [see
+  * integer_evaluate()], and since it is the same hook a derived class
+  * evaluating the components in parallel serves both methods.
+  *
   * The method returns the number of different components evaluated. It may
   * also internally set Result == kError if an irrecoverable error happens
   * during a component compute()-tion or Result == kStopTime if the available
   * running time runs up. */
 
- virtual Index InnerLoop( bool extrastep = false );
+ virtual Index InnerLoop( bool extrastep = false , bool all = false );
 
 /*--------------------------------------------------------------------------*/
  /* Computes Fi[ wFi ]( Lambda1 ). In the "default mode", where getgi == true,
@@ -3314,7 +3475,7 @@ public:
    ++UpFiLmb1def;  // all components + the sum computed
    UpFiLmb1[ wFi ] = nval;
    UpFiLmb1.back() = std::accumulate( UpFiLmb1.begin() , --(UpFiLmb1.end()) ,
-                                      Fi0Lmb1 );
+                                      Fi0_Lmb1() );
    // note that this is the point where the lower bound (if any) is
    // "baked in" the total function value
    if( TrueLB && ( UpFiLmb1.back() < LowerBound.back() ) )
@@ -3358,7 +3519,7 @@ public:
    ++LwFiLmb1def;  // all components + the sum computed
    LwFiLmb1[ wFi ] = nval;
    LwFiLmb1.back() = std::accumulate( LwFiLmb1.begin() , --(LwFiLmb1.end()) ,
-                                      Fi0Lmb1 );
+                                      Fi0_Lmb1() );
    // note that this is the point where the lower bound (if any) is
    // "baked in" the total function value
    if( TrueLB && ( LwFiLmb1.back() < LowerBound.back() ) )
@@ -3391,7 +3552,7 @@ public:
    ++UpFiLmbdef;  // all components + the sum computed
    UpFiLmb[ wFi ] = nval;
    UpFiLmb.back() = std::accumulate( UpFiLmb.begin() , --(UpFiLmb.end()) ,
-                                     Fi0Lmb );
+                                     Fi0_Lmb() );
    // note that this is the point where the lower bound (if any) is
    // "baked in" the total function value
    if( TrueLB && ( UpFiLmb.back() < LowerBound.back() ) )
@@ -3435,7 +3596,7 @@ public:
    ++LwFiLmbdef;  // all components + the sum computed
    LwFiLmb[ wFi ] = nval;
    LwFiLmb.back() = std::accumulate( LwFiLmb.begin() , --(LwFiLmb.end()) ,
-                                     Fi0Lmb );
+                                     Fi0_Lmb() );
    // note that this is the point where the lower bound (if any) is
    // "baked in" the total function value
    if( TrueLB && ( LwFiLmb.back() < LowerBound.back() ) )
@@ -3530,6 +3691,43 @@ public:
   }
 
 /*--------------------------------------------------------------------------*/
+ /// the weight of the k-th component [see v_c05w]
+
+ VarValue cw( Index k ) const { return( v_c05w[ k ] ); }
+
+/*--------------------------------------------------------------------------*/
+ /// the linearization coefficients of the k-th component, times its weight
+ /** Each calls C05Function::get_linearization_coefficients() of the k-th
+  * component with the same arguments and multiplies by cw( k ) what it has
+  * written in \p g. */
+
+ template< class... A >
+ void lin_coeffs( Index k , VarValue * g , Range r , A... a ) {
+  v_c05f[ k ]->get_linearization_coefficients( g , r , a... );
+  scale_coeffs( k , g , std::min( r.second ,
+                                  v_c05f[ k ]->get_num_active_var() ) ,
+                r.first );
+  }
+
+ template< class... A >
+ void lin_coeffs( Index k , VarValue * g , c_Subset & s , A... a ) {
+  v_c05f[ k ]->get_linearization_coefficients( g , s , a... );
+  scale_coeffs( k , g , s.size() , 0 );
+  }
+
+ void lin_coeffs( Index k , VarValue * g ) {
+  v_c05f[ k ]->get_linearization_coefficients( g );
+  scale_coeffs( k , g , v_c05f[ k ]->get_num_active_var() , 0 );
+  }
+
+ /// multiplies by cw( k ) the entries of g for the indices in [ f , l )
+ void scale_coeffs( Index k , VarValue * g , Index l , Index f ) {
+  if( const auto w = cw( k ) ; w != 1 )
+   for( Index i = f ; i < l ; ++i )
+    g[ i - f ] *= w;
+  }
+
+/*--------------------------------------------------------------------------*/
  /** Finds the next component to compute in the inner loop, writes is in
   * f_wFi; returns false if there is no other component to compute. */
 
@@ -3559,6 +3757,8 @@ public:
  double Heuristic3( void );
 
  double Heuristic4( void );
+
+ double Heuristic5( void );
 
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 /** The heuristics make use of data about the newly obtained aggregate
@@ -3634,6 +3834,7 @@ public:
  int tSPar1;        ///< int parameter for long-term t-strategy
  double tSPar2;     ///< double parameter for long-term t-strategy
  double tSPar3;     ///< double parameter for small heuristic t changes
+ double tSPar4;     ///< double parameter of the cosine t-heuristic
 
  int DoEasy;        ///< how "easy" components are managed [see intDoEasy]
 
@@ -3769,17 +3970,27 @@ public:
  Vec_VarValue LowerBound;  ///< Lower Bound over (each component of) Fi
  VarValue f_global_LB;     ///< an algorithmically discovered global LB
 
- VarValue f_cond_LB = -INFshift;
- ///< the cutoff that is the global lower bound of the master, which is
- ///< only conditionally valid [see global_LB_row()]; -INF if there is none
+ VarValue f_box_LB = -INFshift;
+ ///< the bound of box_lower_bound() at the last master problem, which needs
+ ///< no test on z*; - INF if there is none
+
+ VarValue f_cutoff_LB = -INFshift;
+ ///< the cutoff that is the global lower bound of the master, which is a
+ ///< bound on f only if f is above it [see global_LB_row()]; -INF if there
+ ///< is none
 
  VarValue f_LB_row = -INFshift;
  ///< the global lower bound last set in the master, translated with the
  ///< stability centre [see global_LB_row()]; -INF if there is none
 
- bool f_cond_LB_off = false;
+ bool f_cutoff_LB_off = false;
  ///< true if the master has failed with the cutoff as its global lower
  ///< bound in this call to compute(), which then goes on without it
+
+ Index f_mp_fail_its = 0;
+ ///< number of iterations, since the last serious step of this call to
+ ///< compute(), in which the master has been solved only after deleting
+ ///< items [see FormD()]
 
  VarValue f_level_Delta = 0;
  ///< expected decrease used by level stabilization
@@ -3799,6 +4010,11 @@ public:
  VarValue f_level_restart_centre = INFshift;
  ///< value of the centre at which a closed but unconfirmed level gap has
  ///< restarted the target, INFshift if none [see level_gap_closed()]
+
+ Index f_level_recoveries = 0;  ///< bounded retries at the current centre
+ bool f_level_retry = false;   ///< FormD_once() requests another attempt
+ bool f_aggregate_valid = false; ///< fresh, consistent aggregate certificate
+ VarValue f_level_target_LB = -INFshift; ///< restartable target-bound memory
 
  VarValue LStabM;      ///< m_l parameter for level stabilization
 
@@ -3907,7 +4123,8 @@ public:
   * created or the easy components last changed [see easy_says_it()] */
  VarValue Prevt;       ///< what t were before being changed for funny reasons
  /**< the value of t before an empty bundle brought it down to tMinor,
-  * INFshift if t has not been changed so; FormD() restores it as soon as
+  * NaNshift if t has not been changed so (t may be INFshift [see
+  * dbltMaior]); FormD() restores it as soon as
   * the bundle is not empty, or within the same call when the master solved
   * with tMinor is empty or unbounded as an answer of the easy components,
   * or fails with no item left to remove */
@@ -4043,6 +4260,12 @@ public:
  std::vector< C05Function * > v_c05f;
  ///< the vector of (pointers to) the components of the sum function
 
+ std::vector< VarValue > v_c05w;
+ ///< the weight of each component, that of the Objective of its sub-Block
+ ///< [see Block::set_objective_weight()], by which its values, bounds,
+ ///< Lipschitz constant and linearizations are multiplied, and the cutoffs
+ ///< given to it divided [see cw() and lin_coeffs()]
+
  LinearFunction * f_lf;  ///< the 0-th component of the sum function
 
  /* The 0-th component may also be a separable quadratic one,
@@ -4145,6 +4368,24 @@ public:
  VarValue Fi0Lmb;        ///< value of the linear 0-th component in Lambda
  VarValue Fi0Lmb1;       ///< value of the linear 0-th component in Lambda1
 
+ std::vector< MasterProblemBlock::LinearRow > v_lc_A;
+                         ///< the linear Constraint of the Block, as rows on
+                         ///< the positions of their ColVariable in LamVcblr
+ Vec_VarValue v_lc_l;    ///< their lower sides, the constant term out
+ Vec_VarValue v_lc_u;    ///< and their upper ones
+ std::unordered_set< const Function * > f_lc_fun;
+                         ///< their LinearFunction [see
+                         ///< process_outstanding_Modification()]
+
+ bool f_host = false;    ///< whether the master hosts the Block [see
+                         ///< host_Block()]
+ std::vector< ColVariable * > v_host_x;
+                         ///< the ColVariable the master has the hosted
+                         ///< Block bound with, empty if none
+
+ bool f_lc_lmb_ok = true;   ///< whether Lambda satisfies the v_lc_A
+ bool f_lc_lmb1_ok = true;  ///< whether Lambda1 does
+
  Subset CurrNrEvls;      /**< how many times compute() has been called for
                           * each component in the current iteration */
 
@@ -4223,7 +4464,50 @@ public:
 
 /*--------------------------------------------------------------------------*/
 
+ /// true if the stability center is optimal up to eps (RelAcc if eps <= 0)
+ /** The test is \f$ D^*_{t^*}( z^* ) + \Sigma \leq \varepsilon \f$, with
+  * \f$ t^* \f$ = dbltStar, where \f$ D^*_t \f$ is the conjugate of the
+  * stabilizing term of the master problem: \f$ D^*_t( z ) = \frac{t}{2} \|
+  * z \|_2^2 \f$ for the proximal term \f$ \frac{1}{2t} \| \cdot \|_2^2
+  * \f$, and \f$ D^*_t( z ) = t \| z \|_1 \f$ for the trust region \f$ \|
+  * \cdot \|_\infty \leq t \f$, whose indicator has the dual norm as
+  * conjugate; hence the trust region has the same test as the proximal
+  * term, with the norm dual to that of the region. Neither gives a lower
+  * bound on its own: from the aggregated linearization and the Hölder
+  * inequality,
+  * \f[
+  *   f( \Lambda ) \geq f( \bar\Lambda ) - \Sigma
+  *                - \| z^* \|_1 \| \Lambda - \bar\Lambda \|_\infty
+  * \f]
+  * for every \f$ \Lambda \f$, which is a bound on the optimal value only
+  * if \f$ z^* = 0 \f$, or if \f$ \| \Lambda - \bar\Lambda \|_\infty \f$
+  * is bounded, i.e., there are finite bounds on all the variables (at
+  * least on those with \f$ z^*_i \neq 0 \f$). The latter case gives the
+  * bound of box_lower_bound(), and the center is also declared optimal if
+  * its value is within \f$ \varepsilon \f$ of it, which is a stop that
+  * holds whatever dblNZEps is. The other stop, \f$ \| z^* \| \leq \f$
+  * NrmZFctr \f$ \cdot \f$ dblNZEps, rests on \f$ z^* = 0 \f$, and
+  * therefore it is only as safe as dblNZEps is small. */
+
+ // Pure level requires an independently certified closed objective gap;
+ // small projection/aggregate norms remain diagnostics, not global bounds.
  bool IsOptimal( double eps = 0 ) const;
+
+ /// a lower bound on f valid whatever z* is, or - INF if there is none
+ /** At the trial point \f$ y^* \f$ of the last master problem, the model is
+  * \f$ f( \bar\Lambda ) + v^* \f$, and the master gives a subgradient
+  * \f$ s \f$ of the model plus the indicator of the box of the variables;
+  * hence, by the Hölder inequality,
+  * \f[
+  *   \min f \geq f( \bar\Lambda ) + v^* - \sum_i | s_i |
+  *   \max\{ u_i - y^*_i , y^*_i - l_i \}
+  * \f]
+  * which is finite if every \f$ i \f$ with \f$ s_i \neq 0 \f$ has finite
+  * bounds \f$ [ l_i , u_i ] \f$. Only the proximal and the trust region
+  * masters are covered; the level and doubly stabilized ones have their
+  * own bounds, and so has the integer master. */
+
+ VarValue box_lower_bound( void ) const;
 
  /// the cutoff on the value of a point, in the minimization the solver does
  /** A point whose value is at most this is at least as good as asked [see
@@ -4253,13 +4537,13 @@ public:
 
  /// the global lower bound of the master
  /** Sets the global lower bound of the master to the largest between the
-  * true one, if any, and cutoff_point(), recording the latter in f_cond_LB
+  * true one, if any, and cutoff_point(), recording the latter in f_cutoff_LB
   * when it is the larger. A point with value at most cutoff_point() is as
   * good as asked, so whoever set the cutoff does not care where the minimum
   * is if it is below: either min f >= cutoff_point(), and the bound is
   * valid, or compute() stops with kCutOff as soon as it finds such a point.
-  * The cutoff is only a conditional bound, as a bound that the master then
-  * proves is one on f only if it is above it [see dblUpCutOff and
+  * The cutoff is not a bound, as a bound that the master then proves is
+  * one on f only if it is above it [see dblUpCutOff and
   * dblLwCutOff]. The global lower bound of the master is in the frame of
   * the stability centre [see LB_translation()], hence it is set again
   * whenever the centre moves; with no value at the stability centre to
@@ -4267,7 +4551,7 @@ public:
   * a global lower bound, hence with the primal one nothing is done. Since
   * with the cutoff the master may be badly conditioned, a master that fails
   * with it is solved again without it, which then stays out until compute()
-  * returns [see f_cond_LB_off]. */
+  * returns [see f_cutoff_LB_off]. */
 
  void global_LB_row( void );
 
@@ -4381,7 +4665,7 @@ class BundleSolverState : public State {
  using VarValue = BundleSolver::VarValue;
  using Vec_VarValue = BundleSolver::Vec_VarValue;
 
-/*------- CONSTRUCTING AND DESTRUCTING BundleSolverState --------*/
+/*------- CONSTRUCTING AND DESTRUCTING BundleSolverState -------------------*/
 
  /// constructor, doing everything or nothing.
  /** Constructor of BundleSolverState. If provided with a pointer
@@ -4433,7 +4717,7 @@ class BundleSolverState : public State {
    delete el;
   }
 
-/*---- METHODS DESCRIBING THE BEHAVIOR OF A BundleSolverState ---*/
+/*---- METHODS DESCRIBING THE BEHAVIOR OF A BundleSolverState --------------*/
 
  /// serialize a BundleSolverState into a netCDF::NcGroup
  /** The method serializes the BundleSolverState into the provided

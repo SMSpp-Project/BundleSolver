@@ -132,7 +132,7 @@ int main( void )
  bool ok = true;
  torch::Tensor x = torch::ones( { 20 } );
 
- /*---------------------- (1) architecture round trip ---------------------*/
+ /*---------------------- (1) architecture round trip -----------------------*/
 
  std::cout << "--- architecture descriptor ---" << std::endl;
 
@@ -157,7 +157,7 @@ int main( void )
   ok = false;
   }
 
- /*------------------- (2) reload keeping ( h , c ) -----------------------*/
+ /*------------------- (2) reload keeping ( h , c ) -------------------------*/
  // the reloaded net must take up at step 6, not start over at step 1;
  // this is the case that failed before ( h , c ) were written
 
@@ -183,7 +183,7 @@ int main( void )
   ok = false;
   }
 
- /*------------------- (3) reload discarding ( h , c ) --------------------*/
+ /*------------------- (3) reload discarding ( h , c ) ----------------------*/
  // the same weights from a cleared state: what a new instance should see,
  // i.e. steps 1..5 again
 
@@ -202,7 +202,7 @@ int main( void )
   ok = false;
   }
 
- /*------------------------- (4) the MLP path -----------------------------*/
+ /*------------------------- (4) the MLP path -------------------------------*/
 
  std::cout << std::endl << "--- MLP, which has no recurrent state ---"
            << std::endl;
@@ -223,7 +223,7 @@ int main( void )
   ok = false;
   }
 
- /*------------------------------ verdict ---------------------------------*/
+ /*------------------------------ verdict -----------------------------------*/
 
  std::remove( CkptPath.c_str() );
 

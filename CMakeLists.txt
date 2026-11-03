@@ -44,7 +44,7 @@ list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 # This creates an ENABLE_TESTING option (default: ON) and enables the testing
 # using the ctest executable.
 # See: https://cmake.org/cmake/help/latest/manual/ctest.1.html
-#include(CTest)
+include(CTest)
 
 # Sets the default build type (if none was specified).
 # See: https://cmake.org/cmake/help/latest/variable/CMAKE_BUILD_TYPE.html
@@ -117,6 +117,11 @@ if (BUILD_SHARED_LIBS)
         # for by -u included, even under -dead_strip_dylibs
         target_link_options(${modName} INTERFACE
                 "LINKER:-u,_SMSpp_force_load_${modName}")
+    elseif (MINGW)
+        # the PE linker imports a DLL for the symbols asked for, -u
+        # included
+        target_link_options(${modName} INTERFACE
+                "LINKER:-u,SMSpp_force_load_${modName}")
     endif ()
 endif ()
 
@@ -165,9 +170,21 @@ if (Torch_FOUND)
     add_library(${modName}ML)
     target_compile_features(${modName}ML PUBLIC cxx_std_20)
 
-    if (MSVC AND BUILD_SHARED_LIBS)
-        target_link_options(${modName}ML INTERFACE
-                            "/INCLUDE:SMSpp_force_load_${modName}ML")
+    # the options of the target of the module [see above]
+    if (BUILD_SHARED_LIBS)
+        if (MSVC)
+            target_link_options(${modName}ML INTERFACE
+                    "/INCLUDE:SMSpp_force_load_${modName}ML")
+        elseif (UNIX AND (NOT APPLE))
+            target_link_options(${modName}ML INTERFACE
+                    "LINKER:--no-as-needed")
+        elseif (APPLE)
+            target_link_options(${modName}ML INTERFACE
+                    "LINKER:-u,_SMSpp_force_load_${modName}ML")
+        elseif (MINGW)
+            target_link_options(${modName}ML INTERFACE
+                    "LINKER:-u,SMSpp_force_load_${modName}ML")
+        endif ()
     endif ()
 
     target_sources(${modName}ML PRIVATE src/BundleSolverML.cpp)
@@ -188,6 +205,39 @@ endif ()
 # This alias is defined so that executables in this same project can use
 # the library with this notation.
 add_library(${modNamespace}::${modName} ALIAS ${modName})
+
+# ----- C++20 module -------------------------------------------------------- #
+# The module smspp.bundlesolver (src/BundleSolver.cppm) exports the names of
+# the headers and re-exports smspp.milpsolver; like the module smspp of the
+# core, it is built when SMSpp_BUILD_MODULE is ON, which needs CMake 3.28 or
+# later, the Ninja or Visual Studio generator and a compiler that scans the
+# dependencies of the modules.
+# Where these are missing, or a module it imports is not there, the option
+# is turned off with a warning [see CheckModule.cmake of SMS++].
+smspp_check_module(${modNamespace}::MILPSolver_module)
+if (SMSpp_BUILD_MODULE)
+    # the scan of the module dependencies, and $<LINK_ONLY> honoured also for
+    # the target itself, which cmake_policy(VERSION 3.15) above leaves off
+    cmake_policy(SET CMP0155 NEW)
+    cmake_policy(SET CMP0131 NEW)
+
+    add_library(${modName}_module)
+    target_sources(${modName}_module PUBLIC
+            FILE_SET CXX_MODULES
+            BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/src
+            FILES src/${modName}.cppm)
+    target_compile_features(${modName}_module PUBLIC cxx_std_20)
+    # the interface takes the include paths and the definitions of the
+    # library, but not its compile options (e.g., the -fopenmp of a source,
+    # which no header needs), so that it agrees with the module it imports
+    target_include_directories(${modName}_module PRIVATE
+            $<TARGET_PROPERTY:${modName},INTERFACE_INCLUDE_DIRECTORIES>)
+    target_compile_definitions(${modName}_module PRIVATE
+            $<TARGET_PROPERTY:${modName},INTERFACE_COMPILE_DEFINITIONS>)
+    target_link_libraries(${modName}_module PUBLIC $<LINK_ONLY:${modName}>
+            ${modNamespace}::MILPSolver_module)
+    add_library(${modNamespace}::${modName}_module ALIAS ${modName}_module)
+endif ()
 
 # ----- Subdirectories ------------------------------------------------------ #
 if (BUILD_TESTING)
@@ -217,6 +267,17 @@ install(TARGETS ${modName}
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} # .dll
         LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} # .so .dylib
         ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}) # .lib
+
+# Install the module, whose interface is compiled again by each importer
+if (SMSpp_BUILD_MODULE)
+    install(TARGETS ${modName}_module
+            EXPORT ${modName}Targets
+            RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+            LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+            ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+            FILE_SET CXX_MODULES
+            DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/${modNamespace}/modules)
+endif ()
 
 # Install the headers
 install(FILES

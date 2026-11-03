@@ -27,7 +27,8 @@ if (Torch_FOUND)
             if (APPLE)
                 add_link_options("-Wl,-all_load")
             else ()
-                add_link_options("-Wl,--whole-archive,--allow-multiple-definition")
+                add_link_options(
+                    "-Wl,--whole-archive,--allow-multiple-definition")
             endif ()
         endif ()
     endif ()
@@ -44,7 +45,8 @@ if (Torch_FOUND)
                           SMS++::BundleSolverML
                           ${TORCH_LIBRARIES})
 
-    add_executable(BundleSolverMLCheckpoint_test BundleSolverMLCheckpoint_test.cpp)
+    add_executable(BundleSolverMLCheckpoint_test
+                   BundleSolverMLCheckpoint_test.cpp)
     target_link_libraries(BundleSolverMLCheckpoint_test PRIVATE
                           SMS++::BundleSolverML
                           ${TORCH_LIBRARIES})
@@ -59,9 +61,18 @@ if (Torch_FOUND)
                 $<TARGET_FILE_DIR:${modName}ML_test>
                 COMMAND_EXPAND_LISTS
                 COMMENT "Copying runtime DLLs next to ${modName}ML_test.exe")
+        # one link at a time, since two copies of the same DLL into a
+        # directory collide, and Ninja links in parallel
+        get_property(_pools GLOBAL PROPERTY JOB_POOLS)
+        if (NOT _pools MATCHES "smspp_runtime_dlls=")
+            set_property(GLOBAL APPEND PROPERTY JOB_POOLS smspp_runtime_dlls=1)
+        endif ()
+        set_property(TARGET ${modName}ML_test
+                     PROPERTY JOB_POOL_LINK smspp_runtime_dlls)
     endif ()
 
-    # the test reads BSPar.txt and BSPar-ML.txt from the working directory
+    # the test reads BSPar.txt, BSPar-ML.txt and BSCfg-ML.txt from the working
+    # directory
     add_test(NAME ${modName}ML_test
              COMMAND ${modName}ML_test
              WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
@@ -85,7 +96,8 @@ if (TARGET SMS++::MILPSolver)
     target_link_libraries(zeroth_quadratic_e2e_test PRIVATE
                           SMS++::BundleSolver
                           SMS++::MILPSolver)
-    # the test reads BSPar-rho.txt and MPBCfg-rho.txt from the working directory
+    # the test reads BSPar-rho.txt and MPBCfg-rho.txt from the working
+    # directory
     add_test(NAME zeroth_quadratic_e2e_test
              COMMAND zeroth_quadratic_e2e_test
              WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
@@ -136,6 +148,25 @@ if (TARGET SMS++::MILPSolver)
              WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 endif ()
 
+# ----- the Constraint of the Block --------------------------------------- #
+# The FRowConstraint of the Block, which the primal master hosts and the dual
+# one has as multipliers, displacement and iterate form, proximal, level and
+# trust region, against the Linear Program, also after a side, a coefficient,
+# a row added, relaxed and removed between two calls of compute(), and then,
+# for the primal master alone, a quadratic row and a Variable that is no
+# coordinate
+if (TARGET SMS++::MILPSolver)
+    add_executable(linear_constraints_test test_linear_constraints.cpp)
+    target_link_libraries(linear_constraints_test PRIVATE
+                          SMS++::BundleSolver
+                          SMS++::MILPSolver)
+    # the test reads BSPar-lc.txt, BSCfg-cut.txt, MPBCfg.txt, MPBCfg-qcp.txt
+    # and MILPCfg-MPB.txt from the working directory
+    add_test(NAME linear_constraints_test
+             COMMAND linear_constraints_test
+             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+endif ()
+
 # ----- the verdict of the easy components at the first master ------------ #
 # An easy LagBFunction next to a hard component, whose first master has an
 # empty bundle and t at dbltMinor: a master that is not unbounded at the
@@ -150,6 +181,43 @@ if (TARGET SMS++::MILPSolver)
     add_test(NAME easy_tminor_test
              COMMAND easy_tminor_test
              WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+endif ()
+
+# ----- the time limit while the master fails [see dblMaxTime] ------------- #
+# A master Solver that fails at each call after the first few, whose failures
+# the BundleSolver recovers from by emptying the bundle one item at a time:
+# with no time limit it ends in kLowPrecision at the stability centre, with
+# one in kStopTime soon after it
+if (TARGET SMS++::MILPSolver)
+    add_executable(time_limit_test test_time_limit.cpp)
+    target_link_libraries(time_limit_test PRIVATE
+                          SMS++::BundleSolver
+                          SMS++::MILPSolver)
+    # it reads BSPar-time.txt, BSCfg-cut.txt and MPBCfg-fail.txt from the
+    # working directory, and it is skipped without HiGHS
+    add_test(NAME time_limit_test
+             COMMAND time_limit_test
+             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+    set_tests_properties(time_limit_test PROPERTIES SKIP_RETURN_CODE 77)
+endif ()
+
+# ----- a failure of the master on the items of this iteration ------------ #
+# A master Solver that fails at its first calls, when the bundle only has the
+# items of the first iteration, which are not removable at this iteration:
+# the recovery removes them as well, and the call ends in kOK with the value
+# of a BundleSolver whose master does not fail
+if (TARGET SMS++::MILPSolver)
+    add_executable(mp_recovery_test test_mp_recovery.cpp)
+    target_link_libraries(mp_recovery_test PRIVATE
+                          SMS++::BundleSolver
+                          SMS++::MILPSolver)
+    # it reads BSPar-recovery.txt, BSCfg-cut.txt, MPBCfg-transient.txt and
+    # MPBCfg-int.txt from the working directory, and it is skipped without
+    # HiGHS
+    add_test(NAME mp_recovery_test
+             COMMAND mp_recovery_test
+             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+    set_tests_properties(mp_recovery_test PROPERTIES SKIP_RETURN_CODE 77)
 endif ()
 
 # the examples of OSBDO, see osbdo/README.md

@@ -49,6 +49,12 @@ ifdef BNDSLVML
     BNDSLVH += $(BNDSLVSDR)/include/BundleSolverML.h
 endif
 
+# the C++20 module smspp.bundlesolver - - - - - - - - - - - - - - - - - - - -
+# [see makefile-mod of SMS++]
+
+$(eval $(call SMSppMODrule,BNDSLV,$(BNDSLVSDR),BundleSolver,\
+	smspp.bundlesolver,MILPS))
+
 # clean - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 clean::
@@ -56,7 +62,8 @@ clean::
 
 # dependencies: every .o from its .cpp + every recursively included .h- - - -
 
-$(BNDSLVSDR)/obj/ParallelBundleSolver.o: $(BNDSLVSDR)/src/ParallelBundleSolver.cpp \
+$(BNDSLVSDR)/obj/ParallelBundleSolver.o: \
+	$(BNDSLVSDR)/src/ParallelBundleSolver.cpp \
 	$(BNDSLVH) $(SMS++OBJ) $(MILPSH)
 	$(CC) -c $(BNDSLVSDR)/src/ParallelBundleSolver.cpp -o $@ \
 	$(BNDSLVINC) $(SMS++INC) $(MILPSINC) $(SW)

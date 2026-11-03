@@ -1,11 +1,12 @@
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-# - - - - - - - - - - - - - - - BSPar-cutoff.txt - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - BSPar-cutoff.txt  - - - - - - - - - - - - - - -
 #
 # The BundleSolver of test_cutoff.cpp, one for each stabilization of the
 # dual master whose global lower bound the cutoff becomes: proximal, level
 # and doubly stabilized [see BSCfg-cut.txt and intMPStbl]. The tester runs
 # each of them on the same instances, with and without the cutoffs.
 #
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 BlockSolverConfig     # exact type of the Configuration object
@@ -26,7 +27,7 @@ BundleSolver          # 3rd: doubly stabilized
 # 1st ComputeConfig: proximal - - - - - - - - - - - - - - - - - - - - - - - -
 *BSCfg-cut.txt
 
-# 2nd ComputeConfig: level- - - - - - - - - - - - - - - - - - - - - - - - - -
+# 2nd ComputeConfig: level - - - - - - - - - - - - - - - - - - - - - - - - -
 *BSCfg-cut.txt +
 
 1  # f_diff == 1 ==> only the entries below are changed
@@ -62,9 +63,9 @@ intMPStbl       1     # 1 = level
 # [none]
 
 # pointer to the "extra" Configuration
-* # [none]
+*  # [none]
 
-# 3rd ComputeConfig: doubly stabilized- - - - - - - - - - - - - - - - - - - -
+# 3rd ComputeConfig: doubly stabilized - - - - - - - - - - - - - - - - - - -
 *BSCfg-cut.txt +
 
 1  # f_diff == 1 ==> only the entries below are changed
@@ -100,10 +101,10 @@ intMPStbl       2     # 2 = doubly stabilized
 # [none]
 
 # pointer to the "extra" Configuration
-* # [none]
+*  # [none]
 
 # end of BlockSolverConfig - - - - - - - - - - - - - - - - - - - - - - - - -
 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-# - - - - - - - - - - - - - END BSPar-cutoff.txt - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - END BSPar-cutoff.txt  - - - - - - - - - - - - - -
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -

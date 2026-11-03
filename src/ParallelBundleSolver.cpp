@@ -112,7 +112,8 @@ SMSpp_insert_in_factory_cpp_0( ParallelBundleSolver );
 /*----------------------- OTHER PROTECTED METHODS --------------------------*/
 /*--------------------------------------------------------------------------*/
 
-BundleSolver::Index ParallelBundleSolver::InnerLoop( bool extrastep )
+BundleSolver::Index ParallelBundleSolver::InnerLoop( bool extrastep ,
+                                                     bool all )
 {
  /* The inner loop is divided in three phases:
   *
@@ -173,7 +174,11 @@ BundleSolver::Index ParallelBundleSolver::InnerLoop( bool extrastep )
  // if there is nothing to parallelize here, call the base class version - - -
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  if( ( NrFi == 1 ) || ( MaxThread == 0 ) )
-  return( BundleSolver::InnerLoop( extrastep ) );
+  return( BundleSolver::InnerLoop( extrastep , all ) );
+
+ // every component in the order of the sequential version [see the header]
+ if( all )
+  return( InnerLoopOrdered( extrastep , false , true ) );
 
  // if a deterministic formulation is selected, dispatch to it - - - - - - - -
  // bit 0 of ParFrm picks fixed-order consumption; bits 1/2 select the
@@ -272,8 +277,8 @@ BundleSolver::Index ParallelBundleSolver::InnerLoop( bool extrastep )
 
   // collect function values (upper and lower bound)- - - - - - - - - - - - -
   auto fwFi = v_c05f[ wFi ];
-  auto ue = fwFi->get_upper_estimate();
-  auto le = fwFi->get_lower_estimate();
+  auto ue = cw( wFi ) * fwFi->get_upper_estimate();
+  auto le = cw( wFi ) * fwFi->get_lower_estimate();
 
   #if VERBOSE_LOG
    if( f_log && ( LogVerb > 3 ) ) {
@@ -407,8 +412,8 @@ BundleSolver::Index ParallelBundleSolver::InnerLoop( bool extrastep )
 
   // collect function values (upper and lower bound)- - - - - - - - - - - - -
   auto fwFi = v_c05f[ wFi ];
-  auto ue = fwFi->get_upper_estimate();
-  auto le = fwFi->get_lower_estimate();
+  auto ue = cw( wFi ) * fwFi->get_upper_estimate();
+  auto le = cw( wFi ) * fwFi->get_lower_estimate();
 
   #if VERBOSE_LOG
    if( f_log && ( LogVerb > 3 ) ) {
@@ -495,7 +500,7 @@ BundleSolver::Index ParallelBundleSolver::InnerLoopOrdered( bool extrastep ,
  // with at most one "hard" component there is nothing to parallelize: defer
  // to the base version, which also has the right edge-case semantics
  if( NrFi - NrEasy <= 1 )
-  return( BundleSolver::InnerLoop( extrastep ) );
+  return( BundleSolver::InnerLoop( extrastep , batch ) );
 
  // minimum number of components to evaluate; batch forces them all
  Index minceval = ( MinNrEvls >= 0 ? Index( MinNrEvls )
@@ -597,8 +602,8 @@ BundleSolver::Index ParallelBundleSolver::InnerLoopOrdered( bool extrastep ,
 
   // collect function values (upper and lower bound)- - - - - - - - - - - - -
   auto fwFi = v_c05f[ wFi ];
-  auto ue = fwFi->get_upper_estimate();
-  auto le = fwFi->get_lower_estimate();
+  auto ue = cw( wFi ) * fwFi->get_upper_estimate();
+  auto le = cw( wFi ) * fwFi->get_lower_estimate();
 
   #if VERBOSE_LOG
    if( f_log && ( LogVerb > 3 ) ) {

@@ -7,6 +7,272 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-03
+
+### Added
+
+- the stabilization `kNone` (`intMPStbl` 3), the cutting-plane method of
+  Kelley on the primal master problem, with continuous and with integer
+  Variable (`intIntVars` 1, the cutting-plane master from the start): t has
+  no effect, the stopping test is the gap between the centre and the master,
+  and an unbounded master stops the method with `kError` rather than
+  emptying the bundle; `trust_region_radius()`, t under the trust region and
+  infinite under `kNone`, is what the step is measured against in the noise
+  reduction and in the counter of the serious steps
+
+- the weight of the Objective of a `Block` [see
+  `Block::set_objective_weight()`]: the value, bounds, Lipschitz constant and
+  linearizations of each component are multiplied by the weight of the
+  Objective of its sub-Block, and the cutoffs given to it divided, in
+  `BundleSolver`, `ParallelBundleSolver` and `BundleSolverML`; a component with
+  a weight is not easy, since the master would have to multiply by it both the
+  Objective of the inner Block and its coupling with the multipliers
+
+- the makefiles build the C++20 module `smspp.bundlesolver` when `SMSppMOD`
+  is not empty (e.g., `make SMSppMOD=1`), with clang++ 16 or later [see
+  `lib/makefile-mod` of SMS++]
+
+- the primal master problem hosts the Block, when its coordinates are all
+  ColVariable of the Block itself and the Block has Constraint other than the
+  box [see `MasterProblemBlock::set_hosted_Block()`]: the Solver of the master
+  then has these Constraint as they are, of any type it can read (e.g., a
+  `FRowConstraint` with a `DQuadFunction`) and possibly on Variable of the
+  Block that are not coordinates, the feasible set being the projection of
+  the one of the Block, and their Modification reach it directly. A point
+  the master has not written is checked on each `RowConstraint` of the Block,
+  with the other Variable at the value of the last master; the dual master
+  keeps the linear rows. `linear_constraints_test` also adds a ball and a
+  Variable that is no coordinate, for the BundleSolver with the primal master
+
+- linear `Constraint` in the Block: a `FRowConstraint` with a
+  `LinearFunction` of the `ColVariable` that the components have, which the
+  master problem has as rows (the primal one) or as multipliers in the
+  aggregate (the dual one, also with easy components). What is minimized is
+  the function plus the indicator of the set they define, i.e., a point out
+  of the set has value + INF while the linearizations of the components there
+  are kept, so that a starting point out of it is left at the first serious
+  step; the points of the master problem are in it by construction, and the
+  others are checked within 1e-9 relative. The first master is solved with
+  the empty components given their fictitious bound, rather than skipped, and
+  an empty master is the set being empty, or under the trust region being out
+  of reach, which enlarges the region as the vertical linearizations do. Any
+  Modification of them (sides, coefficients, a row added, removed, relaxed or
+  enforced) has them read again once the Variable have changed, and given
+  anew to the master problem, the values at the stability centre and at the
+  trial point being then computed again, since the indicator may have changed
+  there
+
+- a lower bound that needs no test on z*: at each master problem of the
+  proximal method or of the trust region, the model at the trial point minus
+  the Hölder term sum_i | s_i | max | Lambda_i - y*_i | over the bounds of
+  the variables, s being the subgradient of the model plus the indicator of
+  the box that the master gives (`box_lower_bound()`). It is finite when
+  every variable with s_i != 0 has finite bounds, the largest one is kept as
+  the global bound, and `IsOptimal()` stops when the value at the centre is
+  within the accuracy of it, whatever `dblNZEps` is
+
+- `intMLModel` and `intMLHidden` of `BundleSolverML`: the recurrent core of
+  the network (0 = none, the feed-forward network, 1 = RNN, 2 = GRU, 3 =
+  LSTM) and its hidden size, so that the cores already in `Net` can be
+  chosen from the configuration; changing either rebuilds the network,
+  seeded with `intMLSeed` if that is >= 0, so that the initial weights do
+  not depend on the order in which the parameters are set. The state of the
+  core is cleared at the beginning of each `compute()`, and `Backward()`
+  replays the recorded iterations of a recurrent core in their order, with
+  the gradient truncated at each window [see `intMLWindow`]
+
+- `intMLLoss` and `intMLFeatures` of `BundleSolverML`, whose defaults 0 keep
+  the loss and the features it had. With `intMLLoss` = 1 each prediction of
+  t is paired with the step it has produced, and the loss is the mean of
+  c log t, c being the cosine of the angle between the new subgradient and
+  the step, which decreases t where the step went too far and increases it
+  where it did not go far enough, whatever the sign of the function. With
+  `intMLFeatures` = 1 the features are dimensionless (the values of the
+  function relative to its value at the center, the step-size through the
+  decrease the model predicts, the norms through their ratios), and the
+  network gives the fraction tau of the current estimate of the gap that
+  the decrease predicted by the model has to be, t = tau ( Sigma* +
+  D_t*( z* ) ) / || z* ||^2, rather than t itself, so that one network
+  applies to instances of different size and scale; weights trained with
+  the other features do not apply
+
+- the heuristic of t 5, selected by the bit 10 of `inttSPar1` both after a
+  serious and after a null step: t is multiplied by exp( - beta c ), c being
+  the cosine of the angle between the new subgradient and the step from the
+  stability center to the trial point, and beta the new `dbltSPar4` (0.3 by
+  default), so that t increases when the step was too short and decreases
+  when it was too long
+
+- the C++20 module `smspp.bundlesolver` (`src/BundleSolver.cppm`), which
+  exports every name that the headers declare at namespace scope and
+  re-exports `smspp.milpsolver`, so that a source file can write `import
+  smspp.bundlesolver;` in place of the `#include` of the headers; it is
+  built with the CMake option `SMSpp_BUILD_MODULE`, as the target
+  `SMS++::BundleSolver_module`. The headers of `BundleSolverML`, which needs
+  Torch, are not in it
+
+### Changed
+
+- the README leaves the channels that distribute SMS++ to the
+  installation guide of the wiki (Installing-SMS++), keeping the names
+  of the packages of the module
+
+- the pipeline builds the module also with its makefiles, after CMake, and
+  runs on a change of the makefiles too [see `ci/makefile` of the umbrella]
+
+- `SMSpp_BUILD_MODULE` no longer stops the configuration when the C++20
+  module cannot be built, i.e., with a CMake older than 3.28, a generator
+  other than Ninja or Visual Studio, a compiler other than Clang 16 (with
+  `clang-scan-deps`) or MSVC 19.34, or a module it imports that is not
+  there: the option is turned off with a warning that says why, and the
+  build goes on with the headers [see `cmake/CheckModule.cmake` of SMS++]
+
+- the cutoff that is the global lower bound of the master is no longer called
+  a conditional bound (`f_cutoff_LB`, formerly `f_cond_LB`), the conditional
+  bound being the one of `Block::get_valid_lower_bound()`; the bound that
+  z* = 0 gives is that of the last iteration because the upper bound of a
+  Lagrangian function is the value of the primal solution of that iteration,
+  as the comment now says
+
+- the bits of `intDoEasy` are renumbered with no gap, bit 1 being free
+  since its use was dropped: +1 the easy components, +2 (formerly +8) their
+  reduced costs, +4 together with +2 (formerly +12) also the dual values of
+  their rows, +8 (formerly +16) no size Variable, +16 (formerly +32) the
+  sized copies; a configuration written for the old bits has to be
+  translated (e.g., 13 is now 7, 45 is now 23)
+
+- the prediction of `BundleSolverML` no longer builds an autograd graph
+
+### Fixed
+
+- on Windows, the executables that copy their DLLs next to themselves
+  are linked one at a time (a job pool of Ninja), since two copies of the
+  same DLL into one directory collided (e.g., with the clang++ of MSYS2)
+
+- with the compilers of MinGW (MSYS2) the target asks whoever links it
+  for the symbol that forces the module in, as with MSVC and on macOS:
+  the linker imports a DLL only for the symbols asked for, so that a
+  program that used none had the module left out and its classes
+  missing from the factory
+
+- `cmake/FindCPLEX.cmake` and `cmake/FindGUROBI.cmake` keep the version of a
+  found library in the cache, with the include directory it is read from, and
+  read it again when that directory changes: the check of the cache wanted
+  the version, which was not cached, so that every configure searched the
+  library again
+
+- `cmake/FindCPLEX.cmake` and `cmake/FindGUROBI.cmake` drop the cached paths
+  of CPLEX and Gurobi when one of them does not exist any more (e.g., in a
+  build directory configured once outside and once inside a container, or
+  after an upgrade), so that all of them are searched again; the stale
+  include directory was kept, since `find_path()` does not search a cached
+  one again, and the configuration stopped on reading the version from a
+  header that is not there
+
+- `cmake/FindGUROBI.cmake` (`cmake/FindCPLEX.cmake` on Windows) searches the
+  include directory again whenever it takes the library from the directory of
+  the version it finds, so that both come from the same version
+
+- with the trust region, as long as no point of the domain is known each
+  master problem starts from `dbltMinor` and t comes back afterwards, but
+  what came back was the `dbltMinor` an empty bundle had already brought t
+  down to, so that the method went on from there whatever `dbltInit` was;
+  the t an empty bundle puts aside is now held by a NaN rather than by
+  `Inf< double >()`, which t may be (`dbltMaior` and `dbltInit` infinite),
+  and `FormLambda1()` does not scale the step of the trust region, nor one
+  whose t is infinite, which gave NaN with an infinite t
+
+- a change of the linear `Constraint` drops the global lower bound, as it
+  does the level target: a larger set may have a lower minimum, and with
+  the level stabilization the stale bound, above the new minimum, kept
+  the level gap from closing [see `linear_constraints_test`]
+
+- with the level stabilization the initial probe, which is a proximal
+  master, gives the lower bound of its aggregate as the other masters do:
+  at a stability centre that is already optimal the probe predicts no
+  decrease, the level goes to the centre, and its master, with no
+  multiplier on the level row, ran out of restarts
+
+- with the level stabilization and a cutoff, a master problem with no
+  usable aggregate first removes the cutoff as its global lower bound,
+  as any other failing master does, and only then restarts the level:
+  with the stability centre within the accuracy of the cutoff, the
+  restarts ran out and `compute()` returned `kLowPrecision` rather than
+  `kCutOff` [see `cutoff_test`]
+
+- the makefiles of the tests and of the tools build also with g++: they
+  take the option that stops at the first error and the one of the
+  debugging information, which clang++ and g++ spell differently
+  (`-ferror-limit=1` and `-glldb` against `-fmax-errors=1` and `-ggdb`),
+  from `SMSppSWERR` and `SMSppSWDBG` of `lib/makefile-OS` of SMS++
+
+- with `intIntVars` 1 the `ParallelBundleSolver` evaluates the components
+  on its threads: the method with integer Variable evaluated them in a loop
+  of its own, which no derived class redefines, and now does it by
+  `InnerLoop()` with the new argument `all`, which evaluates every hard
+  component collecting the linearizations with no stop on a serious or null
+  step; with `all` the `ParallelBundleSolver` consumes the evaluations in
+  the order of the sequential version, hence it takes the same iterations.
+  `integer_test` has several polyhedral components, and the
+  `ParallelBundleSolver` as a second Solver of `BSPar-int.txt`
+
+- the tests are registered with ctest also in a fresh build of the
+  umbrella, where `include(CTest)` was commented out and the tests were
+  built but never run
+
+- a master Solver that fails on the master itself, rather than on the
+  bundle, made `compute()` run until `intMaxIter`: the recovery deleted an
+  item, the master was solved without it, and the new trial point gave the
+  item back. This happens, e.g., with an active-set QP Solver that stops at
+  its iteration limit where it cannot tell that the master is empty. Now
+  `compute()` stops with `kError` once the master has failed in more
+  iterations since the last serious step than the items the bundle can hold
+
+- a true global lower bound [see `set_valid_lower_bound()`] within the
+  accuracy of the value at the centre now stops `compute()` with `kOK`, and
+  `get_lb()` / `get_ub()` give the largest of it and of the bound found by
+  the algorithm, while the latter used to hide the former as soon as it was
+  finite, however worse
+
+- a serious step accepted a point worse than the stability centre when some
+  hard component had no item in the bundle: the targets were then infinite,
+  which is right when the value at the centre is not known yet, but the
+  recovery from failures of the master problem can empty the bundle in the
+  middle of a call. On a two-stage stochastic unit commitment the
+  Lagrangian Dual moved its centre from 3.81e9 to -3.78e12 and stopped
+  there; the upper target is now the value at the centre whenever this is
+  known, so that only an improving step is serious
+
+- the recovery from a numerical failure of the master problem declared it
+  unrecoverable as soon as the bundle had only items of the current
+  iteration (the new linearizations and the aggregated ones, not removable
+  until the next one), as at the first master of a call or right after a
+  serious step: these are now removed as well, the model without them being
+  still a model of the function, and only an empty bundle, whose master is
+  the stability centre itself, is left. On `pHydro_18` of plan4res the
+  Lagrangian Dual ended in `kError` at the 149-th iteration, its master
+  failing on GUROBI's dual simplex right after a serious step
+
+- the time limit (`dblMaxTime`) did not hold while the master problem was
+  failing: the recovery, which removes an item from the bundle and solves
+  the master again until it works or the bundle is empty, did not look at
+  the time, and gave the master Solver the time left even when this was
+  negative, which GUROBI refuses, keeping its previous limit. On an AC unit
+  commitment over 24 hours the Lagrangian Dual stopped at 600 seconds went
+  on for 200 more in the recovery and ended in `kError`; it now stops with
+  `kStopTime` as soon as the time is up, and the time left that the master
+  Solver and the components are given is never below zero
+
+- `NeedsG1()` did not ask for the new subgradient when the heuristic of t 4
+  is used after a serious step only, as it compared the bits 6 and 7 of
+  `inttSPar1` with 172 rather than with 192: the heuristic then read a G1
+  that had not been computed
+
+- the scalar product < g , d* > of the new subgradient and the direction
+  that the heuristics of t 2 and 3 use (`inttSPar1`) and that
+  `BundleSolverML` takes as a feature, which was z* d* plus the product of
+  each new subgradient with the stability center rather than with d*
+
 ## [0.6.0] - 2026-10-09
 
 ### Added
@@ -100,8 +366,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the concave case, `dblLwCutOff` in the convex one) is also the global
   lower bound of the master, when it is above the true one, as whoever set
   it does not care where the optimum is beyond it: in a Branch-and-Bound,
-  the incumbent stabilizes the dual of the node. The bound is only
-  conditional: what the master proves is recorded as a global bound, and
+  the incumbent stabilizes the dual of the node. The cutoff is not a
+  bound: what the master proves is recorded as a global bound, and
   reported by `get_lb()` / `get_ub()`, only if it is above the cutoff, the
   level target is never put beyond it, and an optimality test passed with
   the value at the stability centre within the accuracy of the cutoff ends
@@ -721,7 +987,8 @@ Several major improvements:
 
 - First test release.
 
-[Unreleased]: https://gitlab.com/smspp/bundlesolver/-/compare/0.6.0...develop
+[Unreleased]: https://gitlab.com/smspp/bundlesolver/-/compare/0.7.0...develop
+[0.7.0]: https://gitlab.com/smspp/bundlesolver/-/compare/0.6.0...0.7.0
 [0.6.0]: https://gitlab.com/smspp/bundlesolver/-/compare/0.5.0...0.6.0
 [0.5.0]: https://gitlab.com/smspp/bundlesolver/-/compare/0.4.5...0.5.0
 [0.4.5]: https://gitlab.com/smspp/bundlesolver/-/compare/0.4.4...0.4.5
