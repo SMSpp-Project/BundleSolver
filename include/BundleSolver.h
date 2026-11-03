@@ -3218,8 +3218,9 @@ public:
  /// the radius of the trust region: t, or infinite with no stabilization
  /** The radius \f$ \| d^* \|_\infty \f$ is measured against in the
   * stabilizations whose master is that of the trust region, i.e., t under
-  * #kTrustRegion and \f$ \infty \f$ with no stabilization (#kNone), whose
-  * master is the one of the trust region with an infinite t [see
+  * MasterProblemBlock::kTrustRegion and \f$ \infty \f$ with no
+  * stabilization (MasterProblemBlock::kNone), whose master is the one of the
+  * trust region with an infinite t [see
   * MasterProblemBlock::has_trust_region()]; 0 for the other ones. */
 
  [[nodiscard]] VarValue trust_region_radius( void ) const {
