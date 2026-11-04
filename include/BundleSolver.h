@@ -4555,6 +4555,15 @@ public:
 
  void global_LB_row( void );
 
+/*--------------------------------------------------------------------------*/
+ /// the fictitious lower bounds of the empty hard components
+ /** Gives the fictitious bound of MasterProblemBlock::set_fictitious_LB()
+  * to every hard component with no diagonal item and no lower bound of its
+  * own, unless the master has a finite global lower bound [see
+  * global_LB_row()], and takes it away from the others. */
+
+ void sync_fictitious_LB( void );
+
  /// the translation of the global lower bound of the master
  /** The value that the global lower bound of the master is decreased by, that
   * of the function at the stability centre in the frame of the master [see

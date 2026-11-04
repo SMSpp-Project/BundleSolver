@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- the fictitious bound v^k >= 0 of an empty hard component (no diagonal
+  item and no lower bound of its own) is not set when the master has a
+  finite global lower bound, which keeps it bounded with the component left
+  free (the model is then the bound alone); the bounds are kept in step by
+  `sync_fictitious_LB()`, also when the cutoff is taken out of the global
+  lower bound and when an item is deleted
+
 ## [0.7.0] - 2026-11-03
 
 ### Added
