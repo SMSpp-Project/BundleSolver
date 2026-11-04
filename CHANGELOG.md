@@ -21,6 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `BundleSolver::concerned_by()` is `eModAbst`: the physical Modification
+  of the Block, which the BundleSolver has no use for, no longer reach it
+
 - the fictitious bound v^k >= 0 of an empty hard component (no diagonal
   item and no lower bound of its own) is not set when the master has a
   finite global lower bound, which keeps it bounded with the component left

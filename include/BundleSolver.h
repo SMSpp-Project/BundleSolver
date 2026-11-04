@@ -677,6 +677,19 @@ public:
  void set_Block( Block * block ) override;
 
 /*--------------------------------------------------------------------------*/
+ /// the kinds of Modification the BundleSolver reads: the abstract ones
+ /** The BundleSolver reads the Modification of the Objective, of the
+  * Variable and of the Constraint of its Block, i.e., of the abstract
+  * representation [see Solver::concerned_by()]: the physical Modification,
+  * which it has no use for, do not reach it. Those that come through its
+  * own Observer [see GroupObserver] do not pass through the Block, and are
+  * not filtered. */
+
+ [[nodiscard]] Modification::ModConcern concerned_by( void ) const override {
+  return( Modification::eModAbst );
+  }
+
+/*--------------------------------------------------------------------------*/
  /// set the int parameters of BundleSolver
  /** Set the int parameters specific of BundleSolver, together with the
   * parameters of CDASolver that BundleSolver actually "listens to". Note
