@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `dbltEmpty`, the t of the master problem while the bundle is empty: 0,
   the default, is `dbltMinor` as before, a positive value is used as t and a
   negative one leaves t as it is
+- `intXtrLife` and `intXtrOnNS`, for the items fetched from a component
+  beyond the first at an evaluation (e.g., the epsilon-optimal solutions of a
+  Solver with `intMaxSol` > 1): with `intXtrLife` > 0 they are removed after
+  that many steps with a zero multiplier rather than `intBPar1`, and with
+  `intXtrOnNS` = 1 they are fetched only after a null step; both 0 by
+  default, which leaves the algorithm as it is
 
 ### Changed
 

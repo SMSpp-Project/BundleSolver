@@ -1803,6 +1803,7 @@ void BundleSolver::set_Block( Block * block )
   LmbdBst.resize( NumVar );
 
  OOBase.resize( vBPar2.back() , Inf< SIndex >() );
+ Xtra.assign( vBPar2.back() , 0 );
  // counter for eliminating outdated items: Inf< SIndex >() means empty
 
  ItemVcblr.resize( vBPar2.back() , std::make_pair( InINF , InINF ) );
@@ -2088,6 +2089,18 @@ void BundleSolver::set_par( idx_type par , int value )
     throw( std::invalid_argument(
                      "BundleSolver::set_par: IntVars must be 0 or 1" ) );
    IntVars = value;
+   break;
+  case( intXtrLife ):
+   if( value < 0 )
+    throw( std::invalid_argument(
+                     "BundleSolver::set_par: XtrLife must be >= 0" ) );
+   XtrLife = value;
+   break;
+  case( intXtrOnNS ):
+   if( ( value < 0 ) || ( value > 1 ) )
+    throw( std::invalid_argument(
+                     "BundleSolver::set_par: XtrOnNS must be 0 or 1" ) );
+   XtrOnNS = value;
    break;
   default: CDASolver::set_par( par , value );
   }
@@ -2615,6 +2628,8 @@ int BundleSolver::get_int_par( idx_type par ) const
   case( intCmpAggrRule ): return( CmpAggrRule );
   case( intTDisc ):     return( TDisc );
   case( intIntVars ):   return( IntVars );
+  case( intXtrLife ):   return( XtrLife );
+  case( intXtrOnNS ):   return( XtrOnNS );
   default:              return( CDASolver::get_int_par( par ) );
   }
  }  // end( BundleSolver::get_int_par )
@@ -4675,9 +4690,11 @@ int BundleSolver::continuous_step( Index cnt , bool doubly_stabilized ,
   GotoLambda1();
   update_level_after_step( true , gated_level_update , old_ref );
   CNSCntr = 0;
+  LastNS = false;
   CmptdinL = ( cnt == NrFi - NrEasy );
   }
  else {        // NS - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  LastNS = true;
   BLOG( 1 , std::endl << " NS[" << CNSCntr << "]: " );
   BLOG2( 1 , DeltaFi < INFshift , "DFi = " << shrt << rs( DeltaFi )
              <<  " ~ " << def );
@@ -6210,7 +6227,10 @@ bool BundleSolver::GetGi( Index wFi )
  bool insrtd = false;  // keep track if anything new at all was inserted
  auto fwFi = v_c05f[ wFi ];
 
- for( Index Ftchd = 0 ; Ftchd < aBP3 ; ++Ftchd ) {
+ // with intXtrOnNS, more than BPar4 items only after a null step
+ const Index nFtch = ( XtrOnNS && ( ! LastNS ) ) ? BPar4 : aBP3;
+
+ for( Index Ftchd = 0 ; Ftchd < nFtch ; ++Ftchd ) {
   bool diagonal = true;
   bool HasLinearization;
 
@@ -6623,6 +6643,7 @@ bool BundleSolver::GetGi( Index wFi )
    // guarantee termination anyway, the feasible region needing not be a
    // polyhedron, and with a finite bundle it may leave no room at all
    OOBase[ wh ] = -1;
+   Xtra[ wh ] = ( Ftchd > 0 );
    if( ! diagonal )     // a new vertical row: the MP is bound to change
     MPchgs = 2;
    }
@@ -6858,7 +6879,8 @@ void BundleSolver::SimpleBStrat( void )
  const bool keep_vertical = ( trust_region_radius() > 0 );
  auto deletable = [ this , keep_vertical ]( Index i ) {
   return( ( OOBase[ i ] < Inf< SIndex >() ) &&
-          ( OOBase[ i ] > SIndex( BPar1 ) ) &&
+          ( OOBase[ i ] > SIndex( ( XtrLife > 0 ) && Xtra[ i ] ? XtrLife
+                                                               : BPar1 ) ) &&
           ( ( ! keep_vertical ) || is_subgradient_global( i ) ) );
   };
 
@@ -7806,6 +7828,7 @@ Index BundleSolver::BStrategy( Index wFi )
  whisZ[ wFi ] = whZ;      // Z[ wFi ] is in the bundle in position whZ
  Zvalid[ wFi ] = true;    // ... and it is valid
  OOBase[ whZ ] = -1;      // ... and it won't be removed in this iteration
+ Xtra[ whZ ] = 0;         // ... and it is no extra item
 
  BLOG( 2 , std::endl << "Aggregation performed into " << whZ );
 
@@ -7939,6 +7962,7 @@ void BundleSolver::guts_of_destructor( void )
  ItemVcblr.clear();
 
  OOBase.clear();
+ Xtra.clear();
 
  LmbdBst.clear();
  Lambda1.clear();
@@ -8202,6 +8226,7 @@ void BundleSolver::ReSetAlg( unsigned char RstLvl )
  if( ! ( RstLvl & RstAlg ) ) {  // reset algorithmic parameters - - - - - - -
   ParIter = 0;             // reset iterations count
   CSSCntr = CNSCntr = 0;   // ... comprised consecutive NS/SS count
+  LastNS = false;          // the first evaluation follows no null step
 
   if( t != tInit ) {       // reset t
    t = tInit;
@@ -8820,6 +8845,7 @@ void BundleSolver::reset_bundle( void )
   remove_cut_global( name );
 
  OOBase.assign( vBPar2.back() , Inf< SIndex >() );
+ Xtra.assign( vBPar2.back() , 0 );
 
  ItemVcblr.assign( vBPar2.back() , std::make_pair( InINF , InINF ) );
 

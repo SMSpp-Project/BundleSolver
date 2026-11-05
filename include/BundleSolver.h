@@ -402,6 +402,10 @@ public:
 
  intIntVars ,      ///< whether the integer Variable are kept integer
 
+ intXtrLife ,      ///< zero-multiplier age that removes an extra item
+
+ intXtrOnNS ,      ///< extra items fetched only after a null step
+
  intLastBndSlvPar  ///< first allowed new int parameter for derived classes
                    /**< Convenience value for easily allow derived classes
                     * to extend the set of int algorithmic parameters. */
@@ -634,6 +638,9 @@ public:
   CmpAggrRule = get_dflt_int_par( intCmpAggrRule );
   TDisc = get_dflt_int_par( intTDisc );
   IntVars = get_dflt_int_par( intIntVars );
+  XtrLife = get_dflt_int_par( intXtrLife );
+  XtrOnNS = get_dflt_int_par( intXtrOnNS );
+  LastNS = false;
   CmpAggr = get_dflt_dbl_par( dblCmpAggr );
   IncrCost = get_dflt_dbl_par( dblIncrCost );
   IntRad = get_dflt_dbl_par( dblIntRad );
@@ -1232,7 +1239,22 @@ public:
   *   optimal base, since without the multipliers of a continuous master
   *   there is no base, hence intBPar2 has to be large enough for all of
   *   them. If no Variable is
-  *   integer, 1 is the same as 0. */
+  *   integer, 1 is the same as 0.
+  *
+  * - intXtrLife [0]: if positive, an "extra" item, i.e., one fetched from a
+  *   component beyond the first at the same function evaluation [see
+  *   intBPar3], is eliminated once it has had a zero multiplier for the last
+  *   intXtrLife steps, rather than intBPar1 ones; the extra items, e.g., the
+  *   epsilon-optimal solutions that a Solver gives with intMaxSol > 1, are
+  *   not as valuable as the first one, and keeping them as long makes the
+  *   Master Problem grow with their number. With 0 they are treated as the
+  *   other items.
+  *
+  * - intXtrOnNS [0]: with 1, more than intBPar4 items are fetched from a
+  *   component only at the evaluations that follow a null step, i.e., when
+  *   the model has been found inaccurate, and intBPar4 ones otherwise; with
+  *   0, up to the current number [see intBPar3 and intBPar6] at every
+  *   evaluation. */
 
  void set_par( idx_type par , int value ) override;
 
@@ -2347,7 +2369,7 @@ public:
 /*--------------------------------------------------------------------------*/
 
  [[nodiscard]] int get_dflt_int_par( idx_type par ) const override {
-  static const std::array< int , 24 > dflt_int_par = {
+  static const std::array< int , 26 > dflt_int_par = {
     10 ,  // intBPar1
    100 ,  // intBPar2
      1 ,  // intBPar3
@@ -2373,7 +2395,9 @@ public:
     42 ,  // intCmpAggrSeed
      0 ,  // intCmpAggrRule (default value is random)
      0 ,  // intTDisc (default value is no discovery of t)
-     0    // intIntVars (default value is integrality ignored)
+     0 ,  // intIntVars (default value is integrality ignored)
+     0 ,  // intXtrLife (default value is the age of the other items)
+     0    // intXtrOnNS (default value is extra items at every evaluation)
      };
 
   if( ( par >= intLastParCDAS ) && ( par < intLastBndSlvPar ) )
@@ -2508,7 +2532,9 @@ public:
    { "intCmpAggrSeed" , BundleSolver::intCmpAggrSeed } ,
    { "intCmpAggrRule" , BundleSolver::intCmpAggrRule } ,
    { "intTDisc" , BundleSolver::intTDisc } ,
-   { "intIntVars" , BundleSolver::intIntVars }
+   { "intIntVars" , BundleSolver::intIntVars } ,
+   { "intXtrLife" , BundleSolver::intXtrLife } ,
+   { "intXtrOnNS" , BundleSolver::intXtrOnNS }
    };
 
   const auto it = int_pars_map.find( name );
@@ -2606,13 +2632,13 @@ public:
 
  [[nodiscard]] const std::string & int_par_idx2str( idx_type idx )
   const override {
-  static const std::array< std::string , 24 > int_pars_str = {
+  static const std::array< std::string , 26 > int_pars_str = {
    "intBPar1" , "intBPar2" , "intBPar3" , "intBPar4" , "intBPar6" ,
    "intBPar7" , "intMnSSC" , "intMnNSC" , "inttSPar1" , "intMaxNrEvls" ,
    "intDoEasy" , "intWZNorm" , "intFrcLstSS" , "intTrgtMng" ,
    "intMPStbl" , "intMPPrimal" , "intRstAlg" , "intMPV2Form" ,
    "intMPHScaling" , "intMaxLevelNR" , "intCmpAggrSeed" , "intCmpAggrRule" ,
-   "intTDisc" , "intIntVars" };
+   "intTDisc" , "intIntVars" , "intXtrLife" , "intXtrOnNS" };
 
   if( ( idx >= intLastParCDAS ) && ( idx < intLastBndSlvPar ) )
    return( int_pars_str[ idx - intBPar1 ] );
@@ -4050,6 +4076,12 @@ public:
 
  int IntVars;          ///< integer Variable kept integer [see intIntVars]
 
+ int XtrLife;          ///< age that removes an extra item [see intXtrLife]
+
+ int XtrOnNS;          ///< extra items only after a NS [see intXtrOnNS]
+
+ bool LastNS;          ///< whether the last step was a null step
+
  /// which Variable of the C05Function are integer, empty if none is
  std::vector< bool > f_int_var;
 
@@ -4266,6 +4298,10 @@ public:
    * = - Inf< SIndex >() means unremovable */
 
  Vec_SIndex OOBase;
+
+ /// whether each item of the bundle was fetched beyond the first one of its
+ /// component at an evaluation [see intXtrLife]
+ std::vector< char > Xtra;
 
  bool TrueLB;         /**< true if LowerBound is a "true" lower bound rather
                        * than a "conditional" one */
