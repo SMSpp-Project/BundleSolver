@@ -2264,6 +2264,9 @@ void BundleSolver::set_par( idx_type par , double value )
                "BundleSolver::set_par: tSPar4 must be >= 0" ) );
    tSPar4 = value;
    break;
+  case( dbltEmpty ):
+   tEmpty = value;
+   break;
   default:
    CDASolver::set_par( par , value );
   }
@@ -2651,6 +2654,7 @@ double BundleSolver::get_dbl_par( idx_type par ) const
   case( dblLwCutOff ):   return( f_lw_cutoff );
   case( dblIntRad ):     return( IntRad );
   case( dbltSPar4 ):     return( tSPar4 );
+  case( dbltEmpty ):     return( tEmpty );
   default:               return( CDASolver::get_dbl_par( par ) );
   }
  }  // end( BundleSolver::get_dbl_par )
@@ -3560,9 +3564,12 @@ void BundleSolver::FormD_once( void )
  const bool empty_bundle = ( NrEasy < NrFi ) &&
                            ( MasterPB ? MasterPB->is_bundle_empty() : true );
  if( empty_bundle ) {
-  if( ( t > tMinor ) && std::isnan( Prevt ) ) {
+  // the t of an empty bundle [see dbltEmpty], none if it is negative
+  const VarValue te = tEmpty < 0 ? t : tEmpty == 0 ? tMinor
+                      : std::max( tMinor , std::min( tMaior , tEmpty ) );
+  if( ( t != te ) && std::isnan( Prevt ) ) {
    Prevt = t;
-   t = tMinor;
+   t = te;
    tHasChgd = true;
    }
   }
@@ -3971,12 +3978,12 @@ void BundleSolver::FormD_once( void )
   // failure of the MP Solver neither is believed
   const bool easy_answer = NrEasy && easy_says_it() && ( ! mp_failed );
 
-  // with an empty bundle t is at tMinor [see above], and the master of a
-  // Bundle with easy components is then a badly scaled problem, the
-  // stabilizing term vanishing against their data, which a master Solver
-  // may well declare empty or unbounded when it is not: the verdict is the
-  // easy components' answer only if the master solved again with t where
-  // it was before the empty bundle (Prevt) still gives it
+  // with an empty bundle t is at dbltEmpty [see above], tMinor by default,
+  // and the master of a Bundle with easy components is then a badly scaled
+  // problem, the stabilizing term vanishing against their data, which a
+  // master Solver may well declare empty or unbounded when it is not: the
+  // verdict is the easy components' answer only if the master solved again
+  // with t where it was before the empty bundle (Prevt) still gives it
   if( easy_answer && ( primal_empty || primal_unbounded ) &&
       ( ! t_restored ) && ( ! std::isnan( Prevt ) ) ) {
    t_restored = true;
@@ -8411,9 +8418,9 @@ bool BundleSolver::IsOptimal( double eps ) const
  if( vStar.back() >= INFshift )  // some components have no subgradients
   return( false );               // no way one can detect optimality
 
- // while the bundle is empty t is temporarily collapsed to tMinor [see
+ // while the bundle is empty t is temporarily set by dbltEmpty [see
  // FormD()], and Prevt holds the value to be restored as soon as there is
- // something in the bundle. With that t the step is null, hence z* and Sigma
+ // something in the bundle. With tMinor the step is null, hence z* and Sigma
  // are zero because of the stabilization and not because the point is
  // optimal: reading them as optimality certifies whatever point the
  // algorithm happens to be at, which is how an unbounded problem got

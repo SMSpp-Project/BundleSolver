@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `dbltEmpty`, the t of the master problem while the bundle is empty: 0,
+  the default, is `dbltMinor` as before, a positive value is used as t and a
+  negative one leaves t as it is
+
 ### Changed
 
 - the fictitious bound v^k >= 0 of an empty hard component (no diagonal

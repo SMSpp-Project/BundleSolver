@@ -465,6 +465,8 @@ public:
 
   dbltSPar4 ,     ///< numerical parameter of the cosine t-heuristic
 
+  dbltEmpty ,     ///< t of the master problem while the bundle is empty
+
   dblLastBndSlvPar ///< first allowed new double parameter for derived classes
                    /**< Convenience value for easily allow derived classes
                     * to extend the set of double algorithmic parameters. */
@@ -636,6 +638,7 @@ public:
   IncrCost = get_dflt_dbl_par( dblIncrCost );
   IntRad = get_dflt_dbl_par( dblIntRad );
   tSPar4 = get_dflt_dbl_par( dbltSPar4 );
+  tEmpty = get_dflt_dbl_par( dbltEmpty );
 
   v_events.resize( max_event_number() );
   }
@@ -1667,7 +1670,19 @@ public:
   *   removed altogether. It must be in ( 0 , 1 ].
   *
   * - dbltSPar4 [0.3]: the factor beta >= 0 of Heuristic5 [see bit 10 of
-  *                    inttSPar1], which multiplies t by exp( - beta c ). */
+  *                    inttSPar1], which multiplies t by exp( - beta c ).
+  *
+  * - dbltEmpty [0]: the t of the master problem while the bundle is empty,
+  *                  i.e., some hard component has no subgradient yet; t
+  *   goes back to its value as soon as the bundle has something. With 0, t
+  *   is dbltMinor, and the first master gives the point of the domain
+  *   closest to the starting one (which is the starting one itself if it
+  *   is feasible and the 0-th component, if any, is null); a positive value
+  *   is used as t, within [ dbltMinor , dbltMaior ], and a negative one
+  *   leaves t as it is, so that the first step is a step of the current t.
+  *   The latter can be better when the starting point is known to be poor,
+  *   but evaluating it first is what one wants when it is a good one, as
+  *   in a reoptimization that has lost most of the bundle. */
 
  void set_par( idx_type par , double value ) override;
 
@@ -2370,7 +2385,7 @@ public:
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
  [[nodiscard]] double get_dflt_dbl_par( idx_type par ) const override {
-  static const std::array< double , 24 > dflt_dbl_par = {
+  static const std::array< double , 25 > dflt_dbl_par = {
    0 ,      // dblNZEps
    1e+2 ,   // dbltStar
    0 ,      // dblMinNrEvls
@@ -2394,7 +2409,8 @@ public:
    0 ,      // dblCmpAggr
    0 ,      // dblIncrCost
    0.1 ,    // dblIntRad
-   0.3      // dbltSPar4
+   0.3 ,    // dbltSPar4
+   0        // dbltEmpty (default value is dbltMinor)
    };
 
   if( ( par >= dblLastParCDAS ) && ( par < dblLastBndSlvPar ) )
@@ -2530,7 +2546,8 @@ public:
    { "dblCmpAggr" , BundleSolver::dblCmpAggr } ,
    { "dblIncrCost" , BundleSolver::dblIncrCost } ,
    { "dblIntRad" , BundleSolver::dblIntRad } ,
-   { "dbltSPar4" , BundleSolver::dbltSPar4 }
+   { "dbltSPar4" , BundleSolver::dbltSPar4 } ,
+   { "dbltEmpty" , BundleSolver::dbltEmpty }
    };
 
   const auto it = dbl_pars_map.find( name );
@@ -2607,13 +2624,13 @@ public:
 
  [[nodiscard]] const std::string & dbl_par_idx2str( idx_type idx )
   const override {
-  static const std::array< std::string , 24 > dbl_pars_str = {
+  static const std::array< std::string , 25 > dbl_pars_str = {
    "dblNZEps" , "dbltStar" , "dblMinNrEvls" , "dblBPar5" , "dblm1" ,
    "dblm2" , "dblm3" , "dblmxIncr" , "dblmnIncr" , "dblmxDecr" ,
    "dblmnDecr" , "dbltMaior" , "dbltMinor" , "dbltInit" , "dbltSPar2" ,
    "dbltSPar3" , "dblLStabM" , "dblLStabDlt" , "dblLStabIncr" ,
    "dblLStabSmall" , "dblCmpAggr" , "dblIncrCost" , "dblIntRad" ,
-   "dbltSPar4" };
+   "dbltSPar4" , "dbltEmpty" };
 
  if( ( idx >= dblLastParCDAS ) && ( idx < dblLastBndSlvPar ) )
    return( dbl_pars_str[ idx - dblLastParCDAS ] );
@@ -2877,7 +2894,7 @@ public:
     Otherwise report an unrecoverable master failure through Result so
     compute() can stop or handle it. An empty or unbounded master is
     reported as kInfeasible / kUnbounded only when it is an answer [see
-    easy_says_it()]; with an empty bundle and t at dbltMinor the master is
+    easy_says_it()]; with an empty bundle and t at dbltEmpty the master is
     solved again with the previous t (Prevt) before a verdict of the easy
     components is trusted, and the same is done before an unrecoverable
     failure of the master Solver is declared. */
@@ -3249,7 +3266,7 @@ public:
   * Two cases are excluded by FormD() even when this returns true: a master
   * that follows a failure of the master Solver in the same call, which is
   * the same error in disguise, and a master solved with an empty bundle,
-  * whose t is at dbltMinor and whose stabilizing term vanishes against the
+  * whose t is at dbltEmpty and whose stabilizing term vanishes against the
   * data of the easy components, which is solved again with the previous t
   * and believed only if it is again empty or unbounded. */
 
@@ -3835,6 +3852,7 @@ public:
  double tSPar2;     ///< double parameter for long-term t-strategy
  double tSPar3;     ///< double parameter for small heuristic t changes
  double tSPar4;     ///< double parameter of the cosine t-heuristic
+ double tEmpty;     ///< t of the master problem while the bundle is empty
 
  int DoEasy;        ///< how "easy" components are managed [see intDoEasy]
 
@@ -4122,11 +4140,11 @@ public:
  /**< true until a master problem has been solved since the master was
   * created or the easy components last changed [see easy_says_it()] */
  VarValue Prevt;       ///< what t were before being changed for funny reasons
- /**< the value of t before an empty bundle brought it down to tMinor,
+ /**< the value of t before an empty bundle changed it [see dbltEmpty],
   * NaNshift if t has not been changed so (t may be INFshift [see
   * dbltMaior]); FormD() restores it as soon as
   * the bundle is not empty, or within the same call when the master solved
-  * with tMinor is empty or unbounded as an answer of the easy components,
+  * with that t is empty or unbounded as an answer of the easy components,
   * or fails with no item left to remove */
  bool f_tr_open = false;  ///< the last master was solved without the trust
                           ///< region, whose radius is still t [see FormD()]
