@@ -4565,8 +4565,9 @@ public:
   * dblLwCutOff]. The global lower bound of the master is in the frame of
   * the stability centre [see LB_translation()], hence it is set again
   * whenever the centre moves; with no value at the stability centre to
-  * translate it with, the master is left as it is. Only the dual master has
-  * a global lower bound, hence with the primal one nothing is done. Since
+  * translate it with, the master is left as it is. The primal master has it
+  * in the value row, of the hard components and b only, hence with the
+  * primal master and easy components nothing is done. Since
   * with the cutoff the master may be badly conditioned, a master that fails
   * with it is solved again without it, which then stays out until compute()
   * returns [see f_cutoff_LB_off]. */
@@ -4581,6 +4582,15 @@ public:
   * global_LB_row()], and takes it away from the others. */
 
  void sync_fictitious_LB( void );
+
+/*--------------------------------------------------------------------------*/
+ /// v* of the components with no model
+ /** Gives +INF to vStar[ k ] of each hard component with the fictitious
+  * bound [see sync_fictitious_LB()], and then to the total vStar.back():
+  * the value the master gives it is that of the bound, the component having
+  * no subgradient to build a model of F_k with. */
+
+ void no_model_vStar( void );
 
  /// the translation of the global lower bound of the master
  /** The value that the global lower bound of the master is decreased by, that

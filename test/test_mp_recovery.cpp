@@ -15,9 +15,10 @@
  * \f]
  * with K components, solved by the two BundleSolver of BSPar-recovery.txt:
  * the first has its master problem given to TransientMPSolver, which fails
- * at its first FAIL calls and then has all of them solved by HiGHS [see
- * MPBCfg-transient.txt], the second has HiGHS for the master problem from
- * the start. At the first master problem the bundle only has the
+ * at the first FAIL calls with a nonempty bundle (a Solver of the master is
+ * expected to solve the master with no cut) and then has all of them solved
+ * by HiGHS [see MPBCfg-transient.txt], the second has HiGHS for the master
+ * problem from the start. At the first master problem the bundle only has the
  * linearizations of the first evaluation, so the first has to remove some
  * of them and go on: it has to end in kOK with the optimal value of the
  * second.
@@ -56,6 +57,8 @@
 
 #include "FRealObjective.h"
 
+#include "MasterProblemBlock.h"
+
 #include "OneVarConstraint.h"
 
 #include "PolyhedralFunction.h"
@@ -78,16 +81,16 @@ const Index N = 5;           ///< number of variables
 const Index M = 5;           ///< number of pieces of each component
 const Index K = 10;          ///< number of components
 const double BND = 1e+6;     ///< bound of each component
-const long FAIL = 3;         ///< master problems that fail at the start
+const long FAIL = 3;         ///< master problems with cuts that fail
 
 static int failed = 0;
 
 /*--------------------------------------------------------------------------*/
 /*------------------------ CLASS TransientMPSolver -------------------------*/
 /*--------------------------------------------------------------------------*/
-/// the Solver of the master problem: the first FAIL calls fail, the others
-/// are answered by the Solver registered after it [see
-/// MPBCfg-transient.txt]
+/// the Solver of the master problem: the first FAIL calls with a nonempty
+/// bundle fail, the others are answered by the Solver registered after it
+/// [see MPBCfg-transient.txt]
 
 class TransientMPSolver : public CDASolver {
  public:
@@ -95,7 +98,8 @@ class TransientMPSolver : public CDASolver {
  ~TransientMPSolver() override = default;
 
  int compute( bool changedvars = true ) override {
-  if( ++f_calls <= FAIL ) {
+  auto mp = dynamic_cast< MasterProblemBlock * >( get_Block() );
+  if( mp && ( ! mp->is_bundle_empty() ) && ( ++f_calls <= FAIL ) ) {
    ++Failures;
    return( kError );
    }

@@ -3385,12 +3385,16 @@ BundleSolver::VarValue BundleSolver::LB_translation( void ) const
 
 void BundleSolver::global_LB_row( void )
 {
- if( ( ! MasterPB ) || UsesPrimalMaster() )
+ // the value row of the primal master has the hard components and b only,
+ // hence it cannot bound the function when there are easy components
+ if( ( ! MasterPB ) || ( UsesPrimalMaster() && NrEasy ) )
   return;
 
  // with no value at the stability centre there is nothing to translate the
- // bound with, and the master is left as it is
- const VarValue rf = LB_translation();
+ // bound with, and the master is left as it is; as the level, the bound is
+ // absolute in the primal iterate frame
+ const bool absolute = UsesPrimalMaster() && MPV2Form;
+ const VarValue rf = absolute ? 0 : LB_translation();
  if( ! std::isfinite( rf ) )
   return;
 
@@ -3411,6 +3415,19 @@ void BundleSolver::global_LB_row( void )
 
 /*--------------------------------------------------------------------------*/
 
+void BundleSolver::no_model_vStar( void )
+{
+ // the value that the master gives a component with the fictitious bound is
+ // that of the bound, not of a model [see sync_fictitious_LB()]
+ for( Index k = 0 ; k < NrFi ; ++k )
+  if( ( k < FictLB.size() ) && FictLB[ k ] ) {
+   vStar[ k ] = INFshift;
+   vStar.back() = INFshift;
+   }
+ }
+
+/*--------------------------------------------------------------------------*/
+
 void BundleSolver::sync_fictitious_LB( void )
 {
  if( ! MasterPB )
@@ -3423,17 +3440,18 @@ void BundleSolver::sync_fictitious_LB( void )
  // own it leaves the primal master unbounded and the dual one infeasible
  // (gamma^k is fixed to 0, hence lambda = 0). If the master has a finite
  // global lower bound, this is all right: lambda = 0 and r = 1 satisfy the
- // normalization lambda + r - omega = 1, and the component is left as it
- // is. Otherwise, it gets the fictitious bound v^k >= 0 of
- // MasterProblemBlock::set_fictitious_LB(), which makes it "disappear"
- // (gamma^k becomes a free multiplier absorbing lambda); with all the
- // components empty, and nothing else in the master, the bounds are not
- // used [see MasterProblemBlock::solve_master()], but they do no harm.
+ // normalization lambda + r - omega = 1 (in the primal one, the row
+ // LB <= b*d + sum_k v^k bounds the components from below), and the
+ // component is left as it is. Otherwise, it gets the fictitious bound
+ // v^k >= 0 of MasterProblemBlock::set_fictitious_LB(), which makes it
+ // "disappear" (gamma^k becomes a free multiplier absorbing lambda), also
+ // when all the components are empty, a master that its Solver has to solve
+ // as any other.
  // The next evaluation either refills the bundle (a cut is added, and the
  // bound removed here the next time) or returns F_k = -INF, which is
  // propagated as kUnbounded and not masked by the fictitious bound.
  // Components with a genuine lower bound never need it.
- const bool global_lb = ( ! UsesPrimalMaster() ) && ( f_LB_row > -INFshift );
+ const bool global_lb = f_LB_row > -INFshift;
  for( Index k = 0 ; k < NrFi ; ++k ) {
   if( NrEasy && IsEasy[ k ] )
    continue;
@@ -4154,6 +4172,7 @@ void BundleSolver::FormD_once( void )
  for( Index k = 0 ; k < NrFi ; ++k )
   if( MasterPB )
    vStar[ k ] = MasterPB->get_FiBLambda( int( k ) );
+ no_model_vStar();
 
  if( NrEasy ) {  // there are easy components
   // adjust the contribution of the easy components to v* and Sigma*.
@@ -4846,6 +4865,7 @@ int BundleSolver::integer_master( double tm )
   vStar.back() = MasterPB->get_FiBLambda();
   for( Index k = 0 ; k < NrFi ; ++k )
    vStar[ k ] = MasterPB->get_FiBLambda( int( k ) );
+  no_model_vStar();
   }
 
  return( rc );

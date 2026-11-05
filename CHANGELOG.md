@@ -21,6 +21,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   free (the model is then the bound alone); the bounds are kept in step by
   `sync_fictitious_LB()`, also when the cutoff is taken out of the global
   lower bound and when an item is deleted
+- the global lower bound is given to the primal master as well, when there
+  are no easy components, and v* of a component with the fictitious bound
+  is +INF, the master giving it the value of the bound rather than of a
+  model, now that the master with all the components empty is solved by its
+  Solver
+- `mp_recovery_test` and `time_limit_test` have their master problems fail
+  only with a nonempty bundle, a Solver of the master being expected to
+  solve the master with no cut, and the BundleSolver of `time_limit_test`
+  with no time limit stops at `intMaxIter` 10
 
 ## [0.7.0] - 2026-11-03
 
