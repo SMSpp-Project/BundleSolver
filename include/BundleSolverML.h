@@ -332,12 +332,12 @@ class BundleSolverML : public BundleSolver
   * features are divided by fixed scales and the network gives t; with
   * intMLFeatures == 1 they are dimensionless (values of the function
   * relative to the value at the center, norms by their ratios), and the
-  * network gives tau, the fraction of the current estimate of the gap that
-  * the decrease predicted by the model has to be, so that the same network
-  * applies to instances of different size and scale. It also records what
-  * the loss of intMLLoss needs in the subsequent Backward() call: the
-  * tensors (G, Q, alpha, w, ...) out of which the search direction is
-  * differentiated, or the outcome of the step that has just been done.
+  * network gives tau, the factor by which t changes, so that the same
+  * network applies to instances of different size and scale. It also
+  * records what the loss of intMLLoss needs in the subsequent Backward()
+  * call: the tensors (G, Q, alpha, w, ...) out of which the search
+  * direction is differentiated, or the outcome of the step that has just
+  * been done.
   *
   * @param whch  unused, kept for interface compatibility with BundleSolver
   *
@@ -437,8 +437,7 @@ class BundleSolverML : public BundleSolver
   *
   * - intMLFeatures: the features of the network, 0 (the default) = divided
   *   by fixed scales, the network giving t, 1 = dimensionless, the network
-  *   giving tau with t = tau ( Sigma* + D_t*( z* ) ) / || z* ||^2 [see
-  *   Heuristic()].
+  *   giving tau with the new t = tau t [see Heuristic()].
   *
   * Changing intMLModel or intMLHidden to a different value rebuilds the
   * (privately-owned) network with new initial weights, and hence discards

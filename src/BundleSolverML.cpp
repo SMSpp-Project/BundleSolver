@@ -313,29 +313,27 @@ double BundleSolverML::Heuristic( Index whch )
   }
 
  /* With intMLFeatures == 0 the output of the network is t itself. With
-  * intMLFeatures == 1 it is tau, dimensionless as its input, and t is the
-  * step-size with which the decrease the model predicts, t || z* ||^2, is
-  * tau times the current estimate of the gap G = Sigma* + D_t*( z* ):
-  * t = tau G / || z* ||^2. Since G and || z* || go to 0 together as the
-  * algorithm converges, t does not drift as a product of factors would.
-  * tau is the output divided by log( 2 ), the output of the final Softplus
-  * at 0, so that tau = 1 for a network with null weights; t is left as it
-  * is when G or || z* || is null, i.e., at the first iterations. Either
-  * way t = s * output, with the scale s recorded for Backward() (0 when t
-  * does not depend on the output). */
+  * intMLFeatures == 1 it is tau, dimensionless as its input, and the new t
+  * is tau times the current one, so that the network says how t has to
+  * change and not its scale, which no dimensionless feature can give. tau
+  * is the output divided by log( 2 ), the output of the final Softplus at
+  * 0, so that a network with null weights leaves t as it is. An estimate
+  * of the gap as the scale, e.g., t = tau ( Sigma* + D_t*( z* ) ) /
+  * || z* ||^2, would not do: D_t*( z* ) = t* || z* ||^2 / 2 bounds t from
+  * below by tau t* / 2 whatever the network says, and Sigma* grows with
+  * the steps that a large t takes, so that t could only grow. Either way
+  * t = s * output, with the scale s recorded for Backward() (0 when t does
+  * not depend on the output). */
  double t_pred = t;
  double scale = 0;
  if( f_ML_features ) {
-  const double G = Sigma + DSTS;
   const double out = output.item< double >();
-  if( std::isfinite( out ) && ( out > 0 ) && ( G > 0 ) && ( NrmZ > 0 ) &&
-      ( G < INFshift ) ) {
-   scale = G / ( std::log( 2.0 ) * double( NrmZ ) * double( NrmZ ) );
+  if( std::isfinite( out ) && ( out > 0 ) && ( t > 0 ) ) {
+   scale = t / std::log( 2.0 );
    t_pred = scale * out;
    }
   else
-   BML_LOG( "Heuristic: output = " << out << ", G = " << G
-	    << ", || z* || = " << NrmZ << ", t unchanged" << std::endl );
+   BML_LOG( "Heuristic: output = " << out << ", t unchanged" << std::endl );
   }
  else {
   t_pred = output.item< double >();
@@ -558,7 +556,8 @@ void BundleSolverML::dimensionless_features( double cs , double nd )
                   nd / ( t * NrmZ ) : 0;
  features[ 17 ] = NrmD > 0 ? NrmDInf / NrmD : 0;        // shape of d
  features[ 18 ] = 0;
- features[ 19 ] = NrmZFctr;                             // normalization factor
+ features[ 19 ] = ( NrmZFctr > 0 ) && ( NrmZFctr < INFshift ) ?
+                  lg( NrmZ / NrmZFctr ) : 0;            // || z* || / || g1 ||
  }
 
 /*--------------------------------------------------------------------------*/

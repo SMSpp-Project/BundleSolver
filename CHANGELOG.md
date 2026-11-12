@@ -21,6 +21,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- with `intMLFeatures` = 1 the network of `BundleSolverML` gives the factor
+  tau by which t changes, the new t being tau t, rather than the fraction
+  of the estimate of the gap, t = tau ( Sigma* + D_t*( z* ) ) / || z* ||^2,
+  which bounded t from below by tau t* / 2 whatever the network said and
+  grew with Sigma*, which the steps of a large t make grow, so that t
+  could only grow up to `dbltMaior`; the last feature is || z* || relative
+  to the norm of the first subgradient rather than the latter, which is not
+  dimensionless; weights trained with the former do not apply
 - `BundleSolver::concerned_by()` is `eModAbst`: the physical Modification
   of the Block, which the BundleSolver has no use for, no longer reach it
 
