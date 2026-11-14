@@ -198,6 +198,8 @@ static constexpr unsigned char RstCrr = 2;  // don't reset current point to
                                             // all-0, use Variable value()
 static constexpr unsigned char RstCmp = 4;  // empty the bundle and reset t at
                                             // every call of compute()
+static constexpr unsigned char RstShf = 8;  // keep the lower bounds through a
+                                            // change known in an interval
 
 static constexpr auto InINF = SMSpp_di_unipi_it::Inf< Index >();
 
@@ -624,6 +626,12 @@ int BundleSolver::compute( bool changedvars )
   ReSetAlg( RstAlgPrm );
   }
  RifeqFi = ( UpRifFi == UpFiLmb );  // true if the reference values are right
+
+ // the global lower bound that the previous calls leave, moved by the
+ // changes since then [see FModChg( lo , hi , wFi )]
+ f_kept_LB = ( RstAlgPrm & RstShf ) ? f_global_LB : -INFshift;
+ if( f_kept_LB > -INFshift )
+  BLOG( 1 , " ~ kept LB = " << def << rs( f_kept_LB ) << std::endl );
 
  // G1 is a subgradient, i.e., it lives in the space of the Variable
  if( NeedsG1() )
@@ -8460,6 +8468,18 @@ bool BundleSolver::IsOptimal( double eps ) const
    return( true );
   }
 
+ // the global lower bound that the call has found when it started, kept
+ // through the changes [see intRstAlg], is that of the stop of a previous
+ // call, whence within the accuracy of the value at the centre the centre
+ // is optimal as much as it was there; below it by more than the accuracy
+ // the value disproves it, and it says nothing
+ if( ( f_kept_LB > -INFshift ) && ( UpFiLmb.back() < INFshift ) ) {
+  c_VarValue lerr = max_error( eps );
+  if( ( lerr < INFshift ) &&
+      ( std::abs( UpFiLmb.back() - f_kept_LB ) <= lerr ) )
+   return( true );
+  }
+
  if( vStar.back() >= INFshift )  // some components have no subgradients
   return( false );               // no way one can detect optimality
 
@@ -8671,6 +8691,78 @@ void BundleSolver::FModChg( VarValue shift , Index wFi )
  install_level_stabilization();
 
  }  // end( BundleSolver::FModChg )
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::FModChg( VarValue lo , VarValue hi , Index wFi )
+{
+ // the cases that a single shift says [see FModChg( shift , wFi )]
+ if( ( lo == hi ) && std::isfinite( lo ) ) {
+  FModChg( lo , wFi );
+  return;
+  }
+ if( ( lo <= -INFshift ) && ( hi >= INFshift ) ) {
+  FModChg( NaNshift , wFi );
+  return;
+  }
+ if( ( lo == 0 ) && ( hi >= INFshift ) ) {
+  FModChg( INFshift , wFi );
+  return;
+  }
+ if( ( lo <= -INFshift ) && ( hi == 0 ) ) {
+  FModChg( -INFshift , wFi );
+  return;
+  }
+
+ if( ! f_convex ) {  // the function minimized is - f
+  const auto t = lo;
+  lo = - hi;
+  hi = - t;
+  }
+
+ // the values at the points: an upper estimate stays one if the function
+ // cannot grow (hi <= 0), otherwise it is no longer known
+ if( hi > 0 ) {
+  if( UpFiLmb[ wFi ] < INFshift ) {
+   UpFiLmb[ wFi ] = INFshift;
+   --UpFiLmbdef;
+   }
+  if( UpFiLmb.back() < INFshift ) {
+   UpFiLmb.back() = INFshift;
+   --UpFiLmbdef;
+   }
+  UpFiBest = INFshift;
+  }
+
+ // the lower estimates, at a point and global, move by lo if it is finite
+ if( lo > -INFshift ) {
+  if( LwFiLmb[ wFi ] > -INFshift )
+   LwFiLmb[ wFi ] += lo;
+  if( LwFiLmb.back() > -INFshift )
+   LwFiLmb.back() += lo;
+  if( f_global_LB > -INFshift )
+   f_global_LB += lo;
+  if( f_box_LB > -INFshift )
+   f_box_LB += lo;
+  }
+ else {
+  if( LwFiLmb[ wFi ] > -INFshift ) {
+   LwFiLmb[ wFi ] = -INFshift;
+   --LwFiLmbdef;
+   }
+  if( LwFiLmb.back() > -INFshift ) {
+   LwFiLmb.back() = -INFshift;
+   --LwFiLmbdef;
+   }
+  f_global_LB = -INFshift;
+  f_box_LB = -INFshift;
+  }
+
+ // the level target is an absolute value that the function may no longer
+ // take: it is set anew, from the lower bound kept if any
+ reset_level_stabilization();
+
+ }  // end( BundleSolver::FModChg( lo , hi ) )
 
 /*--------------------------------------------------------------------------*/
 
@@ -9130,8 +9222,12 @@ void BundleSolver::process_outstanding_Modification( void )
    // there are no known values to shift. if, rather, the values are only
    // shifted by finite amounts, the total shift is the sum of the shift,
    // and the order of additions does not change the result
-   if( wFi < NrFi )
-    FModChg( tmod->shift() , wFi );
+   if( wFi < NrFi ) {
+    if( RstAlgPrm & RstShf )
+     FModChg( tmod->shift_lower() , tmod->shift_upper() , wFi );
+    else
+     FModChg( tmod->shift() , wFi );
+    }
    else {
     // the Constraint of the Block are all read again at the end
     if( root_row_function( tmod->function() ) )

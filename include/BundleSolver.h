@@ -1172,6 +1172,17 @@ public:
   *                                meant for production, where keeping the
   *                                bundle across calls is what re-optimization
   *                                is, but to measure what it is worth
+  *                  3 bit == 1 -> a component whose change is only known
+  *                                to lie in an interval [ lo , hi ] at
+  *                                every point [see
+  *                                FunctionMod::shift_lower()] moves the
+  *                                lower estimates and the global lower
+  *                                bound by lo rather than dropping them,
+  *                                and in the next call a value at the
+  *                                stability centre within the accuracy of
+  *                                the bound so kept proves it optimal [see
+  *                                FModChg()]; otherwise only shift() is
+  *                                read, as an interval is not there
   *
   * - intMPV2Form [0]: storage frame of the Master Problem, in both its
   *                    primal and its dual form: 0 selects the displacement
@@ -2402,6 +2413,7 @@ public:
      2 ,  // intRstAlg, default value:
           // RstAlg = 0  -  reset algorithmic parameters
           // RstCrr = 1  -  set current point to using values of the Variable
+          // RstShf = 0  -  only shift() of a FunctionMod is read
      0 ,  // intMPV2Form (default value is displacement form)
      1 ,  // intMPHScaling (default value is the local row scaling)
      5 ,  // intMaxLevelNR
@@ -4031,6 +4043,11 @@ public:
  ///< the bound of box_lower_bound() at the last master problem, which needs
  ///< no test on z*; - INF if there is none
 
+ VarValue f_kept_LB = -INFshift;
+ ///< the global lower bound of the previous call, moved by the changes of
+ ///< the components since then [see FModChg( lo , hi , wFi )]; - INF if
+ ///< there is none
+
  VarValue f_cutoff_LB = -INFshift;
  ///< the cutoff that is the global lower bound of the master, which is a
  ///< bound on f only if f is above it [see global_LB_row()]; -INF if there
@@ -4700,6 +4717,21 @@ public:
 /*--------------------------------------------------------------------------*/
 
  void FModChg( VarValue shift , Index wFi );
+
+ /// the component wFi has changed by an amount in [ lo , hi ]
+ /** At every point the function value of the component wFi has changed by
+  * an amount in [ lo , hi ] [see FunctionMod::shift_lower()], either end
+  * possibly infinite. A finite lo = hi is the shift of FModChg( lo , wFi ),
+  * and so are lo = 0 , hi = INF (INFshift), lo = - INF , hi = 0 (- INFshift)
+  * and both infinite (NaN). Otherwise, the values at the points are no
+  * longer known and are dropped, as with NaN, while the lower estimates
+  * keep valid moved by lo: if \f$ \underline{f} \leq f_{old}( x ) \f$ for
+  * all x, then \f$ \underline{f} + lo \leq f( x ) \f$ for all x, and the
+  * same holds at a given point. This is the case of LwFiLmb, f_global_LB and
+  * f_box_LB, while the level target is set anew; the lower bound so kept is
+  * recorded in f_kept_LB [see IsOptimal()]. */
+
+ void FModChg( VarValue lo , VarValue hi , Index wFi );
 
 /*--------------------------------------------------------------------------*/
 

@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- bit 3 of `intRstAlg`: a component whose change is only known to lie in
+  an interval [ lo , hi ] at every point [see `FunctionMod::shift_lower()`],
+  as that of a `LagBFunction` whose costs change, moves the lower estimates
+  and the global lower bound by lo rather than dropping them, and in the
+  next call a value at the stability centre within the accuracy of the
+  bound so kept stops it; 0 by default, which only reads `shift()`
 - `dbltEmpty`, the t of the master problem while the bundle is empty: 0,
   the default, is `dbltMinor` as before, a positive value is used as t and a
   negative one leaves t as it is
