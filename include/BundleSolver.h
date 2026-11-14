@@ -4284,7 +4284,8 @@ public:
 
  std::vector< Subset > InvItemVcblr;
 
- /// the change of the linear part of each component, not yet given to the master
+ /// the change of the linear part of each component, not yet given to the
+ /// master
  /** A C05FunctionModLin says that the linear part of a component has changed
   * by a given delta, which moves every linearization of it by that same
   * delta and leaves the constants where they are. The deltas that reach the

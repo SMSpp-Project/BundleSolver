@@ -186,7 +186,8 @@ static AbstractBlock * build_decomposed( const Instance & I ,
   DQuadFunction::v_coeff_triple of;
   for( auto & dj : *d )
    of.emplace_back( & dj , 0.0 , 1.0 );
-  auto iobj = new FRealObjective( inner , new DQuadFunction( std::move( of ) ) );
+  auto iobj = new FRealObjective( inner ,
+                                  new DQuadFunction( std::move( of ) ) );
   iobj->set_sense( Objective::eMin );
   inner->set_objective( iobj );
   attach( inner , inner_cfg );

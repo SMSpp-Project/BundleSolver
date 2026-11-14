@@ -152,10 +152,9 @@ static std::vector< BoxConstraint > * boxes( std::vector< ColVariable > & v ,
 // w_j - r+_j + r-_j - x_j = 0 (x == nullptr: = 0, x comes from the master)
 // and adds the terms of the objective to of
 
-static std::vector< FRowConstraint > * agent( AbstractBlock * blk ,
-                                              const Agent & a ,
-                                              ColVariable * x ,
-                                              DQuadFunction::v_coeff_triple & of )
+static std::vector< FRowConstraint > *
+agent( AbstractBlock * blk , const Agent & a , ColVariable * x ,
+       DQuadFunction::v_coeff_triple & of )
 {
  const int d = a.m + a.n;
  auto X = new std::vector< ColVariable >( a.n * a.m );
@@ -244,8 +243,8 @@ static std::vector< CRow > coupling_rows( const Instance & I )
 /*--------------------------------------------------------------------------*/
 // the linear cost: sale' x_0,in - retail' x_N-1,out
 
-static LinearFunction::v_coeff_pair cost( const Instance & I ,
-                                          std::vector< std::vector< ColVariable > * > & x )
+static LinearFunction::v_coeff_pair
+cost( const Instance & I , std::vector< std::vector< ColVariable > * > & x )
 {
  LinearFunction::v_coeff_pair of;
  for( std::size_t j = 0 ; j < I.sale.size() ; ++j )
@@ -316,7 +315,8 @@ static AbstractBlock * build_decomposed( const Instance & I ,
    for( auto & v : *xi )
     rc.emplace_back( & v , c.count( & v ) ? c[ & v ] : 0.0 );
   }
- auto robj = new FRealObjective( root , new LinearFunction( std::move( rc ) ) );
+ auto robj = new FRealObjective( root ,
+                                 new LinearFunction( std::move( rc ) ) );
  robj->set_sense( Objective::eMin );
  root->set_objective( robj );
 
@@ -329,7 +329,8 @@ static AbstractBlock * build_decomposed( const Instance & I ,
   auto inner = new AbstractBlock();
   DQuadFunction::v_coeff_triple of;
   auto lr = agent( inner , a , nullptr , of );
-  auto iobj = new FRealObjective( inner , new DQuadFunction( std::move( of ) ) );
+  auto iobj = new FRealObjective( inner ,
+                                  new DQuadFunction( std::move( of ) ) );
   iobj->set_sense( Objective::eMin );
   inner->set_objective( iobj );
   attach( inner , inner_cfg );
@@ -365,7 +366,8 @@ static AbstractBlock * build_decomposed( const Instance & I ,
   inner->set_objective( iobj );
 
   // the coefficients of each x_ij in the rows
-  std::vector< std::vector< LinearFunction::v_coeff_pair > > col( I.ag.size() );
+  std::vector< std::vector< LinearFunction::v_coeff_pair > >
+   col( I.ag.size() );
   for( std::size_t i = 0 ; i < I.ag.size() ; ++i )
    col[ i ].resize( I.ag[ i ].m + I.ag[ i ].n );
   for( std::size_t r = 0 ; r < cr.size() ; ++r )

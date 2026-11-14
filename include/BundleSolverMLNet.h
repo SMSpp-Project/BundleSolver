@@ -90,7 +90,7 @@ struct NetOptions {
  *     phi_t --> [ recurrent core ] --> [ (mu,sigma) sampler ] --> [ MLP head ]
  *                     |                     (optional)                |
  *                 h_t , c_t                                           v
- *              (carried across                                  softplus + clamp
+ *              (carried across                               softplus + clamp
  *               bundle iterations)                                    |
  *                                                                     v
  *                                                                     t > 0

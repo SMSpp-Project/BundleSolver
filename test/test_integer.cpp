@@ -217,7 +217,8 @@ static std::vector< std::pair< double , long > > solve_with_bundle(
  for( Index j = 0 ; j < n ; ++j )
   cf.emplace_back( &(*x)[ j ] , b_lin[ j ] );
 
- auto obj0 = new FRealObjective( root , new LinearFunction( std::move( cf ) ) );
+ auto obj0 = new FRealObjective( root ,
+                                 new LinearFunction( std::move( cf ) ) );
  obj0->set_sense( Objective::eMin , eNoMod );
  root->set_objective( obj0 , eNoMod );
 

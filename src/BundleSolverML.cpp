@@ -637,7 +637,8 @@ void BundleSolverML::Backward( void )
 
    // clip the gradients so that their global L2 norm is <= GRAD_CLIP_NORM
    auto pre_clip_norm = torch::nn::utils::clip_grad_norm_(
-					     nn->parameters() , GRAD_CLIP_NORM );
+					     nn->parameters() ,
+					     GRAD_CLIP_NORM );
    BML_LOG( "Backward: gradient norm (pre-clip) = " << pre_clip_norm
 	    << std::endl );
 

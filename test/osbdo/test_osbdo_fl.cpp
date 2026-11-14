@@ -400,7 +400,8 @@ static AbstractBlock * build( const Instance & I )
  LinearFunction::v_coeff_pair zero;
  for( auto & xj : *x )
   zero.emplace_back( & xj , 0.0 );
- auto robj = new FRealObjective( root , new LinearFunction( std::move( zero ) ) );
+ auto robj = new FRealObjective( root ,
+                                 new LinearFunction( std::move( zero ) ) );
  robj->set_sense( Objective::eMin );
  root->set_objective( robj );
 
@@ -443,7 +444,8 @@ static AbstractBlock * build( const Instance & I )
   LagBFunction::v_dual_pair dp;
   for( int j = 0 ; j < I.p ; ++j )
    dp.emplace_back( & ( *x )[ j ] , new LinearFunction(
-                LinearFunction::v_coeff_pair{ { & ( *w )[ j ] , I.lambda } } ) );
+                LinearFunction::v_coeff_pair{ { & ( *w )[ j ] ,
+                                                I.lambda } } ) );
   lbf->set_dual_pairs( std::move( dp ) );
 
   auto sub = new AbstractBlock( root );

@@ -530,7 +530,8 @@ class BundleSolverML : public BundleSolver
     return;
     case( intMLWindow ):
     if( value < 1 )
-     throw( std::invalid_argument( "BundleSolverML::set_par: intMLWindow must be >= 1" ) );
+     throw( std::invalid_argument(
+       "BundleSolverML::set_par: intMLWindow must be >= 1" ) );
     f_ML_window = value;
     return;
     case( intMaxThread ):

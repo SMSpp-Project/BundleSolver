@@ -5603,11 +5603,12 @@ void BundleSolver::read_linear_constraints( void )
     continue;
     }
 
-   throw( std::logic_error( std::string( "BundleSolver::"
-					 "read_linear_constraints: unsupported "
-					 "type of " ) +
-			    ( group->is_dynamic() ? "dynamic" : "static" ) +
-			    " Constraint" ) );
+   throw( std::logic_error(
+		 std::string( "BundleSolver::"
+			      "read_linear_constraints: unsupported "
+			      "type of " ) +
+		 ( group->is_dynamic() ? "dynamic" : "static" ) +
+		 " Constraint" ) );
    }
 
  }  // end( BundleSolver::read_linear_constraints )
@@ -7674,8 +7675,10 @@ Index BundleSolver::BStrategy( Index wFi )
                                : MasterPB->get_lambda();
  const double aggregate_mass_eps =
   1e-12 * ( pure_level_aggregate ? std::abs( aggregate_mass )
-                               : std::max( std::abs( aggregate_mass ) , 1.0 ) );
- if( ! std::isfinite( aggregate_mass ) || aggregate_mass <= aggregate_mass_eps )
+                               : std::max( std::abs( aggregate_mass ) ,
+					   1.0 ) );
+ if( ! std::isfinite( aggregate_mass ) ||
+     aggregate_mass <= aggregate_mass_eps )
   return( InINF );
 
  // the aggregate is made of the diagonal items alone, with the multipliers
@@ -7802,7 +7805,7 @@ Index BundleSolver::BStrategy( Index wFi )
  //   a* = (1/mass) (sum_i theta_i a_i + gamma LB)
  // In pure level, get_aggregated_subgradient() already returns g*.
  std::vector< double > tZ_buf =
-                              MasterPB->get_aggregated_subgradient( hard_k( wFi ) );
+   MasterPB->get_aggregated_subgradient( hard_k( wFi ) );
  if( tZ_buf.empty() )
   tZ_buf.assign( NumVar , 0.0 );
  if( ! pure_level_aggregate )
@@ -8516,12 +8519,12 @@ BundleSolver::VarValue BundleSolver::box_lower_bound( void ) const
  //   f( Lambda ) >= UpFiLmb + v* + < s , Lambda - y* >
  //               >= UpFiLmb + v* - sum_i | s_i | max | Lambda_i - y*_i |
  //
- // with the max over the bounds of Lambda_i, which is finite if every i with s_i != 0 has finite bounds (Hölder with
- // the 1-norm and the INF-norm). s is -d* / t in the proximal master (the
- // mass of the rows dividing it in the dual one) and the part of the
- // multipliers of the box that belongs to the trust region under
- // kTrustRegion [see get_z_vector()]; the level, doubly stabilized and
- // integer masters have their own bounds, and are not covered
+ // with the max over the bounds of Lambda_i, which is finite if every i with
+ // s_i != 0 has finite bounds (Hölder with the 1-norm and the INF-norm). s is
+ // -d* / t in the proximal master (the mass of the rows dividing it in the
+ // dual one) and the part of the multipliers of the box that belongs to the
+ // trust region under kTrustRegion [see get_z_vector()]; the level, doubly
+ // stabilized and integer masters have their own bounds, and are not covered
  if( ( ! MasterPB ) || ( ! RifeqFi ) || ( ! f_int_var.empty() ) )
   return( -INFshift );
  if( ( UpFiLmb.back() >= INFshift ) || ( vStar.back() >= INFshift ) )
