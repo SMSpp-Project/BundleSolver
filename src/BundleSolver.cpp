@@ -9088,6 +9088,11 @@ void BundleSolver::process_outstanding_Modification( void )
       LwFiLmbdef = NrFi;             // it will have to be recomputed
       }
      UpFiBest = INFshift;            // and the best value as well
+     // the minimum may now be anywhere, below the global lower bounds and
+     // the level target
+     f_global_LB = -INFshift;
+     f_box_LB = -INFshift;
+     reset_level_stabilization();
      }
     else {                       // a FunctionMod changing the constant
      #ifndef NDEBUG

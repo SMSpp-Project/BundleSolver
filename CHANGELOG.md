@@ -48,6 +48,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   solve the master with no cut, and the BundleSolver of `time_limit_test`
   with no time limit stops at `intMaxIter` 10
 
+### Fixed
+
+- a change of the coefficients of the linear part (the 0-th component) left
+  the global lower bound, that of `box_lower_bound()` and the level target
+  where they were, although the minimum may have moved anywhere
+
 ## [0.7.0] - 2026-11-03
 
 ### Added
