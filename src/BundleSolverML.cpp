@@ -317,7 +317,8 @@ double BundleSolverML::Heuristic( Index whch )
   * is tau times the current one, so that the network says how t has to
   * change and not its scale, which no dimensionless feature can give. tau
   * is the output divided by log( 2 ), the output of the final Softplus at
-  * 0, so that a network with null weights leaves t as it is. An estimate
+  * 0, so that the network, whose last layer starts null [see reset_net()],
+  * leaves t as it is until it has learnt otherwise. An estimate
   * of the gap as the scale, e.g., t = tau ( Sigma* + D_t*( z* ) ) /
   * || z* ||^2, would not do: D_t*( z* ) = t* || z* ||^2 / 2 bounds t from
   * below by tau t* / 2 whatever the network says, and Sigma* grows with
@@ -345,7 +346,8 @@ double BundleSolverML::Heuristic( Index whch )
    }
   }
 
- BML_LOG( "Heuristic: predicted t = " << t_pred << std::endl );
+ BML_LOG( "Heuristic: predicted t = " << t_pred << ", cs = " << cs
+	  << std::endl );
 
  /* Nothing below is used unless the trajectory is replayed in Backward(),
   * i.e., unless the training is on and this iteration is in the window

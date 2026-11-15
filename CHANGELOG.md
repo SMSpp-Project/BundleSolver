@@ -29,6 +29,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   could only grow up to `dbltMaior`; the last feature is || z* || relative
   to the norm of the first subgradient rather than the latter, which is not
   dimensionless; weights trained with the former do not apply
+- `intMLFeatures` of `BundleSolverML` is 1 by default, the dimensionless
+  features, with which on MMCF the network takes as many iterations as the
+  rule of `BundleSolver`, against more than twice as many with the scaled
+  ones (0, the former default); with 1 the last layer of the network starts
+  null, so that tau = 1 and t is left as it is until the network has learnt
+  otherwise, rather than random, which gave a tau far from 1 on every input
+  and hence a t decreasing or increasing geometrically from the first
+  iteration; changing `intMLFeatures` rebuilds the network, as
+  `intMLModel` and `intMLHidden` do; the log of `Heuristic()` also prints
+  the cosine of the step
 - `BundleSolver::concerned_by()` is `eModAbst`: the physical Modification
   of the Block, which the BundleSolver has no use for, no longer reach it
 
