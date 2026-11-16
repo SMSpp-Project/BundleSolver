@@ -60,6 +60,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- the tester uses `smspp_terminate()` of the core, with which it aborts with
+  a message when `std::terminate()` is called with no exception, e.g., by the
+  destructor of a `std::thread` that can still be joined, where rethrowing
+  the null exception crashed
+
 - `ParallelBundleSolver.h` is installed, which the installed module
   `smspp.bundlesolver` includes and which the library always builds
 
