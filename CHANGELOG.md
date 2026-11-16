@@ -60,6 +60,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `ParallelBundleSolver.h` is installed, which the installed module
+  `smspp.bundlesolver` includes and which the library always builds
+
+- the installed module `smspp.bundlesolver` could not be imported, since its
+  package gave the interface of the module the target of the library by its
+  name in the build tree, which an installed package does not have
+
 - a change of the coefficients of the linear part (the 0-th component) left
   the global lower bound, that of `box_lower_bound()` and the level target
   where they were, although the minimum may have moved anywhere
