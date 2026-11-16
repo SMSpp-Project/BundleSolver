@@ -24,7 +24,7 @@ BundleSolverML        # RNN core
 BundleSolverML        # GRU core
 BundleSolverML        # LSTM core
 BundleSolverML        # feed-forward network, step loss
-BundleSolverML        # RNN core, dimensionless features
+BundleSolverML        # RNN core, scaled features
 BundleSolverML        # GRU core, both
 
 7  # number of ComputeConfig in this BlockSolverConfig
@@ -198,7 +198,7 @@ intMLLoss          1 # the step loss
 # follows it in the enclosing file, i.e. the next ComputeConfig
 *  # [none]
 
-# 6: RNN core, dimensionless features
+# 6: RNN core, scaled features
 *BSCfg-ML.txt +
 
 1  # f_diff == 1 ==> only the entries below are changed
@@ -207,7 +207,7 @@ intMLLoss          1 # the step loss
 
 # now all the integer parameters
 intMLModel         1 # RNN core
-intMLFeatures      1 # dimensionless features
+intMLFeatures      0 # scaled features
 
 0  # number of double parameters
 
@@ -240,7 +240,7 @@ intMLFeatures      1 # dimensionless features
 # follows it in the enclosing file, i.e. the next ComputeConfig
 *  # [none]
 
-# 7: GRU core, step loss and dimensionless features
+# 7: GRU core, step loss and scaled features
 *BSCfg-ML.txt +
 
 1  # f_diff == 1 ==> only the entries below are changed
@@ -250,7 +250,7 @@ intMLFeatures      1 # dimensionless features
 # now all the integer parameters
 intMLModel         2 # GRU core
 intMLLoss          1 # the step loss
-intMLFeatures      1 # dimensionless features
+intMLFeatures      0 # scaled features
 
 0  # number of double parameters
 

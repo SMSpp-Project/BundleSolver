@@ -15,15 +15,17 @@
  * \f]
  * with K components. The master problem is given to FailingMPSolver,
  * which has the first few of them solved by HiGHS and then takes a while and
- * returns kError at each call [see MPBCfg-fail.txt], when the bundle is
- * large enough for the recovery to take much longer than the time limit.
+ * returns kError at each call with a nonempty bundle (a Solver of the master
+ * is expected to solve the master with no cut) [see MPBCfg-fail.txt], when
+ * the bundle is large enough for the recovery to take much longer than the
+ * time limit.
  * The instance is solved by the two BundleSolver of BSPar-time.txt:
  *
- * - the first, with no time limit, has to end in kLowPrecision at the
- *   stability centre: the recovery removes the items one at a time, those
- *   of the current iteration as well, the master problem with an empty
- *   bundle is the centre itself, which then the noise reduction cannot get
- *   away from, until t is at its maximum;
+ * - the first, with no time limit, has to end in kStopIter at the
+ *   stability centre after its few iterations [see intMaxIter]: at each of
+ *   them the recovery removes the items one at a time, those of the current
+ *   iteration as well, the master problem with an empty bundle, which HiGHS
+ *   solves, is the centre itself, and the cuts there make it fail again;
  *
  * - the second, with dblMaxTime well below the time the recovery takes,
  *   has to end in kStopTime soon after the time limit, with the value of
@@ -64,6 +66,8 @@
 
 #include "FRealObjective.h"
 
+#include "MasterProblemBlock.h"
+
 #include "OneVarConstraint.h"
 
 #include "PolyhedralFunction.h"
@@ -95,9 +99,9 @@ static int failed = 0;
 /*--------------------------------------------------------------------------*/
 /*------------------------- CLASS FailingMPSolver --------------------------*/
 /*--------------------------------------------------------------------------*/
-/// the Solver of the master problem: the first GOOD calls are answered by
-/// the Solver registered after it [see MPBCfg-fail.txt], the following ones
-/// take WAIT seconds and fail
+/// the Solver of the master problem: the first GOOD calls, and those with
+/// an empty bundle, are answered by the Solver registered after it [see
+/// MPBCfg-fail.txt], the following ones take WAIT seconds and fail
 
 class FailingMPSolver : public CDASolver {
  public:
@@ -105,7 +109,8 @@ class FailingMPSolver : public CDASolver {
  ~FailingMPSolver() override = default;
 
  int compute( bool changedvars = true ) override {
-  if( ++f_calls > GOOD ) {
+  auto mp = dynamic_cast< MasterProblemBlock * >( get_Block() );
+  if( ( ++f_calls > GOOD ) && mp && ( ! mp->is_bundle_empty() ) ) {
    ++Failures;
    std::this_thread::sleep_for( std::chrono::duration< double >( WAIT ) );
    return( kError );
@@ -241,15 +246,15 @@ int main( int argc , char ** argv )
 
  // with no time limit the recovery removes the items one at a time, at WAIT
  // seconds each, until the bundle is empty and the master problem gives the
- // centre, which the noise reduction does not change: the call ends with
- // the centre, as not optimal, after much longer than the time limit
+ // centre, whose cuts make it fail again: the call ends at the iteration
+ // limit with the centre, after much longer than the time limit
  const auto st0 = nolimit->compute( false );
  const double t0 = nolimit->get_elapsed_time();
  const double v0 = nolimit->get_ub();  // the value at the stability centre
  const long f0 = FailingMPSolver::Failures;
  cout << "no time limit: status " << st0 << " in " << t0 << " s, " << f0
       << " failed master problems" << endl;
- check( st0 == Solver::kLowPrecision , "kLowPrecision with no time limit" );
+ check( st0 == Solver::kStopIter , "kStopIter with no time limit" );
  check( std::isfinite( v0 ) , "the value of the stability centre with no "
 	                      "time limit" );
  check( t0 > MAXT + 10 * WAIT , "the recovery outlasts the time limit" );

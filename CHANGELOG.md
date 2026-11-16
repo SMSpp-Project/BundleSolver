@@ -7,6 +7,77 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-16
+
+### Added
+
+- `dbltEmpty`, the t of the master problem while the bundle is empty: 0,
+  the default, is `dbltMinor` as before, a positive value is used as t and a
+  negative one leaves t as it is
+- `intXtrLife` and `intXtrOnNS`, for the items fetched from a component
+  beyond the first at an evaluation (e.g., the epsilon-optimal solutions of a
+  Solver with `intMaxSol` > 1): with `intXtrLife` > 0 they are removed after
+  that many steps with a zero multiplier rather than `intBPar1`, and with
+  `intXtrOnNS` = 1 they are fetched only after a null step; both 0 by
+  default, which leaves the algorithm as it is
+
+### Changed
+
+- with `intMLFeatures` = 1 the network of `BundleSolverML` gives the factor
+  tau by which t changes, the new t being tau t, rather than the fraction
+  of the estimate of the gap, t = tau ( Sigma* + D_t*( z* ) ) / || z* ||^2,
+  which bounded t from below by tau t* / 2 whatever the network said and
+  grew with Sigma*, which the steps of a large t make grow, so that t
+  could only grow up to `dbltMaior`; the last feature is || z* || relative
+  to the norm of the first subgradient rather than the latter, which is not
+  dimensionless; weights trained with the former do not apply
+- `intMLFeatures` of `BundleSolverML` is 1 by default, the dimensionless
+  features, with which on MMCF the network takes as many iterations as the
+  rule of `BundleSolver`, against more than twice as many with the scaled
+  ones (0, the former default); with 1 the last layer of the network starts
+  null, so that tau = 1 and t is left as it is until the network has learnt
+  otherwise, rather than random, which gave a tau far from 1 on every input
+  and hence a t decreasing or increasing geometrically from the first
+  iteration; changing `intMLFeatures` rebuilds the network, as
+  `intMLModel` and `intMLHidden` do; the log of `Heuristic()` also prints
+  the cosine of the step
+- `BundleSolver::concerned_by()` is `eModAbst`: the physical Modification
+  of the Block, which the BundleSolver has no use for, no longer reach it
+
+- the fictitious bound v^k >= 0 of an empty hard component (no diagonal
+  item and no lower bound of its own) is not set when the master has a
+  finite global lower bound, which keeps it bounded with the component left
+  free (the model is then the bound alone); the bounds are kept in step by
+  `sync_fictitious_LB()`, also when the cutoff is taken out of the global
+  lower bound and when an item is deleted
+- the global lower bound is given to the primal master as well, when there
+  are no easy components, and v* of a component with the fictitious bound
+  is +INF, the master giving it the value of the bound rather than of a
+  model, now that the master with all the components empty is solved by its
+  Solver
+- `mp_recovery_test` and `time_limit_test` have their master problems fail
+  only with a nonempty bundle, a Solver of the master being expected to
+  solve the master with no cut, and the BundleSolver of `time_limit_test`
+  with no time limit stops at `intMaxIter` 10
+
+### Fixed
+
+- the tester uses `smspp_terminate()` of the core, with which it aborts with
+  a message when `std::terminate()` is called with no exception, e.g., by the
+  destructor of a `std::thread` that can still be joined, where rethrowing
+  the null exception crashed
+
+- `ParallelBundleSolver.h` is installed, which the installed module
+  `smspp.bundlesolver` includes and which the library always builds
+
+- the installed module `smspp.bundlesolver` could not be imported, since its
+  package gave the interface of the module the target of the library by its
+  name in the build tree, which an installed package does not have
+
+- a change of the coefficients of the linear part (the 0-th component) left
+  the global lower bound, that of `box_lower_bound()` and the level target
+  where they were, although the minimum may have moved anywhere
+
 ## [0.7.0] - 2026-11-03
 
 ### Added
@@ -987,7 +1058,8 @@ Several major improvements:
 
 - First test release.
 
-[Unreleased]: https://gitlab.com/smspp/bundlesolver/-/compare/0.7.0...develop
+[Unreleased]: https://gitlab.com/smspp/bundlesolver/-/compare/0.8.0...develop
+[0.8.0]: https://gitlab.com/smspp/bundlesolver/-/compare/0.7.0...0.8.0
 [0.7.0]: https://gitlab.com/smspp/bundlesolver/-/compare/0.6.0...0.7.0
 [0.6.0]: https://gitlab.com/smspp/bundlesolver/-/compare/0.5.0...0.6.0
 [0.5.0]: https://gitlab.com/smspp/bundlesolver/-/compare/0.4.5...0.5.0

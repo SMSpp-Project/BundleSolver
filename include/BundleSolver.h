@@ -402,6 +402,10 @@ public:
 
  intIntVars ,      ///< whether the integer Variable are kept integer
 
+ intXtrLife ,      ///< zero-multiplier age that removes an extra item
+
+ intXtrOnNS ,      ///< extra items fetched only after a null step
+
  intLastBndSlvPar  ///< first allowed new int parameter for derived classes
                    /**< Convenience value for easily allow derived classes
                     * to extend the set of int algorithmic parameters. */
@@ -464,6 +468,8 @@ public:
   dblIntRad ,     ///< growth of the region of the integer method
 
   dbltSPar4 ,     ///< numerical parameter of the cosine t-heuristic
+
+  dbltEmpty ,     ///< t of the master problem while the bundle is empty
 
   dblLastBndSlvPar ///< first allowed new double parameter for derived classes
                    /**< Convenience value for easily allow derived classes
@@ -632,10 +638,14 @@ public:
   CmpAggrRule = get_dflt_int_par( intCmpAggrRule );
   TDisc = get_dflt_int_par( intTDisc );
   IntVars = get_dflt_int_par( intIntVars );
+  XtrLife = get_dflt_int_par( intXtrLife );
+  XtrOnNS = get_dflt_int_par( intXtrOnNS );
+  LastNS = false;
   CmpAggr = get_dflt_dbl_par( dblCmpAggr );
   IncrCost = get_dflt_dbl_par( dblIncrCost );
   IntRad = get_dflt_dbl_par( dblIntRad );
   tSPar4 = get_dflt_dbl_par( dbltSPar4 );
+  tEmpty = get_dflt_dbl_par( dbltEmpty );
 
   v_events.resize( max_event_number() );
   }
@@ -665,6 +675,19 @@ public:
   * solve. */
 
  void set_Block( Block * block ) override;
+
+/*--------------------------------------------------------------------------*/
+ /// the kinds of Modification the BundleSolver reads: the abstract ones
+ /** The BundleSolver reads the Modification of the Objective, of the
+  * Variable and of the Constraint of its Block, i.e., of the abstract
+  * representation [see Solver::concerned_by()]: the physical Modification,
+  * which it has no use for, do not reach it. Those that come through its
+  * own Observer [see GroupObserver] do not pass through the Block, and are
+  * not filtered. */
+
+ [[nodiscard]] Modification::ModConcern concerned_by( void ) const override {
+  return( Modification::eModAbst );
+  }
 
 /*--------------------------------------------------------------------------*/
  /// set the int parameters of BundleSolver
@@ -1229,7 +1252,22 @@ public:
   *   optimal base, since without the multipliers of a continuous master
   *   there is no base, hence intBPar2 has to be large enough for all of
   *   them. If no Variable is
-  *   integer, 1 is the same as 0. */
+  *   integer, 1 is the same as 0.
+  *
+  * - intXtrLife [0]: if positive, an "extra" item, i.e., one fetched from a
+  *   component beyond the first at the same function evaluation [see
+  *   intBPar3], is eliminated once it has had a zero multiplier for the last
+  *   intXtrLife steps, rather than intBPar1 ones; the extra items, e.g., the
+  *   epsilon-optimal solutions that a Solver gives with intMaxSol > 1, are
+  *   not as valuable as the first one, and keeping them as long makes the
+  *   Master Problem grow with their number. With 0 they are treated as the
+  *   other items.
+  *
+  * - intXtrOnNS [0]: with 1, more than intBPar4 items are fetched from a
+  *   component only at the evaluations that follow a null step, i.e., when
+  *   the model has been found inaccurate, and intBPar4 ones otherwise; with
+  *   0, up to the current number [see intBPar3 and intBPar6] at every
+  *   evaluation. */
 
  void set_par( idx_type par , int value ) override;
 
@@ -1667,7 +1705,19 @@ public:
   *   removed altogether. It must be in ( 0 , 1 ].
   *
   * - dbltSPar4 [0.3]: the factor beta >= 0 of Heuristic5 [see bit 10 of
-  *                    inttSPar1], which multiplies t by exp( - beta c ). */
+  *                    inttSPar1], which multiplies t by exp( - beta c ).
+  *
+  * - dbltEmpty [0]: the t of the master problem while the bundle is empty,
+  *                  i.e., some hard component has no subgradient yet; t
+  *   goes back to its value as soon as the bundle has something. With 0, t
+  *   is dbltMinor, and the first master gives the point of the domain
+  *   closest to the starting one (which is the starting one itself if it
+  *   is feasible and the 0-th component, if any, is null); a positive value
+  *   is used as t, within [ dbltMinor , dbltMaior ], and a negative one
+  *   leaves t as it is, so that the first step is a step of the current t.
+  *   The latter can be better when the starting point is known to be poor,
+  *   but evaluating it first is what one wants when it is a good one, as
+  *   in a reoptimization that has lost most of the bundle. */
 
  void set_par( idx_type par , double value ) override;
 
@@ -2332,7 +2382,7 @@ public:
 /*--------------------------------------------------------------------------*/
 
  [[nodiscard]] int get_dflt_int_par( idx_type par ) const override {
-  static const std::array< int , 24 > dflt_int_par = {
+  static const std::array< int , 26 > dflt_int_par = {
     10 ,  // intBPar1
    100 ,  // intBPar2
      1 ,  // intBPar3
@@ -2358,7 +2408,9 @@ public:
     42 ,  // intCmpAggrSeed
      0 ,  // intCmpAggrRule (default value is random)
      0 ,  // intTDisc (default value is no discovery of t)
-     0    // intIntVars (default value is integrality ignored)
+     0 ,  // intIntVars (default value is integrality ignored)
+     0 ,  // intXtrLife (default value is the age of the other items)
+     0    // intXtrOnNS (default value is extra items at every evaluation)
      };
 
   if( ( par >= intLastParCDAS ) && ( par < intLastBndSlvPar ) )
@@ -2370,7 +2422,7 @@ public:
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
 
  [[nodiscard]] double get_dflt_dbl_par( idx_type par ) const override {
-  static const std::array< double , 24 > dflt_dbl_par = {
+  static const std::array< double , 25 > dflt_dbl_par = {
    0 ,      // dblNZEps
    1e+2 ,   // dbltStar
    0 ,      // dblMinNrEvls
@@ -2394,7 +2446,8 @@ public:
    0 ,      // dblCmpAggr
    0 ,      // dblIncrCost
    0.1 ,    // dblIntRad
-   0.3      // dbltSPar4
+   0.3 ,    // dbltSPar4
+   0        // dbltEmpty (default value is dbltMinor)
    };
 
   if( ( par >= dblLastParCDAS ) && ( par < dblLastBndSlvPar ) )
@@ -2492,7 +2545,9 @@ public:
    { "intCmpAggrSeed" , BundleSolver::intCmpAggrSeed } ,
    { "intCmpAggrRule" , BundleSolver::intCmpAggrRule } ,
    { "intTDisc" , BundleSolver::intTDisc } ,
-   { "intIntVars" , BundleSolver::intIntVars }
+   { "intIntVars" , BundleSolver::intIntVars } ,
+   { "intXtrLife" , BundleSolver::intXtrLife } ,
+   { "intXtrOnNS" , BundleSolver::intXtrOnNS }
    };
 
   const auto it = int_pars_map.find( name );
@@ -2530,7 +2585,8 @@ public:
    { "dblCmpAggr" , BundleSolver::dblCmpAggr } ,
    { "dblIncrCost" , BundleSolver::dblIncrCost } ,
    { "dblIntRad" , BundleSolver::dblIntRad } ,
-   { "dbltSPar4" , BundleSolver::dbltSPar4 }
+   { "dbltSPar4" , BundleSolver::dbltSPar4 } ,
+   { "dbltEmpty" , BundleSolver::dbltEmpty }
    };
 
   const auto it = dbl_pars_map.find( name );
@@ -2589,13 +2645,13 @@ public:
 
  [[nodiscard]] const std::string & int_par_idx2str( idx_type idx )
   const override {
-  static const std::array< std::string , 24 > int_pars_str = {
+  static const std::array< std::string , 26 > int_pars_str = {
    "intBPar1" , "intBPar2" , "intBPar3" , "intBPar4" , "intBPar6" ,
    "intBPar7" , "intMnSSC" , "intMnNSC" , "inttSPar1" , "intMaxNrEvls" ,
    "intDoEasy" , "intWZNorm" , "intFrcLstSS" , "intTrgtMng" ,
    "intMPStbl" , "intMPPrimal" , "intRstAlg" , "intMPV2Form" ,
    "intMPHScaling" , "intMaxLevelNR" , "intCmpAggrSeed" , "intCmpAggrRule" ,
-   "intTDisc" , "intIntVars" };
+   "intTDisc" , "intIntVars" , "intXtrLife" , "intXtrOnNS" };
 
   if( ( idx >= intLastParCDAS ) && ( idx < intLastBndSlvPar ) )
    return( int_pars_str[ idx - intBPar1 ] );
@@ -2607,13 +2663,13 @@ public:
 
  [[nodiscard]] const std::string & dbl_par_idx2str( idx_type idx )
   const override {
-  static const std::array< std::string , 24 > dbl_pars_str = {
+  static const std::array< std::string , 25 > dbl_pars_str = {
    "dblNZEps" , "dbltStar" , "dblMinNrEvls" , "dblBPar5" , "dblm1" ,
    "dblm2" , "dblm3" , "dblmxIncr" , "dblmnIncr" , "dblmxDecr" ,
    "dblmnDecr" , "dbltMaior" , "dbltMinor" , "dbltInit" , "dbltSPar2" ,
    "dbltSPar3" , "dblLStabM" , "dblLStabDlt" , "dblLStabIncr" ,
    "dblLStabSmall" , "dblCmpAggr" , "dblIncrCost" , "dblIntRad" ,
-   "dbltSPar4" };
+   "dbltSPar4" , "dbltEmpty" };
 
  if( ( idx >= dblLastParCDAS ) && ( idx < dblLastBndSlvPar ) )
    return( dbl_pars_str[ idx - dblLastParCDAS ] );
@@ -2877,7 +2933,7 @@ public:
     Otherwise report an unrecoverable master failure through Result so
     compute() can stop or handle it. An empty or unbounded master is
     reported as kInfeasible / kUnbounded only when it is an answer [see
-    easy_says_it()]; with an empty bundle and t at dbltMinor the master is
+    easy_says_it()]; with an empty bundle and t at dbltEmpty the master is
     solved again with the previous t (Prevt) before a verdict of the easy
     components is trusted, and the same is done before an unrecoverable
     failure of the master Solver is declared. */
@@ -3249,7 +3305,7 @@ public:
   * Two cases are excluded by FormD() even when this returns true: a master
   * that follows a failure of the master Solver in the same call, which is
   * the same error in disguise, and a master solved with an empty bundle,
-  * whose t is at dbltMinor and whose stabilizing term vanishes against the
+  * whose t is at dbltEmpty and whose stabilizing term vanishes against the
   * data of the easy components, which is solved again with the previous t
   * and believed only if it is again empty or unbounded. */
 
@@ -3835,6 +3891,7 @@ public:
  double tSPar2;     ///< double parameter for long-term t-strategy
  double tSPar3;     ///< double parameter for small heuristic t changes
  double tSPar4;     ///< double parameter of the cosine t-heuristic
+ double tEmpty;     ///< t of the master problem while the bundle is empty
 
  int DoEasy;        ///< how "easy" components are managed [see intDoEasy]
 
@@ -4032,6 +4089,12 @@ public:
 
  int IntVars;          ///< integer Variable kept integer [see intIntVars]
 
+ int XtrLife;          ///< age that removes an extra item [see intXtrLife]
+
+ int XtrOnNS;          ///< extra items only after a NS [see intXtrOnNS]
+
+ bool LastNS;          ///< whether the last step was a null step
+
  /// which Variable of the C05Function are integer, empty if none is
  std::vector< bool > f_int_var;
 
@@ -4122,11 +4185,11 @@ public:
  /**< true until a master problem has been solved since the master was
   * created or the easy components last changed [see easy_says_it()] */
  VarValue Prevt;       ///< what t were before being changed for funny reasons
- /**< the value of t before an empty bundle brought it down to tMinor,
+ /**< the value of t before an empty bundle changed it [see dbltEmpty],
   * NaNshift if t has not been changed so (t may be INFshift [see
   * dbltMaior]); FormD() restores it as soon as
   * the bundle is not empty, or within the same call when the master solved
-  * with tMinor is empty or unbounded as an answer of the easy components,
+  * with that t is empty or unbounded as an answer of the easy components,
   * or fails with no item left to remove */
  bool f_tr_open = false;  ///< the last master was solved without the trust
                           ///< region, whose radius is still t [see FormD()]
@@ -4221,7 +4284,8 @@ public:
 
  std::vector< Subset > InvItemVcblr;
 
- /// the change of the linear part of each component, not yet given to the master
+ /// the change of the linear part of each component, not yet given to the
+ /// master
  /** A C05FunctionModLin says that the linear part of a component has changed
   * by a given delta, which moves every linearization of it by that same
   * delta and leaves the constants where they are. The deltas that reach the
@@ -4248,6 +4312,10 @@ public:
    * = - Inf< SIndex >() means unremovable */
 
  Vec_SIndex OOBase;
+
+ /// whether each item of the bundle was fetched beyond the first one of its
+ /// component at an evaluation [see intXtrLife]
+ std::vector< char > Xtra;
 
  bool TrueLB;         /**< true if LowerBound is a "true" lower bound rather
                        * than a "conditional" one */
@@ -4547,13 +4615,32 @@ public:
   * dblLwCutOff]. The global lower bound of the master is in the frame of
   * the stability centre [see LB_translation()], hence it is set again
   * whenever the centre moves; with no value at the stability centre to
-  * translate it with, the master is left as it is. Only the dual master has
-  * a global lower bound, hence with the primal one nothing is done. Since
+  * translate it with, the master is left as it is. The primal master has it
+  * in the value row, of the hard components and b only, hence with the
+  * primal master and easy components nothing is done. Since
   * with the cutoff the master may be badly conditioned, a master that fails
   * with it is solved again without it, which then stays out until compute()
   * returns [see f_cutoff_LB_off]. */
 
  void global_LB_row( void );
+
+/*--------------------------------------------------------------------------*/
+ /// the fictitious lower bounds of the empty hard components
+ /** Gives the fictitious bound of MasterProblemBlock::set_fictitious_LB()
+  * to every hard component with no diagonal item and no lower bound of its
+  * own, unless the master has a finite global lower bound [see
+  * global_LB_row()], and takes it away from the others. */
+
+ void sync_fictitious_LB( void );
+
+/*--------------------------------------------------------------------------*/
+ /// v* of the components with no model
+ /** Gives +INF to vStar[ k ] of each hard component with the fictitious
+  * bound [see sync_fictitious_LB()], and then to the total vStar.back():
+  * the value the master gives it is that of the bound, the component having
+  * no subgradient to build a model of F_k with. */
+
+ void no_model_vStar( void );
 
  /// the translation of the global lower bound of the master
  /** The value that the global lower bound of the master is decreased by, that

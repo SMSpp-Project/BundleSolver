@@ -3,9 +3,10 @@
 #
 # The master problem of the first BundleSolver of BSPar-recovery.txt:
 # TransientMPSolver, the Solver of test_mp_recovery.cpp, which fails at its
-# first few calls and then has all of them answered by the HiGHSMILPSolver
-# registered after it, so that the first master problem fails when the
-# bundle only has the items of the first iteration.
+# first few calls with a nonempty bundle and then has all of them answered
+# by the HiGHSMILPSolver registered after it, so that the first master
+# problem with cuts fails when the bundle only has the items of the first
+# iteration.
 #
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -

@@ -183,11 +183,10 @@ static AbstractBlock * build_lp( const Instance & I ,
 /*--------------------------------------------------------------------------*/
 // the resource-directive form, see the header
 
-static AbstractBlock * build_decomposed( const Instance & I ,
-                                         const std::string & inner_cfg ,
-                                         bool scale ,
-                                         boost::multi_array< ColVariable , 2 > * & x ,
-                                         LinearFunction * & cplobj )
+static AbstractBlock *
+build_decomposed( const Instance & I , const std::string & inner_cfg ,
+                  bool scale , boost::multi_array< ColVariable , 2 > * & x ,
+                  LinearFunction * & cplobj )
 {
  // the coefficient of master variable x_ie wherever it appears
  auto sc = [ & ]( int e ) { return( scale ? I.cap[ e ] : 1.0 ); };
@@ -232,14 +231,16 @@ static AbstractBlock * build_decomposed( const Instance & I ,
   auto cr = new std::vector< FRowConstraint >( I.E );
   for( int e = 0 ; e < I.E ; ++e ) {
    ( *cr )[ e ].set_function( new LinearFunction(
-                         LinearFunction::v_coeff_pair{ { & ( *z )[ e ] , 1.0 } } ) );
+                         LinearFunction::v_coeff_pair{ { & ( *z )[ e ] ,
+                                                         1.0 } } ) );
    ( *cr )[ e ].set_lhs( -Inf< double >() );
    ( *cr )[ e ].set_rhs( 0 );
    }
   inner->add_static_constraint( *cr );
 
   auto iobj = new FRealObjective( inner , new LinearFunction(
-                   LinearFunction::v_coeff_pair{ { t->data() , - I.b[ i ] } } ) );
+                   LinearFunction::v_coeff_pair{ { t->data() ,
+                                                   - I.b[ i ] } } ) );
   iobj->set_sense( Objective::eMin );
   inner->set_objective( iobj );
   attach( inner , inner_cfg );
@@ -285,7 +286,8 @@ static AbstractBlock * build_decomposed( const Instance & I ,
   for( int i = 0 ; i < I.M ; ++i )
    for( int e = 0 ; e < I.E ; ++e )
     dp.emplace_back( & ( *x )[ i ][ e ] , new LinearFunction(
-                        LinearFunction::v_coeff_pair{ { & ( *mu )[ e ] , sc( e ) } } ) );
+                        LinearFunction::v_coeff_pair{ { & ( *mu )[ e ] ,
+                                                        sc( e ) } } ) );
   lbf->set_dual_pairs( std::move( dp ) );
 
   auto sub = new AbstractBlock( root );

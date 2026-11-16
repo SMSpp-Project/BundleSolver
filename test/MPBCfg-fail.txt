@@ -4,8 +4,8 @@
 # The master problem of BSPar-time.txt: FailingMPSolver, the Solver of
 # test_time_limit.cpp, which has its first few calls answered by the
 # HiGHSMILPSolver registered after it and then takes a while and fails at
-# each call, so that the recovery from a failure of the master goes through
-# a large bundle.
+# each call with a nonempty bundle, so that the recovery from a failure of
+# the master goes through a large bundle.
 #
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -

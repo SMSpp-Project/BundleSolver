@@ -332,12 +332,12 @@ class BundleSolverML : public BundleSolver
   * features are divided by fixed scales and the network gives t; with
   * intMLFeatures == 1 they are dimensionless (values of the function
   * relative to the value at the center, norms by their ratios), and the
-  * network gives tau, the fraction of the current estimate of the gap that
-  * the decrease predicted by the model has to be, so that the same network
-  * applies to instances of different size and scale. It also records what
-  * the loss of intMLLoss needs in the subsequent Backward() call: the
-  * tensors (G, Q, alpha, w, ...) out of which the search direction is
-  * differentiated, or the outcome of the step that has just been done.
+  * network gives tau, the factor by which t changes, so that the same
+  * network applies to instances of different size and scale. It also
+  * records what the loss of intMLLoss needs in the subsequent Backward()
+  * call: the tensors (G, Q, alpha, w, ...) out of which the search
+  * direction is differentiated, or the outcome of the step that has just
+  * been done.
   *
   * @param whch  unused, kept for interface compatibility with BundleSolver
   *
@@ -435,17 +435,18 @@ class BundleSolverML : public BundleSolver
   *   with \f$ c_{f+1} \f$ the cosine between the new subgradient and the
   *   step produced by t_f [see Backward()];
   *
-  * - intMLFeatures: the features of the network, 0 (the default) = divided
-  *   by fixed scales, the network giving t, 1 = dimensionless, the network
-  *   giving tau with t = tau ( Sigma* + D_t*( z* ) ) / || z* ||^2 [see
-  *   Heuristic()].
+  * - intMLFeatures: the features of the network, 0 = divided by fixed
+  *   scales, the network giving t, 1 (the default) = dimensionless, the
+  *   network giving tau with the new t = tau t [see Heuristic()].
   *
-  * Changing intMLModel or intMLHidden to a different value rebuilds the
-  * (privately-owned) network with new initial weights, and hence discards
-  * any weights loaded or learnt before; the new weights are drawn right
-  * after seeding Torch with intMLSeed, if that is >= 0, so that they depend
-  * on the values of the three parameters and not on the order in which they
-  * are set.
+  * Changing intMLModel, intMLHidden or intMLFeatures to a different value
+  * rebuilds the (privately-owned) network with new initial weights, and
+  * hence discards any weights loaded or learnt before; the new weights are
+  * drawn right after seeding Torch with intMLSeed, if that is >= 0, so that
+  * they depend on the values of the parameters and not on the order in
+  * which they are set. With intMLFeatures == 1 the last layer starts null,
+  * so that tau = 1 and t is left as it is until the network has learnt
+  * otherwise [see reset_net()].
   *
   * Unlike BundleSolver, BundleSolverML also listens to intMaxThread of
   * ThinComputeInterface: at the beginning of each compute() the number of
@@ -468,7 +469,7 @@ class BundleSolverML : public BundleSolver
   intMLModel ,       ///< 0 = MLP, 1 = RNN, 2 = GRU, 3 = LSTM [0]
   intMLHidden ,      ///< hidden size of the recurrent core [16]
   intMLLoss ,        ///< 0 = objective loss, 1 = step loss [0]
-  intMLFeatures ,    ///< 0 = scaled features, 1 = dimensionless [0]
+  intMLFeatures ,    ///< 0 = scaled features, 1 = dimensionless [1]
   intLastBndSlvMLPar ///< first allowed new int parameter for derived classes
   };
 
@@ -531,7 +532,8 @@ class BundleSolverML : public BundleSolver
     return;
     case( intMLWindow ):
     if( value < 1 )
-     throw( std::invalid_argument( "BundleSolverML::set_par: intMLWindow must be >= 1" ) );
+     throw( std::invalid_argument(
+       "BundleSolverML::set_par: intMLWindow must be >= 1" ) );
     f_ML_window = value;
     return;
     case( intMaxThread ):
@@ -568,7 +570,10 @@ class BundleSolverML : public BundleSolver
     if( ( value < 0 ) || ( value > 1 ) )
      throw( std::invalid_argument(
       "BundleSolverML::set_par: intMLFeatures must be in [ 0 , 1 ]" ) );
-    f_ML_features = value;
+    if( value != f_ML_features ) {
+     f_ML_features = value;
+     reset_net();
+     }
     return;
     default:
     BundleSolver::set_par( par , value );
@@ -645,7 +650,7 @@ class BundleSolverML : public BundleSolver
    0 ,        // intMLModel
    16 ,       // intMLHidden
    0 ,        // intMLLoss
-   0          // intMLFeatures
+   1          // intMLFeatures
    };
 
   if( ( par >= intLastBndSlvPar ) && ( par < intLastBndSlvMLPar ) )
@@ -774,7 +779,7 @@ class BundleSolverML : public BundleSolver
  int f_ML_model = 0;             ///< value of intMLModel [0]
  int f_ML_hidden = 16;           ///< value of intMLHidden [16]
  int f_ML_loss = 0;              ///< value of intMLLoss [0]
- int f_ML_features = 0;          ///< value of intMLFeatures [0]
+ int f_ML_features = 1;          ///< value of intMLFeatures [1]
  int f_ML_iter = 0;              ///< iteration counter within a solve
 
 /*--------------------------------------------------------------------------*/
@@ -785,11 +790,17 @@ class BundleSolverML : public BundleSolver
  /** Re-allocates the private network with the architecture given by
   * intMLModel and intMLHidden (and drops the stale Adam optimizer, which is
   * bound to the parameters of the old one); used by the constructor and by
-  * set_par() when intMLSeed, intMLModel or intMLHidden change. If intMLSeed
-  * is >= 0, Torch is seeded with it right before the new initial weights
-  * are drawn, which makes them independent of what was drawn before. If a
-  * shared network is active it is left untouched, since it is externally
-  * managed and possibly shared with other solvers. */
+  * set_par() when intMLSeed, intMLModel, intMLHidden or intMLFeatures
+  * change. If intMLSeed is >= 0, Torch is seeded with it right before the
+  * new initial weights are drawn, which makes them independent of what was
+  * drawn before. With intMLFeatures == 1 the weights and the bias of the
+  * last layer are then set to 0: the output is the Softplus of 0, i.e.,
+  * log( 2 ), and tau = 1 [see Heuristic()], whereas random weights would
+  * give a tau far from 1 on every input, and hence a t that decreases or
+  * increases geometrically from the first iteration; the gradient of the
+  * last layer is not null, so the training is not hindered. If a shared
+  * network is active it is left untouched, since it is externally managed
+  * and possibly shared with other solvers. */
 
  void reset_net( void ) {
   if( f_ML_seed >= 0 )
@@ -800,6 +811,13 @@ class BundleSolverML : public BundleSolver
   o.model_type  = f_ML_model;
   o.hidden_size = f_ML_hidden;
   f_owned_net = std::make_shared< Net >( o );
+  if( f_ML_features ) {
+   torch::NoGradGuard no_grad;
+   auto & head = f_owned_net->head;
+   auto last = head[ head->size() - 1 ]->as< torch::nn::Linear >();
+   last->weight.zero_();
+   last->bias.zero_();
+   }
   nn = f_owned_net.get();
   f_optimizer.reset();
   }

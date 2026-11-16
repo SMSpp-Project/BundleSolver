@@ -2,9 +2,10 @@
 # - - - - - - - - - - - - - - - BSPar-time.txt  - - - - - - - - - - - - - - -
 #
 # The BundleSolver of test_time_limit.cpp, both with the master problem of
-# MPBCfg-fail.txt, which fails at each call: the first with no time limit,
-# the second with a time limit well below the time the recovery from the
-# failures takes [see dblMaxTime].
+# MPBCfg-fail.txt, which fails at each call with a nonempty bundle: the
+# first with no time limit and a few iterations, the second with a time
+# limit well below the time the recovery from the failures takes [see
+# dblMaxTime].
 #
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -28,10 +29,10 @@ BundleSolver          # 2nd: time limit
 
 1  # f_diff == 1 ==> only the entries below are changed
 
-0  # number of integer parameters
+1  # number of integer parameters
 
 # now all the integer parameters
-# [none]
+intMaxIter     10     # a few iterations, each with a recovery
 
 0  # number of double parameters
 

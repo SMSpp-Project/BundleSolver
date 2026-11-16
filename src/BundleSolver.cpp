@@ -1803,6 +1803,7 @@ void BundleSolver::set_Block( Block * block )
   LmbdBst.resize( NumVar );
 
  OOBase.resize( vBPar2.back() , Inf< SIndex >() );
+ Xtra.assign( vBPar2.back() , 0 );
  // counter for eliminating outdated items: Inf< SIndex >() means empty
 
  ItemVcblr.resize( vBPar2.back() , std::make_pair( InINF , InINF ) );
@@ -2089,6 +2090,18 @@ void BundleSolver::set_par( idx_type par , int value )
                      "BundleSolver::set_par: IntVars must be 0 or 1" ) );
    IntVars = value;
    break;
+  case( intXtrLife ):
+   if( value < 0 )
+    throw( std::invalid_argument(
+                     "BundleSolver::set_par: XtrLife must be >= 0" ) );
+   XtrLife = value;
+   break;
+  case( intXtrOnNS ):
+   if( ( value < 0 ) || ( value > 1 ) )
+    throw( std::invalid_argument(
+                     "BundleSolver::set_par: XtrOnNS must be 0 or 1" ) );
+   XtrOnNS = value;
+   break;
   default: CDASolver::set_par( par , value );
   }
  }  // end( BundleSolver::set_par( int ) )
@@ -2263,6 +2276,9 @@ void BundleSolver::set_par( idx_type par , double value )
     throw( std::invalid_argument(
                "BundleSolver::set_par: tSPar4 must be >= 0" ) );
    tSPar4 = value;
+   break;
+  case( dbltEmpty ):
+   tEmpty = value;
    break;
   default:
    CDASolver::set_par( par , value );
@@ -2612,6 +2628,8 @@ int BundleSolver::get_int_par( idx_type par ) const
   case( intCmpAggrRule ): return( CmpAggrRule );
   case( intTDisc ):     return( TDisc );
   case( intIntVars ):   return( IntVars );
+  case( intXtrLife ):   return( XtrLife );
+  case( intXtrOnNS ):   return( XtrOnNS );
   default:              return( CDASolver::get_int_par( par ) );
   }
  }  // end( BundleSolver::get_int_par )
@@ -2651,6 +2669,7 @@ double BundleSolver::get_dbl_par( idx_type par ) const
   case( dblLwCutOff ):   return( f_lw_cutoff );
   case( dblIntRad ):     return( IntRad );
   case( dbltSPar4 ):     return( tSPar4 );
+  case( dbltEmpty ):     return( tEmpty );
   default:               return( CDASolver::get_dbl_par( par ) );
   }
  }  // end( BundleSolver::get_dbl_par )
@@ -3381,12 +3400,16 @@ BundleSolver::VarValue BundleSolver::LB_translation( void ) const
 
 void BundleSolver::global_LB_row( void )
 {
- if( ( ! MasterPB ) || UsesPrimalMaster() )
+ // the value row of the primal master has the hard components and b only,
+ // hence it cannot bound the function when there are easy components
+ if( ( ! MasterPB ) || ( UsesPrimalMaster() && NrEasy ) )
   return;
 
  // with no value at the stability centre there is nothing to translate the
- // bound with, and the master is left as it is
- const VarValue rf = LB_translation();
+ // bound with, and the master is left as it is; as the level, the bound is
+ // absolute in the primal iterate frame
+ const bool absolute = UsesPrimalMaster() && MPV2Form;
+ const VarValue rf = absolute ? 0 : LB_translation();
  if( ! std::isfinite( rf ) )
   return;
 
@@ -3402,6 +3425,69 @@ void BundleSolver::global_LB_row( void )
  if( row != f_LB_row ) {
   f_LB_row = row;
   MasterPB->set_global_LB( row );
+  }
+ }
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::no_model_vStar( void )
+{
+ // the value that the master gives a component with the fictitious bound is
+ // that of the bound, not of a model [see sync_fictitious_LB()]
+ for( Index k = 0 ; k < NrFi ; ++k )
+  if( ( k < FictLB.size() ) && FictLB[ k ] ) {
+   vStar[ k ] = INFshift;
+   vStar.back() = INFshift;
+   }
+ }
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::sync_fictitious_LB( void )
+{
+ if( ! MasterPB )
+  return;
+
+ // A hard component with no diagonal item (a vertical one enters the row
+ // sum_i theta^k_i + gamma^k = lambda of the dual master with a zero
+ // coefficient) models F_k as the max over an empty set of affine pieces,
+ // i.e., the improper constant -infinity, and with no lower bound of its
+ // own it leaves the primal master unbounded and the dual one infeasible
+ // (gamma^k is fixed to 0, hence lambda = 0). If the master has a finite
+ // global lower bound, this is all right: lambda = 0 and r = 1 satisfy the
+ // normalization lambda + r - omega = 1 (in the primal one, the row
+ // LB <= b*d + sum_k v^k bounds the components from below), and the
+ // component is left as it is. Otherwise, it gets the fictitious bound
+ // v^k >= 0 of MasterProblemBlock::set_fictitious_LB(), which makes it
+ // "disappear" (gamma^k becomes a free multiplier absorbing lambda), also
+ // when all the components are empty, a master that its Solver has to solve
+ // as any other.
+ // The next evaluation either refills the bundle (a cut is added, and the
+ // bound removed here the next time) or returns F_k = -INF, which is
+ // propagated as kUnbounded and not masked by the fictitious bound.
+ // Components with a genuine lower bound never need it.
+ const bool global_lb = f_LB_row > -INFshift;
+ for( Index k = 0 ; k < NrFi ; ++k ) {
+  if( NrEasy && IsEasy[ k ] )
+   continue;
+  const bool want = ( MasterPB->get_diagonal_count( hard_k( k ) ) == 0 ) &&
+                    ( LowerBound[ k ] <= - INFshift ) && ( ! global_lb );
+  // an active fictitious bound is set again at every call, since
+  // set_reference() rebuilds the bound from the physical lower bound and
+  // may overwrite it while FictLB[ k ] is still true
+  if( want ) {
+   MasterPB->set_fictitious_LB( hard_k( k ) , true );
+   FictLB[ k ] = true;
+   }
+  else
+   if( FictLB[ k ] ) {
+    // a finite physical bound collected by FormD() has already replaced the
+    // fictitious one through set_LB(), and set_fictitious_LB( false ) would
+    // erase it: then only the flag is cleared
+    if( LowerBound[ k ] <= - INFshift )
+     MasterPB->set_fictitious_LB( hard_k( k ) , false );
+    FictLB[ k ] = false;
+    }
   }
  }
 
@@ -3511,9 +3597,12 @@ void BundleSolver::FormD_once( void )
  const bool empty_bundle = ( NrEasy < NrFi ) &&
                            ( MasterPB ? MasterPB->is_bundle_empty() : true );
  if( empty_bundle ) {
-  if( ( t > tMinor ) && std::isnan( Prevt ) ) {
+  // the t of an empty bundle [see dbltEmpty], none if it is negative
+  const VarValue te = tEmpty < 0 ? t : tEmpty == 0 ? tMinor
+                      : std::max( tMinor , std::min( tMaior , tEmpty ) );
+  if( ( t != te ) && std::isnan( Prevt ) ) {
    Prevt = t;
-   t = tMinor;
+   t = te;
    tHasChgd = true;
    }
   }
@@ -3711,63 +3800,8 @@ void BundleSolver::FormD_once( void )
    }
   }
 
- // fictitious-LB sync for empty components - - - - - - - - - - - - - - - - -
- //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
- // A hard component whose bundle is empty models its F_k as the max over
- // an empty set of affine pieces, i.e. the improper constant -infinity:
- // the dual master is then infeasible (the per-component simplex row
- // sum_i theta^k_i + gamma^k = lambda collapses to gamma^k = lambda with
- // gamma^k structurally fixed to 0). Following the historical QP-bundle /
- // OSIMPSolver device, install a *fictitious* model lower bound on every
- // such component, which makes it "disappear" (gamma^k becomes a free
- // multiplier absorbing the simplex mass) and restores master
- // feasibility. The fictitious bound value is handled inside
- // MasterProblemBlock::set_fictitious_LB: 0 when no global LB exists, or
- // strictly below the genuine global LB otherwise, so it never tightens
- // the master beyond the aggregate bound (the subtle point OSIMPSolver
- // makes via "gamma_i cost = global_LB - 1"). The subsequent Fi(.)
- // evaluation then either refills the bundle (proper function -> cut
- // added, fictitious removed next time) or returns F_k = -INF (improper
- // function -> the UpFiLmb1.back() == -INFshift path right after
- // InnerLoop propagates kUnbounded, *not* masked by the fictitious
- // bound). Components owning a genuine individual LB never need this.
- // With no easy components, the all-empty case is left to the
- // MasterProblemBlock::solve_master short-circuit. With exact easy
- // components, however, that master must be solved immediately; therefore
- // every empty hard component also needs its fictitious bound from the first
- // iteration, otherwise gamma^k = 0 forces lambda = 0 in its normalization
- // row while the easy master fixes lambda = 1. The same holds with linear
- // Constraint, which the step has to satisfy from the first iteration on.
- if( MasterPB && ( NrEasy || ( ! v_lc_A.empty() ) || f_host ||
-                   ( ! MasterPB->is_bundle_empty() ) ) )
-  for( Index k = 0 ; k < NrFi ; ++k ) {
-   if( NrEasy && IsEasy[ k ] )
-    continue;
-   // what makes the per-component simplex row unsatisfiable is having no
-   // *diagonal* item: a vertical one enters that row with a zero
-   // coefficient, so a bundle of vertical items alone still needs the
-   // fictitious bound to free gamma^k
-   const bool want = ( MasterPB->get_diagonal_count( hard_k( k ) ) == 0 ) &&
-                      ( LowerBound[ k ] <= - INFshift );
-   // Refresh an active fictitious bound after every possible reference-point
-   // change. set_reference() rebuilds the PFB bound from the physical lower
-   // bound and can therefore overwrite the fictitious value even though the
-   // BundleSolver-side FictLB flag is still true.
-   if( want ) {
-    MasterPB->set_fictitious_LB( hard_k( k ) , want );
-    FictLB[ k ] = true;
-   }
-   else
-    if( FictLB[ k ] ) {
-     // A finite physical bound collected by FormD() has already replaced
-     // the fictitious one through set_LB(). In that case only clear our
-     // bookkeeping flag: calling set_fictitious_LB(false) would erase the
-     // genuine bound that has just been installed.
-     if( LowerBound[ k ] <= - INFshift )
-      MasterPB->set_fictitious_LB( hard_k( k ) , false );
-     FictLB[ k ] = false;
-    }
-  }
+ // the fictitious bounds of the empty components [see sync_fictitious_LB()]
+ sync_fictitious_LB();
 
  // true if the master has already been tried again with t as it was
  // before the empty bundle brought it down to its minimum
@@ -3977,12 +4011,12 @@ void BundleSolver::FormD_once( void )
   // failure of the MP Solver neither is believed
   const bool easy_answer = NrEasy && easy_says_it() && ( ! mp_failed );
 
-  // with an empty bundle t is at tMinor [see above], and the master of a
-  // Bundle with easy components is then a badly scaled problem, the
-  // stabilizing term vanishing against their data, which a master Solver
-  // may well declare empty or unbounded when it is not: the verdict is the
-  // easy components' answer only if the master solved again with t where
-  // it was before the empty bundle (Prevt) still gives it
+  // with an empty bundle t is at dbltEmpty [see above], tMinor by default,
+  // and the master of a Bundle with easy components is then a badly scaled
+  // problem, the stabilizing term vanishing against their data, which a
+  // master Solver may well declare empty or unbounded when it is not: the
+  // verdict is the easy components' answer only if the master solved again
+  // with t where it was before the empty bundle (Prevt) still gives it
   if( easy_answer && ( primal_empty || primal_unbounded ) &&
       ( ! t_restored ) && ( ! std::isnan( Prevt ) ) ) {
    t_restored = true;
@@ -4042,6 +4076,8 @@ void BundleSolver::FormD_once( void )
   if( ( f_cutoff_LB > -INFshift ) && ( ! f_cutoff_LB_off ) ) {
    f_cutoff_LB_off = true;
    global_LB_row();
+   sync_fictitious_LB();  // without the cutoff, the empty components may
+                          // need their fictitious bound again
    if( f_cutoff_LB <= -INFshift ) {
     BLOG( 2 , std::endl << "Bundle::FormD: error in MP, cutoff bound "
                            "removed" );
@@ -4151,6 +4187,7 @@ void BundleSolver::FormD_once( void )
  for( Index k = 0 ; k < NrFi ; ++k )
   if( MasterPB )
    vStar[ k ] = MasterPB->get_FiBLambda( int( k ) );
+ no_model_vStar();
 
  if( NrEasy ) {  // there are easy components
   // adjust the contribution of the easy components to v* and Sigma*.
@@ -4653,9 +4690,11 @@ int BundleSolver::continuous_step( Index cnt , bool doubly_stabilized ,
   GotoLambda1();
   update_level_after_step( true , gated_level_update , old_ref );
   CNSCntr = 0;
+  LastNS = false;
   CmptdinL = ( cnt == NrFi - NrEasy );
   }
  else {        // NS - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  LastNS = true;
   BLOG( 1 , std::endl << " NS[" << CNSCntr << "]: " );
   BLOG2( 1 , DeltaFi < INFshift , "DFi = " << shrt << rs( DeltaFi )
              <<  " ~ " << def );
@@ -4843,6 +4882,7 @@ int BundleSolver::integer_master( double tm )
   vStar.back() = MasterPB->get_FiBLambda();
   for( Index k = 0 ; k < NrFi ; ++k )
    vStar[ k ] = MasterPB->get_FiBLambda( int( k ) );
+  no_model_vStar();
   }
 
  return( rc );
@@ -5563,11 +5603,12 @@ void BundleSolver::read_linear_constraints( void )
     continue;
     }
 
-   throw( std::logic_error( std::string( "BundleSolver::"
-					 "read_linear_constraints: unsupported "
-					 "type of " ) +
-			    ( group->is_dynamic() ? "dynamic" : "static" ) +
-			    " Constraint" ) );
+   throw( std::logic_error(
+		 std::string( "BundleSolver::"
+			      "read_linear_constraints: unsupported "
+			      "type of " ) +
+		 ( group->is_dynamic() ? "dynamic" : "static" ) +
+		 " Constraint" ) );
    }
 
  }  // end( BundleSolver::read_linear_constraints )
@@ -6187,7 +6228,10 @@ bool BundleSolver::GetGi( Index wFi )
  bool insrtd = false;  // keep track if anything new at all was inserted
  auto fwFi = v_c05f[ wFi ];
 
- for( Index Ftchd = 0 ; Ftchd < aBP3 ; ++Ftchd ) {
+ // with intXtrOnNS, more than BPar4 items only after a null step
+ const Index nFtch = ( XtrOnNS && ( ! LastNS ) ) ? BPar4 : aBP3;
+
+ for( Index Ftchd = 0 ; Ftchd < nFtch ; ++Ftchd ) {
   bool diagonal = true;
   bool HasLinearization;
 
@@ -6600,6 +6644,7 @@ bool BundleSolver::GetGi( Index wFi )
    // guarantee termination anyway, the feasible region needing not be a
    // polyhedron, and with a finite bundle it may leave no room at all
    OOBase[ wh ] = -1;
+   Xtra[ wh ] = ( Ftchd > 0 );
    if( ! diagonal )     // a new vertical row: the MP is bound to change
     MPchgs = 2;
    }
@@ -6835,7 +6880,8 @@ void BundleSolver::SimpleBStrat( void )
  const bool keep_vertical = ( trust_region_radius() > 0 );
  auto deletable = [ this , keep_vertical ]( Index i ) {
   return( ( OOBase[ i ] < Inf< SIndex >() ) &&
-          ( OOBase[ i ] > SIndex( BPar1 ) ) &&
+          ( OOBase[ i ] > SIndex( ( XtrLife > 0 ) && Xtra[ i ] ? XtrLife
+                                                               : BPar1 ) ) &&
           ( ( ! keep_vertical ) || is_subgradient_global( i ) ) );
   };
 
@@ -7629,8 +7675,10 @@ Index BundleSolver::BStrategy( Index wFi )
                                : MasterPB->get_lambda();
  const double aggregate_mass_eps =
   1e-12 * ( pure_level_aggregate ? std::abs( aggregate_mass )
-                               : std::max( std::abs( aggregate_mass ) , 1.0 ) );
- if( ! std::isfinite( aggregate_mass ) || aggregate_mass <= aggregate_mass_eps )
+                               : std::max( std::abs( aggregate_mass ) ,
+					   1.0 ) );
+ if( ! std::isfinite( aggregate_mass ) ||
+     aggregate_mass <= aggregate_mass_eps )
   return( InINF );
 
  // the aggregate is made of the diagonal items alone, with the multipliers
@@ -7757,7 +7805,7 @@ Index BundleSolver::BStrategy( Index wFi )
  //   a* = (1/mass) (sum_i theta_i a_i + gamma LB)
  // In pure level, get_aggregated_subgradient() already returns g*.
  std::vector< double > tZ_buf =
-                              MasterPB->get_aggregated_subgradient( hard_k( wFi ) );
+   MasterPB->get_aggregated_subgradient( hard_k( wFi ) );
  if( tZ_buf.empty() )
   tZ_buf.assign( NumVar , 0.0 );
  if( ! pure_level_aggregate )
@@ -7783,6 +7831,7 @@ Index BundleSolver::BStrategy( Index wFi )
  whisZ[ wFi ] = whZ;      // Z[ wFi ] is in the bundle in position whZ
  Zvalid[ wFi ] = true;    // ... and it is valid
  OOBase[ whZ ] = -1;      // ... and it won't be removed in this iteration
+ Xtra[ whZ ] = 0;         // ... and it is no extra item
 
  BLOG( 2 , std::endl << "Aggregation performed into " << whZ );
 
@@ -7916,6 +7965,7 @@ void BundleSolver::guts_of_destructor( void )
  ItemVcblr.clear();
 
  OOBase.clear();
+ Xtra.clear();
 
  LmbdBst.clear();
  Lambda1.clear();
@@ -8179,6 +8229,7 @@ void BundleSolver::ReSetAlg( unsigned char RstLvl )
  if( ! ( RstLvl & RstAlg ) ) {  // reset algorithmic parameters - - - - - - -
   ParIter = 0;             // reset iterations count
   CSSCntr = CNSCntr = 0;   // ... comprised consecutive NS/SS count
+  LastNS = false;          // the first evaluation follows no null step
 
   if( t != tInit ) {       // reset t
    t = tInit;
@@ -8321,17 +8372,10 @@ void BundleSolver::Delete( Index i , bool ModDelete )
  --NrItems[ k ];
  --NrItems[ NrFi ];
 
- // FormD() may delete an item as part of its emergency recovery and
- // immediately re-solve the master, without returning to the outer loop
- // where fictitious bounds are normally synchronized. If this was the last
- // cut of a hard component with no genuine lower bound, install its
- // fictitious bound now so the component normalization remains feasible.
- if( MasterPB && ( MasterPB->get_diagonal_count( hard_k( k ) ) == 0 ) &&
-     ( ( ! NrEasy ) || ( ! IsEasy[ k ] ) ) &&
-     ( LowerBound[ k ] <= - INFshift ) && ( ! FictLB[ k ] ) ) {
-  MasterPB->set_fictitious_LB( hard_k( k ) , true );
-  FictLB[ k ] = true;
-  }
+ // FormD() may delete an item as part of its emergency recovery and solve
+ // the master again at once: if this was the last cut of a component, it
+ // may need its fictitious bound now
+ sync_fictitious_LB();
 
  // remove from the global pool: the removal is "hard" if either BPar7 says
  // so, or the linearization had been deleted anyway
@@ -8422,9 +8466,9 @@ bool BundleSolver::IsOptimal( double eps ) const
  if( vStar.back() >= INFshift )  // some components have no subgradients
   return( false );               // no way one can detect optimality
 
- // while the bundle is empty t is temporarily collapsed to tMinor [see
+ // while the bundle is empty t is temporarily set by dbltEmpty [see
  // FormD()], and Prevt holds the value to be restored as soon as there is
- // something in the bundle. With that t the step is null, hence z* and Sigma
+ // something in the bundle. With tMinor the step is null, hence z* and Sigma
  // are zero because of the stabilization and not because the point is
  // optimal: reading them as optimality certifies whatever point the
  // algorithm happens to be at, which is how an unbounded problem got
@@ -8475,12 +8519,12 @@ BundleSolver::VarValue BundleSolver::box_lower_bound( void ) const
  //   f( Lambda ) >= UpFiLmb + v* + < s , Lambda - y* >
  //               >= UpFiLmb + v* - sum_i | s_i | max | Lambda_i - y*_i |
  //
- // with the max over the bounds of Lambda_i, which is finite if every i with s_i != 0 has finite bounds (Hölder with
- // the 1-norm and the INF-norm). s is -d* / t in the proximal master (the
- // mass of the rows dividing it in the dual one) and the part of the
- // multipliers of the box that belongs to the trust region under
- // kTrustRegion [see get_z_vector()]; the level, doubly stabilized and
- // integer masters have their own bounds, and are not covered
+ // with the max over the bounds of Lambda_i, which is finite if every i with
+ // s_i != 0 has finite bounds (Hölder with the 1-norm and the INF-norm). s is
+ // -d* / t in the proximal master (the mass of the rows dividing it in the
+ // dual one) and the part of the multipliers of the box that belongs to the
+ // trust region under kTrustRegion [see get_z_vector()]; the level, doubly
+ // stabilized and integer masters have their own bounds, and are not covered
  if( ( ! MasterPB ) || ( ! RifeqFi ) || ( ! f_int_var.empty() ) )
   return( -INFshift );
  if( ( UpFiLmb.back() >= INFshift ) || ( vStar.back() >= INFshift ) )
@@ -8804,6 +8848,7 @@ void BundleSolver::reset_bundle( void )
   remove_cut_global( name );
 
  OOBase.assign( vBPar2.back() , Inf< SIndex >() );
+ Xtra.assign( vBPar2.back() , 0 );
 
  ItemVcblr.assign( vBPar2.back() , std::make_pair( InINF , InINF ) );
 
@@ -9046,6 +9091,11 @@ void BundleSolver::process_outstanding_Modification( void )
       LwFiLmbdef = NrFi;             // it will have to be recomputed
       }
      UpFiBest = INFshift;            // and the best value as well
+     // the minimum may now be anywhere, below the global lower bounds and
+     // the level target
+     f_global_LB = -INFshift;
+     f_box_LB = -INFshift;
+     reset_level_stabilization();
      }
     else {                       // a FunctionMod changing the constant
      #ifndef NDEBUG
