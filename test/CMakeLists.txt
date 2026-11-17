@@ -119,7 +119,7 @@ if (TARGET SMS++::MILPSolver)
              WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 endif ()
 
-# ----- the Constraint of the Block --------------------------------------- #
+# ----- the Constraint of the Block ----------------------------------------- #
 # The FRowConstraint of the Block, which the primal master hosts and the dual
 # one has as multipliers, displacement and iterate form, proximal, level and
 # trust region, against the Linear Program, also after a side, a coefficient,
@@ -138,7 +138,7 @@ if (TARGET SMS++::MILPSolver)
              WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 endif ()
 
-# ----- the verdict of the easy components at the first master ------------ #
+# ----- the verdict of the easy components at the first master -------------- #
 # An easy LagBFunction next to a hard component, whose first master has an
 # empty bundle and t at dbltMinor: a master that is not unbounded at the
 # previous t is not taken for the easy components' answer, one that still is
@@ -154,7 +154,22 @@ if (TARGET SMS++::MILPSolver)
              WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 endif ()
 
-# ----- the time limit while the master fails [see dblMaxTime] ------------- #
+# ----- the part of the dual solution [see get_dual_solution()] ------------- #
+# Two hard components in sub-Blocks of two classes: the positional and the
+# "meta" Configuration of get_dual_solution() give the important
+# linearization to the components they ask for, and only to them
+if (TARGET SMS++::MILPSolver)
+    add_executable(partial_dual_test test_partial_dual.cpp)
+    target_link_libraries(partial_dual_test PRIVATE
+                          SMS++::BundleSolver
+                          SMS++::MILPSolver)
+    # it reads BSPar.txt and MPBCfg.txt from the working directory
+    add_test(NAME partial_dual_test
+             COMMAND partial_dual_test
+             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+endif ()
+
+# ----- the time limit while the master fails [see dblMaxTime] -------------- #
 # A master Solver that fails at each call after the first few, whose failures
 # the BundleSolver recovers from by emptying the bundle one item at a time:
 # with no time limit it ends in kLowPrecision at the stability centre, with
@@ -172,7 +187,7 @@ if (TARGET SMS++::MILPSolver)
     set_tests_properties(time_limit_test PROPERTIES SKIP_RETURN_CODE 77)
 endif ()
 
-# ----- a failure of the master on the items of this iteration ------------ #
+# ----- a failure of the master on the items of this iteration -------------- #
 # A master Solver that fails at its first calls, when the bundle only has the
 # items of the first iteration, which are not removable at this iteration:
 # the recovery removes them as well, and the call ends in kOK with the value

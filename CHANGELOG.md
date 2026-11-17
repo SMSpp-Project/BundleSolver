@@ -7,7 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `get_dual_solution()`, and `get_var_solution()` for the easy components,
+  read the "meta" Configuration of `Solver::get_var_solution()`: a
+  component is written whole if the Block it stands for, or a Block below
+  it, is chosen by `classname()`, all of them if the Block of the Solver is;
+  `partial_dual_test` checks it next to the positional format
+
 ### Changed
+
+- the class of a component whose C05Function is not a Block is that of the
+  Block whose Objective it is in [see `component_Block()`], for vstrNoEasy
+  too, where it changes nothing since such a component is never easy
 
 - the library is kept in whoever links it by a source that calls its
   `SMSpp_force_load_` function, the tests and the tools take the static
@@ -19,6 +31,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 
 - `cmake/FindCPLEX.cmake` and `cmake/FindGUROBI.cmake`, which nothing used
+
+### Fixed
+
+- `get_dual_solution()` with a `SimpleConfiguration< std::vector< int > >`
+  and no easy component at all asked the master for the dual solution of
+  an easy component, and threw: it writes the hard ones, as with nullptr
 
 ## [0.8.0] - 2026-11-16
 

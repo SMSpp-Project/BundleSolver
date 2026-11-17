@@ -1567,18 +1567,12 @@ void BundleSolver::set_Block( Block * block )
    continue;
   }
 
-  // check if the class of component k is forbidden to be easy: that of the
-  // (first) nested Block of its C05Function if this is a Block with nested
-  // Block (as the inner Block of a LagBFunction), else that of the
-  // C05Function itself if it is a Block
+  // check if the class of component k is forbidden to be easy
   if( ! NoEasyCls.empty() )
-   if( auto fb = dynamic_cast< Block * >( v_c05f[ k ] ) ) {
-    const auto cb = fb->get_number_nested_Blocks() ?
-                    fb->get_nested_Block( 0 ) : fb;
-    if( cb && ( std::find( NoEasyCls.begin() , NoEasyCls.end() ,
-			   cb->classname() ) != NoEasyCls.end() ) )
+   if( auto cb = component_Block( k ) )
+    if( std::find( NoEasyCls.begin() , NoEasyCls.end() ,
+		   cb->classname() ) != NoEasyCls.end() )
      continue;
-    }
 
    auto LagB = dynamic_cast< LagBFunction * >( v_c05f[ k ] );
    if( LagB ) {
@@ -2385,6 +2379,19 @@ void BundleSolver::get_var_solution( Configuration *solc )
   return;
   }
 
+ // the "meta" format: the easy components with a Block in them chosen,
+ // both their duals and their reduced costs [see get_dual_solution()]
+ if( auto m = dynamic_cast< SimpleConfiguration< std::map< std::string ,
+                                    Configuration * > > * >( solc ) ) {
+  // IsEasy is empty if no component is easy, and then there is nothing
+  for( Index k = 0 ; k < IsEasy.size() ; ++k )
+   if( IsEasy[ k ] && component_selected( k , m->f_value ) ) {
+    get_var_solution_easy_pi( k );
+    get_var_solution_easy_rc( k );
+    }
+  return;
+  }
+
  // case "all the easy components"
  if( auto c = dynamic_cast< SimpleConfiguration< int > * >( solc ) ) {
   auto h = c->f_value;
@@ -2404,6 +2411,29 @@ void BundleSolver::get_var_solution( Configuration *solc )
   return;
   }
  }  // end( BundleSolver::get_var_solution )
+
+/*--------------------------------------------------------------------------*/
+
+Block * BundleSolver::component_Block( Index k ) const
+{
+ auto fb = dynamic_cast< Block * >( v_c05f[ k ] );
+ if( ! fb )  // the Block whose Objective the C05Function is in
+  return( v_c05f[ k ]->get_Block() );
+ return( fb->get_number_nested_Blocks() ? fb->get_nested_Block( 0 ) : fb );
+ }
+
+/*--------------------------------------------------------------------------*/
+
+bool BundleSolver::component_selected( Index k ,
+		       const std::map< std::string , Configuration * > & map )
+ const
+{
+ // the Block of the Solver chosen, by its class or by "*", means all
+ if( map.count( "*" ) || map.count( f_Block->classname() ) )
+  return( true );
+ auto cb = component_Block( k );
+ return( ( ! cb ) || has_selected( cb , map ) );
+ }
 
 /*--------------------------------------------------------------------------*/
 
@@ -2458,6 +2488,24 @@ void BundleSolver::get_var_solution_easy_rc( Index k )
 
 void BundleSolver::get_dual_solution( Configuration * solc )
 {
+ // the dual solution of component k, the master giving it for the easy ones
+ auto write = [ this ]( Index k ) {
+  if( NrEasy && IsEasy[ k ] )
+   get_dual_solution_easy( k );
+  else
+   get_dual_solution_hard( k );
+  };
+
+ if( auto m = dynamic_cast< SimpleConfiguration< std::map< std::string ,
+                                    Configuration * > > * >( solc ) ) {
+  // the "meta" format: a component is written whole if any Block in it is
+  // chosen, or if it has no Block to tell [see Solver::get_var_solution()]
+  for( Index k = 0 ; k < NrFi ; ++k )
+   if( component_selected( k , m->f_value ) )
+    write( k );
+  return;
+  }
+
  if( auto c = dynamic_cast< SimpleConfiguration< std::vector< int > > * >(
                                                                   solc ) ) {
   for( auto k : c->f_value ) {
@@ -2465,26 +2513,13 @@ void BundleSolver::get_dual_solution( Configuration * solc )
     throw( std::invalid_argument(
                "BundleSolver::get_dual_solution: invalid index " +
                std::to_string( k ) ) );
-
-   if( NrEasy && ( ! IsEasy[ k ] ) )
-    get_dual_solution_hard( k );
-   else
-    get_dual_solution_easy( k );
+   write( k );
    }
-
   return;
   }
 
- if( NrEasy ) {
-  for( Index k = 0 ; k < NrFi ; ++k )
-   if( IsEasy[ k ] )
-    get_dual_solution_easy( k );
-   else
-    get_dual_solution_hard( k );
-  }
- else
-  for( Index k = 0 ; k < NrFi ; ++k )
-   get_dual_solution_hard( k );
+ for( Index k = 0 ; k < NrFi ; ++k )
+  write( k );
 
  }  // end( BundleSolver::get_dual_solution() )
 

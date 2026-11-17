@@ -1867,8 +1867,9 @@ public:
   *   with nested Block, as a LagBFunction is, whose nested Block is the
   *   inner Block it relaxes, it is the classname() of its first nested
   *   Block; otherwise, if the C05Function is a Block, it is its own
-  *   classname(); otherwise the component has no class, and vstrNoEasy
-  *   never applies to it. This lets one configuration say which components
+  *   classname(); otherwise it is that of the Block whose Objective the
+  *   C05Function is in [see component_Block()], although such a component
+  *   is never "easy" anyway. This lets one configuration say which components
   *   are "hard" for instances whose components are numbered differently.
   *   As for vintNoEasy, this clearly only applies if intDoEasy != 0, and
   *   the parameter is read when BundleSolver is register()-ed to the Block
@@ -2125,6 +2126,11 @@ public:
   *   second bit (+2) if the reduced costs need be written) which is applied
   *   to *all easy* components.
   *
+  * - a pointer to a SimpleConfiguration< std::map< std::string ,
+  *   Configuration * > >, the "meta" format of Solver::get_var_solution():
+  *   both the dual variables and the reduced costs are written of the easy
+  *   components that it chooses [see component_selected()].
+  *
   * IMPORTANT NOTE: getting access to dual variables / reduced costs of
   *                 any easy component requires access to that
   *   component's description, which is *deleted if not needed* as
@@ -2165,9 +2171,12 @@ public:
   *   directly written in the Block inside the LagBFunction.
   *
   * If \p solc is nullptr, then the solution for all components is written.
-  * Otherwise, \p solc must be a pointer to a SimpleConfiguration< std::vector<
-  * int > >, assuming to contain the indices of the components of which the
-  * primal solution has to be written.
+  * Otherwise, \p solc can be a pointer to a SimpleConfiguration<
+  * std::vector< int > >, assuming to contain the indices of the components
+  * of which the primal solution has to be written, or to a
+  * SimpleConfiguration< std::map< std::string , Configuration * > >, the
+  * "meta" format of Solver::get_var_solution(), and then the components it
+  * chooses are written, each whole [see component_selected()].
   */
 
  void get_dual_solution( Configuration *solc = nullptr ) override;
@@ -3359,6 +3368,25 @@ public:
     ++e;
   return( e );
   }
+
+ /*-------------------------------------------------------------------------*/
+ /// the Block whose classname() component \p k is named by
+
+ /** The (first) sub-Block of the C05Function of component \p k if this is a
+  * Block with sub-Blocks, as the inner Block of a LagBFunction, else the
+  * C05Function itself if it is a Block, else the Block whose Objective it
+  * is in (nullptr if none); it is what vstrNoEasy and the "meta"
+  * Configuration of get_var_solution() and get_dual_solution() look at. */
+
+ Block * component_Block( Index k ) const;
+
+ /// whether the "meta" \p map chooses component \p k
+ /** True if \p map chooses the Block of this Solver, by its classname() or
+  * by "*", or a Block of component \p k [see has_selected()], or if
+  * component \p k has no Block to tell; the component is written whole. */
+
+ bool component_selected( Index k ,
+		  const std::map< std::string , Configuration * > & map ) const;
 
  /*-------------------------------------------------------------------------*/
 
