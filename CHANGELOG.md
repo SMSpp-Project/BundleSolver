@@ -17,6 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- the quadratic 0-th component is allowed also with the trust region
+  (`intMPStbl` 4) and with no stabilization (`intMPStbl` 3) [see
+  `MasterProblemBlock::set_zeroth_quadratic()` of SMS++];
+  `zeroth_quadratic_e2e_test` compares with the monolithic quadratic program
+  the proximal, the trust region and the cutting plane, the last two also in
+  raw form, from `BSPar-rho.txt`
+
 - `BundleSolver` finds the type of a `Modification`, of a `Function` and
   of a `Constraint` by `memo_cast()` [see `SMSTypedefs.h` of SMS++]
 

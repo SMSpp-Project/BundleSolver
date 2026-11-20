@@ -17,10 +17,11 @@
  * and that with rho = 0 nothing whatsoever changes, which is the condition
  * the feature was accepted under. The coefficients of the Objective are read
  * back and compared with the closed form, at the first build and after a
- * change of t. The linear part is not here: it is installed into the
- * Objective once it exists, so the rho * x_bar that goes with it belongs to
- * the refresh done before every solve, and is exercised by a solve rather
- * than by this test.
+ * change of t, and under the trust region and the cutting plane, which have
+ * no quadratic term of their own, with rho / 2. The linear part is not
+ * here: it is installed into the Objective once it exists, so the
+ * rho * x_bar that goes with it belongs to the refresh done before every
+ * solve, and is exercised by a solve rather than by this test.
  *
  * \author Donato Meoli \n
  *         Dipartimento di Informatica \n
@@ -94,12 +95,15 @@ static DQuadFunction * objective_of( MasterProblemBlock * mpb )
 
 /*--------------------------------------------------------------------------*/
 
-/// builds a primal, proximal MasterProblemBlock of @p n variables
+/// builds a primal MasterProblemBlock of @p n variables, proximal unless
+/// @p stbl says otherwise
 
 static MasterProblemBlock * make_mpb( int n , double t ,
                                       const std::vector< double > & b ,
                                       const std::vector< double > & x_bar ,
-                                      double rho )
+                                      double rho ,
+                                      MasterProblemBlock::stabilization_type
+                                      stbl = MasterProblemBlock::kProximal )
 {
  auto mpb = new MasterProblemBlock();
  mpb->configure( true ,    // primal MP
@@ -108,7 +112,7 @@ static MasterProblemBlock * make_mpb( int n , double t ,
                  1 ,       // one hard component
                  {} ,      // no easy component
                  {} ,      // nothing ignored
-                 MasterProblemBlock::kProximal );
+                 stbl );
  mpb->generate_abstract_variables();
  mpb->generate_abstract_constraints();
  mpb->set_t( t );
@@ -202,6 +206,17 @@ int main( void )
                  " carries its own rho" );
     }
    }
+
+ // the trust region and the cutting plane have no quadratic term of their
+ // own, and the master carries ( rho / 2 ) x^2 as it is - - - - - - - - - -
+
+ for( auto stbl : { MasterProblemBlock::kTrustRegion ,
+                    MasterProblemBlock::kNone } ) {
+  auto mpb = make_mpb( n , t , b , x_bar , rho , stbl );
+  check_close( objective_of( mpb )->get_quadratic_coefficient( 0 ) ,
+               rho / 2.0 , 1e-12 , "stabilization " +
+               std::to_string( int( stbl ) ) + " carries rho / 2" );
+  }
 
  // what is not supported says so - - - - - - - - - - - - - - - - - - - - - -
 

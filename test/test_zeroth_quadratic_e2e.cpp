@@ -12,11 +12,13 @@
  * \f]
  * i.e. a regularised risk, which is what the Benders master of a support
  * vector machine and any other strongly convex nonsmooth problem look like.
- * It is solved twice: by the bundle, which sees the quadratic term as the
- * 0-th component of the sum-function and hands it to its master, and as one
- * monolithic quadratic program in ( x , v ) with the epigraph constraints
- * written out, which any general-purpose solver handles. The two optimal
- * values have to agree.
+ * It is solved by each Solver of BSPar-rho.txt, i.e., by the bundle with
+ * the proximal stabilization, with the trust region and with none, which
+ * sees the quadratic term as the 0-th component of the sum-function and
+ * hands it to its master, and as one monolithic quadratic program in
+ * ( x , v ) with the epigraph constraints written out, which any
+ * general-purpose solver handles. Every value has to agree with the
+ * monolithic one.
  *
  * With rho = 0 the same instance is solved again, which is the case that has
  * to keep behaving exactly as it did before the quadratic component existed.
@@ -131,8 +133,9 @@ static void make_instance( Index n , Index m , unsigned seed )
 /// the problem as the bundle sees it: the quadratic 0-th component in the
 /// Objective of the root, the polyhedral one in a sub-Block
 
-static double solve_with_bundle( Index n , const std::vector< double > & rho ,
-                                 const char * bsc_fn )
+static std::vector< double > solve_with_bundle( Index n ,
+                                                 const std::vector< double > &
+                                                 rho , const char * bsc_fn )
 {
  auto root = new AbstractBlock();
 
@@ -167,15 +170,17 @@ static double solve_with_bundle( Index n , const std::vector< double > & rho ,
  root->add_nested_Block( sub );
 
  auto bsc = apply_bsc( root , bsc_fn );
- auto slvr = root->get_registered_solvers().front();
- slvr->compute( false );
- const double value = slvr->get_var_value();
+ std::vector< double > values;
+ for( auto slvr : root->get_registered_solvers() ) {
+  slvr->compute( false );
+  values.push_back( slvr->get_var_value() );
+  }
 
  bsc->clear();
  bsc->apply( root );
  delete bsc;
  delete root;
- return( value );
+ return( values );
  }
 
 /*--------------------------------------------------------------------------*/
@@ -252,10 +257,11 @@ int main( int argc , char ** argv )
 
  for( double rho : { 1.0 , 3.0 , 10.0 } ) {
   const std::vector< double > rhos( n , rho );
-  const double bundle = solve_with_bundle( n , rhos , "BSPar-rho.txt" );
+  const auto bundle = solve_with_bundle( n , rhos , "BSPar-rho.txt" );
   const double mono = solve_monolithic( n , rhos , "MPBCfg-rho.txt" );
-  check_close( bundle , mono , 1e-6 ,
-               "rho = " + std::to_string( rho ) );
+  for( Index s = 0 ; s < bundle.size() ; ++s )
+   check_close( bundle[ s ] , mono , 1e-6 , "rho = " + std::to_string( rho ) +
+                ", Solver " + std::to_string( s + 1 ) );
   }
 
  // the coefficients need not be all equal: a Benders master where only some
@@ -264,9 +270,11 @@ int main( int argc , char ** argv )
  { std::vector< double > rhos( n );
   for( Index j = 0 ; j < n ; ++j )
    rhos[ j ] = 1.0 + j;
-  const double bundle = solve_with_bundle( n , rhos , "BSPar-rho.txt" );
+  const auto bundle = solve_with_bundle( n , rhos , "BSPar-rho.txt" );
   const double mono = solve_monolithic( n , rhos , "MPBCfg-rho.txt" );
-  check_close( bundle , mono , 1e-6 , "a rho per coordinate" );
+  for( Index s = 0 ; s < bundle.size() ; ++s )
+   check_close( bundle[ s ] , mono , 1e-6 , "a rho per coordinate, Solver " +
+                std::to_string( s + 1 ) );
   }
 
  cout << ( failed ? RED( Shit happened!! ) : GREEN( All tests passed!! ) )
