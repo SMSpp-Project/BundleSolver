@@ -158,7 +158,7 @@ BundleSolver::effective_bounds( const ColVariable * var )
 
  for( Index i = 0 ; i < var->get_num_active() ; ++i ) {
   const auto c = var->get_active( i );
-  const auto b = dynamic_cast< const OneVarConstraint * >( c );
+  const auto b = memo_cast< const OneVarConstraint * >( c );
   if( ! b )
    continue;
 
@@ -1208,13 +1208,13 @@ void BundleSolver::set_Block( Block * block )
  if( sb.empty() ) {  // no sub-Block
   // the objective function of the Block must be a C05Function  - - - - - - -
 
-  auto obj = dynamic_cast< FRealObjective * >( f_Block->get_objective() );
+  auto obj = memo_cast< FRealObjective * >( f_Block->get_objective() );
   if( ! obj )
    throw( std::invalid_argument(
               "BundleSolver::set_Block: "
               "objective is not a FRealObjective" ) );
 
-  auto c05f = dynamic_cast< C05Function * >( obj->get_function() );
+  auto c05f = memo_cast< C05Function * >( obj->get_function() );
   if( ! c05f )
    throw( std::invalid_argument(
               "BundleSolver::set_Block: "
@@ -1244,7 +1244,7 @@ void BundleSolver::set_Block( Block * block )
    f_qf = nullptr;
    }
   else {
-   auto obj = dynamic_cast< FRealObjective * >( f_Block->get_objective() );
+   auto obj = memo_cast< FRealObjective * >( f_Block->get_objective() );
    if( ! obj )
     throw( std::logic_error(
                "BundleSolver::set_Block: "
@@ -1255,9 +1255,9 @@ void BundleSolver::set_Block( Block * block )
     f_qf = nullptr;
     }
    else {
-    f_lf = dynamic_cast< LinearFunction * >( obj->get_function() );
+    f_lf = memo_cast< LinearFunction * >( obj->get_function() );
     f_qf = f_lf ? nullptr
-                : dynamic_cast< DQuadFunction * >( obj->get_function() );
+                : memo_cast< DQuadFunction * >( obj->get_function() );
 
     if( ( ! f_lf ) && ( ! f_qf ) )
      throw( std::logic_error(
@@ -1303,13 +1303,13 @@ void BundleSolver::set_Block( Block * block )
   for( Index i = 0 ; i < sb.size() ; ++i ) {  // for each sub-block
    // the objective function of each sub-block must be a C05Function - - - - -
 
-   auto obj = dynamic_cast< FRealObjective * >( sb[ i ]->get_objective() );
+   auto obj = memo_cast< FRealObjective * >( sb[ i ]->get_objective() );
    if( ! obj )
     throw( std::logic_error(
                "BundleSolver::set_Block: sub-Block "
                "objective is not a real function" ) );
 
-   auto c05f = dynamic_cast< C05Function * >( obj->get_function() );
+   auto c05f = memo_cast< C05Function * >( obj->get_function() );
    if( ! c05f )
     throw( std::logic_error(
                "BundleSolver::set_Block: sub-Block "
@@ -1574,7 +1574,7 @@ void BundleSolver::set_Block( Block * block )
 		   cb->classname() ) != NoEasyCls.end() )
      continue;
 
-   auto LagB = dynamic_cast< LagBFunction * >( v_c05f[ k ] );
+   auto LagB = memo_cast< LagBFunction * >( v_c05f[ k ] );
    if( LagB ) {
     auto MILPs = new MILPSolver();
     try {  // check if the inner Block of the LagBFunction is all-linear
@@ -5590,7 +5590,7 @@ void BundleSolver::read_linear_constraints( void )
   if( cns.is_relaxed() )
    return;
 
-  auto lf = dynamic_cast< LinearFunction * >( cns.get_function() );
+  auto lf = memo_cast< LinearFunction * >( cns.get_function() );
   if( ! lf )
    throw( std::logic_error( "BundleSolver::read_linear_constraints: the "
                             "Function of a FRowConstraint is not a "
@@ -5776,7 +5776,7 @@ bool BundleSolver::root_row_function( const Function * f ) const
 {
  if( ! f )
   return( false );
- auto cns = dynamic_cast< const Constraint * >( f->get_Observer() );
+ auto cns = memo_cast< const Constraint * >( f->get_Observer() );
  return( cns && ( cns->get_Block() == f_Block ) );
  }
 
@@ -8944,7 +8944,7 @@ bool BundleSolver::is_special_GroupMod( GroupModification & gmod )
  auto smi = gmod.sub_Modifications().begin();
  auto sm0 = *(smi++);
  for( ; smi !=  gmod.sub_Modifications().end() ; ++smi )
-  if( typeid( sm0 ) != typeid( *smi ) )
+  if( typeid( * sm0 ) != typeid( * * smi ) )
    return( false );
 
  smi = gmod.sub_Modifications().begin();
@@ -8952,7 +8952,7 @@ bool BundleSolver::is_special_GroupMod( GroupModification & gmod )
 
  // check FunctionModVarsAddd
  if( const auto mod0 =
-     std::dynamic_pointer_cast< FunctionModVarsAddd >( sm0 ) ) {
+     memo_pointer_cast< FunctionModVarsAddd >( sm0 ) ) {
   for( ; smi != gmod.sub_Modifications().end() ; ++smi ) {
    auto modi = std::static_pointer_cast< FunctionModVarsAddd >( *smi );
    if( ( mod0->first() != modi->first() ) ||
@@ -8967,7 +8967,7 @@ bool BundleSolver::is_special_GroupMod( GroupModification & gmod )
 
  // check FunctionModVarsRngd
  if( const auto mod0 =
-     std::dynamic_pointer_cast< FunctionModVarsRngd >( sm0 ) ) {
+     memo_pointer_cast< FunctionModVarsRngd >( sm0 ) ) {
   for( ; smi != gmod.sub_Modifications().end() ; ++smi ) {
    auto modi = std::static_pointer_cast< FunctionModVarsRngd >( *smi );
    if( mod0->range() != modi->range() )
@@ -8981,7 +8981,7 @@ bool BundleSolver::is_special_GroupMod( GroupModification & gmod )
 
  // check FunctionModVarsSbst
  if( const auto mod0 =
-     std::dynamic_pointer_cast< FunctionModVarsSbst >( sm0 ) ) {
+     memo_pointer_cast< FunctionModVarsSbst >( sm0 ) ) {
   for( ; smi != gmod.sub_Modifications().end() ; ++smi ) {
    auto modi = std::static_pointer_cast< FunctionModVarsSbst >( *smi );
    if( mod0->subset() != modi->subset() )
@@ -9001,7 +9001,7 @@ bool BundleSolver::is_special_GroupMod( GroupModification & gmod )
 
 void BundleSolver::flatten_Modification_list( Lst_sp_Mod & vmt , sp_Mod mod )
 {
- const auto tmod = std::dynamic_pointer_cast< GroupModification >( mod );
+ const auto tmod = memo_pointer_cast< GroupModification >( mod );
  if( tmod && ( ! is_special_GroupMod( *tmod ) ) )
   for( auto submod : tmod->sub_Modifications() )
    flatten_Modification_list( vmt , submod );
@@ -9042,7 +9042,7 @@ void BundleSolver::process_outstanding_Modification( void )
 
  if( ! f_member2cmp.empty() )
   v_mod_tmp.remove_if( [ this ]( const sp_Mod & mod ) {
-   const auto fmod = std::dynamic_pointer_cast< FunctionMod >( mod );
+   const auto fmod = memo_pointer_cast< FunctionMod >( mod );
    return( fmod && ( f_member2cmp.count( fmod->function() ) > 0 ) );
    } );
 
@@ -9110,7 +9110,7 @@ void BundleSolver::process_outstanding_Modification( void )
   // first check if it is any kind of FunctionMod, since this gives immediate
   // access to the component, and any FunctionMod pertaining to an already
   // reset component can be almost immediately deleted
-  if( const auto tmod = std::dynamic_pointer_cast< FunctionMod >( mod ) ) {
+  if( const auto tmod = memo_pointer_cast< FunctionMod >( mod ) ) {
    if( tmod->function() == zeroth_component() ) {
     const auto shift = tmod->shift();
     // special immediate treatment of the 0-th component, which is simple
@@ -9209,7 +9209,7 @@ void BundleSolver::process_outstanding_Modification( void )
    // a C05FunctionModRngd only changes existing linearizations, and
    // therefore is never a "hard" reset
    if( const auto ttmod =
-       std::dynamic_pointer_cast< C05FunctionModRngd >( tmod ) ) {
+       memo_pointer_cast< C05FunctionModRngd >( tmod ) ) {
     switch( ttmod->type() ) {
      case( C05FunctionMod::AllLinearizationChanged ):
      case( C05FunctionMod::AllEntriesChanged ):
@@ -9226,7 +9226,7 @@ void BundleSolver::process_outstanding_Modification( void )
    // NothingChanged, which by definition does nothing save for the
    // shift(), that has been dealt with already
    if( const auto ttmod =
-       std::dynamic_pointer_cast< C05FunctionModSbst >( tmod ) ) {
+       memo_pointer_cast< C05FunctionModSbst >( tmod ) ) {
     switch( ttmod->type() ) {
      case( C05FunctionMod::AllLinearizationChanged ):
      case( C05FunctionMod::AllEntriesChanged ):
@@ -9245,7 +9245,7 @@ void BundleSolver::process_outstanding_Modification( void )
    // concave, or vice-versa, which is not allowed; all other cases
    // will have to be dealt with later
    if( const auto ttmod =
-       std::dynamic_pointer_cast< C05FunctionMod >( tmod ) ) {
+       memo_pointer_cast< C05FunctionMod >( tmod ) ) {
     switch( ttmod->type() ) {
      case( C05FunctionMod::GlobalPoolRemoved ):
       if( ttmod->which().empty() ) {
@@ -9274,7 +9274,7 @@ void BundleSolver::process_outstanding_Modification( void )
 
    // a C05FunctionModLin* only changes existing linearizations, and
    // therefore is never a "hard" reset
-   if( std::dynamic_pointer_cast< C05FunctionModLinRngd >( tmod ) )
+   if( memo_pointer_cast< C05FunctionModLinRngd >( tmod ) )
     continue;
 
    // if control reaches this point, mod is (indistinguishable from) a base
@@ -9297,7 +9297,7 @@ void BundleSolver::process_outstanding_Modification( void )
   // are refreshed; if not, the variable change also implies a "hard" reset
   // of that component. in no case the Modification is removed from the
   // list, the 4th loop doing the actual addition and removal of variables
-  if( const auto tmod = std::dynamic_pointer_cast< FunctionModVars >( mod ) ) {
+  if( const auto tmod = memo_pointer_cast< FunctionModVars >( mod ) ) {
    auto wFi = get_index_of_component( tmod->function() );
 
    /* A variable change of a Function that is not a component says nothing
@@ -9319,13 +9319,13 @@ void BundleSolver::process_outstanding_Modification( void )
 
    FModChg( tmod->shift() , wFi );  // change/reset upper/lower values
 
-   if( std::dynamic_pointer_cast< C05FunctionModVarsAddd >( tmod ) )
+   if( memo_pointer_cast< C05FunctionModVarsAddd >( tmod ) )
     continue;
 
-   if( std::dynamic_pointer_cast< C05FunctionModVarsRngd >( tmod ) )
+   if( memo_pointer_cast< C05FunctionModVarsRngd >( tmod ) )
     continue;
 
-   if( std::dynamic_pointer_cast< C05FunctionModVarsSbst >( tmod ) )
+   if( memo_pointer_cast< C05FunctionModVarsSbst >( tmod ) )
     continue;
 
    // if control reaches here, this is a FunctionModVars* that is not a
@@ -9340,16 +9340,16 @@ void BundleSolver::process_outstanding_Modification( void )
   // a GroupModification here can only be a bunch of identical
   // *FunctionModVar*: pick the first one and act on it
   if( const auto tmod =
-      std::dynamic_pointer_cast< GroupModification >( mod ) ) {
+      memo_pointer_cast< GroupModification >( mod ) ) {
    auto fmod = tmod->sub_Modifications().front();
 
-   if( std::dynamic_pointer_cast< C05FunctionModVarsAddd >( fmod ) )
+   if( memo_pointer_cast< C05FunctionModVarsAddd >( fmod ) )
     continue;
 
-   if( std::dynamic_pointer_cast< C05FunctionModVarsRngd >( fmod ) )
+   if( memo_pointer_cast< C05FunctionModVarsRngd >( fmod ) )
     continue;
 
-   if( std::dynamic_pointer_cast< C05FunctionModVarsSbst >( fmod ) )
+   if( memo_pointer_cast< C05FunctionModVarsSbst >( fmod ) )
     continue;
 
    // if control reaches here, this is a FunctionModVars* that is not a
@@ -9367,16 +9367,16 @@ void BundleSolver::process_outstanding_Modification( void )
 
    }  // end( if( tmod == GroupModification ) )
 
-  if( const auto cmod = std::dynamic_pointer_cast< ConstraintMod >( mod ) ) {
+  if( const auto cmod = memo_pointer_cast< ConstraintMod >( mod ) ) {
    // a Constraint of the Block whose sides change, or that is relaxed or
    // enforced: they are all read again at the end; with the Block hosted
    // this holds for any Constraint but the box, which is not a row
    const auto cns = cmod->constraint();
    if( cns && ( cns->get_Block() == f_Block ) &&
-       ( dynamic_cast< FRowConstraint * >( cns ) ||
-         ( f_host && ( ! dynamic_cast< BoxConstraint * >( cns ) ) &&
-           ( ! dynamic_cast< LB0Constraint * >( cns ) ) &&
-           ( ! dynamic_cast< NNConstraint * >( cns ) ) ) ) ) {
+       ( memo_cast< FRowConstraint * >( cns ) ||
+         ( f_host && ( ! memo_cast< BoxConstraint * >( cns ) ) &&
+           ( ! memo_cast< LB0Constraint * >( cns ) ) &&
+           ( ! memo_cast< NNConstraint * >( cns ) ) ) ) ) {
     lc_chgd = true;
     to_delete = true;
     continue;
@@ -9386,21 +9386,21 @@ void BundleSolver::process_outstanding_Modification( void )
               "ConstraintMod not handled (yet)" ) );
    }
 
-  if( std::dynamic_pointer_cast< VariableMod >( mod ) )
+  if( memo_pointer_cast< VariableMod >( mod ) )
    throw( std::invalid_argument(
               "BundleSolver::process_outstanding_Modification: "
               "VariableMod not handled (yet)" ) );
 
-  if( std::dynamic_pointer_cast< BlockMod >( mod ) )
+  if( memo_pointer_cast< BlockMod >( mod ) )
    throw( std::invalid_argument(
               "BundleSolver::process_outstanding_Modification: "
               "BlockMod not handled (yet)" ) );
 
-  if( std::dynamic_pointer_cast< BlockModAD >( mod ) ) {
+  if( memo_pointer_cast< BlockModAD >( mod ) ) {
    // a linear Constraint that comes or goes: they are all read again at
    // the end
-   if( ( std::dynamic_pointer_cast< BlockModAdd< FRowConstraint > >( mod ) ||
-         std::dynamic_pointer_cast< BlockModRmv< FRowConstraint > >( mod ) ) &&
+   if( ( memo_pointer_cast< BlockModAdd< FRowConstraint > >( mod ) ||
+         memo_pointer_cast< BlockModRmv< FRowConstraint > >( mod ) ) &&
        ( mod->get_Block() == f_Block ) )
     lc_chgd = true;
 
@@ -9590,7 +9590,7 @@ void BundleSolver::process_outstanding_Modification( void )
   // only changes in places where Lambda == 0, but this cannot be checked
   // efficiently)
   if( const auto tmod =
-      std::dynamic_pointer_cast< C05FunctionModRngd >( mod ) ) {
+      memo_pointer_cast< C05FunctionModRngd >( mod ) ) {
    auto wFi = get_index_of_component( tmod->function() );
    switch( tmod->type() ) {
     case( C05FunctionMod::AllEntriesChanged ):
@@ -9622,7 +9622,7 @@ void BundleSolver::process_outstanding_Modification( void )
   // only changes in places where Lambda == 0, but this cannot be checked
   // efficiently)
   if( const auto tmod =
-      std::dynamic_pointer_cast< C05FunctionModSbst >( mod ) ) {
+      memo_pointer_cast< C05FunctionModSbst >( mod ) ) {
    auto wFi = get_index_of_component( tmod->function() );
    switch( tmod->type() ) {
     case( C05FunctionMod::AllEntriesChanged ):
@@ -9645,7 +9645,7 @@ void BundleSolver::process_outstanding_Modification( void )
   // with which.empty() "soft" resets all the component and Alpha;
   // AlphaChanged only changes the constants (obviously)
   if( const auto tmod =
-      std::dynamic_pointer_cast< C05FunctionMod >( mod ) ) {
+      memo_pointer_cast< C05FunctionMod >( mod ) ) {
    if( ! tmod->which().empty() )   // we only react to which().empty()
     continue;
 
@@ -9684,7 +9684,7 @@ void BundleSolver::process_outstanding_Modification( void )
   // changes the linearization errors as well, this also resets all the
   // Alpha
   if( const auto tmod =
-      std::dynamic_pointer_cast< C05FunctionModLinRngd >( mod ) ) {
+      memo_pointer_cast< C05FunctionModLinRngd >( mod ) ) {
    auto wFi = get_index_of_component( tmod->function() );
    if( reset[ wFi ] )            // component reset already
     to_delete = true;            // nothing else to do
@@ -9706,7 +9706,7 @@ void BundleSolver::process_outstanding_Modification( void )
   // changes the linearization errors as well, this also resets all the
   // Alpha
   if( const auto tmod =
-      std::dynamic_pointer_cast< C05FunctionModLinSbst >( mod ) ) {
+      memo_pointer_cast< C05FunctionModLinSbst >( mod ) ) {
    auto wFi = get_index_of_component( tmod->function() );
    if( reset[ wFi ] )            // component reset already
     to_delete = true;            // nothing else to do
@@ -9722,7 +9722,7 @@ void BundleSolver::process_outstanding_Modification( void )
   // a specialised way by BundleSolver, but is currently not, and
   // therefore it is a "full" reset
   if( const auto tmod =
-      std::dynamic_pointer_cast< C05FunctionModLin >( mod ) ) {
+      memo_pointer_cast< C05FunctionModLin >( mod ) ) {
    auto wFi = get_index_of_component( tmod->function() );
 
    /* The linear part of the component has changed by delta, which moves
@@ -9886,7 +9886,7 @@ void BundleSolver::process_outstanding_Modification( void )
   // also, note that NothingChanged and AlphaChanged cannot happen, since
   // again these cases have been dealt with already
 
-  if( const auto tmod = std::dynamic_pointer_cast< C05FunctionMod >( mod ) ) {
+  if( const auto tmod = memo_pointer_cast< C05FunctionMod >( mod ) ) {
    auto wFi = get_index_of_component( tmod->function() );
 
    switch( tmod->type() ) {
@@ -10145,12 +10145,12 @@ void BundleSolver::process_outstanding_Modification( void )
 
   {
    // a "naked" FunctionModVars
-   auto tmod = std::dynamic_pointer_cast< FunctionModVars >( mod );
+   auto tmod = memo_pointer_cast< FunctionModVars >( mod );
    if( ! tmod ) {
     // if it is not a "naked" FunctionModVars, it can still be a group of
     // identical *FunctionModVars* "dressed" into a GroupModification
     if( const auto gmod =
-        std::dynamic_pointer_cast< GroupModification >( mod ) )
+        memo_pointer_cast< GroupModification >( mod ) )
      // if so, pick the first one and act on it
      tmod = std::static_pointer_cast< FunctionModVars >(
                                          gmod->sub_Modifications().front() );
@@ -10174,7 +10174,7 @@ void BundleSolver::process_outstanding_Modification( void )
     // or a non-special GroupMod already flattened by
     // flatten_Modification_list — both signal divergence.
     if( ( ! f_sparse_lambda ) &&
-        ( ! std::dynamic_pointer_cast< GroupModification >( mod ) ) ) {
+        ( ! memo_pointer_cast< GroupModification >( mod ) ) ) {
      f_sparse_lambda = true;
      Lambda2Idx.clear();
      Lambda2Idx.reserve( LamVcblr.size() );
@@ -10198,7 +10198,7 @@ void BundleSolver::process_outstanding_Modification( void )
      }
 
         if( const auto ttmod =
-        std::dynamic_pointer_cast< FunctionModVarsAddd >( tmod ) ) {
+        memo_pointer_cast< FunctionModVarsAddd >( tmod ) ) {
      if( f_sparse_lambda ) {
       // Sparse Lambda Addd: ttmod->first() is local (= loc_NV[ h ] at
       // the time the Mod was issued) and ttmod->vars() is the subset
@@ -10267,7 +10267,7 @@ void BundleSolver::process_outstanding_Modification( void )
      } // end( if( tmod == FunctionModVarsAddd ) )
 
     if( const auto ttmod =
-        std::dynamic_pointer_cast< FunctionModVarsRngd >( tmod ) ) {
+        memo_pointer_cast< FunctionModVarsRngd >( tmod ) ) {
      if( f_sparse_lambda ) {
       // Sparse Lambda Rngd: range is in v_c05f[ h ]'s LOCAL index
       // space. Drop the affected local slots from v_local2global[ h ]
@@ -10392,7 +10392,7 @@ void BundleSolver::process_outstanding_Modification( void )
      }  // end( if( ttmod == FunctionModVarsRngd ) )
 
     if( const auto ttmod =
-        std::dynamic_pointer_cast< FunctionModVarsSbst >( tmod ) ) {
+        memo_pointer_cast< FunctionModVarsSbst >( tmod ) ) {
      if( f_sparse_lambda ) {
       // Sparse Lambda Sbst: subset() lists LOCAL indices in v_c05f[ h ];
       // mirror the Rngd path — drop them from v_local2global[ h ],
@@ -10839,7 +10839,7 @@ void BundleSolver::process_outstanding_Modification( void )
 
   // a C05FunctionModRngd, that at this point can only have which().empty()
   if( const auto tmod =
-      std::dynamic_pointer_cast< C05FunctionModRngd >( mod ) ) {
+      memo_pointer_cast< C05FunctionModRngd >( mod ) ) {
    if( ! tmod->which().empty() )
     throw( std::logic_error(
                "BundleSolver::process_outstanding_Modification: "
@@ -10852,7 +10852,7 @@ void BundleSolver::process_outstanding_Modification( void )
 
   // a C05FunctionModSbst, that at this point can only have which().empty()
   if( const auto tmod =
-      std::dynamic_pointer_cast< C05FunctionModSbst >( mod ) ) {
+      memo_pointer_cast< C05FunctionModSbst >( mod ) ) {
    if( ! tmod->which().empty() )
     throw( std::logic_error(
                "BundleSolver::process_outstanding_Modification: "
@@ -10866,7 +10866,7 @@ void BundleSolver::process_outstanding_Modification( void )
   // a C05FunctionModLinRngd implies that a specific range in all the
   // linearizations must be changed (by adding something)
   if( const auto tmod =
-      std::dynamic_pointer_cast< C05FunctionModLinRngd >( mod ) ) {
+      memo_pointer_cast< C05FunctionModLinRngd >( mod ) ) {
    wFi = get_index_of_component( tmod->function() );
    vars = & tmod->vars();
    goto done;
@@ -10875,7 +10875,7 @@ void BundleSolver::process_outstanding_Modification( void )
   // a C05FunctionModLinSbst implies that a specific subset in all the
   // linearizations must be changed (by adding something)
   if( const auto tmod =
-           std::dynamic_pointer_cast< C05FunctionModLinSbst >( mod ) ) {
+           memo_pointer_cast< C05FunctionModLinSbst >( mod ) ) {
    wFi = get_index_of_component( tmod->function() );
    vars = & tmod->vars();
    goto done;

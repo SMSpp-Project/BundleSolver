@@ -17,6 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `BundleSolver` finds the type of a `Modification`, of a `Function` and
+  of a `Constraint` by `memo_cast()` [see `SMSTypedefs.h` of SMS++]
+
 - the class of a component whose C05Function is not a Block is that of the
   Block whose Objective it is in [see `component_Block()`], for vstrNoEasy
   too, where it changes nothing since such a component is never easy
@@ -33,6 +36,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `cmake/FindCPLEX.cmake` and `cmake/FindGUROBI.cmake`, which nothing used
 
 ### Fixed
+
+- a `GroupModification` that changes the `Variable` of all the components
+  at once is recognised only if all its `Modification` are of the same
+  type, instead of whatever their type
 
 - `get_dual_solution()` with a `SimpleConfiguration< std::vector< int > >`
   and no easy component at all asked the master for the dual solution of
