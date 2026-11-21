@@ -3993,7 +3993,7 @@ void BundleSolver::FormD_once( void )
     // linear Constraint, or of the easy components at the first master
     // after they changed [see easy_says_it()]
     Result = ( may_be_empty() || ( NrEasy && easy_says_it() ) ) ?
-	     kInfeasible : kError;
+	     int( kInfeasible ) : int( kError );
     return;
     }
    continue;
@@ -8943,9 +8943,12 @@ bool BundleSolver::is_special_GroupMod( GroupModification & gmod )
 
  auto smi = gmod.sub_Modifications().begin();
  auto sm0 = *(smi++);
- for( ; smi !=  gmod.sub_Modifications().end() ; ++smi )
-  if( typeid( * sm0 ) != typeid( * * smi ) )
+ const auto & mod0 = *sm0;
+ for( ; smi !=  gmod.sub_Modifications().end() ; ++smi ) {
+  const auto & mod = **smi;
+  if( typeid( mod0 ) != typeid( mod ) )
    return( false );
+  }
 
  smi = gmod.sub_Modifications().begin();
  ++smi;

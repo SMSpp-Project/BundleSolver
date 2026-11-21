@@ -51,6 +51,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `get_dual_solution()` with a `SimpleConfiguration< std::vector< int > >`
   and no easy component at all asked the master for the dual solution of
   an easy component, and threw: it writes the hard ones, as with nullptr
+- `BundleSolver` compares the types of the `Modification` of a
+  `GroupModification` through references, and no longer through expressions
+  with side effects inside `typeid`, and gives the status of an empty level
+  refresh with no conditional between two enumerations
 
 ## [0.8.0] - 2026-11-16
 
