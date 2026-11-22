@@ -82,8 +82,14 @@ MOBJ =  $(BNDSLVOBJ) $(SMS++OBJ)
 # libraries
 MLIB =  $(BNDSLVLIB) $(SMS++LIB)
 
+# without Torch there is no BundleSolverML to test
+ifneq ($(BNDSLVML),)
 $(DIR)/$(NAME): $(MOBJ) $(DIR)/test.o
 	$(CC) -o $(DIR)/$(NAME) $(DIR)/test.o $(MOBJ) $(MLIB) $(SW)
+else
+$(DIR)/$(NAME):
+	@echo "$(NAME) is not built: Torch is not found [see Torch_ROOT]"
+endif
 
 # dependencies: every .o from its .cpp + every recursively included .h- - - -
 
