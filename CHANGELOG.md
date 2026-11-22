@@ -21,8 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   bundle also below `dbltMinor`, which bounds t only once the bundle has
   something, so that a short first step is kept with a large `dbltMinor`
 
-- the makefiles give the shared library of the module by default on Linux
-  and on macOS, as CMake does, and its objects with `SMSppSTATIC` [see
+- the makefiles give the shared library of the module by default, a DLL on
+  Windows, as CMake does, and its objects with `SMSppSTATIC` [see
   `lib/makefile-shared` of SMS++]
 
 - the quadratic 0-th component is allowed also with the trust region
