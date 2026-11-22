@@ -69,4 +69,8 @@ BNDSLVH := $(BNDSLVH) $(MILPSH)
 # external libraries for BundleSolver
 BNDSLVLIB = $(MILPSLIB) $(libTorchLIB)
 
+# the objects as the shared libraries of the module and of those whose
+# objects it takes [see SMS++/lib/makefile-shared]
+$(eval $(call SMSppSOlib,BNDSLV))
+
 ############################ End of makefile #################################
