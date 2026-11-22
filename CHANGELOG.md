@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- a positive `dbltEmpty` is the t of the master problem with the empty
+  bundle also below `dbltMinor`, which bounds t only once the bundle has
+  something, so that a short first step is kept with a large `dbltMinor`
+
 - the makefiles give the shared library of the module by default on Linux
   and on macOS, as CMake does, and its objects with `SMSppSTATIC` [see
   `lib/makefile-shared` of SMS++]

@@ -1713,8 +1713,9 @@ public:
   *   is dbltMinor, and the first master gives the point of the domain
   *   closest to the starting one (which is the starting one itself if it
   *   is feasible and the 0-th component, if any, is null); a positive value
-  *   is used as t, within [ dbltMinor , dbltMaior ], and a negative one
-  *   leaves t as it is, so that the first step is a step of the current t.
+  *   is used as t up to dbltMaior, also below dbltMinor, which bounds t
+  *   only once the bundle has something, and a negative one leaves t as it
+  *   is, so that the first step is a step of the current t.
   *   The latter can be better when the starting point is known to be poor,
   *   but evaluating it first is what one wants when it is a good one, as
   *   in a reoptimization that has lost most of the bundle. */

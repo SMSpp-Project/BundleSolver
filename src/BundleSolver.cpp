@@ -3634,7 +3634,7 @@ void BundleSolver::FormD_once( void )
  if( empty_bundle ) {
   // the t of an empty bundle [see dbltEmpty], none if it is negative
   const VarValue te = tEmpty < 0 ? t : tEmpty == 0 ? tMinor
-                      : std::max( tMinor , std::min( tMaior , tEmpty ) );
+                      : std::min( tMaior , tEmpty );
   if( ( t != te ) && std::isnan( Prevt ) ) {
    Prevt = t;
    t = te;
