@@ -675,7 +675,9 @@ void BundleSolverML::Backward( void )
  * coeff * fi * d t_f, i.e., the loss is linear in t with the sign of fi.
  * The mean (rather than the sum) is taken, and fi is not multiplied in, so
  * that the magnitude of the loss does not grow with the iterations and with
- * the scale of f. */
+ * the scale of f. With dblMLTPenalty = lambda > 0 each of these terms also
+ * gets lambda t_f^2 / 2, so that with fi < 0 the term of a SS, which alone
+ * pushes t up without end, has its minimum in t_f = |fi| / lambda. */
 
 torch::Tensor BundleSolverML::objective_loss( size_t wstart , size_t wend ,
 					      size_t & n_used )
@@ -731,6 +733,8 @@ torch::Tensor BundleSolverML::objective_loss( size_t wstart , size_t wend ,
 
    auto term = coeff_vecs[ f ] * nn_out *
                BundleSolverML_Fi::apply( w_cum , gs_scalar , FiS[ f ] );
+   if( f_ML_tpen > 0 )
+    term = term + float( 0.5 * f_ML_tpen ) * nn_out * nn_out;
    loss += term;
 
    BML_LOG( "Backward: iteration " << f << ( is_ss ? " [SS]" : " [last]" )

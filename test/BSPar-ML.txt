@@ -4,10 +4,11 @@
 # The BundleSolverML of the tester for BundleSolverML, one for each core of
 # the network [see intMLModel]: all of them run the ComputeConfig of
 # BSCfg-ML.txt, the first as it is, i.e. with the feed-forward network, the
-# next three changing only the core to an RNN, a GRU and an LSTM, and the
-# last three the loss and the features [see intMLLoss and intMLFeatures]
-# of the first three cores. The tester trains and checks each of them in
-# turn against the plain BundleSolver of BSPar.txt.
+# next three changing only the core to an RNN, a GRU and an LSTM, the next
+# three the loss and the features [see intMLLoss and intMLFeatures] of the
+# first three cores, and the last one the penalty on t^2 of the loss of
+# the LSTM core [see dblMLTPenalty]. The tester trains and checks each of
+# them in turn against the plain BundleSolver of BSPar.txt.
 #
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -16,7 +17,7 @@ BlockSolverConfig     # exact type of the Configuration object
 
 1  # the BlockSolverConfig is a "differential" one
 
-7  # number of (the names of) Solver in this BlockSolverConfig
+8  # number of (the names of) Solver in this BlockSolverConfig
 
 # now all the names of the Solver - - - - - - - - - - - - - - - - - - - - - -
 BundleSolverML        # feed-forward network
@@ -26,8 +27,9 @@ BundleSolverML        # LSTM core
 BundleSolverML        # feed-forward network, step loss
 BundleSolverML        # RNN core, scaled features
 BundleSolverML        # GRU core, both
+BundleSolverML        # LSTM core, penalty on t^2
 
-7  # number of ComputeConfig in this BlockSolverConfig
+8  # number of ComputeConfig in this BlockSolverConfig
 
 # now all the ComputeConfig
 
@@ -256,6 +258,47 @@ intMLFeatures      0 # scaled features
 
 # now all the double parameters
 # [none]
+
+0  # number of string parameters
+
+# now all the string parameters
+# [none]
+
+0  # number of vector-of-int parameters
+
+# now all the vector-of-int parameters
+# [none]
+
+0  # number of vector-of-double parameters
+
+# now all the vector-of-double parameters
+# [none]
+
+0  # number of vector-of-string parameters
+
+# now all the vector-of-string parameters
+# [none]
+
+# the "extra" Configuration slot, which this block does not change
+# but has to write all the same: an override block that leaves it
+# out is read on to the end of the stream, and so swallows whatever
+# follows it in the enclosing file, i.e. the next ComputeConfig
+*  # [none]
+
+# 8: LSTM core, penalty on t^2
+*BSCfg-ML.txt +
+
+1  # f_diff == 1 ==> only the entries below are changed
+
+1  # number of integer parameters
+
+# now all the integer parameters
+intMLModel         3 # LSTM core
+
+1  # number of double parameters
+
+# now all the double parameters
+dblMLTPenalty    0.1 # weight of the penalty on t^2
 
 0  # number of string parameters
 

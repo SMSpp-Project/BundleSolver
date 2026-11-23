@@ -8,8 +8,9 @@
  * Objective of an otherwise "empty" AbstractBlock. The Block is first solved
  * by a standard BundleSolver, whose optimal value is taken as the reference,
  * and then repeatedly solved by each BundleSolverML of BSPar-ML.txt, one for
- * each core of the network (none, RNN, GRU, LSTM) and three more with the
- * other loss and features (intMLLoss, intMLFeatures), that trains its network
+ * each core of the network (none, RNN, GRU, LSTM), three more with the
+ * other loss and features (intMLLoss, intMLFeatures) and one with the penalty
+ * on t^2 of the loss (dblMLTPenalty), that trains its network
  * online by itself at the end of each solve (intMLTrainOnline); for each of
  * them the network is checked to have the core asked by intMLModel, the
  * optimal values are compared at each epoch, the network parameters are

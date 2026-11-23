@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `dblMLTPenalty` of `BundleSolverML`, the weight lambda of a penalty
+  lambda t^2 / 2 on the predicted t in the loss of `intMLLoss` 0, which
+  then has its minimum in t = |f| / lambda instead of pushing t up without
+  end; 0, the default, leaves the loss as it was
+
 - `get_dual_solution()`, and `get_var_solution()` for the easy components,
   read the "meta" Configuration of `Solver::get_var_solution()`: a
   component is written whole if the Block it stands for, or a Block below

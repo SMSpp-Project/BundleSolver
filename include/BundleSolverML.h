@@ -474,10 +474,82 @@ class BundleSolverML : public BundleSolver
   };
 
 /*--------------------------------------------------------------------------*/
+ /// public enum of the double parameters added by BundleSolverML
+ /** Public enum of the additional double algorithmic parameters of
+  * BundleSolverML, on top of those of BundleSolver:
+  *
+  * - dblMLTPenalty: the weight \f$ \lambda \geq 0 \f$ of the penalty
+  *   \f$ \lambda t_f^2 / 2 \f$ that the loss of intMLLoss == 0 adds to
+  *   each of its terms \f$ t_f f_f \f$, with \f$ f_f \f$ the best value
+  *   of the function found so far; with \f$ f_f < 0 \f$ the term alone
+  *   pushes t up without end, and with the penalty it has its minimum in
+  *   \f$ t_f = |f_f| / \lambda \f$. The default 0 leaves the loss as it
+  *   is [see Backward()]. It is ignored by the loss of intMLLoss == 1. */
+
+ enum dbl_par_type_BndSlvML {
+  dblMLTPenalty = dblLastBndSlvPar ,  ///< weight of the penalty on t^2 [0]
+  dblLastBndSlvMLPar ///< first allowed new double parameter for derived
+                     ///< classes
+  };
+
+/*--------------------------------------------------------------------------*/
  /// get the number of int parameters
 
  [[nodiscard]] idx_type get_num_int_par( void ) const override {
   return( idx_type( intLastBndSlvMLPar ) );
+  }
+
+/*--------------------------------------------------------------------------*/
+ /// get the number of double parameters
+
+ [[nodiscard]] idx_type get_num_dbl_par( void ) const override {
+  return( idx_type( dblLastBndSlvMLPar ) );
+  }
+
+/*--------------------------------------------------------------------------*/
+ /// get the double parameter par
+
+ [[nodiscard]] double get_dbl_par( idx_type par ) const override {
+  if( par == dblMLTPenalty )
+   return( f_ML_tpen );
+  return( BundleSolver::get_dbl_par( par ) );
+  }
+
+/*--------------------------------------------------------------------------*/
+ /// set the double parameter par
+ /** Sets the BundleSolverML-specific double parameters and delegates all
+  * the others to BundleSolver. */
+
+ void set_par( idx_type par , double value ) override {
+  if( par == dblMLTPenalty ) {
+   if( value < 0 )
+    throw( std::invalid_argument(
+		 "BundleSolverML::set_par: dblMLTPenalty must be >= 0" ) );
+   f_ML_tpen = value;
+   }
+  else
+   BundleSolver::set_par( par , value );
+  }
+
+/*--------------------------------------------------------------------------*/
+ /// string-to-index map for the BundleSolverML double parameters
+
+ [[nodiscard]] idx_type dbl_par_str2idx( const std::string & name )
+  const override {
+  if( name == "dblMLTPenalty" )
+   return( dblMLTPenalty );
+  return( BundleSolver::dbl_par_str2idx( name ) );
+  }
+
+/*--------------------------------------------------------------------------*/
+ /// index-to-string map for the BundleSolverML double parameters
+
+ [[nodiscard]] const std::string & dbl_par_idx2str( idx_type idx )
+  const override {
+  static const std::string dbl_par_str_ML = "dblMLTPenalty";
+  if( idx == dblMLTPenalty )
+   return( dbl_par_str_ML );
+  return( BundleSolver::dbl_par_idx2str( idx ) );
   }
 
 /*--------------------------------------------------------------------------*/
@@ -672,6 +744,8 @@ class BundleSolverML : public BundleSolver
    return( 1.000001 );
   if( par == dblmnDecr )
    return( 1 );
+  if( par == dblMLTPenalty )
+   return( 0 );
 
   return( BundleSolver::get_dflt_dbl_par( par ) );
   }
@@ -780,6 +854,7 @@ class BundleSolverML : public BundleSolver
  int f_ML_hidden = 16;           ///< value of intMLHidden [16]
  int f_ML_loss = 0;              ///< value of intMLLoss [0]
  int f_ML_features = 1;          ///< value of intMLFeatures [1]
+ double f_ML_tpen = 0;           ///< value of dblMLTPenalty [0]
  int f_ML_iter = 0;              ///< iteration counter within a solve
 
 /*--------------------------------------------------------------------------*/
