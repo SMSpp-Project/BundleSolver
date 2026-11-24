@@ -19,19 +19,11 @@
  * BundleSolverMLNet.h, LSTMBlock.h are not in this module: they need a
  * library of their own, or only a source includes them.
  *
- * \author Antonio Frangioni \n
- *         Dipartimento di Informatica \n
- *         Universita' di Pisa \n
- *
- * \author Enrico Calandrini \n
- *         Dipartimento di Informatica \n
- *         Universita' di Pisa \n
- *
  * \author Donato Meoli \n
  *         Dipartimento di Informatica \n
  *         Universita' di Pisa \n
  *
- * \copyright &copy; by Antonio Frangioni, Enrico Calandrini, Donato Meoli
+ * \copyright &copy; by Donato Meoli
  */
 /*--------------------------------------------------------------------------*/
 /*------------------------- GLOBAL MODULE FRAGMENT -------------------------*/

@@ -187,11 +187,11 @@ conduct, and the process for submitting merge requests to us.
 
 ### Current Lead Authors
 
-- **Antonio Frangioni**  
+- **Enrico Calandrini**  
   Dipartimento di Informatica  
   Università di Pisa
 
-- **Enrico Calandrini**  
+- **Antonio Frangioni**  
   Dipartimento di Informatica  
   Università di Pisa
 
