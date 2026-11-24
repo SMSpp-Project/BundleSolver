@@ -8,7 +8,7 @@
 #   if Torch is installed at $(Torch_ROOT) (see                              #
 #   extlib/makefile-default-paths-*)                                         #
 #                                                                            #
-#                               Donato Meoli                                 #
+#                             Antonio Frangioni                              #
 #                         Dipartimento di Informatica                        #
 #                             Universita' di Pisa                            #
 #                                                                            #

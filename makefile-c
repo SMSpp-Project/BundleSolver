@@ -19,8 +19,7 @@
 #           $(BNDSLVH)   = the .h files to include for BundleSolver          #
 #           $(BNDSLVINC) = the -I$( BundleSolver directory )                 #
 #                                                                            #
-#                              Antonio Frangioni                             #
-#                               Enrico Gorgone                               #
+#                             Antonio Frangioni                              #
 #                         Dipartimento di Informatica                        #
 #                             Universita' di Pisa                            #
 #                                                                            #

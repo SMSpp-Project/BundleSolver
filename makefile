@@ -24,8 +24,7 @@
 #           $(BNDSLVH)     = the .h files to include                         #
 #           $(BNDSLVINC)   = the -I$( source directory )                     #
 #                                                                            #
-#                              Antonio Frangioni                             #
-#                               Enrico Gorgone                               #
+#                             Antonio Frangioni                              #
 #                         Dipartimento di Informatica                        #
 #                             Universita' di Pisa                            #
 #                                                                            #
