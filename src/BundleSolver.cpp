@@ -2096,6 +2096,12 @@ void BundleSolver::set_par( idx_type par , int value )
                      "BundleSolver::set_par: XtrOnNS must be 0 or 1" ) );
    XtrOnNS = value;
    break;
+  case( intMPFixQuad ):
+   if( ( value < 0 ) || ( value > 1 ) )
+    throw( std::invalid_argument(
+                     "BundleSolver::set_par: MPFixQuad must be 0 or 1" ) );
+   MPFixQuad = value;
+   break;
   default: CDASolver::set_par( par , value );
   }
  }  // end( BundleSolver::set_par( int ) )
@@ -2665,6 +2671,7 @@ int BundleSolver::get_int_par( idx_type par ) const
   case( intIntVars ):   return( IntVars );
   case( intXtrLife ):   return( XtrLife );
   case( intXtrOnNS ):   return( XtrOnNS );
+  case( intMPFixQuad ): return( MPFixQuad );
   default:              return( CDASolver::get_int_par( par ) );
   }
  }  // end( BundleSolver::get_int_par )
@@ -7468,6 +7475,7 @@ void BundleSolver::InitMPB( void )
  // storage frame before calling it. In primal raw mode the optimization
  // variable is the absolute point x rather than the displacement d.
  MasterPB->set_v2_form( MPV2Form );
+ MasterPB->set_fixed_curvature( MPFixQuad );
 
  // pick primal vs dual: easy components force the dual form
  const bool want_primal = IsMPPrimal && ! ( DoEasy && ( NrEasy > 0 ) );

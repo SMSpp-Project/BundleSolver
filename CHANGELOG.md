@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `intMPFixQuad` of `BundleSolver`, which with 1 forms the dual master
+  problem of the proximal stabilization with its quadratic term fixed and t
+  in the coefficients of its rows [see
+  `MasterProblemBlock::set_fixed_curvature()`], so that GUROBI keeps its
+  basis when t changes; 0, the default, leaves the master as it was, and
+  `linear_constraints_test` has it as a 6th BundleSolver
+
 - `dblMLTPenalty` of `BundleSolverML`, the weight lambda of a penalty
   lambda t^2 / 2 on the predicted t in the loss of `intMLLoss` 0, which
   then has its minimum in t = |f| / lambda instead of pushing t up without

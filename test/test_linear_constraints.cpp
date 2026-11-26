@@ -106,11 +106,12 @@ const double ACC = 1e-6;     ///< dblRelAcc of BSCfg-cut.txt
 
 static const char * const NAME[] = {
  "proximal, dual" , "proximal, primal" , "trust region, dual" ,
- "trust region, primal, iterate" , "level, dual, iterate" };
+ "trust region, primal, iterate" , "level, dual, iterate" ,
+ "proximal, dual, fixed quadratic term" };
 
-static const Index NSLV = 5;  ///< the BundleSolver of BSPar-lc.txt
+static const Index NSLV = 6;  ///< the BundleSolver of BSPar-lc.txt
 
-static const bool PRIMAL[] = { false , true , false , true , false };
+static const bool PRIMAL[] = { false , true , false , true , false , false };
                               ///< those whose master is the primal one
 
 static int failed = 0;

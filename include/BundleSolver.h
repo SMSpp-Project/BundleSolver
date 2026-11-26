@@ -409,6 +409,8 @@ public:
 
  intXtrOnNS ,      ///< extra items fetched only after a null step
 
+ intMPFixQuad ,    ///< t out of the quadratic term of the dual MP
+
  intLastBndSlvPar  ///< first allowed new int parameter for derived classes
                    /**< Convenience value for easily allow derived classes
                     * to extend the set of int algorithmic parameters. */
@@ -643,6 +645,7 @@ public:
   IntVars = get_dflt_int_par( intIntVars );
   XtrLife = get_dflt_int_par( intXtrLife );
   XtrOnNS = get_dflt_int_par( intXtrOnNS );
+  MPFixQuad = get_dflt_int_par( intMPFixQuad );
   LastNS = false;
   CmpAggr = get_dflt_dbl_par( dblCmpAggr );
   IncrCost = get_dflt_dbl_par( dblIncrCost );
@@ -1270,7 +1273,15 @@ public:
   *   component only at the evaluations that follow a null step, i.e., when
   *   the model has been found inaccurate, and intBPar4 ones otherwise; with
   *   0, up to the current number [see intBPar3 and intBPar6] at every
-  *   evaluation. */
+  *   evaluation.
+  *
+  * - intMPFixQuad [0]: with 1, the dual Master Problem with the proximal
+  *   stabilization keeps its quadratic term fixed and has t in the
+  *   coefficients of z in its rows instead [see
+  *   MasterProblemBlock::set_fixed_curvature()]: the same problem, but a
+  *   Solver that drops the basis when the quadratic term changes (as
+  *   GUROBI does) re-optimizes from it after each change of t; it is read
+  *   when the Master Problem is formed. */
 
  void set_par( idx_type par , int value ) override;
 
@@ -2397,7 +2408,7 @@ public:
 /*--------------------------------------------------------------------------*/
 
  [[nodiscard]] int get_dflt_int_par( idx_type par ) const override {
-  static const std::array< int , 26 > dflt_int_par = {
+  static const std::array< int , 27 > dflt_int_par = {
     10 ,  // intBPar1
    100 ,  // intBPar2
      1 ,  // intBPar3
@@ -2425,7 +2436,8 @@ public:
      0 ,  // intTDisc (default value is no discovery of t)
      0 ,  // intIntVars (default value is integrality ignored)
      0 ,  // intXtrLife (default value is the age of the other items)
-     0    // intXtrOnNS (default value is extra items at every evaluation)
+     0 ,  // intXtrOnNS (default value is extra items at every evaluation)
+     0    // intMPFixQuad (default value is t in the quadratic term)
      };
 
   if( ( par >= intLastParCDAS ) && ( par < intLastBndSlvPar ) )
@@ -2562,7 +2574,8 @@ public:
    { "intTDisc" , BundleSolver::intTDisc } ,
    { "intIntVars" , BundleSolver::intIntVars } ,
    { "intXtrLife" , BundleSolver::intXtrLife } ,
-   { "intXtrOnNS" , BundleSolver::intXtrOnNS }
+   { "intXtrOnNS" , BundleSolver::intXtrOnNS } ,
+   { "intMPFixQuad" , BundleSolver::intMPFixQuad }
    };
 
   const auto it = int_pars_map.find( name );
@@ -2660,13 +2673,14 @@ public:
 
  [[nodiscard]] const std::string & int_par_idx2str( idx_type idx )
   const override {
-  static const std::array< std::string , 26 > int_pars_str = {
+  static const std::array< std::string , 27 > int_pars_str = {
    "intBPar1" , "intBPar2" , "intBPar3" , "intBPar4" , "intBPar6" ,
    "intBPar7" , "intMnSSC" , "intMnNSC" , "inttSPar1" , "intMaxNrEvls" ,
    "intDoEasy" , "intWZNorm" , "intFrcLstSS" , "intTrgtMng" ,
    "intMPStbl" , "intMPPrimal" , "intRstAlg" , "intMPV2Form" ,
    "intMPHScaling" , "intMaxLevelNR" , "intCmpAggrSeed" , "intCmpAggrRule" ,
-   "intTDisc" , "intIntVars" , "intXtrLife" , "intXtrOnNS" };
+   "intTDisc" , "intIntVars" , "intXtrLife" , "intXtrOnNS" ,
+   "intMPFixQuad" };
 
   if( ( idx >= intLastParCDAS ) && ( idx < intLastBndSlvPar ) )
    return( int_pars_str[ idx - intBPar1 ] );
@@ -4126,6 +4140,8 @@ public:
  int XtrLife;          ///< age that removes an extra item [see intXtrLife]
 
  int XtrOnNS;          ///< extra items only after a NS [see intXtrOnNS]
+
+ int MPFixQuad;        ///< t out of the quadratic term [see intMPFixQuad]
 
  bool LastNS;          ///< whether the last step was a null step
 
