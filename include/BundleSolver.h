@@ -781,7 +781,7 @@ public:
   *    4: aBP3 is set to
   *       ( BPar5 > 0 ? BPar4 : BPar3 ) + BPar5 / log10( EpsU / RelAcc )
   *
-  * - intBPar7 [2]: This parameter, coded bit-wise, controls if
+  * - intBPar7 [3]: This parameter, coded bit-wise, controls if
   *                 BundleSolver "tries to play nice" with any
   *   other Solver that may concurrently be using the same C05Function. The
   *   point is that each of these Solver is producing new linearizations,
@@ -1451,15 +1451,16 @@ public:
   *
   *        lower_target = UpFi + v* + m1 * Delta*
   *
-  *   otherwise
+  *   otherwise (m1 <= 0)
   *
   *        lower_target = UpFi + ( 1 + m1 ) * v*
   *
   *   where UpFi is the current upper estimate of the value of the objective
   *   function at the current stability center Lambda, v* < 0 is the
-  *   predicted decrease at the new iterate Lambda1, and Delta* > -v* > 0 is
-  *   the optimal dual value of the Master Problem. Typically, lower_target
-  *   should be "just a bit above UpFi + v*", which is the lowest possible
+  *   predicted decrease at the new iterate Lambda1, and
+  *   Delta* = D*_t( z* ) + Sigma* <= - v* is minus the optimal value of the
+  *   Master Problem (that of its dual). Typically, lower_target should be
+  *   "just a bit above UpFi + v*", which is the lowest possible
   *   value of Fi( Lambda1 ). Whenever a lower bound on Fi( Lambda1 ) is
   *   found that is >= lower_target, a Null Step can be safely declared.
   *
@@ -1475,10 +1476,11 @@ public:
   *   should be "just a bit below UpFi": whenever an upper bound on
   *   Fi( Lambda1 ) is found that is <= upper_target (which means that a
   *   "sizable decrease" has been achieved), a Serious Step can be safely
-  *   declared. Note that it must be 0 < m1 <= m2 < 1; m1 = m2 = 0 is
-  *   theoretically possible, but not practically advisable, for
-  *   polyhedral functions provided that both function values and v* are
-  *   computed without numerical errors (which is typically impossible).
+  *   declared. Note that it must be | m1 | < 1 and | m1 | <= m2 < 1;
+  *   m1 = m2 = 0 is theoretically possible, but not practically advisable,
+  *   for polyhedral functions provided that both function values and v*
+  *   are computed without numerical errors (which is typically
+  *   impossible).
   *   Also, note that whenever m1 < m2 both a SS and a NS may be possible
   *   at the same time, in which case the BundleSolver will
   *   typically favor the SS.

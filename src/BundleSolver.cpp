@@ -2150,7 +2150,7 @@ void BundleSolver::set_par( idx_type par , double value )
    if( std::abs( value ) >= 1 )
     throw( std::invalid_argument(
                "BundleSolver::set_par: "
-               "| m1 | must be in (0, 1)" ) );
+               "| m1 | must be in [0, 1)" ) );
    m1 = value;
    break;
   case( dblm2 ):
