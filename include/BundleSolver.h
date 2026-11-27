@@ -4542,6 +4542,17 @@ public:
  static std::pair< double , double >
  effective_bounds( const ColVariable * var );
 
+ /// effective_bounds() of LamVcblr[ i ], from a copy made for all of them
+ /** The box of the Variable changes only by the Modification, hence the
+  * copy is made at the first call after these have been processed [see
+  * process_outstanding_Modification()], or after set_Block(). */
+
+ const std::pair< double , double > & box_of( Index i ) const;
+
+ mutable std::vector< std::pair< double , double > > f_box;
+ ///< the copy of the box [see box_of()]
+ mutable bool f_box_ok = false;  ///< whether f_box is valid
+
 /*--------------------------------------------------------------------------*/
 
  void InitMPB( void );

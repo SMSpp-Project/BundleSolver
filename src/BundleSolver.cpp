@@ -172,6 +172,20 @@ BundleSolver::effective_bounds( const ColVariable * var )
 }
 
 /*--------------------------------------------------------------------------*/
+
+const std::pair< double , double > & BundleSolver::box_of( Index i ) const
+{
+ if( ( ! f_box_ok ) || ( f_box.size() != LamVcblr.size() ) ) {
+  f_box.resize( LamVcblr.size() );
+  for( Index k = 0 ; k < LamVcblr.size() ; ++k )
+   f_box[ k ] = effective_bounds( LamVcblr[ k ] );
+  f_box_ok = true;
+  }
+
+ return( f_box[ i ] );
+ }
+
+/*--------------------------------------------------------------------------*/
 /*-------------------------------- CONSTANTS -------------------------------*/
 /*--------------------------------------------------------------------------*/
 
@@ -1162,6 +1176,8 @@ int BundleSolver::compute( bool changedvars )
 
 void BundleSolver::set_Block( Block * block )
 {
+ f_box_ok = false;  // a new Block, a new box [see box_of()]
+
  if( f_Block == block )  // registering to the same Block
   return;                // cowardly and silently return
 
@@ -1885,7 +1901,7 @@ void BundleSolver::set_Block( Block * block )
  if( MasterPB ) {
   std::vector< double > Lbox( NumVar ) , Ubox( NumVar );
   for( Index i = 0 ; i < NumVar ; ++i ) {
-   const auto bounds = effective_bounds( LamVcblr[ i ] );
+   const auto & bounds = box_of( i );
    Lbox[ i ] = bounds.first;
    Ubox[ i ] = bounds.second;
    }
@@ -3889,7 +3905,7 @@ void BundleSolver::FormD_once( void )
   if( MasterPB ) {
    std::vector< double > Lbox( NumVar ) , Ubox( NumVar );
    for( Index i = 0 ; i < NumVar ; ++i ) {
-    const auto bounds = effective_bounds( LamVcblr[ i ] );
+    const auto & bounds = box_of( i );
     Lbox[ i ] = bounds.first;
     Ubox[ i ] = bounds.second;
     }
@@ -4912,7 +4928,7 @@ int BundleSolver::integer_master( double tm )
 
  std::vector< double > Lbox( NumVar ) , Ubox( NumVar );
  for( Index i = 0 ; i < NumVar ; ++i ) {
-  const auto bounds = effective_bounds( LamVcblr[ i ] );
+  const auto & bounds = box_of( i );
   Lbox[ i ] = bounds.first;
   Ubox[ i ] = bounds.second;
 
@@ -5024,7 +5040,7 @@ bool BundleSolver::integer_start( double & tot_time , long & tot_NrEvls )
   // the binary Variable get the local branching in place of the trust
   // region [see MasterProblemBlock::set_local_branching()]
   for( Index i = 0 ; i < NumVar ; ++i ) {
-   const auto bounds = effective_bounds( LamVcblr[ i ] );
+   const auto & bounds = box_of( i );
    if( ( i < f_int_var.size() ) && f_int_var[ i ] &&
        ( bounds.first == 0 ) && ( bounds.second == 1 ) ) {
     f_int_bin[ i ] = true;
@@ -5444,7 +5460,7 @@ void BundleSolver::PrepareLambda1( bool from_master )
  // ColVariable bounds combined with any supported active bound constraint
  if( MasterPB )
   for( Index i = 0 ; i < NumVar ; ++i ) {
-   const auto bounds = effective_bounds( LamVcblr[ i ] );
+   const auto & bounds = box_of( i );
    if( Lambda1[ i ] < bounds.first )
     Lambda1[ i ] = bounds.first;
    if( Lambda1[ i ] > bounds.second )
@@ -5455,7 +5471,7 @@ void BundleSolver::PrepareLambda1( bool from_master )
  // gives them up to its tolerance
  for( Index i = 0 ; i < f_int_var.size() ; ++i )
   if( f_int_var[ i ] ) {
-   const auto bounds = effective_bounds( LamVcblr[ i ] );
+   const auto & bounds = box_of( i );
    Lambda1[ i ] = std::round( Lambda1[ i ] );
    if( Lambda1[ i ] < bounds.first )
     Lambda1[ i ] = std::ceil( bounds.first );
@@ -8626,7 +8642,7 @@ BundleSolver::VarValue BundleSolver::box_lower_bound( void ) const
  for( Index i = 0 ; i < NumVar ; ++i ) {
   if( s[ i ] == 0 )
    continue;
-  const auto bounds = effective_bounds( LamVcblr[ i ] );
+  const auto & bounds = box_of( i );
   const double y = Lambda[ i ] + d[ i ];
   const double w = std::max( std::abs( bounds.second - y ) ,
                              std::abs( y - bounds.first ) );
@@ -9046,6 +9062,15 @@ void BundleSolver::flatten_Modification_list( Lst_sp_Mod & vmt , sp_Mod mod )
 
 void BundleSolver::process_outstanding_Modification( void )
 {
+ // the box may change, also while the Modification are processed, hence
+ // it is copied again at the first call of box_of() after this one
+ f_box_ok = false;
+ struct BoxGuard
+ {
+  bool & ok;
+  ~BoxGuard() { ok = false; }
+  } box_guard{ f_box_ok };
+
  // multiple-loop version, where several passes are done in order to gather
  // which kind of Modification have occurred and avoid doing costly work
  // more than once

@@ -22,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- the box of the `Variable` of the master [see `effective_bounds()`] is
+  copied once after the Modification are processed, and read from the copy
+  (`box_of()`) by the many loops that need it
+
 - `get_index_of_component()` finds a component through a hash map from the
   `Function` to its index, rebuilt when found stale, rather than by a linear
   search
