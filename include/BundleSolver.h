@@ -2824,6 +2824,17 @@ public:
  void remove_cut_global( Index name );
 
 /*--------------------------------------------------------------------------*/
+ /// remove from the master the cuts collected while f_defer_cuts
+ /** While f_defer_cuts is true, remove_cut_global() and Delete() only
+  * collect the names of the cuts to be removed in v_deferred_cuts, one list
+  * per component; this removes them, with one
+  * MasterProblemBlock::remove_cuts() per component, synchronizes the
+  * fictitious lower bounds [see sync_fictitious_LB()], which Delete() does
+  * not do meanwhile, and sets f_defer_cuts to false. */
+
+ void remove_deferred_cuts( void );
+
+/*--------------------------------------------------------------------------*/
  /// returns the upper bound of valid global names in the bundle
  /** Used as the loop upper bound (i.e.
   * `for( i = 0 ; i < get_max_name() ; ++i ) ...`); returns the highest
@@ -4275,6 +4286,13 @@ public:
   * when MasterPB != nullptr; sized NrFi. */
 
  std::vector< bool > FictLB;
+
+ bool f_defer_cuts = false;  ///< whether removals from the master wait
+			     ///< [see remove_deferred_cuts()]
+
+ std::vector< std::vector< int > > v_deferred_cuts;
+ ///< the names of the cuts waiting for removal
+ ///< from the master, per component
 
  /** FrFItem[ k ] contains the index of the first position in the global
   * pool of component k where BundleSolver can put a new

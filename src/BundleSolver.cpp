@@ -473,9 +473,30 @@ void BundleSolver::remove_cut_global( Index name )
 {
  if( MasterPB && name < ItemVcblr.size() ) {
   const auto & loc = ItemVcblr[ name ];
-  if( loc.second < Inf< Index >() )
-   MasterPB->remove_cut( hard_k( loc.first ) , int( name ) );
+  if( loc.second < Inf< Index >() ) {
+   if( f_defer_cuts ) {
+    if( v_deferred_cuts.size() < NrFi )
+     v_deferred_cuts.resize( NrFi );
+    v_deferred_cuts[ loc.first ].push_back( int( name ) );
+    }
+   else
+    MasterPB->remove_cut( hard_k( loc.first ) , int( name ) );
+   }
   }
+ }
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::remove_deferred_cuts( void )
+{
+ f_defer_cuts = false;
+ for( Index k = 0 ; k < v_deferred_cuts.size() ; ++k ) {
+  if( v_deferred_cuts[ k ].empty() )
+   continue;
+  MasterPB->remove_cuts( hard_k( k ) , v_deferred_cuts[ k ] );
+  v_deferred_cuts[ k ].clear();
+  }
+ sync_fictitious_LB();
  }
 
 /*--------------------------------------------------------------------------*/
@@ -6920,6 +6941,8 @@ void BundleSolver::SimpleBStrat( void )
           ( ( ! keep_vertical ) || is_subgradient_global( i ) ) );
   };
 
+ // the cuts leave the master all at once, after the loop
+ f_defer_cuts = ( MasterPB != nullptr );
  if( ( BPar7 & 3 ) == 3 ) {  // "eager" deletion
   std::vector< Subset > tbdltd( NrFi );
   for( Index i = 0 ; i < get_max_name() ; ++i )
@@ -6927,6 +6950,8 @@ void BundleSolver::SimpleBStrat( void )
     tbdltd[ ItemVcblr[ i ].first ].push_back( ItemVcblr[ i ].second );
     Delete( i );
     }
+  if( f_defer_cuts )
+   remove_deferred_cuts();
 
   inhibit_Modification( true );
   for( Index k = 0 ; k < NrFi ; ++k )
@@ -6934,10 +6959,13 @@ void BundleSolver::SimpleBStrat( void )
     v_c05f[ k ]->delete_linearizations( std::move( tbdltd[ k ] ) , false );
   inhibit_Modification( false );
   }
- else                        // "lazy" deletion
+ else {  // "lazy" deletion
   for( Index i = 0 ; i < get_max_name() ; ++i )
    if( deletable( i ) )
     Delete( i );
+  if( f_defer_cuts )
+   remove_deferred_cuts();
+  }
 
  #if CHECK_DS & 1
   CheckBundle();
@@ -8409,8 +8437,10 @@ void BundleSolver::Delete( Index i , bool ModDelete )
 
  // FormD() may delete an item as part of its emergency recovery and solve
  // the master again at once: if this was the last cut of a component, it
- // may need its fictitious bound now
- sync_fictitious_LB();
+ // may need its fictitious bound now, unless the removal of the cut from
+ // the master waits [see remove_deferred_cuts()]
+ if( ! f_defer_cuts )
+  sync_fictitious_LB();
 
  // remove from the global pool: the removal is "hard" if either BPar7 says
  // so, or the linearization had been deleted anyway

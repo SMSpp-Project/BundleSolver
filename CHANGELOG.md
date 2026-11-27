@@ -22,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `SimpleBStrat()` removes the cuts it deletes from the master all at once,
+  with one `MasterProblemBlock::remove_cuts()` per component, and
+  synchronizes the fictitious lower bounds once after them
+
 - a positive `dbltEmpty` is the t of the master problem with the empty
   bundle also below `dbltMinor`, which bounds t only once the bundle has
   something, so that a short first step is kept with a large `dbltMinor`
