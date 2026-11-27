@@ -4380,6 +4380,10 @@ public:
  std::vector< C05Function * > v_c05f;
  ///< the vector of (pointers to) the components of the sum function
 
+ std::unordered_map< Function * , Index > m_c05f_index;
+ ///< the position of each Function in v_c05f, the first one if repeated,
+ ///< rebuilt when it is found stale [see get_index_of_component()]
+
  std::vector< VarValue > v_c05w;
  ///< the weight of each component, that of the Objective of its sub-Block
  ///< [see Block::set_objective_weight()], by which its values, bounds,
@@ -4720,11 +4724,17 @@ public:
 
  Index get_index_of_component( Function * f )
  {
-  const auto fit = std::find( v_c05f.begin() , v_c05f.end() , f );
-  if( fit != v_c05f.end() )
-   return( std::distance( v_c05f.begin() , fit ) );
+  auto it = m_c05f_index.find( f );
+  if( ( it != m_c05f_index.end() ) && ( it->second < v_c05f.size() ) &&
+      ( v_c05f[ it->second ] == f ) )
+   return( it->second );
 
-  return( Inf< Index >() );
+  // m_c05f_index is stale, or f is not a component: rebuilt and searched
+  m_c05f_index.clear();
+  for( Index k = v_c05f.size() ; k-- > 0 ; )
+   m_c05f_index.insert_or_assign( v_c05f[ k ] , k );
+  it = m_c05f_index.find( f );
+  return( it != m_c05f_index.end() ? it->second : Inf< Index >() );
   }
 
 /*--------------------------------------------------------------------------*/

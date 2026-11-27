@@ -22,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `get_index_of_component()` finds a component through a hash map from the
+  `Function` to its index, rebuilt when found stale, rather than by a linear
+  search
+
 - `SimpleBStrat()` removes the cuts it deletes from the master all at once,
   with one `MasterProblemBlock::remove_cuts()` per component, and
   synchronizes the fictitious lower bounds once after them
