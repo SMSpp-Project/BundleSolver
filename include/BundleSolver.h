@@ -40,7 +40,9 @@
  *
  * BundleSolver is capable of solving any Block such that:
  *
- * - only has "continuous" ColVariable (is_integer() == false);
+ * - only has "continuous" ColVariable (is_integer() == false), or has the
+ *   integer ones treated as such (intIntVars == 0, the default), unless
+ *   they are kept integer with intIntVars == 1 [see intIntVars];
  *
  * - has no Constraint, except possibly BoxConstraint (upper and/or lower
  *   bounds on the ColVariable), and any Constraint the Solver of the primal
@@ -215,9 +217,10 @@ namespace SMSpp_di_unipi_it
  *
  * BundleSolver is capable of solving any Block such that:
  *
- * - only has "continuous" ColVariable (is_integer() == false) that are
- *   either unconstrained below (lower bound == - INF) or non-negative
- *   (lower bound == 0);
+ * - only has "continuous" ColVariable (is_integer() == false), or has the
+ *   integer ones treated as such unless intIntVars == 1 [see intIntVars],
+ *   that are either unconstrained below (lower bound == - INF) or
+ *   non-negative (lower bound == 0);
  *
  * - has no Constraint, except possibly NNConstraint (bounds >= 0) or
  *   BoxConstraint (upper and/or lower bounds) on some of the ColVariable,

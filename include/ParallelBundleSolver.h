@@ -94,11 +94,9 @@ public:
   * provided so that the list can be easily further extended by derived
   * classes.
   *
-  * In fact ParallelBundleSolver currently has no extra parameters w.r.t.
-  * BundleSolver, except the fact that it does really react to the
-  * intMaxThread one of ThinComputeInterface which BundleSolver instead
-  * ignores (since it's completely sequential implementation).
- */
+  * Besides intParFrm, ParallelBundleSolver reacts to the intMaxThread
+  * parameter of ThinComputeInterface, which BundleSolver instead ignores
+  * (since it's completely sequential implementation). */
 
  enum int_par_type_PBndSlv {
 
@@ -144,7 +142,7 @@ public:
 
  enum dbl_par_type_PBndSlv {
   dblPoolingInt = dblLastBndSlvPar ,
-  ///< parameter for declaring the frequency of pooling of results
+  ///< frequency of pooling of results: accepted, and not used
 
   dblLastPBndSlvPar ///< first new double parameter for derived classes
                     /**< Convenience value for easily allow derived classes
@@ -180,16 +178,20 @@ public:
  *  @{ */
 
  /// set the int parameters of ParallelBundleSolver
- /** Set the int parameters specific of ParallelBundleSolver, which actually
+ /** Set the int parameters specific of ParallelBundleSolver, one of which
   * is a parameter of ThinComputeInterface that ParallelBundleSolver
-  * "listens to" while BundleSolver does not:
+  * "listens to" while BundleSolver does not, or calls the BundleSolver
+  * version to deal with the rest:
   *
   * - intMaxThread [0]: maximum number of threads that compute() uses to
   *                     evaluate the components. The threads are started
   *   the first time InnerLoop() needs them and live as long as the
   *   ParallelBundleSolver does, waiting between one evaluation and the next,
   *   so that no thread is created per evaluation; their number is
-  *   min( intMaxThread , number of hard components ). */
+  *   min( intMaxThread , number of hard components );
+  *
+  * - intParFrm [0]: the formulation of the parallel InnerLoop() [see
+  *                  intParFrm]. */
 
  void set_par( idx_type par , int value ) override {
   if( par == intMaxThread )

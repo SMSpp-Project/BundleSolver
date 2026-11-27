@@ -22,12 +22,12 @@
  * part of that approach. The convex multipliers that form the direction are
  * still computed by the classical Master problem of the base BundleSolver,
  * rather than by the attention-based recurrent network of the paper. By
- * default the network learns t with an objective-based, time-discounted
- * loss differentiated through the search direction; as options [see
- * intMLLoss and intMLFeatures] it learns t from the outcome of each step,
- * i.e., from the sign of the directional derivative of the function at the
- * trial point along the direction, and it sees dimensionless features
- * [see Backward() and Heuristic()].
+ * default the network sees dimensionless features and learns t with an
+ * objective-based, time-discounted loss differentiated through the search
+ * direction; as options it learns t from the outcome of each step [see
+ * intMLLoss], i.e., from the sign of the directional derivative of the
+ * function at the trial point along the direction, and it sees features
+ * divided by fixed scales [see intMLFeatures, Backward() and Heuristic()].
  *
  * The network can be trained online: after each compute() the caller can
  * invoke Backward(), which computes a loss out of the recorded iterations,
@@ -103,16 +103,22 @@ namespace SMSpp_di_unipi_it
 /*--------------------------------------------------------------------------*/
 /*----------------------------- CLASS Net ----------------------------------*/
 /*--------------------------------------------------------------------------*/
-/// two-layer feedforward neural network predicting the step-size t
-/** Net is a simple two-layer feedforward neural network used by
- * BundleSolverML to predict the step-size t:
+/// neural network predicting the step-size t
+/** Net [see BundleSolverMLNet.h] is the neural network used by
+ * BundleSolverML to predict the step-size t, whose architecture is decided
+ * at construction time by NetOptions:
  *
- * - input layer: 20 features describing the current state of the bundle
+ * - input: 20 features describing the current state of the bundle
  *   algorithm;
  *
- * - hidden layer: 16 units with Softplus activation;
+ * - core: none (a feed-forward network) or a recurrent one, RNN, GRU or
+ *   LSTM, whose state is carried across the iterations [see intMLModel and
+ *   intMLHidden];
  *
- * - output layer: 1 unit with Softplus activation, producing t > 0.
+ * - head: a hidden layer of 16 units with Softplus activation, then 1
+ *   output unit with Softplus activation, clamped into [ t_min , t_max ],
+ *   producing t > 0 (or, with intMLFeatures == 1, the factor tau > 0 of
+ *   the new t = tau t [see Heuristic()]).
  *
  * The Softplus output ensures that the predicted step-size is always
  * strictly positive, as required for the convergence of the bundle method.
