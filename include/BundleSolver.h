@@ -4515,6 +4515,8 @@ public:
 
  void CreateMPB( void );
 
+ void DeleteMPB( void );
+
 /*--------------------------------------------------------------------------*/
 
  static std::pair< double , double >

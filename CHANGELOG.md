@@ -57,6 +57,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- a `BundleSolver` that leaves its `Block` deletes its `MasterProblemBlock`
+  and the `Solver` registered on it, and builds new ones for the next
+  `Block`: the master was cleared and built again, and kept the `Solver` of
+  the previous `Block` with its state, so that a `BundleSolver` detached and
+  attached again to the same `Block` did not start as the first time (a
+  branch-and-bound searched another tree), and the master of a
+  `BundleSolver` was never deleted
+
 - a `GroupModification` that changes the `Variable` of all the components
   at once is recognised only if all its `Modification` are of the same
   type, instead of whatever their type

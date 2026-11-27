@@ -581,8 +581,7 @@ int BundleSolver::compute( bool changedvars )
    const auto & cf = f_lf->get_v_var();
    for( Index i = 0 ; i < cf.size() && i < NumVar ; ++i )
     b[ i ] = f_convex ? cf[ i ].second : - cf[ i ].second;
-   // no quadratic term: the master may be recycled from a Block that had
-   // one [see CreateMPB()], and clear() does not forget it
+   // no quadratic term
    MasterPB->set_zeroth_quadratic( {} );
    }
   else {
@@ -1147,6 +1146,7 @@ void BundleSolver::set_Block( Block * block )
  if( f_Block ) {  // changing from a previous oracle - - - - - - - - - - - - -
                  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
   guts_of_destructor();   // deallocate memory
+  DeleteMPB();            // and the master problem goes with its Block
   }
 
  Solver::set_Block( block );  // attach to the new Block
@@ -7448,17 +7448,34 @@ double BundleSolver::Heuristic5( void )
 
 void BundleSolver::CreateMPB( void )
 {
- // allocate (or re-cycle) the MasterProblemBlock
- if( MasterPB )
-  MasterPB->clear();
- else
-  MasterPB = new MasterProblemBlock();
+ /* Each Block has a MasterProblemBlock of its own, and with it a Solver of
+  * its own [see DeleteMPB()]. */
+ MasterPB = new MasterProblemBlock();
 
  f_easy_first_MP = true;  // no master solved yet [see easy_says_it()]
  f_cutoff_LB = -INFshift;   // nor any global lower bound set in it
  f_LB_row = -INFshift;
 
  }  // end( BundleSolver::CreateMPB )
+
+/*--------------------------------------------------------------------------*/
+
+void BundleSolver::DeleteMPB( void )
+{
+ /* The master problem is not kept for the next Block: a master that was
+  * cleared and built again would keep the Solver registered on it, whose
+  * state is that of the previous Block, and a BundleSolver attached again
+  * to the same Block would then not start as it did the first time. The
+  * Solver go first, the destructor of the master giving the easy
+  * components back to their Function Block. */
+ if( ! MasterPB )
+  return;
+
+ MasterPB->unregister_Solvers();
+ delete MasterPB;
+ MasterPB = nullptr;
+
+ }  // end( BundleSolver::DeleteMPB )
 
 /*--------------------------------------------------------------------------*/
 
@@ -7552,13 +7569,11 @@ void BundleSolver::InitMPB( void )
      env && env[ 0 ] )
   MasterPB->set_xref_tol( std::atof( env ) );
 
- /* configure() has just built the structure of the master anew, and with it
-  * the abstract representation that went with the previous one is gone. A
-  * :MILPSolver that is registered on the master reads it through that
-  * representation, and asks for it when it is registered: a master that is
-  * being recycled keeps the Solver it already has, so nobody would ask
-  * again, and the master would be solved with no Variable in it. The three
-  * calls are idempotent, each returning at once when its part is there. */
+ /* configure() has just built the structure of the master, and a
+  * :MILPSolver registered on it reads it through its abstract
+  * representation, which is generated here, before the Solver is. The
+  * three calls are idempotent, each returning at once when its part is
+  * there. */
  MasterPB->generate_abstract_variables();
  MasterPB->generate_abstract_constraints();
  MasterPB->generate_objective();
