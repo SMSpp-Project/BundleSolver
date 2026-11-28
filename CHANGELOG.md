@@ -22,6 +22,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `get_index_of_component()` keeps the position of each component in a
+  `FlatHashTable` of ADS
+
 - the box of the `Variable` of the master [see `effective_bounds()`] is
   copied once after the Modification are processed, and read from the copy
   (`box_of()`) by the many loops that need it
